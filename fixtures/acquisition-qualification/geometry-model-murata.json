@@ -1,0 +1,392 @@
+{
+  "dc_estimate": {
+    "contact_and_joint_ohm": 0.13,
+    "copper_um": 17.5,
+    "input_current_a": 0.00717741046831956,
+    "plane_strip_width_mm": 0.1,
+    "rho_ohm_m": 1.724e-08,
+    "track_width_mm": 0.2
+  },
+  "ground_strips": {
+    "J1-to-J2-pin1": [
+      [
+        106,
+        126.3
+      ],
+      [
+        106,
+        124
+      ],
+      [
+        138,
+        124
+      ],
+      [
+        138,
+        112.7
+      ]
+    ],
+    "J1-to-J3-pin2": [
+      [
+        106,
+        126.3
+      ],
+      [
+        106,
+        101.5
+      ],
+      [
+        122,
+        101.5
+      ],
+      [
+        122,
+        104.3
+      ]
+    ],
+    "J1-to-J3-pin4": [
+      [
+        106,
+        126.3
+      ],
+      [
+        106,
+        101.5
+      ],
+      [
+        126,
+        101.5
+      ],
+      [
+        126,
+        104.3
+      ]
+    ]
+  },
+  "limits": [
+    "Material and etch reductions are conservative engineering assumptions, not supplier-guaranteed lower limits.",
+    "DC estimate and local routing inspection do not prove wideband plane impedance, EMC or physical measurements.",
+    "Bounding rectangles include IC leads; not exact3D meshes.",
+    "Connector dimensions are manufacturer reference dimensions. No enclosed mated-height fit claim.",
+    "0.075mm placement allowance is an assembly target requiring supplier preview/inspection."
+  ],
+  "loops": {
+    "adc_loop": [
+      [
+        [
+          "C3",
+          "1"
+        ],
+        [
+          "U2",
+          "8"
+        ]
+      ],
+      [
+        [
+          "C3",
+          "2"
+        ],
+        [
+          "U2",
+          "3"
+        ]
+      ]
+    ],
+    "filter0_loop": [
+      [
+        [
+          "C4",
+          "1"
+        ],
+        [
+          "U2",
+          "4"
+        ]
+      ],
+      [
+        [
+          "C4",
+          "2"
+        ],
+        [
+          "U2",
+          "3"
+        ]
+      ]
+    ],
+    "filter1_loop": [
+      [
+        [
+          "C5",
+          "1"
+        ],
+        [
+          "U2",
+          "5"
+        ]
+      ],
+      [
+        [
+          "C5",
+          "2"
+        ],
+        [
+          "U2",
+          "3"
+        ]
+      ]
+    ],
+    "input_loop": [
+      [
+        [
+          "C1",
+          "1"
+        ],
+        [
+          "U1",
+          "1"
+        ]
+      ],
+      [
+        [
+          "C1",
+          "2"
+        ],
+        [
+          "U1",
+          "2"
+        ]
+      ]
+    ],
+    "output_loop": [
+      [
+        [
+          "C2",
+          "1"
+        ],
+        [
+          "U1",
+          "5"
+        ]
+      ],
+      [
+        [
+          "C2",
+          "2"
+        ],
+        [
+          "U1",
+          "2"
+        ]
+      ]
+    ]
+  },
+  "packages": {
+    "C1": {
+      "basis": "Samsung specific product L/W/T maximum",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        2.2,
+        1.45,
+        1.45
+      ]
+    },
+    "C2": {
+      "basis": "Samsung specific product L/W/T maximum",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        2.2,
+        1.45,
+        1.45
+      ]
+    },
+    "C3": {
+      "basis": "YAGEO C3 / Murata GRM1885C1H103JA01 L/W/T +/-0.1mm",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.9
+      ]
+    },
+    "C4": {
+      "basis": "Murata GRM1885C1H103JA01D exact reference sheet GRM1885C1H103JA01-01A, physical p2 L/W/T 1.6/0.8/0.8 +/-0.1mm; source-supplement/murata/reference.pdf sha256 3f5a339eb51502df7716dfd2d4c4e6d33e837abc0df5cb8e4fc1e6e275d09790; reference dimensions, approval sheet pending before ordering",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.9
+      ]
+    },
+    "C5": {
+      "basis": "Murata GRM1885C1H103JA01D exact reference sheet GRM1885C1H103JA01-01A, physical p2 L/W/T 1.6/0.8/0.8 +/-0.1mm; source-supplement/murata/reference.pdf sha256 3f5a339eb51502df7716dfd2d4c4e6d33e837abc0df5cb8e4fc1e6e275d09790; reference dimensions, approval sheet pending before ordering",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.9
+      ]
+    },
+    "D1": {
+      "basis": "Diodes SOD123 lead-inclusive He and bodyD/A maxima",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        3.85,
+        1.7,
+        1.35
+      ]
+    },
+    "J1": {
+      "basis": "JST PH header reference envelope plus modeled molded ears;dimensions reference, no guaranteed matedheight",
+      "offset_mm": [
+        1,
+        0.25
+      ],
+      "size_mm": [
+        5.9,
+        4.5,
+        6.0
+      ]
+    },
+    "J2": {
+      "basis": "JST PH header reference envelope plus modeled molded ears;dimensions reference, no guaranteed matedheight",
+      "offset_mm": [
+        3,
+        0.25
+      ],
+      "size_mm": [
+        9.9,
+        4.5,
+        6.0
+      ]
+    },
+    "J3": {
+      "basis": "JST PH header reference envelope plus modeled molded ears;dimensions reference, no guaranteed matedheight",
+      "offset_mm": [
+        3,
+        0.25
+      ],
+      "size_mm": [
+        9.9,
+        4.5,
+        6.0
+      ]
+    },
+    "R1": {
+      "basis": "YAGEO RC0603 maximum;0.1W;1percent",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "R2": {
+      "basis": "YAGEO RC0603 maximum;0.1W;1percent",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "R3": {
+      "basis": "YAGEO RC0603 maximum;0.1W;1percent",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "R4": {
+      "basis": "YAGEO RC0603 maximum;0.1W;1percent",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "R5": {
+      "basis": "YAGEO RC0603 maximum;0.1W;1percent",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "R6": {
+      "basis": "YAGEO RC0603 maximum;0.1W;1percent",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "U1": {
+      "basis": "TI DBV0005A overall lead span3.0;bodylength3.05 plus0.25flash each end",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        3.0,
+        3.55,
+        1.45
+      ]
+    },
+    "U2": {
+      "basis": "TI DGS0010A overall lead span5.05;bodylength3.1 plus0.15flash each end",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        5.05,
+        3.4,
+        1.1
+      ]
+    }
+  },
+  "placement_allowance_mm": 0.075
+}

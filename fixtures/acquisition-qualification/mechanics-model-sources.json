@@ -1,0 +1,18 @@
+{
+  "murata": {
+    "fixture": "geometry-model-murata.json",
+    "producer_sha256": "6efc9ebd0d68c5a3f1bd1cbc39b9c93bd3c22cc034a33d247b535350a0bbd348",
+    "sha256": "311df5d1398780f8b65e061a512bea2384d15298ba6278d505a6e77e3159cb6c",
+    "source": "Exact deterministic model-byte replay of the already admitted acquisition_source_supplement.corrected_model over original captured model; no native capture claim",
+    "source_commit": "5d14bcf4cf9479c0b1d3662309d979853a2510d6"
+  },
+  "original": {
+    "fixture": "geometry-model.json",
+    "sha256": "0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4"
+  },
+  "r6": {
+    "fixture": "geometry-model-r6.json",
+    "sha256": "43be6345262e5eeb0f54b9214009d13168fa5889333b006315f489dac7c8fa8f",
+    "source": "Coordinator private campaign integration/build/g2-acquisition-fresh-r3/prepared/inputs/analysis/geometry-model.json; byte-identical copy, no coordinate/native requalification"
+  }
+}
