@@ -165,8 +165,8 @@ WORKDIR /build/agent-ee
 COPY crates/placement-engine/Cargo.toml crates/placement-engine/Cargo.lock ./crates/placement-engine/
 COPY crates/placement-engine/src ./crates/placement-engine/src
 COPY src/agent_ee/data/jlcpcb-locality.json ./src/agent_ee/data/jlcpcb-locality.json
-COPY fixtures/acquisition-qualification/geometry-model.json fixtures/acquisition-qualification/geometry-model-murata.json fixtures/acquisition-qualification/geometry-model-r6.json ./fixtures/acquisition-qualification/
-COPY fixtures/acquisition-typed/source-supplement.json fixtures/acquisition-typed/power-repair.json ./fixtures/acquisition-typed/
+COPY fixtures/acquisition-qualification/geometry-model.json fixtures/acquisition-qualification/geometry-model-murata.json fixtures/acquisition-qualification/geometry-model-r6.json fixtures/acquisition-qualification/geometry-model-r6-470.json ./fixtures/acquisition-qualification/
+COPY fixtures/acquisition-typed/source-supplement.json fixtures/acquisition-typed/power-repair.json fixtures/acquisition-typed/power-repair-470.json ./fixtures/acquisition-typed/
 COPY scripts/build_placement_engine.py ./scripts/build_placement_engine.py
 RUN python3 scripts/build_placement_engine.py fetch
 RUN --network=none python3 scripts/build_placement_engine.py build \

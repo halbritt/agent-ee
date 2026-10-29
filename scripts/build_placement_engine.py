@@ -30,8 +30,10 @@ def sources(root):
              Path('fixtures/acquisition-qualification/geometry-model.json'),
              Path('fixtures/acquisition-qualification/geometry-model-murata.json'),
              Path('fixtures/acquisition-qualification/geometry-model-r6.json'),
+             Path('fixtures/acquisition-qualification/geometry-model-r6-470.json'),
              Path('fixtures/acquisition-typed/source-supplement.json'),
              Path('fixtures/acquisition-typed/power-repair.json'),
+             Path('fixtures/acquisition-typed/power-repair-470.json'),
              Path('scripts/build_placement_engine.py')]
     paths += [p.relative_to(root) for p in (root / CRATE / 'src').rglob('*') if p.is_file()]
     if not any(p.suffix == '.rs' for p in paths):

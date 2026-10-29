@@ -518,6 +518,7 @@ pub fn aliases(uuids: &[String], supplied: &[Option<String>]) -> Result<Vec<Stri
 const MECHANICS_ORIGINAL: &str = "0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4";
 const MECHANICS_MURATA: &str = "311df5d1398780f8b65e061a512bea2384d15298ba6278d505a6e77e3159cb6c";
 const MECHANICS_R6: &str = "43be6345262e5eeb0f54b9214009d13168fa5889333b006315f489dac7c8fa8f";
+const MECHANICS_R6_470: &str = "02292f70aca8b8a07b2dbbbab42515824b1c2c6d40ba49103a2ef3d7b23b5ffa";
 const MECHANICS_CHECKER: &str = "fb225768d6812abf6b116da31e029b940ca64ccf1427f9c0ef7b04814cf10294";
 const MECHANICS_BASE_SOURCES: [&str; 4] = ["spec.md", "requirement-map.json", "analysis/geometry-model.json", "analysis/geometry_model.py"];
 const MECHANICS_MURATA_SOURCES: &[(&str, &str)] = &[
@@ -538,6 +539,14 @@ const MECHANICS_R6_SOURCES: &[(&str, &str)] = &[
     ("power-repair/derivation.json", "7c01f9960f78fac87969eaa59deb4ab39710254725ebb4b13a83b281b2bcaace"),
 ];
 
+const MECHANICS_R6_470_SOURCES: &[(&str, &str)] = &[
+    ("power-repair/activation.txt", "c873e7f8632f67fca1a0a9f73acfae296adc2674e0cc694456ad91fb27058f51"),
+    ("power-repair/derivation470.json", "c1f8d633277f21547564fcf004b73ecdf0b81f7c5d62ce926508e619cd3a19b6"),
+    ("power-repair/manufacturer/original-manifest.json", "ced5377feed6eac2a0679be4277fd8d6d9a1316a7f315330f91425805dbaa597"),
+    ("power-repair/manufacturer/rc-series.pdf", "7b6f0ae72708ca4b38126f84b5407a3e970a94cb60bc1a0afdaeb25a23d839bb"),
+    ("power-repair/manufacturer/rc-series.txt", "e92249df44472848f9a18eb0606ec309a099112d773b150876c33d654b8a9439"),
+];
+
 /// The same finite model/source versions as Python acquisition_mechanics._version.
 /// Upstream capture verifies source files; this boundary rechecks their pinned
 /// declarations and authenticates the full model bytes before reading geometry.
@@ -552,6 +561,7 @@ fn acquisition_source_model(m: &Value) -> Result<Value> {
     let supplementary: Vec<_> = match model {
         MECHANICS_ORIGINAL => Vec::new(),
         MECHANICS_MURATA => MECHANICS_MURATA_SOURCES.iter().copied().collect(),
+        MECHANICS_R6_470 => MECHANICS_MURATA_SOURCES.iter().chain(MECHANICS_R6_470_SOURCES.iter()).copied().collect(),
         MECHANICS_R6 => MECHANICS_MURATA_SOURCES.iter().chain(MECHANICS_R6_SOURCES.iter()).copied().collect(),
         _ => bail!("unsupported mechanics model/checker"),
     };
@@ -3573,6 +3583,7 @@ mod tests {
                   "311df5d1398780f8b65e061a512bea2384d15298ba6278d505a6e77e3159cb6c"),
             2 => (include_str!("../../../fixtures/acquisition-qualification/geometry-model-r6.json"),
                   "43be6345262e5eeb0f54b9214009d13168fa5889333b006315f489dac7c8fa8f"),
+            3 => (include_str!("../../../fixtures/acquisition-qualification/geometry-model-r6-470.json"), "02292f70aca8b8a07b2dbbbab42515824b1c2c6d40ba49103a2ef3d7b23b5ffa"),
             _ => panic!("test version"),
         };
         raw["mechanics"]["model_raw"] = json!(model);
@@ -3589,12 +3600,18 @@ mod tests {
                 raw["mechanics"]["sources"][format!("power-repair/{name}")] = capture["files"][name].clone();
             }
         }
+        if version == 3 {
+            let capture: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-typed/power-repair-470.json")).unwrap();
+            for (name, hash) in capture["geometry_sources"].as_object().unwrap() {
+                raw["mechanics"]["sources"][format!("power-repair/{name}")] = hash.clone();
+            }
+        }
         raw
     }
 
     #[test]
     fn source_mechanics_captured_versions_keep_body_and_connector_obligations() {
-        for version in 0..3 {
+        for version in 0..4 {
             let raw = captured_mechanics_version(version);
             let p = prepare(&raw).unwrap();
             let poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
@@ -3614,7 +3631,7 @@ mod tests {
     #[test]
     fn source_mechanics_captured_versions_reject_raw_checker_and_source_mutations() {
         use sha2::{Digest, Sha256};
-        for version in 0..3 {
+        for version in 0..4 {
             let raw = captured_mechanics_version(version);
             for key in ["spec.md", "requirement-map.json", "analysis/geometry-model.json", "analysis/geometry_model.py"] {
                 let mut changed = raw.clone();

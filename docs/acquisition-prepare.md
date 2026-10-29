@@ -393,3 +393,50 @@ source identity. All source and copied capture bytes are rechecked before atomic
 publication. Generated narrative and judgment briefs expose the exception; no
 judgment, witness, native result or qualification is produced. Fresh native
 620 ohm/4.75 V checks, independent review and supplier/physical obligations remain.
+
+
+## Selected 470 ohm margin repair
+
+The same public `--added-input power-repair=DIR` accepts a second exact finite
+inventory, pinned by `fixtures/acquisition-typed/power-repair-470.json`. It does
+not add a selector flag: the complete captured inventory and explicit activation
+identify the admitted exception. The original 620 ohm context and source path
+remain supported. Original reference adoption and the 100–150 pF envelope remain.
+
+This version selects R6 alone as C114669 / YAGEO RC0603FR-07470RL, 470 ohm 1%,
+0603. Its RC-series ordering and RC0603 dimensional/rating tables explicitly
+cover the part. The derived datasheet manifest binds that family source to the
+selected identity and preserves its original capture date. Historical exact
+620 ohm documents remain historical. Exact C114669 supplier raw data, HTTP span,
+provenance and parsed package identity enter the existing CPL closure; neither
+same package nor stock substitutes for supplier orientation evidence.
+
+The nominal 25 C output-bleed interval becomes 465.3–474.7 ohm, with adverse
+474.7 ohm in every modeled case. Output budget is 11.624952 mA and conditional
+input budget 12.865998 mA, including the explicitly assumed 1 mA loaded ground
+allowance; this is not a manufacturer maximum. R6 dissipation is 24.349787 mW.
+Exact fractions, revised thermal estimates and source pins are regenerated.
+The finite geometry model retains every dimension/copper assumption and updates
+its current operand, so the existing rail-drop check uses the increased load.
+The 16.5 mV limit remains. Python and Rust admit the corresponding exact model
+and source pins alongside the older supported versions.
+
+The seven typical/startup controls remain. An eighth required check,
+`power-removal-uvlo111-lowcin`, retains 200 microampere stress, 2 microfarad CIN,
+original 12.65 microfarad COUT plus native C3, all ESR and the 0.300 V limit.
+It stages the independently reviewed derivative `3b725409…` separately, preserving
+all its bytes. The one-sided comparator gives falling 1.110 V and counterfactual
+rising 1.135 V; this check is restricted to removal from initialized high state,
+not startup or re-enable qualification. Root selected 2 microseconds, supported
+by the retained hypothetical 470 ohm model's 0.5 microsecond refinement. Its
+1 microsecond case failed numerically and remains UNKNOWN. No regularization or
+claim that every timestep passes is introduced. Typical models remain unchanged.
+
+Those diagnostics motivate the source change; they do not qualify a changed
+board. New judgment briefs require the actual production compiled scope and
+candidate. Historical R4 drafts and injected diagnostic scopes grant no credit.
+Parts, named records, conservative catalog union, operative allocation roster,
+CPL sources, calculation/model pins, original archive and edit ledger are
+regenerated before the existing typed seal. All captured dates remain unchanged;
+freshness, supplier preview, physical confirmation and new native evaluation
+remain obligations. No raw private capture is added to tracked fixtures.

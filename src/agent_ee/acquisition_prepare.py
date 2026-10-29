@@ -451,7 +451,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         if alternative is None or supplement_captures is None:
             raise ValueError('explicit R6 power repair requires captured ADC context and exact source supplement')
         repair_captures = acquisition_power_repair.read(sources[acquisition_power_repair.AT])
-        recipe['power_repair_pins_sha256'] = storage.digest(acquisition_power_repair.PINS)
+        recipe['power_repair_pins_sha256'] = storage.digest(acquisition_power_repair.pin_path(acquisition_power_repair.revision(repair_captures)))
         for module in (acquisition_power_repair, acquisition_power_repair.active_spice):
             recipe['helpers'][module.__name__] = storage.digest(Path(module.__file__))
         for name, captured in acquisition_power_repair.supplier_files(repair_captures).items():
@@ -499,7 +499,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         if repair_captures is not None:
             repair_report = acquisition_power_repair.apply(
                 revised, overlay, repair_captures, alternative['evaluation_as_of'])
-            (provenance / 'power-repair-pins.json').write_bytes(acquisition_power_repair.PINS.read_bytes())
+            (provenance / 'power-repair-pins.json').write_bytes(acquisition_power_repair.pin_path(acquisition_power_repair.revision(repair_captures)).read_bytes())
         supplement_report = None
         if supplement_captures is not None:
             source_files = requirement_map.input_inventory(revised)
@@ -513,7 +513,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             (provenance / 'source-supplement-pins.json').write_bytes(
                 acquisition_source_supplement.PINS.read_bytes())
         if repair_report is not None:
-            acquisition_power_repair.finalize_geometry(revised)
+            acquisition_power_repair.finalize_geometry(revised, acquisition_power_repair.revision(repair_captures))
             for brief in overlay['judgments'].values():
                 brief['questions'] = [q.replace('Power-model correction remains pending;',
                     'Reviewed power-model source correction is admitted; fresh native evaluation remains pending;')
@@ -626,7 +626,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                 if (bundle / 'inputs' / acquisition_source_supplement.AT / name).read_bytes() != captured:
                     raise ValueError('sealed source supplement differs from admitted bytes')
         if repair_captures is not None:
-            if (storage.digest(acquisition_power_repair.PINS) != recipe['power_repair_pins_sha256']
+            if (storage.digest(acquisition_power_repair.pin_path(acquisition_power_repair.revision(repair_captures))) != recipe['power_repair_pins_sha256']
                     or acquisition_power_repair.read(sources[acquisition_power_repair.AT]) != repair_captures):
                 raise ValueError('power repair source changed before publication')
             for name, captured in repair_captures.items():

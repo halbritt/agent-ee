@@ -21,9 +21,9 @@ def declaration(root):
     sources = {rel: digest(root / rel) for rel in SOURCES}
     if sources['analysis/geometry-model.json'] == acquisition_source_supplement.CORRECTED_MODEL:
         sources.update(acquisition_source_supplement.geometry_sources())
-    if sources['analysis/geometry-model.json'] == acquisition_power_repair.MODEL:
+    if sources['analysis/geometry-model.json'] in (acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470):
         sources.update(acquisition_source_supplement.geometry_sources())
-        sources.update(acquisition_power_repair.geometry_sources())
+        sources.update(acquisition_power_repair.geometry_sources('470' if sources['analysis/geometry-model.json'] == acquisition_power_repair.MODEL470 else '620'))
     return {'schema': SCHEMA, 'sources': sources}
 
 
@@ -70,9 +70,9 @@ def _version(document):
     sources = document['sources']
     model = sources['analysis/geometry-model.json']
     extra = acquisition_source_supplement.geometry_sources() if model == acquisition_source_supplement.CORRECTED_MODEL else {}
-    if model == acquisition_power_repair.MODEL:
-        extra = {**acquisition_source_supplement.geometry_sources(), **acquisition_power_repair.geometry_sources()}
-    if (model not in (MODEL, acquisition_source_supplement.CORRECTED_MODEL, acquisition_power_repair.MODEL)
+    if model in (acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470):
+        extra = {**acquisition_source_supplement.geometry_sources(), **acquisition_power_repair.geometry_sources('470' if model == acquisition_power_repair.MODEL470 else '620')}
+    if (model not in (MODEL, acquisition_source_supplement.CORRECTED_MODEL, acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470)
             or sources['analysis/geometry_model.py'] != CHECKER
             or set(sources) != set(SOURCES) | set(extra)
             or any(sources.get(name) != pin for name, pin in extra.items())):

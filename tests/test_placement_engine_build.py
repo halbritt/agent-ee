@@ -24,8 +24,10 @@ class PlacementEngineBuildTest(unittest.TestCase):
                      'fixtures/acquisition-qualification/geometry-model.json',
                      'fixtures/acquisition-qualification/geometry-model-murata.json',
                      'fixtures/acquisition-qualification/geometry-model-r6.json',
+                     'fixtures/acquisition-qualification/geometry-model-r6-470.json',
                      'fixtures/acquisition-typed/source-supplement.json',
                      'fixtures/acquisition-typed/power-repair.json',
+                     'fixtures/acquisition-typed/power-repair-470.json',
                      'scripts/build_placement_engine.py'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -58,8 +60,10 @@ class PlacementEngineBuildTest(unittest.TestCase):
                      'fixtures/acquisition-qualification/geometry-model.json',
                      'fixtures/acquisition-qualification/geometry-model-murata.json',
                      'fixtures/acquisition-qualification/geometry-model-r6.json',
+                     'fixtures/acquisition-qualification/geometry-model-r6-470.json',
                      'fixtures/acquisition-typed/source-supplement.json',
                      'fixtures/acquisition-typed/power-repair.json',
+                     'fixtures/acquisition-typed/power-repair-470.json',
                      'installed/agent-ee-placement'):
             with self.subTest(name=name):
                 path = self.root / name

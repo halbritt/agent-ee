@@ -70,7 +70,7 @@ def finalize(revised, overlay, cpl_root):
         raise ValueError('selected acquisition needs exactly one CPL rotation check')
     check = checks[0]
     paths = list(check['params']['supplier_footprints'])
-    for selected_id in ('C468683', 'C137695'):
+    for selected_id in ('C468683', 'C137695', 'C114669'):
         source = 'cpl/supplier/' + selected_id + '.provenance.json'
         if (Path(cpl_root) / source.removeprefix('cpl/')).is_file() and source not in paths:
             paths.append(source)
@@ -90,8 +90,8 @@ def finalize(revised, overlay, cpl_root):
     before = roster_path.read_bytes()
     old = strict_json(before)
     expected = (selected - {'C468683'}) | {'C37593'} if 'C468683' in selected else selected
-    if 'C137695' in selected:
-        expected = expected - {'C137695'}
+    if selected & {'C137695', 'C114669'}:
+        expected = expected - {'C137695', 'C114669'}
     if not isinstance(old, list) or len(old) != len(set(old)) or set(old) != expected:
         raise ValueError('historical assembly allocation roster differs from admitted original selections')
     roster_path.write_bytes(json_bytes(sorted(selected)))
@@ -104,7 +104,7 @@ def finalize(revised, overlay, cpl_root):
     from .acquisition_alternative import _assembly_check
     mapping = strict_json((revised / 'requirement-map.json').read_bytes())
     question['sources'].append(_assembly_check(mapping)['params']['catalog'] + ' (operative stock capture; freshness remains run-bound)')
-    if 'C137695' in selected:
+    if selected & {'C137695', 'C114669'}:
         question['sources'].append('preparation/power-repair/decision.json (explicit R6 exception, not supplier approval)')
     if roster_path.read_bytes() != before:
         question['sources'].append('history/acquisition-preparation-original/assembly-release-ids.json (historical choices only)')
