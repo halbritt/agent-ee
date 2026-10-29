@@ -389,3 +389,46 @@ must preserve captured inputs while handling the demonstrated schematic-export
 preferences side effect. Agent-690 separately has a bounded citation-extractor
 source repair, with native verification reserved to the coordinator. The full
 gate, trunk landing and board acceptance remain open; acceptance stays **0/4**.
+
+
+### Schematic, fabrication variants and legacy annotation pass selected native checks
+
+The schematic-export correction `a8fcf4ae` extends the existing disposable
+project copy to the exact netlist and BOM commands. It permits only the selected
+design's KiCad preferences file to change in that copy; captured inputs and
+project files remain strict. The FULL/LITE variant test now binds the recorded
+concrete BOM input to the original schematic by hash. Independent source review
+approved this bounded correction.
+
+Agent-696's legacy annotation repair `73939a40` passed independent source review
+and was integrated as `c55250b4`. It uses the existing guarded schematic stage
+with separate symbol and footprint capture roots. The emitter and shared native
+execution guard remain unchanged.
+
+On `c55250b46deca3dd342c44fe5886adfee0b772b7`, all three original failing
+controls passed under native KiCad: the bound FULL/LITE BOM variant, the
+population-change refusal, and the legacy schematic turn. The invocation exited
+0 in 20.6 seconds and retained 4,344 fixture files with hashes. Those fixtures
+include intentional negative-test mutations and do not constitute an accepted
+board or package. A subsequent selected strict run passed **7 modules and 153
+tests, no skips**, exiting 0 in 95.8 seconds. It covers the qualified-rung,
+rung-stage, schematic-stage, schematic execution, fabrication execution,
+fabrication stage and tool-source modules. This is a selected regression pass;
+the full strict gate has not passed. Prior failed attempts remain preserved.
+
+Evidence is in `fab-legacy-native-r1` and `schematic-fab-regressions-r1` beneath
+the host evidence root. The selected strict summary SHA256 is
+`2db2c44142403c13fe5afe06cac05a18ec4c4ea93b75fd32b87b7ee3b2ce7f78`.
+Its actual exit and times are retained in `entry-result.json`.
+
+Independent review blocked the first citation repair because its pdftotext-only
+adapter also intercepted unrelated custom-pad qualification. Agent-690 returned
+child `35638486`, which limits the adapter to citation verification; that child
+is undergoing independent re-review and has no native pass yet. Agent-697 has a
+bounded source assignment for the demonstrated candidate-imaging namespace
+failure, preserving the existing renderer, standalone sandbox, image identities
+and ordinary-placement skip policy. No generic validation framework is authorized.
+
+Campaign acceptance remains **0/4**. Main is unchanged. The board repair cap is
+exhausted, the alternate ADC's assembly eligibility is unresolved, and full-suite
+qualification, trunk integration, an accepted public package and M1 remain open.
