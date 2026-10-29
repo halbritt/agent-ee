@@ -16,7 +16,7 @@ import shutil
 import stat
 import tempfile
 
-from . import acquisition_expected_intent, acquisition_power_repair, acquisition_source_supplement, acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
+from . import acquisition_resistor, acquisition_expected_intent, acquisition_power_repair, acquisition_source_supplement, acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,16 +33,16 @@ REVISION_BASIS = {
     'parts.json': 'Rebind operative spec or source-selected purchasing/stock records without changing CAD or limits',
     'circuit.json': 'Update the source-selected ADC purchasing display and optional finite U2 ADDR pin1 GND/V3V3 tie',
     'assembly-release-ids.json': 'Regenerate operative selected-allocation roster; archive historical choices, no supplier approval',
-    'component-selections.json': 'Record automatic primary/carrier purchasing selection; retain historical original',
+    'component-selections.json': 'Record automatic ADC and optional finite R1/R2 purchasing selection; retain historical original',
     'electrical-locality.json': 'Rebind citations/spec; optional root706 engineering final-group additions preserve original eight legs',
     'placement.json': 'Rebind embedded locality and optional root706 final-group additions; preserve geometry and policy',
     'analysis/electrical-intervals.json': 'Update only bus capacitance and operative source bindings',
-    'OPERATING.md': 'Apply selected total bus capacitance and source-qualified ADC applicability labels',
+    'OPERATING.md': 'Bind selected capacitance, ADC applicability and optional captured Panasonic R1/R2 source attribution',
     'analysis/power-startup/corners.lib': 'Explicit R6+1% adverse626.2ohm; all other original corner values retained',
     'analysis/power-removal/corners.lib': 'Explicit R6+1% adverse626.2ohm; unused historical model remains documentary',
     'analysis/power-startup/README.md': 'Declare seven reviewed source cases, assumptions and convergence history without inherited pass',
     'analysis/power-removal/README.md': 'Declare corrected source-only removal derivative, zero ADC minimum and retained200uA stress',
-    'analysis/geometry-model.json': 'Correct C4/C5 exact Murata attribution; numerical geometry unchanged',
+    'analysis/geometry-model.json': 'Bind exact Murata/R6 lineage and optional manufacturer-derived R1/R2 Panasonic body maxima',
     'engineering-calculations.json': 'Recompute RC operand; bind captured sources and rate-qualified ADC terms',
     'ENGINEERING-REVIEW.md': 'Transcribe changed arithmetic and withhold inherited review credit',
 }
@@ -427,7 +427,9 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             addr_tie=None, evaluation_context=None, evaluation_context_sha256=None,
             expected_intent=None, expected_intent_sha256=None, expected_parts_receipt=None,
             expected_parts_receipt_sha256=None, final_groups=False,
-            role_context=None, role_context_sha256=None, role_source=None):
+            role_context=None, role_context_sha256=None, role_source=None,
+            resistor_context=None, resistor_context_sha256=None, resistor_source=None,
+            public_context=None, public_context_sha256=None):
     """Publish a complete typed source bundle for the captured acquisition recipe.
 
     ``plan_path`` is the existing captured build plan; its source directory,
@@ -439,6 +441,14 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     if any(v is not None for v in (role_context,role_context_sha256,role_source)) and any(
             v is None for v in (role_context,role_context_sha256,role_source)):
         raise ValueError('role context requires source root and exact context SHA-256')
+    resistor_args = (resistor_context, resistor_context_sha256, resistor_source)
+    if any(v is not None for v in resistor_args):
+        if any(v is None for v in resistor_args):
+            raise ValueError('resistor context requires source root and exact context SHA-256')
+        if alternative_context is None or any(v is not None for v in (role_context, role_context_sha256, role_source)):
+            raise ValueError('common resistor context requires ADC context and owns its qualified role selection')
+    if (public_context is None) != (public_context_sha256 is None):
+        raise ValueError('public context requires its exact SHA-256')
     if type(final_groups) is not bool:
         raise ValueError('final_groups must be an explicit boolean')
     if addr_tie is not None and addr_tie not in ('GND', 'V3V3'):
@@ -502,6 +512,24 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             evaluation_as_of=replay[3] if replay is not None else datetime.now(timezone.utc).isoformat())
     elif alternative_source is not None or alternative_context_sha256 is not None:
         raise ValueError('alternative source/hash require alternative_context')
+    resistor = None
+    if resistor_context is not None:
+        resistor_raw, resistor_stamp = _read_context_file(resistor_context, 'resistor context')
+        if spec_record.sha256(resistor_raw) != resistor_context_sha256:
+            raise ValueError('resistor context hash mismatch')
+        resistor_doc, resistor_captures, resistor_roles = acquisition_resistor.read(
+            resistor_source, resistor_raw, selected['value'])
+        typed_overlay._disjoint('output', out.resolve(), {'resistor source': Path(resistor_source).resolve(),
+            'resistor context': Path(resistor_context).resolve()})
+        resistor = dict(path='preparation/resistor-context.json', sha256=resistor_context_sha256,
+                        files=resistor_doc['files'])
+    public = None
+    if public_context is not None:
+        public_raw, public_stamp = _read_context_file(public_context, 'public context')
+        if spec_record.sha256(public_raw) != public_context_sha256:
+            raise ValueError('public context hash mismatch')
+        typed_overlay._disjoint('output', out.resolve(), {'public context': Path(public_context).resolve()})
+        public = dict(path='preparation/public-context.json', sha256=public_context_sha256)
     build_plan.validate_plan(plan)
     roles = None
     role_args=(role_context,role_context_sha256,role_source)
@@ -531,7 +559,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     if alternative is not None:
         recipe['alternative_context'] = alternative
         recipe['selected_cpl_inventory'] = acquisition_selected_cpl.projected_inventory(
-            additions['cpl'], context_doc, context_captures)
+            additions['cpl'], context_doc, context_captures,
+            resistor_captures=resistor_captures if resistor is not None else None)
         for module in (acquisition_alternative, acquisition_alternative_context, acquisition_selected_cpl,
                        acquisition_selected_cpl.cpl_rotation, acquisition_selected_cpl.easyeda_footprint,
                        acquisition_selected_cpl.land_pattern,
@@ -557,6 +586,33 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             if name in recipe['selected_cpl_inventory']:
                 raise ValueError('R6 supplier capture would overwrite original CPL input')
             recipe['selected_cpl_inventory'][name] = spec_record.sha256(captured)
+    catalog_policy = None
+    if public is not None:
+        base_check = acquisition_alternative._assembly_check(catalog.strict_json((base / 'requirement-map.json').read_bytes()))
+        common_catalogs = [catalog.strict_json((base / base_check['params']['catalog']).read_bytes())]
+        if alternative is not None:
+            common_catalogs.append(catalog.strict_json(context_captures[context_doc['catalog']['path']]))
+        if repair_captures is not None:
+            common_catalogs.append(catalog.strict_json(repair_captures['catalog/catalog.json']))
+        if resistor is not None:
+            common_catalogs.append(catalog.strict_json(resistor_captures['catalog/catalog.json']))
+        catalog_policy = acquisition_resistor.policy(public_raw, common_catalogs)
+        recipe['public_context'] = {**public, 'catalog_policy': catalog_policy}
+        recipe['helpers'][acquisition_resistor.__name__] = storage.digest(acquisition_resistor.__file__)
+    if resistor is not None:
+        from . import acquisition_roles, tool_source
+        resistor_choice = acquisition_resistor.choose(catalog_policy)
+        role_doc, role_captures, role_reports = resistor_roles[resistor_choice]
+        entry = resistor_doc['role_contexts'][resistor_choice]
+        role_source = Path(resistor_source) / entry['root']
+        role_context = Path(resistor_source) / entry['context']['path']
+        role_context_sha256 = entry['context']['sha256']
+        role_raw, role_stamp = _read_context_file(role_context, 'selected common role context')
+        roles = dict(context_sha256=role_context_sha256, files=role_doc['files'], application=role_doc['application'],
+            producer_source_sha256=storage.identity(tool_source._files(Path(__file__).parent)))
+        recipe['roles'] = roles
+        recipe['resistor_context'] = resistor
+        recipe['helpers'][acquisition_resistor.__name__] = storage.digest(acquisition_resistor.__file__)
     if addr_tie is not None:
         recipe['addr_tie'] = addr_tie
     if final_groups:
@@ -597,6 +653,12 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         (provenance / 'build-plan.original.json').write_bytes(plan_raw)
         (provenance / 'overlay.original.json').write_bytes(overlay_raw)
         (provenance / 'source-map.json').write_bytes(json_bytes(_source_map(raw, selected, original_record, record)))
+        if resistor is not None:
+            (revised / resistor['path']).write_bytes(resistor_raw)
+            for name, captured in resistor_captures.items():
+                target = revised / acquisition_resistor.AT / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(captured)
         alternative_report = None
         if alternative is not None:
             # The requirements stage has not produced its namespace yet. Bind
@@ -614,7 +676,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                 revised, context_doc, context_captures, alternative['evaluation_as_of'])
             selected_cpl = scratch / 'selected-cpl'
             acquisition_selected_cpl.materialize(sources['cpl'], selected_cpl, context_doc,
-                context_captures, recipe['selected_cpl_inventory'], power_repair_captures=repair_captures)
+                context_captures, recipe['selected_cpl_inventory'], power_repair_captures=repair_captures,
+                resistor_captures=resistor_captures if resistor is not None else None)
             sources['cpl'] = selected_cpl
             overlay['added_inputs']['cpl']['files'] = recipe['selected_cpl_inventory']
         repair_report = None
@@ -640,11 +703,29 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                 brief['questions'] = [q.replace('Power-model correction remains pending;',
                     'Reviewed power-model source correction is admitted; fresh native evaluation remains pending;')
                     for q in brief['questions']]
+        if public is not None:
+            (revised / public['path']).write_bytes(public_raw)
+        resistor_report = None
+        public_policy = ({**public, **catalog_policy} if catalog_policy is not None else None)
+        if resistor is not None and resistor_choice == acquisition_resistor.ALTERNATIVE:
+            resistor_report = acquisition_resistor.apply(revised, resistor_captures, catalog_policy,
+                role_source=role_source, role_context=role_raw, capacitance=selected['value'],
+                as_of=alternative['evaluation_as_of'], policy_blob=public)
+            acquisition_resistor.bind_judgments(overlay, resistor_report)
+        operative_parts = acquisition_resistor.parts_manifest.load_manifest(revised, 'parts.json')
+        acquisition_resistor.enforce_selected(catalog_policy, operative_parts)
+        if resistor is not None:
+            acquisition_resistor.reconcile(role_source, role_doc, resistor_choice, operative_parts)
+        if public_policy is not None:
+            storage.write_json(provenance / 'catalog-policy.json', dict(policy=public_policy,
+                affected=[] if resistor_report is None else catalog.strict_json(
+                    (revised / resistor_report['decision']['path']).read_bytes())['affected']))
         # Derive against the same serialized overlay the seal consumer reads;
         # added-input object order must not change the predicted map bytes.
         overlay = typed_overlay.load_overlay(json_bytes(overlay))
         if alternative_report is not None:
-            selected_closure = acquisition_selected_cpl.finalize(revised, overlay, selected_cpl)
+            selected_closure = acquisition_selected_cpl.finalize(revised, overlay, selected_cpl,
+                resistor_selection=resistor_report, public_policy=public_policy)
             # Match the ordinary compiler's actual authored requirement mapping,
             # while it still remains a source revision, before archive and seal.
             operative = typed_overlay.derive_map(
@@ -685,6 +766,14 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             role_report=acquisition_roles.apply(revised,plan,overlay,role_doc,role_captures)
             (revised/acquisition_roles.AT/'context-input.json').write_bytes(role_raw)
         changed = _archive_revision(base, revised, before, identity)
+        if resistor_report is not None or public is not None:
+            ledger_path = provenance / 'edit-ledger.json'
+            ledger = catalog.strict_json(ledger_path.read_bytes())
+            if resistor_report is not None:
+                ledger['resistor'] = resistor_report
+            if public is not None:
+                ledger['public_context'] = recipe['public_context']
+            ledger_path.write_bytes(json_bytes(ledger))
         if role_report is not None:
             ledger_path=provenance/'edit-ledger.json'
             ledger=json.loads(ledger_path.read_bytes());ledger['roles']=role_report
@@ -781,6 +870,10 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             report['power_repair'] = repair_report
         if role_report is not None:
             report['roles']=role_report
+        if resistor_report is not None:
+            report['resistor'] = resistor_report
+        if public is not None:
+            report['public_context'] = recipe['public_context']
         (bundle / 'preparation.json').write_bytes(json_bytes(report))
         if review_context is not None:
             if ((bundle / 'inputs' / REVIEW_PROFILE).read_bytes() != profile_raw
@@ -827,6 +920,19 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             for name,raw_capture in role_captures.items():
                 if (bundle/'inputs'/acquisition_roles.AT/name).read_bytes()!=raw_capture:
                     raise ValueError('sealed role capture differs from admitted source')
+        if public is not None:
+            if _read_context_file(public_context, 'public context') != (public_raw, public_stamp):
+                raise ValueError('public context changed before publication')
+            if (bundle / 'inputs' / public['path']).read_bytes() != public_raw:
+                raise ValueError('sealed public context differs')
+        if resistor is not None:
+            if _read_context_file(resistor_context, 'resistor context') != (resistor_raw, resistor_stamp):
+                raise ValueError('resistor context changed before publication')
+            if acquisition_resistor.read(resistor_source, resistor_raw, selected['value']) != (resistor_doc, resistor_captures, resistor_roles):
+                raise ValueError('common resistor evidence or source qualification changed')
+            for name, captured in resistor_captures.items():
+                if (bundle / 'inputs' / acquisition_resistor.AT / name).read_bytes() != captured:
+                    raise ValueError('sealed resistor capture differs')
         rename_noreplace(bundle, out)
     return report
 
@@ -840,6 +946,11 @@ def main(argv=None):
     parser.add_argument('--role-context',type=Path,help='pinned finite acquisition v4 role context JSON')
     parser.add_argument('--role-context-sha256')
     parser.add_argument('--role-source',type=Path,help='root of immutable role context files')
+    parser.add_argument('--resistor-context', type=Path, help='common exact Panasonic evidence and qualified role pool')
+    parser.add_argument('--resistor-context-sha256')
+    parser.add_argument('--resistor-source', type=Path)
+    parser.add_argument('--public-context', type=Path, help='public agent-ee.case-context/1 policy, separate from observed stock')
+    parser.add_argument('--public-context-sha256')
     parser.add_argument('--final-groups', action='store_true', help='derive strict final-group source from the captured acquisition allocation')
     parser.add_argument('--verification-timeout-s', type=int,
                         help='explicit build verification budget; requires --review-profile, no automatic increase')
@@ -872,7 +983,10 @@ def main(argv=None):
                          expected_parts_receipt=args.expected_parts_receipt,
                          expected_parts_receipt_sha256=args.expected_parts_receipt_sha256,
                          final_groups=args.final_groups,role_context=args.role_context,
-                         role_context_sha256=args.role_context_sha256,role_source=args.role_source)
+                         role_context_sha256=args.role_context_sha256,role_source=args.role_source,
+                         resistor_context=args.resistor_context, resistor_context_sha256=args.resistor_context_sha256,
+                         resistor_source=args.resistor_source, public_context=args.public_context,
+                         public_context_sha256=args.public_context_sha256)
     except PreparationRefused as exc:
         print(json.dumps(exc.report, ensure_ascii=False))
         return 1

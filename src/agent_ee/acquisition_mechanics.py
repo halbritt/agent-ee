@@ -3,7 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 import hashlib
 
-from . import acquisition_source_supplement, acquisition_power_repair
+from . import acquisition_source_supplement, acquisition_power_repair, acquisition_resistor
 from .catalog import strict_json
 from .mechanical_reservations import _native_owner, _current_owner, _sha
 from .storage import canonical, digest
@@ -24,6 +24,8 @@ def declaration(root):
     if sources['analysis/geometry-model.json'] in (acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470):
         sources.update(acquisition_source_supplement.geometry_sources())
         sources.update(acquisition_power_repair.geometry_sources('470' if sources['analysis/geometry-model.json'] == acquisition_power_repair.MODEL470 else '620'))
+    if sources['analysis/geometry-model.json'] in acquisition_resistor.MODELS:
+        sources.update(acquisition_resistor.geometry_sources(sources['analysis/geometry-model.json']))
     return {'schema': SCHEMA, 'sources': sources}
 
 
@@ -72,7 +74,9 @@ def _version(document):
     extra = acquisition_source_supplement.geometry_sources() if model == acquisition_source_supplement.CORRECTED_MODEL else {}
     if model in (acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470):
         extra = {**acquisition_source_supplement.geometry_sources(), **acquisition_power_repair.geometry_sources('470' if model == acquisition_power_repair.MODEL470 else '620')}
-    if (model not in (MODEL, acquisition_source_supplement.CORRECTED_MODEL, acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470)
+    if model in acquisition_resistor.MODELS:
+        extra = acquisition_resistor.geometry_sources(model)
+    if (model not in (MODEL, acquisition_source_supplement.CORRECTED_MODEL, acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470, *acquisition_resistor.MODELS)
             or sources['analysis/geometry_model.py'] != CHECKER
             or set(sources) != set(SOURCES) | set(extra)
             or any(sources.get(name) != pin for name, pin in extra.items())):

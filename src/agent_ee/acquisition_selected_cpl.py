@@ -35,21 +35,28 @@ def supplier_files(context, captures):
             'supplier/C468683.raweasy.json': raw}
 
 
-def projected_inventory(original, context, captures):
+def projected_inventory(original, context, captures, *, resistor_captures=None):
     projected = dict(original)
-    for path, raw in supplier_files(context, captures).items():
+    files = supplier_files(context, captures)
+    if resistor_captures is not None:
+        from . import acquisition_resistor
+        files.update(acquisition_resistor.supplier_files(resistor_captures))
+    for path, raw in files.items():
         if path in projected:
             raise ValueError('alternative supplier source would overwrite admitted CPL input')
         projected[path] = sha256(raw).hexdigest()
     return projected
 
 
-def materialize(original, destination, context, captures, expected, *, power_repair_captures=None):
+def materialize(original, destination, context, captures, expected, *, power_repair_captures=None, resistor_captures=None):
     shutil.copytree(original, destination)
     files = supplier_files(context, captures)
     if power_repair_captures is not None:
         from . import acquisition_power_repair
         files.update(acquisition_power_repair.supplier_files(power_repair_captures))
+    if resistor_captures is not None:
+        from . import acquisition_resistor
+        files.update(acquisition_resistor.supplier_files(resistor_captures))
     for name, raw in files.items():
         path = Path(destination) / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -58,7 +65,7 @@ def materialize(original, destination, context, captures, expected, *, power_rep
         raise ValueError('derived CPL input closure differs from its pre-seal identity')
 
 
-def finalize(revised, overlay, cpl_root):
+def finalize(revised, overlay, cpl_root, *, resistor_selection=None, public_policy=None):
     """Select exact supplier provenance and update the allocation roster, not approval."""
     revised = Path(revised)
     document = parts_manifest.load_manifest(revised, 'parts.json')
@@ -70,7 +77,7 @@ def finalize(revised, overlay, cpl_root):
         raise ValueError('selected acquisition needs exactly one CPL rotation check')
     check = checks[0]
     paths = list(check['params']['supplier_footprints'])
-    for selected_id in ('C468683', 'C137695', 'C114669'):
+    for selected_id in ('C468683', 'C137695', 'C114669', 'C118155'):
         source = 'cpl/supplier/' + selected_id + '.provenance.json'
         if (Path(cpl_root) / source.removeprefix('cpl/')).is_file() and source not in paths:
             paths.append(source)
@@ -92,6 +99,22 @@ def finalize(revised, overlay, cpl_root):
     expected = (selected - {'C468683'}) | {'C37593'} if 'C468683' in selected else selected
     if selected & {'C137695', 'C114669'}:
         expected = expected - {'C137695', 'C114669'}
+    if 'C118155' in selected:
+        from . import acquisition_resistor
+        if resistor_selection is None or resistor_selection.get('selected') != 'C118155':
+            raise ValueError('Panasonic CPL selection requires its admitted resistor decision')
+        decision = strict_json(parts_manifest._read_blob(revised, resistor_selection['decision']))
+        if (decision.get('schema') != 'agent-ee.acquisition-resistor-decision/1'
+                or decision.get('source_derivation') is not False):
+            raise ValueError('unqualified resistor source derivation cannot select target CPL')
+        targets = [p for p in parts if p['lcsc'] == 'C118155']
+        if ({p['id'] for p in targets} != {'R1', 'R2'} or len(targets) != 2
+                or any(p['mpn'] != acquisition_resistor.MPNS['C118155'] for p in targets)
+                or decision['qualification_record'] != resistor_selection['qualification_record']
+                or decision['catalog_policy']['label'] != acquisition_resistor.LABEL
+                or decision['parts'] != [dict(id=p['id'], instances=p['instances'], lcsc=p['lcsc']) for p in parts]):
+            raise ValueError('Panasonic CPL source allocation or qualification differs')
+        expected = (expected - {'C118155'}) | {'C22548'}
     if not isinstance(old, list) or len(old) != len(set(old)) or set(old) != expected:
         raise ValueError('historical assembly allocation roster differs from admitted original selections')
     roster_path.write_bytes(json_bytes(sorted(selected)))
@@ -108,10 +131,19 @@ def finalize(revised, overlay, cpl_root):
         question['sources'].append('preparation/power-repair/decision.json (explicit R6 exception, not supplier approval)')
     if roster_path.read_bytes() != before:
         question['sources'].append('history/acquisition-preparation-original/assembly-release-ids.json (historical choices only)')
+    if public_policy is not None:
+        question['sources'].append('preparation/public-context.json SHA256 ' + public_policy['sha256'])
+        question['questions'].append(public_policy['label'])
+    if resistor_selection is not None:
+        question['sources'].append('preparation/resistor/decision.json (qualified source selection; fresh board validation required)')
     report = dict(roster=dict(path='assembly-release-ids.json', before_sha256=sha256(before).hexdigest(),
         sha256=digest(roster_path), added=sorted(selected-set(old)), removed=sorted(set(old)-selected),
         meaning='Selected purchasing allocation roster only; supplier approval and physical validation pending'),
         supplier_footprints={lcsc:{k:suppliers[lcsc][k] for k in ('provenance','path','sha256')} for lcsc in sorted(selected)},
         policy='Existing CPL policy, tolerances and native pad/pin rotation rules unchanged')
+    if public_policy is not None:
+        report['catalog_policy'] = public_policy
+    if resistor_selection is not None:
+        report['resistor'] = resistor_selection
     (revised / 'preparation/selected-part-input-closure.json').write_bytes(json_bytes(report))
     return report
