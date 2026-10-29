@@ -382,7 +382,15 @@ point at nominal 25 C and the 20 mA supply contract: 3.75 V after the diode,
 3.74 V after the retained 10 mV wiring allowance, versus the DBV accuracy floor
 of 3.6 V. The 1 mA loaded ground-current allowance is assumed; TI provides no
 loaded maximum. Conditional U1 power/thermal rows use DBV 187.1 C/W and explicitly
-retain board/temperature limitations. Geometry keeps all body sizes and tolerances,
+retain board/temperature limitations. A supporting W-valued interval assertion,
+`u1-dissipation-25c-screen`, is added under the existing rail requirement. It
+bounds that same enclosure by 0.53447 W, which is (125 C recommended TJ maximum −
+25 C) / 187.1 C/W rounded down. It keeps the 1 mA external calculation reserve
+while the actual J2 load is zero, and uses the assumed 1 mA loaded ground current.
+`engineering-calculations.json` records the exact derivation, and the captured TI
+SBVS338H text, extraction manifest and PDF are hash-bound. This is a conditional
+JEDEC-reference screen at 25 C only. It is not a board thermal or junction-temperature
+guarantee, and the dissipation source-evaluation judgment remains. Geometry keeps all body sizes and tolerances,
 changes R6 attribution to its exact sheet, and uses the revised current estimate
 in the existing rail-drop model. Only the finite combined model/source version
 is admitted; numerical limits are not relaxed.

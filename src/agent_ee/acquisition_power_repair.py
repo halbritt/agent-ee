@@ -14,6 +14,19 @@ AT = 'power-repair'
 PREFIX = 'preparation/power-repair'
 PINS = Path(__file__).resolve().parents[2] / 'fixtures/acquisition-typed/power-repair.json'
 PINS470 = PINS.with_name('power-repair-470.json')
+# Supporting rail assertion: conditional JEDEC-reference U1 dissipation screen at declared 25C.
+# Limit floor((125C recommended TJmax - 25C)/187.1C/W DBV RthetaJA) to 5 decimals, TI SBVS338H 5.3/5.4.
+THERMAL_SCREEN = 'u1-dissipation-25c-screen'
+THERMAL_EXPRESSION = '(vin-rail_low)*(2*rail/pullup_r+rail/output_bleed_r+adc_load+external_load)+vin*iq_allowance'
+THERMAL_LIMIT = '0.53447'
+THERMAL_OPERANDS = dict(vin=('4.75 V', '5.25 V'), rail_low=('3.234 V', '3.234 V'), rail=('3.234 V', '3.366 V'),
+    pullup_r=('2178 ohm', '2222 ohm'), adc_load=('.0003 A', '.0003 A'), external_load=('.001 A', '.001 A'),
+    iq_allowance=('.001 A', '.001 A'))
+THERMAL_SOURCES = {'manufacturer-text/tps7a20.txt': '655f6b6f0bcdb005e2316f7d9217eb9defb56ac31e262d7de64645d7efdac523',
+    'manufacturer-text/manifest.json': 'ee1c4d695cdd0ba20527a50bd73516dc2e955559a9bd59829edd5d35748fe43f',
+    'datasheets-regulator-qualified/manifest.json': '897ae4ce0d6234e6d8e70cc86cd16e861ab7294c5dcf6efebd32bcf8eb20afe1',
+    'datasheets-regulator-qualified/24a62c3bba44bad0f419bbf8b75ac28c0402b7c3f91125020e1d3595e602b2a5.pdf':
+        'b6c487d79ebed6dd43bf220b07fc5b3ecb9ee55d87e6daa2312acda6546046c0'}
 MODEL470 = '02292f70aca8b8a07b2dbbbab42515824b1c2c6d40ba49103a2ef3d7b23b5ffa'
 BASIS470 = ('YAGEO RC0603FR-07470RL; RC_L V14 ordering p2 and RC0603 dimensions p4 '
              'maxima1.7/.9/.55mm; power-repair/manufacturer/rc-series.pdf '
@@ -258,6 +271,14 @@ def currents(selected='620'):
     return output, output + Fraction('.001') + Fraction('5.25') / Fraction('21780'), low / upper
 
 
+def _thermal_sources(root):
+    """Exact captured TI SBVS338H bytes behind the thermal screen; drift refuses."""
+    for name, expected in THERMAL_SOURCES.items():
+        if digest(Path(root) / name) != expected:
+            raise ValueError('captured TI thermal source differs: ' + name)
+    return dict(THERMAL_SOURCES)
+
+
 def _calculations(root, selected='620'):
     path = Path(root) / 'analysis/electrical-intervals.json'
     doc = json.loads(path.read_bytes())
@@ -267,9 +288,20 @@ def _calculations(root, selected='620'):
     if budget['lhs'] != '3*rail/pullup_r+adc_load+external_load+iq_allowance+vin/input_bleed_r':
         raise ValueError('authored current accounting differs')
     budget['lhs'] = '2*rail/pullup_r+rail/output_bleed_r+adc_load+external_load+iq_allowance+vin/input_bleed_r'
+    operands = {name: (doc['parameters'][name]['min'], doc['parameters'][name]['max']) for name in THERMAL_OPERANDS}
+    if (operands != THERMAL_OPERANDS or budget['requirement'] not in ('ACQ-ELEC-2', 'ACQ-ELEC-2-RAIL')
+            or any(a['id'] == THERMAL_SCREEN for a in doc['assertions'])):
+        raise ValueError('authored thermal screen operands differ')
+    # Supporting evidence under the existing rail requirement; the 1mA external term is a calculation
+    # reserve (actual J2 load is zero) and iq_allowance is the ASSUMED loaded ground current.
+    doc['assertions'].append(dict(id=THERMAL_SCREEN, requirement=budget['requirement'], expression=THERMAL_EXPRESSION,
+                                  unit='W', target=dict(min='0 W', max=THERMAL_LIMIT + ' W')))
     path.write_bytes(json_bytes(doc))
     output, total, idle = currents(selected)
     power = (Fraction('5.25') - Fraction('3.234')) * output + Fraction('.001') * Fraction('5.25')
+    reference = (Fraction('125') - Fraction('25')) / Fraction('187.1')
+    if Fraction(THERMAL_LIMIT) > reference or reference - Fraction(THERMAL_LIMIT) >= Fraction(1, 100000):
+        raise ValueError('thermal screen limit is not the rounded-down reference budget')
     rows = dict(maximum_output_load_budget=(output, 'A', 'R3/R4 minimum2178ohm; R6 minimum613.8ohm;300uA ADC allocation+1mA external'),
         input_current_budget=(total, 'A', 'Output load plus ASSUMED1mA loaded ground allowance (no manufacturer maximum) and R5 at5.25V'),
         source_current_margin=(Fraction('.02')-total, 'A', '20mA source contract minus conditional modeled input budget'),
@@ -280,6 +312,13 @@ def _calculations(root, selected='620'):
         regulator_headroom_above_accuracy_test_floor=(Fraction('.14'), 'V', '3.74V budget minus3.6V DBV accuracy condition;25C diode interpretation conditional'),
         conditional_u1_power=(power, 'W', 'Worst5.25V,3.234V output plus ASSUMED1mA ground allowance, not a guaranteed loadedIGND bound'),
         conditional_u1_temperature_rise=(power*Fraction('187.1'), 'degC', 'TI DBV187.1C/W reference thermal metric, not measured board Rtheta; conditional power'),
+        u1_dissipation_screen_reference_budget=(reference, 'W', '(TI SBVS338H 5.3 recommended TJmax125C, not150C absolute/shutdown, '
+            'minus declared ambient25C)/5.4 DBV RthetaJA187.1C/W (not YCK201.4); JEDEC reference metric, not board Rtheta'),
+        u1_dissipation_screen_limit=(Fraction(THERMAL_LIMIT), 'W', THERMAL_SCREEN + ' target max: reference budget rounded DOWN; '
+            'conditional25C screen of conditional_u1_power, not a board dissipation rating or junction-temperature guarantee; '
+            'no0..50C, PCB heat-spreading, transient, fault or backpower applicability'),
+        u1_power_zero_external_load=(power - (Fraction('5.25') - Fraction('3.234')) * Fraction('.001'), 'W',
+            'conditional_u1_power with actual J2 load0; the screen retains the1mA external calculation reserve'),
         output_bleed_dissipation=(Fraction('3.366')**2/Fraction(_bounds(selected)[0]), 'W', 'R6 minimum atnominal25C; exact620sheet0.1W@70C; no board thermal qualification'))
     path = Path(root) / 'engineering-calculations.json';calc=json.loads(path.read_bytes())
     for name, (value, unit, basis) in rows.items():
@@ -365,6 +404,7 @@ def apply(root, overlay, captures, as_of):
     if selected == '470':
         for name in ('manufacturer/rc-series.pdf', 'manufacturer/rc-series.txt', 'manufacturer/original-manifest.json', 'derivation470.json', 'uvlo/REPORT.md', 'uvlo/independent-source-review.txt', 'uvlo/independent-native-review.txt', 'uvlo/620-failure-result.json', 'uvlo/470-proposal-result.json', 'uvlo/470-steps-result.json', 'uvlo/470-proposal-native-result.json', 'uvlo/470-steps-native-result.json', 'authority/470-timestep-update.txt'):
             calculations['sources'][AT+'/'+name] = identity_bytes(captures[name])
+    calculations['sources'].update(_thermal_sources(root))
     calculations_path.write_bytes(json_bytes(calculations))
     note = ('\n\nExplicit reference exception: R6 alone is now620ohm1% YAGEO RC0603FR-07620RL/C137695. '
         'R3/R4 remain2.2k. Original-reference brief bytes are preserved; power-repair/activation.txt '
@@ -396,6 +436,10 @@ def apply(root, overlay, captures, as_of):
                 'Geometry uses this revised load for its existing16.5mV rail-drop check; no material, clearance or copper limit changes. '
                 'Worst5.25V U1 power is about25.16mW INCLUDING ASSUMED1mA ground allowance; DBV187.1C/W reference gives about4.71C rise, '
                 'not a measured board thermal bound. Former201.4C/W DBV attribution and old load results are superseded. '
+                'Supporting interval u1-dissipation-25c-screen bounds that same enclosure (1mA external calculation reserve kept while '
+                'actual J2 load is0; ASSUMED1mA loadedIGND) by0.53447W, the rounded-down (125C recommended TJmax-25C)/187.1C/W '
+                'DBV JEDEC reference budget. It is a conditional25C screen, not a board thermal or junction-temperature guarantee; '
+                'the dissipation source evaluation remains a judgment. '
                 'Original startup COUT12.65uF remains, and finite low-COUT3u/ESR100m and5m brackets require fresh evaluation. '
                 'The exact Samsung curves are typical; combined bias/AC/temp/aging bounds are not guaranteed. '
                 'All three startup cases use4.75V. The100m case alone adopts root-authorized1us timestep; oldR6/4.752V convergence is motivation only. '
@@ -416,6 +460,11 @@ def apply(root, overlay, captures, as_of):
             current_note = note
         p.write_text(text + current_note)
     _write(root, PREFIX + '/activation.txt', captures['activation.txt'])
+    screen = overlay['judgments']['judgments/acq-elec-2-source-evaluation.json']
+    screen['sources'] += sorted(THERMAL_SOURCES)
+    screen['questions'].append('Assess executed interval ' + THERMAL_SCREEN + ' (<=' + THERMAL_LIMIT + 'W) with its '
+        'engineering-calculations derivation and captured TI SBVS338H 5.3/5.4/7.1.5 text; it is a conditional JEDEC-reference '
+        'screen under assumed1mA loadedIGND at25C, not proof of board thermal behavior or of the whole dissipation obligation.')
     for brief in overlay['judgments'].values():
         brief['sources'] += [AT + '/activation.txt', PREFIX + '/decision.json', PREFIX + '/power-cases.json']
         brief['questions'].append('Assess the explicitly activated R6 exception and fresh '+('eight' if selected == '470' else 'seven')+'-case results; no historical judgment or100m convergence credit.')

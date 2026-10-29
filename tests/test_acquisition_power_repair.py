@@ -87,8 +87,11 @@ class Margin470Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'analysis').mkdir()
             original=dict(parameters=dict(output_bleed_r=dict(min='2178 ohm',max='2222 ohm'),
-                diode_drop=dict(min='.45 V',max='.45 V'),bus_c=dict(max='150e-12 F')),
-                assertions=[dict(id='input-current-budget',lhs='3*rail/pullup_r+adc_load+external_load+iq_allowance+vin/input_bleed_r',op='<=',rhs='20e-3 A')])
+                diode_drop=dict(min='.45 V',max='.45 V'),bus_c=dict(max='150e-12 F'),
+                vin=dict(min='4.75 V',max='5.25 V'),rail_low=dict(min='3.234 V',max='3.234 V'),rail=dict(min='3.234 V',max='3.366 V'),
+                pullup_r=dict(min='2178 ohm',max='2222 ohm'),adc_load=dict(min='.0003 A',max='.0003 A'),
+                external_load=dict(min='.001 A',max='.001 A'),iq_allowance=dict(min='.001 A',max='.001 A')),
+                assertions=[dict(id='input-current-budget',requirement='ACQ-ELEC-2-RAIL',lhs='3*rail/pullup_r+adc_load+external_load+iq_allowance+vin/input_bleed_r',op='<=',rhs='20e-3 A')])
             (root/'analysis/electrical-intervals.json').write_bytes(json_bytes(original))
             (root/'engineering-calculations.json').write_bytes(json_bytes(dict(values=dict(thermal_sensitivity_rise_all_power_in_u1=dict(value='42')),sources={})))
             repair._calculations(root,'470')
@@ -101,6 +104,61 @@ class Margin470Tests(unittest.TestCase):
             self.assertEqual(Fraction(power['numerator'],power['denominator']),Fraction(28611,1175000))
             self.assertGreater(Decimal(calc['source_current_margin']['value']),Decimal('.007'))
             self.assertNotIn('exact620',calc['output_bleed_dissipation']['basis'])
+
+    def test_thermal_screen_is_one_evaluated_watt_assertion_for_each_selected_revision(self):
+        from agent_ee import interval_assertions
+        for selected in ('620', '470'):
+            with self.subTest(selected=selected), tempfile.TemporaryDirectory() as tmp:
+                root = _thermal_root(Path(tmp))
+                rows = repair._calculations(root, selected)
+                raw = (root/'analysis/electrical-intervals.json').read_bytes()
+                doc = json.loads(raw)
+                self.assertEqual([a['id'] for a in doc['assertions']], ['input-current-budget', 'u1-dissipation-25c-screen'])
+                self.assertEqual(doc['assertions'][1], dict(id='u1-dissipation-25c-screen', requirement='ACQ-ELEC-2-RAIL',
+                    expression='(vin-rail_low)*(2*rail/pullup_r+rail/output_bleed_r+adc_load+external_load)+vin*iq_allowance',
+                    unit='W', target=dict(min='0 W', max='0.53447 W')))
+                result = interval_assertions.evaluate(interval_assertions.load_document(raw), {'document': 'analysis/electrical-intervals.json'})
+                screen = next(a for a in result['assertions'] if a['id'] == 'u1-dissipation-25c-screen')
+                self.assertEqual((screen['verdict'], screen['unit'], screen['requirement'], screen['exact']), ('pass', 'W', 'ACQ-ELEC-2-RAIL', True))
+                # The evaluated worst corner is exactly the captured conditional_u1_power row.
+                self.assertEqual(Fraction(screen['bounds']['max']['rational']), rows['conditional_u1_power'][0])
+                self.assertEqual(screen['target']['rational'], ['0', '53447/100000'])
+                self.assertEqual(screen['operands']['iq_allowance']['source'], 'declared')
+                calc = json.loads((root/'engineering-calculations.json').read_bytes())['values']
+                limit = calc['u1_dissipation_screen_limit']['exact_fraction']
+                reference = calc['u1_dissipation_screen_reference_budget']['exact_fraction']
+                self.assertEqual(Fraction(limit['numerator'], limit['denominator']), Fraction('0.53447'))
+                self.assertEqual(Fraction(reference['numerator'], reference['denominator']), Fraction(1000, 1871))
+                self.assertIn('rounded DOWN', calc['u1_dissipation_screen_limit']['basis'])
+                self.assertEqual(rows['conditional_u1_power'][0] - rows['u1_power_zero_external_load'][0], Fraction('2.016') / 1000)
+                doc['assertions'][0]['lhs'] = '3*rail/pullup_r+adc_load+external_load+iq_allowance+vin/input_bleed_r'
+                (root/'analysis/electrical-intervals.json').write_bytes(json_bytes(doc))
+                with self.assertRaisesRegex(ValueError, 'thermal screen operands differ'):
+                    repair._calculations(root, selected)  # refuses a second authoring of the screen
+
+    def test_thermal_screen_reports_isolated_excess_load_defect_under_unchanged_limit(self):
+        from agent_ee import interval_assertions
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _thermal_root(Path(tmp))
+            repair._calculations(root, '470')
+            doc = json.loads((root/'analysis/electrical-intervals.json').read_bytes())
+            doc['parameters']['adc_load'].update(min='.3 A', max='.3 A')  # scratch control only: one excessive load
+            result = interval_assertions.evaluate(interval_assertions.load_document(json_bytes(doc)), {'document': 'scratch'})
+            screen = next(a for a in result['assertions'] if a['id'] == 'u1-dissipation-25c-screen')
+            self.assertEqual(screen['verdict'], 'defect')
+            self.assertEqual(screen['target'], interval_assertions.interval_record(Fraction(0), Fraction('0.53447'), 'W'))
+            self.assertEqual(screen['contributions'][0]['parameter'], 'vin')
+
+    def test_thermal_screen_refuses_drifted_operands_and_captured_ti_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _thermal_root(Path(tmp), external_load='0 A')
+            with self.assertRaisesRegex(ValueError, 'thermal screen operands differ'):
+                repair._calculations(root, '470')
+            for name in repair.THERMAL_SOURCES:
+                (root/name).parent.mkdir(parents=True, exist_ok=True)
+                (root/name).write_bytes(b'not the captured TI bytes')
+            with self.assertRaisesRegex(ValueError, 'captured TI thermal source differs'):
+                repair._thermal_sources(root)
 
     def test470_mechanics_requires_its_own_complete_source_pins(self):
         from agent_ee import acquisition_source_supplement as supplement
@@ -144,3 +202,24 @@ class Margin470Tests(unittest.TestCase):
         self.assertEqual(added['params']['active_parts']['U1']['subcircuit'],'TPS7A20_ADJ_TRANS_REMOVAL_UVLO111')
         self.assertTrue(all('power-removal-uvlo111/' in row['model_file'] for row in added['params']['active_parts'].values()))
         self.assertEqual(added['params']['active_parts']['C2']['subcircuit'],'COUT_EFFECTIVE')
+
+
+def _thermal_root(root, external_load='.001 A'):
+    """Minimal authored interval inputs; constants mirror the captured acquisition document."""
+    def declared(low, high, requirement='ACQ-ELEC-2-RAIL'):
+        unit = low.split()[1]
+        return dict(min=low, max=high, requirement=requirement, source='declared', unit=unit)
+    parameters = dict(vin=declared('4.75 V', '5.25 V', 'ACQ-ELEC-1-SUPPLY'), rail_low=declared('3.234 V', '3.234 V'),
+        rail=declared('3.234 V', '3.366 V'), pullup_r=declared('2178 ohm', '2222 ohm'), adc_load=declared('.0003 A', '.0003 A'),
+        external_load=declared(external_load, external_load), iq_allowance=declared('.001 A', '.001 A'),
+        output_bleed_r=declared('2178 ohm', '2222 ohm'), input_bleed_r=declared('21780 ohm', '22220 ohm'),
+        diode_drop=declared('.45 V', '.45 V', 'ACQ-ELEC-1-SUPPLY'))
+    parameters['source_limit'] = declared('.02 A', '.02 A')
+    budget = dict(id='input-current-budget', requirement='ACQ-ELEC-2-RAIL', op='<=', rhs='source_limit', unit='A',
+                  lhs='3*rail/pullup_r+adc_load+external_load+iq_allowance+vin/input_bleed_r')
+    (root/'analysis').mkdir()
+    (root/'analysis/electrical-intervals.json').write_bytes(json_bytes(dict(schema='agent-ee.interval-assertions/1',
+        correlation='shared-symbol/independent-parameters', parameters=parameters, assertions=[budget])))
+    (root/'engineering-calculations.json').write_bytes(json_bytes(dict(
+        values=dict(thermal_sensitivity_rise_all_power_in_u1=dict(value='42')), sources={})))
+    return root
