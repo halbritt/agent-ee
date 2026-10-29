@@ -214,3 +214,9 @@ full-radius via position from the saved outward contour, then test gaps of
 explicit conservative false-positive control; no inward approximation or
 threshold adjustment is used. Transformed controls retain exact native bounds,
 front/back layer identity and whole-shape coverage.
+
+Transformed native controls start with zero-angle footprint/pad seed geometry,
+apply the native footprint orientation setter before any side flip, and then
+measure the saved/reloaded pad orientation, global-coordinate bounds, copper
+layer and whole-shape coverage. A footprint angle in source alone does not prove
+the pad was rotated.

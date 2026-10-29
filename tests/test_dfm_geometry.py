@@ -625,7 +625,8 @@ class CustomSmdCoverageTests(unittest.TestCase):
         from unittest.mock import patch
         from agent_ee.symbol_library import parse_sexpr
         loaded=[]
-        fp=NS(Pads=lambda:[NS(SetNet=lambda net:None)])
+        orientations=[]
+        fp=NS(Pads=lambda:[NS(SetNet=lambda net:None)],SetOrientationDegrees=orientations.append)
         board=NS(SetCopperLayerCount=lambda count:None,GetFootprints=lambda:[fp],Add=lambda item:None)
         def save(path, native, *args):
             if not Path(path).exists(): Path(path).write_bytes(b'(kicad_pcb (version 20260206))')
@@ -635,9 +636,10 @@ class CustomSmdCoverageTests(unittest.TestCase):
             return board
         sdk=NS(BOARD=lambda:board,SaveBoard=save,LoadBoard=load,NETINFO_ITEM=lambda *args:object())
         with tempfile.TemporaryDirectory() as tmp, patch.dict('sys.modules',pcbnew=sdk):
-            path=NativeCustomSmdTests.fixture(Path(tmp)/'complete')
+            path=NativeCustomSmdTests.fixture(Path(tmp)/'complete',angle=90)
             self.assertEqual(parse_sexpr(path.read_bytes())[0],'kicad_pcb')
             self.assertEqual(len(loaded),1)
+            self.assertEqual(orientations,[90])
             with self.assertRaisesRegex(ValueError,'generated custom DFM fixture malformed'):
                 NativeCustomSmdTests.fixture(Path(tmp)/'bad',raw_pad='(pad "1" smd custom')
             self.assertEqual(len(loaded),1)
@@ -686,7 +688,7 @@ class NativeCustomSmdTests(unittest.TestCase):
             raw_pad='''(pad "1" smd custom (at 0 0) (size 1 1) (layers "F.Cu")
  (net "V") (options (clearance outline) (anchor rect))
  (primitives (gr_poly (pts (xy 0 -0.5) (xy 3 -0.5) (xy 3 0.5) (xy 0 0.5)) (width 0) (fill yes))))'''
-        footprint=f'''(footprint "OwnedCustom" (layer "F.Cu") (at 20 20 {angle})
+        footprint=f'''(footprint "OwnedCustom" (layer "F.Cu") (at 20 20 0)
  (property "Reference" "U1" (at 0 0) (layer "F.Fab")) {raw_pad})'''
         data=path.read_bytes();at=data.rstrip().rfind(b')');path.write_bytes(data[:at]+footprint.encode()+data[at:])
         from agent_ee.symbol_library import parse_sexpr
@@ -700,6 +702,7 @@ class NativeCustomSmdTests(unittest.TestCase):
         fp=next(iter(b.GetFootprints()))
         test_net=k.NETINFO_ITEM(b,'CUSTOM_DFM_TEST');b.Add(test_net)
         for pad in fp.Pads(): pad.SetNet(test_net)
+        fp.SetOrientationDegrees(angle)
         if back: fp.Flip(fp.GetPosition(),k.FLIP_DIRECTION_TOP_BOTTOM)
         k.SaveBoard(str(path),b,True)
         return path
@@ -742,6 +745,9 @@ class NativeCustomSmdTests(unittest.TestCase):
                      (180,True):(17000000,19500000,20500000,20500000)}[(angle,back)]
             self.assertEqual([min(xs),min(ys),max(xs),max(ys)],
                              [nominal[0]-error,nominal[1]-error,nominal[2]+error,nominal[3]+error])
+            self.assertEqual(pad['custom_copper']['pad_uuid'],pad['uuid'])
+            self.assertEqual(pad['custom_copper']['footprint_uuid'],pad['footprint_uuid'])
+            self.assertEqual(pad['orientation_deg'] % 360, angle % 360)
             self.assertEqual(pad['copper_layers'],['B.Cu' if back else 'F.Cu'])
             self.assertTrue(pad['custom_copper']['layers'][layer]['whole_shape_covered'])
             # A native-copper interior far outside the nominal 1x1 anchor.
