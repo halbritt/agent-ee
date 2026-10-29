@@ -2,7 +2,64 @@
 
 Coordinator/integrator: **agent-688**. Independent gate verifier: **agent-699, Argon High**. Baseline: `9e4f241a0850e9d1e116e60727ea785609b10fc8` (includes previous fleet landing `09bd4e74`). This record activates the [campaign plan](../../research/2026-10-28-zeroasic-campaign-plan.md), preserving its engineering gates.
 
-## Current progress — 2026-10-29 10:36 UTC
+## Current progress — 2026-10-29 11:02 UTC
+
+The goal remains active. **G4 is 0/4 and no measured case has started.** This
+snapshot supersedes the earlier progress summaries without replacing failures.
+
+The automatic carrier selector, public preparation wiring and selected CPL
+closure are integrated as `739b5e73`, `6ef7d9f9` and `d6bbf04a`. One real
+supplier-footprint GET captured C468683 / ADS1115IDGST, including the exact raw
+HTTP result span and provenance. The existing preparer now derives the selected
+supplier list and operative assembly allocation roster before sealing. Independent
+review `696f9d02` approves this source closure; it does not qualify native CPL
+orientation. The integrated focused source run passed 36 tests without skips.
+Two earlier root test invocations had missing or mismatched fixture environment
+paths; their results and the unintended disposable output are retained.
+
+The first fresh preparation invocation failed before publication because root
+omitted the required existing parent directory. An explicit one-invocation
+correction produced preparation identity `8ed6df1d` in 1.963 seconds. The ensuing
+public native build exited 1 in 5.845 seconds: requirements and parts completed,
+then scaffold creation refused because the parts declaration source and its
+mapped membership requirement disagree. This is a producer binding defect.
+Agent-692 owns its bounded correction; the ordinary `parts_subset` guard remains
+authoritative. No routing, package attempt or reviewer call occurred. The failed
+attempt is retained under `g2-acquisition-fresh-r1`, including a separately
+verified copy of all 1,812 preparation/run files (297,973,090 bytes). A new source
+revision requires fresh preparation and an explicit native grant.
+
+The actual esp_prog size operation completed through the retained stage executor.
+All 20 undersized texts became exactly 0.8 mm; independent replay and complete
+raw-token comparison establish that every other board token is unchanged.
+Operation-custody review `d08d8df4` approves output `fd99c17f`, not artwork
+acceptance. Full native parity and opens remain zero. Twenty text-height findings
+disappeared, but six silk overlaps and one silk-over-copper finding were added;
+242 warnings remain. All original inputs and both warning sets are retained.
+
+Root selected the existing 0.1 mm full-via-disk/SMD-copper clearance policy as
+delegated engineering judgment, explicitly not a supplier rule or an owner-sourced
+constraint. Agent-695 is preparing a supported fresh routing invocation with that
+captured project setting while preserving original placement and connectivity.
+The existing DFM check's custom-pad limitation must also be resolved for U2.2;
+unassessed geometry cannot discharge M1. No new routing run has been admitted.
+
+Independent case review found that C1 and C3 cannot count the same observed ADC
+stockout twice. Before any new catalog capture or measured-series freeze, the
+case rule is: if C37593 becomes eligible, retain it for the control and establish
+a separately bound unavailable-choice contrast; otherwise, a distinct qualified
+role/alternative is needed for C3. Raw stock and freshness remain unchanged.
+An imposed constraint must be labelled as such and still satisfy the exact
+campaign contract. The next capture is not yet authorized. Case feasibility and
+implementation must be settled before freezing a measured series; a resulting
+capability change cannot be slipped into an already counted series.
+
+M1, all 14 candidate judgments and independent witnesses, full subscription
+review, full strict qualification, the private evaluation, reproducible release,
+trunk integration and cleanup remain open. Plane comments on AGENTEE-559 and
+AGENTEE-523 record these results without marking either accepted.
+
+## Earlier progress — 2026-10-29 10:36 UTC
 
 The owner's goal remains active through actual G4 acceptance. **Acceptance is
 0/4; the measured series has not started.** The following supersedes older
