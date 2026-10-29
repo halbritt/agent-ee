@@ -10,7 +10,8 @@ composition slices so ZA-02 can consume qualified reference entries.
 The direct [owner scope amendment of 2026-10-29](2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
 excludes ESP-Prog from all campaign work and acceptance dependencies. References
 to M1 below mean acquisition-applicable obligations, not closure of the broader
-recovery programme. Campaign execution remains paused.
+recovery programme. The owner's subsequent instruction to resume applies to
+this acquisition-only campaign scope.
 
 These are local proposals, not published Plane tickets or implementation
 dispatches. `ZA-01` through `ZA-11` are document identifiers. Existing item IDs
