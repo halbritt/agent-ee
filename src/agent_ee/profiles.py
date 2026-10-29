@@ -10,6 +10,12 @@ def validate_profile(profile):
         raise ValueError('profile name required')
     if profile.get('tool_mode', 'investigate') not in ('investigate', 'fixed_packet'):
         raise ValueError('tool_mode must be investigate or fixed_packet')
+    if 'purpose_review' in profile:
+        purpose = profile['purpose_review']
+        if (not isinstance(purpose, dict) or set(purpose) != {'mode', 'reason'}
+                or purpose['mode'] not in ('board', 'source_topology')
+                or not isinstance(purpose['reason'], str) or not purpose['reason'].strip()):
+            raise ValueError('purpose_review requires board|source_topology mode and nonempty reason')
     reviewers = profile.get('reviewers')
     if not isinstance(reviewers, list) or len(reviewers) < 2:
         raise ValueError('profile requires at least two reviewers')

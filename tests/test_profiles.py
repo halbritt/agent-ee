@@ -2,6 +2,20 @@ import unittest
 from agent_ee.profiles import validate_profile
 
 class ProfileTests(unittest.TestCase):
+    def test_finite_purpose_mode_requires_explicit_reason(self):
+        import copy
+        import json
+        from pathlib import Path
+        profile = json.loads((Path(__file__).resolve().parents[1] / 'profiles/claude.json').read_text())
+        for mode in ('board', 'source_topology'):
+            selected = {**profile, 'purpose_review': dict(mode=mode, reason='Captured source qualification')}
+            self.assertEqual(validate_profile(selected), selected)
+        for value in (None, 'source_topology', {}, {'mode': 'off', 'reason': 'skip'},
+                      {'mode': 'source_topology', 'reason': ' '},
+                      {'mode': 'source_topology', 'reason': 'source', 'disable': True}):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_profile({**profile, 'purpose_review': copy.deepcopy(value)})
+
     def test_selection_is_explicit_for_every_role(self):
         with self.assertRaisesRegex(ValueError, 'profile'):
             validate_profile({})
@@ -80,7 +94,8 @@ class CorrectionIdentityTests(unittest.TestCase):
             before={'candidate_id':'old-profile','run_id':'old-run','findings':[{'id':'circuit/flaw','status':'accepted'}]}
             after={'candidate_id':'new-profile','run_id':'new-run','outcome':'criteria_satisfied','checks':[{'id':'native','execution':'ok','outcome':'pass'}]}
             write_json(new/'result.json',after)
-            with patch('agent_ee.run_record.verify',side_effect=[before,after]), patch('agent_ee.run_record.save_result'):
+            with patch('agent_ee.run_record.verify',side_effect=[before,after]), patch('agent_ee.run_record.save_result'), \
+                    patch('agent_ee.locking.fcntl.flock'):
                 with self.assertRaisesRegex(ValueError,'captured input'):
                     link_correction(old,new,'circuit/flaw',['native'], 'Different reviewer called it acceptable')
 

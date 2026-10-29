@@ -1,9 +1,11 @@
 """Purpose navigation and advisory retention, without simulated model judgment."""
 import io
+import copy
 import json
 import shutil
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from agent_ee.candidate import capture
@@ -634,3 +636,126 @@ class PurposeIntegrityRunTests(unittest.TestCase):
             with self.subTest(label):
                 self.refused(run2, held, mutate, message)
         self.assertEqual(verify(run2, host=self.reviews.host)['outcome'], 'defects_or_unresolved')
+
+
+class SourcePurposeTests(unittest.TestCase):
+    """Actual capture/baseline/packet admission; no native check execution."""
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        source = self.root / 'source'
+        source.mkdir()
+        from tests.test_native_binding import GEN
+        (source / 'native.kicad_sch').write_text(GEN.schematic())
+        (source / 'native.kicad_pcb').write_text('(kicad_pcb)')
+        (source / 'requirements.md').write_text('R1 keeps its captured identity.\nThermal proof remains mandatory.\n')
+        (source / 'targets.json').write_text('{}')
+        (source / 'reference.md').write_text('Authored source-only control, not native qualification.')
+        authority = dict(path='project/requirements.md', locator='R1 source identity')
+        self.source_row = dict(id='r1-source', statement='R1 retains its identity', source=authority,
+                               checks=['interface'], verification_phase='source')
+        self.deferred = dict(id='r1-thermal', statement='Thermal proof remains mandatory',
+            source=dict(path='project/requirements.md', locator='Thermal obligation'),
+            conditions=['25 C only', 'No board thermal pass'], checks=['thermal'], verification_phase='adaptation')
+        self.interface = dict(schema='agent-ee.interface/1', allowed_edits=[],
+            components={'resistor': dict(locations=[dict(sheet='/', reference='R1')], symbols=['Owned:R'])},
+            terminals={}, invariants=[dict(id='r1-present', kind='component', component='resistor',
+                populated=True, requirement='r1-source', source=authority)])
+        write_json(source / 'interface.json', self.interface)
+        self.contract = dict(schema='agent-ee.block-contract/1', id='authored', version='1',
+            requirements=[self.source_row, self.deferred],
+            check_set=[dict(id='interface', kind='hardware_interface', params=dict(contract='project/interface.json', netlist_check='netlist')),
+                       dict(id='thermal', kind='active_spice', params=dict(contract='active-spice/1'))])
+        write_json(source / 'block-contract.json', self.contract)
+        profile = read_json(Path(__file__).resolve().parents[1] / 'profiles/claude.json')
+        profile['purpose_review'] = dict(mode='source_topology', reason='Explicit authored source qualification')
+        row = {k: copy.deepcopy(v) for k, v in self.source_row.items() if k != 'verification_phase'}
+        row['intent'] = 'acceptance'
+        self.scope = dict(schema='agent-ee.scope/3', name='source-only', scope='Exact source membership only',
+            schematic='project/native.kicad_sch', board='project/native.kicad_pcb',
+            inputs=[dict(path='source', at='project')], review_profile=profile,
+            checks=[dict(id='netlist', kind='netlist', params={}, stage='verification'),
+                dict(id='interface', kind='hardware_interface',
+                    params=dict(contract='project/interface.json', netlist_check='netlist'), stage='verification')],
+            baseline=dict(requirements=[row, dict(id='native-netlist', statement='Read native source',
+                source=authority, intent='informational', checks=['netlist'])],
+                targets=['project/targets.json'], reference_architectures=['project/reference.md']),
+            stages=dict(schema='agent-ee.stages/1', order=['verification'], finding_retry_limit=3,
+                subjects=dict(verification=dict(kind='symbols', path='project/native.kicad_sch', references=['R1']))))
+
+    def captured(self):
+        write_json(self.root / 'scope.json', self.scope)
+        run = self.root / 'run'
+        run.mkdir()
+        manifest = capture(self.root / 'scope.json', run)
+        return run, manifest
+
+    def test_source_mode_uses_actual_phase_contract_and_scoped_outgoing_brief(self):
+        from agent_ee.purpose_review import applicability
+        from agent_ee.candidate import verify_snapshot
+        self.scope['packet_max_bytes'] = 0
+        run, manifest = self.captured()
+        before = copy.deepcopy(manifest)
+        packet = build_packet(run, [], 'source-run')
+        self.assertTrue(all(a['bytes_included'] == 0 for a in packet['artifacts']))
+        admitted = packet['purpose_review']['applicability']
+        self.assertEqual(admitted['deferred_requirements'][0]['requirement'], self.deferred)
+        self.assertEqual(admitted['deferred_requirements'][0]['evaluation'], 'not_evaluated')
+        self.assertEqual(manifest, before)
+        self.assertEqual(verify_snapshot(run), manifest)
+        prompts = []
+        def transport(run, role, definition, prompt, schema, timeout, **kwargs):
+            prompts.append(prompt)
+            self.assertIn('admitted source_topology qualification only', prompt)
+            self.assertNotIn('For EVERY empty field', prompt)
+            self.assertIn('mandatory', prompt)
+            self.assertIn('unassessed, never passed', prompt)
+            return {'execution': 'ok'}, dict(schema='agent-ee.review/2', candidate_id=packet['candidate_id'],
+                run_id=packet['run_id'], packet_sha256=packet['packet_sha256'], role=role,
+                findings=[], coverage=['purpose_review: source role boundaries only'], limitations=['No board qualification'])
+        with patch('agent_ee.reviewers.reviewer_call', side_effect=transport):
+            reviews, records = initial_reviews(run, packet, time.monotonic() + 30)
+        self.assertEqual(len(reviews), 2, records)
+        def adjudicator(run, role, definition, prompt, schema, timeout, **kwargs):
+            self.assertEqual(role, 'adjudicator')
+            self.assertIn('admitted source_topology qualification only', prompt)
+            self.assertIn('mandatory and not_evaluated', prompt)
+            return {'execution': 'ok'}, dict(schema='agent-ee.decisions/2',
+                candidate_id=packet['candidate_id'], run_id=packet['run_id'], decisions=[])
+        with patch('agent_ee.reviewers.reviewer_call', side_effect=adjudicator):
+            record, decisions = adjudicator_call(run, packet, [], reviews, time.monotonic() + 30)
+        self.assertEqual(record['execution'], 'ok')
+        altered = copy.deepcopy(packet)
+        altered['purpose_review']['applicability']['reason'] = 'changed'
+        with self.assertRaisesRegex(ValueError, 'applicability differs'):
+            initial_reviews(run, altered, time.monotonic() + 30)
+        self.assertEqual(applicability(run, manifest), admitted)
+
+    def test_source_mode_refuses_board_checks_subjects_and_package_use(self):
+        from agent_ee.purpose_review import applicability
+        run, manifest = self.captured()
+        for kind in ('drc', 'fab_package', 'active_spice', 'interval_assertions', 'geometry'):
+            bad = copy.deepcopy(manifest)
+            bad['scope']['checks'][0]['kind'] = kind
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, 'check families'):
+                applicability(run, bad)
+        for mutation in ('footprints', 'package', 'phase', 'params', 'missing', 'tampered'):
+            bad = copy.deepcopy(manifest)
+            path = run / 'inputs/project/block-contract.json'
+            original = path.read_bytes()
+            if mutation == 'footprints':
+                bad['scope']['stages']['subjects']['verification'] = dict(kind='footprints', path=bad['scope']['board'], references=['R1'])
+            elif mutation == 'package': bad['scope']['package'] = 'release'
+            elif mutation in ('phase', 'missing', 'tampered'):
+                contract = copy.deepcopy(self.contract)
+                if mutation == 'phase': contract['requirements'][0]['verification_phase'] = 'adaptation'
+                elif mutation == 'missing': contract['requirements'][0].pop('verification_phase')
+                else: contract['requirements'][0]['statement'] = 'Forged'
+                write_json(path, contract)
+                if mutation != 'tampered': bad['files']['project/block-contract.json'] = digest(path)
+            else: bad['scope']['checks'][1]['params']['netlist_check'] = 'foreign'
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                applicability(run, bad)
+            path.write_bytes(original)

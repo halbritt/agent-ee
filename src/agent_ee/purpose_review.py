@@ -4,6 +4,11 @@ This dimension supplies no check verdict or geometric proof. Reviewers use the
 existing captured policies, native inventories, measurements and renders.
 """
 
+import copy
+import hashlib
+import json
+from pathlib import PurePosixPath
+
 BRIEF = (
     "Perform the purpose_review dimension independently as well as correctness review. "
     "Read the complete captured policy and arrangement, native geometry measurements and renders; "
@@ -31,6 +36,115 @@ BRIEF = (
     "findings never carry it), and begin each purpose coverage and limitation entry with "
     "'purpose_review:'. A review with neither is recorded as purpose coverage unknown. "
 )
+
+SOURCE_BRIEF = (
+    'Perform purpose_review within the admitted source_topology qualification only. '
+    'Challenge the intended role boundaries, native symbol/pin/net identity, exact membership, '
+    'source sufficiency and captured source-phase criteria independently. Read complete captured '
+    'contracts and sources. Preserve every deferred adaptation statement, condition and limit as '
+    'mandatory and not_evaluated. The required native board is historical context, not board '
+    'acceptance: do not perform an area, pose or routability optimization audit for this scope. '
+    'Electrical, thermal, layout, return-path, supplier and board purpose qualification remain '
+    'unassessed, never passed. Missing topology evidence remains unresolved. Keep correctness '
+    "findings under the ordinary evidence rules; prefix scoped coverage/limitations 'purpose_review:'. "
+)
+
+
+def brief(applicable):
+    return SOURCE_BRIEF if applicable is not None else BRIEF
+
+
+def applicability(run, manifest):
+    """Admit the finite source mode from real subjects and pinned phase contracts."""
+    from .profiles import validate_profile
+    from .stages import declaration
+    from .parts_manifest import read_captured
+    from .baseline import load_baseline
+    scope, files = manifest['scope'], manifest['files']
+    profile = scope.get('review_profile')
+    if not profile or 'purpose_review' not in profile:
+        return None
+    config = validate_profile(profile)['purpose_review']
+    if config['mode'] == 'board':
+        return None
+    stages = declaration(scope, files)
+    if (scope.get('schema') != 'agent-ee.scope/3' or stages is None
+            or stages['order'] != ['verification']
+            or stages['subjects'].get('verification', {}).get('kind') != 'symbols'
+            or any(key in scope for key in ('block_provenance', 'block_plan', 'reserved_area', 'package'))):
+        raise ValueError('source_topology purpose requires a symbol-only source qualification')
+    specs = {c['id']: c for c in scope['checks']}
+    if any(c['kind'] not in ('netlist', 'parts_subset', 'hardware_interface') for c in specs.values()):
+        raise ValueError('source_topology purpose refuses board/package/electrical check families')
+
+    def captured(path):
+        raw = read_captured(run / 'inputs', path)
+        if files.get(path) != hashlib.sha256(raw).hexdigest():
+            raise ValueError('source_topology contract is not captured or changed: ' + path)
+        return json.loads(raw)
+
+    contract_paths = sorted({str(PurePosixPath(c['params']['contract']).with_name('block-contract.json'))
+                             for c in specs.values() if c['kind'] == 'hardware_interface'})
+    if not contract_paths:
+        raise ValueError('source_topology purpose requires qualified source-phase contracts')
+    source_rows, deferred, contracts = {}, [], []
+    for path in contract_paths:
+        contract = captured(path)
+        if contract.get('schema') != 'agent-ee.block-contract/1' or contract.get('pending_requirements'):
+            raise ValueError('source_topology requires a phase-qualified block contract')
+        templates = {c['id']: c for c in contract['check_set']}
+        contracts.append(dict(path='inputs/' + path, sha256=files[path]))
+        for row in contract['requirements']:
+            source_path = row['source']['path']
+            raw = read_captured(run / 'inputs', source_path)
+            if files.get(source_path) != hashlib.sha256(raw).hexdigest():
+                raise ValueError('source_topology requirement source changed or absent')
+            phase = row.get('verification_phase')
+            if phase not in ('source', 'adaptation') or not row['checks']:
+                raise ValueError('source_topology requires explicit source/adaptation phases')
+            if phase == 'adaptation':
+                if any(c in specs for c in row['checks']):
+                    raise ValueError('source_topology cannot evaluate an adaptation obligation')
+                deferred.append(dict(contract='inputs/' + path, requirement=copy.deepcopy(row),
+                                     status='mandatory_on_adaptation', evaluation='not_evaluated'))
+                continue
+            if row['id'] in source_rows:
+                raise ValueError('ambiguous source requirement identity')
+            source_rows[row['id']] = row
+            for cid in row['checks']:
+                expected, actual = templates[cid], specs.get(cid, {})
+                if (expected['kind'], expected.get('params', {})) != (actual.get('kind'), actual.get('params', {})):
+                    raise ValueError('source_topology source check contract differs')
+    allowed = {cid for row in source_rows.values() for cid in row['checks']}
+    allowed.update(c['id'] for c in specs.values() if c['kind'] == 'netlist' or
+                   (c['kind'] == 'parts_subset' and 'reference_set' not in c.get('params', {})))
+    if set(specs) != allowed:
+        raise ValueError('source_topology checks lack source-phase binding')
+    for spec in specs.values():
+        if spec['kind'] == 'hardware_interface':
+            interface = captured(spec['params']['contract'])
+            if (interface.get('qualification_record') or any(row['kind'] not in
+                    ('component', 'value', 'named_net', 'same_net', 'no_connect') for row in interface['invariants'])):
+                raise ValueError('source_topology requires topology-only interface criteria')
+    baseline = load_baseline(run)
+    if baseline is None:
+        raise ValueError('source_topology requires an immutable source baseline')
+    seen = set()
+    for row in baseline['requirements']:
+        if row['id'] in source_rows:
+            expected = source_rows[row['id']]
+            if any(row[key] != expected[key] for key in ('statement', 'source', 'checks')):
+                raise ValueError('source_topology baseline changes source-phase criteria')
+            seen.add(row['id'])
+        elif any(cid not in specs or specs[cid]['kind'] == 'hardware_interface' or
+                 'reference_set' in specs[cid].get('params', {}) for cid in row['checks']):
+            raise ValueError('source_topology baseline is not source-only')
+        if row['id'] in {d['requirement']['id'] for d in deferred}:
+            raise ValueError('source_topology cannot qualify an adaptation requirement')
+    if seen != set(source_rows):
+        raise ValueError('source_topology baseline omits source-phase criteria')
+    return {**config, 'source_contracts': contracts, 'deferred_requirements': deferred,
+            'board_purpose': 'unassessed; native board retained as context only'}
 
 DIMENSION = 'purpose_review'
 COVERAGE_PREFIX = 'purpose_review:'
@@ -196,7 +310,7 @@ def coverage_limitations(records):
             for r in records if r['status'] == 'unknown']
 
 
-def dimension(manifest, citation_files, checks, visuals=None):
+def dimension(manifest, citation_files, checks, visuals=None, *, applicable=None):
     """Index only sources already admitted to the sealed packet; never peer work."""
     available = {item['path'] for item in citation_files}
     inputs = [{'path': 'inputs/' + rel, 'sha256': value}
@@ -210,6 +324,12 @@ def dimension(manifest, citation_files, checks, visuals=None):
                                   if (rel := entry['path'] if isinstance(entry, dict) else entry) in available]}
                     for check in checks]
     renders = render_sides(visuals, available)
+    if applicable is not None:
+        return {'authority': 'advisory', 'applicability': applicable,
+                'candidate_sources': inputs, 'measurements': measurements,
+                'questions': ['source role boundaries and exact native topology/membership',
+                              'source sufficiency and mandatory deferred adaptation obligations'],
+                'limitations': ['Board/electrical/thermal/layout/return-path/supplier purpose is unassessed.']}
     return {'authority': 'advisory',
             'empty_field_threshold': {'area_mm2': 100, 'enforcement': 'advisory',
                 'provenance': 'agent-chosen review focus; not an acceptance limit or minimum useful area'},

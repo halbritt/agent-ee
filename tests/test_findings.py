@@ -1070,7 +1070,7 @@ class FindingsTests(unittest.TestCase):
             counts[role] = counts.get(role, 0) + 1
             self.assertIn("Every evidence citation MUST include", prompt)
             self.assertEqual(schema["properties"]["schema"]["enum"], ["agent-ee.review/2"])
-            self.assertEqual(schema["properties"]["findings"]["items"]["properties"]["evidence"], EVIDENCE_SCHEMA)
+            self.assertNotEqual(schema["properties"]["findings"]["items"]["properties"]["evidence"], EVIDENCE_SCHEMA)
             citation = {"path": "checks/rc_transient.json", "locator": "response"}
             if counts[role] == 2:
                 self.assertIn("requires pointer, lines or xpath", prompt)
@@ -1089,7 +1089,7 @@ class FindingsTests(unittest.TestCase):
             counts[role] = counts.get(role, 0) + 1
             self.assertIn("Every evidence citation MUST include", prompt)
             self.assertEqual(schema["properties"]["schema"]["enum"], ["agent-ee.decisions/2"])
-            self.assertEqual(schema["properties"]["decisions"]["items"]["properties"]["evidence"], EVIDENCE_SCHEMA)
+            self.assertNotEqual(schema["properties"]["decisions"]["items"]["properties"]["evidence"], EVIDENCE_SCHEMA)
             citation = {"path": "checks/rc_transient.json", "locator": "response"}
             if counts[role] == 2:
                 self.assertIn("requires pointer, lines or xpath", prompt)

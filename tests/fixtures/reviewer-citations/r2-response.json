@@ -1,0 +1,52 @@
+{
+  "candidate_id": "fee71a9b07cbd756b91a8ee883f1b5bca3b33948016c045d6cc7a602da274d6b",
+  "coverage": [
+    "Read and hash-verified all 84 baseline-bound files; inspected complete architecture, target records, native schematic, symbol libraries, selected-part manifests and all three role contracts.",
+    "Independently re-exported the native netlist with KiCad 10.0.7. Component identities and pin-to-net memberships match the captured export. Resolved inherited symbol definitions before comparing embedded pin signatures.",
+    "Verified exact power membership C1,C2,D1,J1,R5,R6,U1; analog membership C3,C4,C5,J3,R1,R2,U2; host membership J2,R3,R4. These disjoint sets cover all 17 physical parts. Values, selected identities, footprints, population, UUIDs and complete member pin sets agree.",
+    "Verified actual no-connect markers for U1.4 and U2.2. The three native power symbols remain virtual, excluded from BOM and board, with empty footprints.",
+    "Inspected all eight check records and underlying reports. No failed declared check, native tool failure or independently supported source-topology defect was found. This does not establish electrical behavior.",
+    "purpose_review: Read placement policy and arrangement, measured native geometry, parsed both native SVGs and viewed top/bottom renders. No declared obstacles, keepouts, mounting holes or reserved routing lanes were found. Only J1/J2/J3 have fixed native poses.",
+    "purpose_review: J1's west/front placement separates power access. Moving its complete block north preserves this purpose and local spacing. Rotating J1 90 degrees could reduce inward courtyard depth from 6.99 to 5.59 mm, but offers less demonstrated return. Inboard or bottom placement has no supported advantage.",
+    "purpose_review: J2's east/front placement separates host access. A 90-degree rotation could reduce inward courtyard depth from 10.99 to 5.59 mm; net benefit remains unknown without cable geometry and rerouting measurements. Inboard or bottom placement adds routing or assembly costs without a measured saving.",
+    "purpose_review: J3's long axis parallel to the north edge uses 5.59 mm inward courtyard depth versus 10.99 mm when rotated 90 degrees. Keeping its analog cluster nearby is justified. Moving inboard, to B, or closer to the edge has no demonstrated lower total cost.",
+    "purpose_review: Locality, body/courtyard separation, placement allowances, mating columns and height declarations serve local routing, assembly and access purposes. Keeping capacitor/filter relative poses is justified; rigid power-block translation preserves internal distances. Loop, rail-drop and assembly-gap targets do not reserve broad empty fields. No relaxation is supported.",
+    "purpose_review: Native polygon calculations identify one connected placement-empty field above 100 mm2 on each face: F 1320.83 mm2 and B 1555.42 mm2. F contains local access and routing reserves but no declared broad mechanical reserve. B overlaps 1459.57 mm2 of ground fill, a justified return-copper reserve whose necessary extent remains unqualified. Overlapping reserves were not added twice.",
+    "purpose_review: Examined J1/J2/J3 vertical mating columns individually; modeled areas are 37.95/59.95/59.95 mm2 with zero overlap against other captured body envelopes. Renders show socket entry and bottom through-hole joints. Cable bends, latch handling and probe-tool clearance remain unresolved. No LEDs, antennas, card sockets, dedicated test points or mounting holes require additional access analysis.",
+    "purpose_review: Best supported advisory change is moving the complete power block 10 mm north. Conditional outline reduction saves 450 mm2; direct rail endpoint spans also decrease. Bottom-side population would consume the selected ground-plane face and alter access/assembly without a demonstrated advantage.",
+    "purpose_review: Default DRC limits remain advisory: edge clearance 0.5 mm, hole clearance 0.25 mm, hole spacing 0.45 mm, minimum clearance/track 0.2 mm, minimum drill 0.3 mm, minimum via 0.6 mm, mask web 0.1 mm; Default netclass clearance/track/via/drill 0.2/0.25/0.6/0.3 mm. These serve local manufacturing margins, not broad area reserves. No blocking limit or unsupported relaxation is asserted."
+  ],
+  "findings": [
+    {
+      "assessment": "concern",
+      "condition": "The engineering-selected 45 by 35 mm bench outline and lower-left power anchor are retained without a mounting-hole or enclosure constraint requiring that separation.",
+      "dimension": "purpose_review",
+      "evidence": [
+        {
+          "locator": "Bench-board dimensions, interface placement, locality and access declarations",
+          "path": "inputs/spec.md",
+          "pointer": "/unused",
+          "xpath": "./unused"
+        }
+      ],
+      "id": "circuit-purpose-01",
+      "location": "Power block C1,C2,D1,J1,R5,R6,U1 and board outline",
+      "mechanism": "The power block sits substantially south of the analog and host blocks, extending board height and inter-block rail spans.",
+      "reasoning": "Translate the complete power block north 10 mm while retaining J1 on F at the west edge with its current orientation. Native courtyard polygon comparisons find no new inter-footprint overlap; the lowest translated courtyard reaches y=120.345 mm. A bottom edge at y=125 leaves 4.655 mm courtyard margin and conditionally reduces area by 45\u00d710=450 mm2, or 28.57%. U1.5-to-U2.8 direct span decreases from 11.1873 to 7.3421 mm. This is a geometric comparison, not a routed-length prediction. It requires revised engineering outline/J1 declarations, rerouting, plane refill and adaptation qualification; cable, thermal and return-path consequences remain unknown.",
+      "severity": "info",
+      "title": "Power-block translation offers conditional area and routing savings",
+      "witnesses": []
+    }
+  ],
+  "limitations": [
+    "Electrical, thermal, layout, return-path, supplier and board acceptance remain mandatory adaptation obligations. All six adaptation-phase obligations remain unevaluated; retained closed-incomplete R5 inputs are not accepted-board evidence.",
+    "No new ERC/DRC, SPICE, component-rating applicability, supplier authentication, fabrication/assembly acceptance or bench testing was performed. No drc-constraints.json or native constraint_provenance was supplied.",
+    "purpose_review: Mated cable bend radii, finger/latch envelopes, probe-tool geometry and installed-height tolerances are missing. Modeled access columns and renders cannot establish physical access or enclosure fit.",
+    "purpose_review: The alternative was evaluated using translated native courtyard polygons, not a modified or rerouted candidate. Routed savings, minimum necessary ground-plane area, thermal effects and full mechanical suitability remain unknown.",
+    "purpose_review: Captured package envelopes are engineering reference rectangles. Native SVGs were parsed completely; visual inspection used the supplied top/bottom PNG renders."
+  ],
+  "packet_sha256": "548f7df950c488d83639be237a0fc1306ed943eb003aa90fb9289c31b7076d3a",
+  "role": "circuit",
+  "run_id": "3821e54b-579c-4600-b5fd-5af59ed544f3",
+  "schema": "agent-ee.review/2"
+}

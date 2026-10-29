@@ -46,8 +46,21 @@ complete without it. [`profiles/pod-review.json`](../profiles/pod-review.json)
 adds it for the telemetry pod; see [budget implications](rf-review.md#profiles-pod-wiring-and-budget). Roles must be distinct safe lowercase IDs; `adjudicator` is reserved.
 At least two reviewers are required. Optional reviewer `lens` replaces its
 built-in circuit/physical lens. The [placement purpose brief](purpose-review.md)
-remains mandatory for every initial role even with a custom lens; supported
+remains mandatory by default for every initial role even with a custom lens; supported
 area and routability suggestions remain advisory beside correctness findings.
+
+For an explicitly captured source qualification, a profile may declare
+`"purpose_review": {"mode": "source_topology", "reason": "<nonempty scope rationale>"}`.
+The finite modes are `board` and `source_topology`; omission preserves board review.
+Source mode requires a scope/3 verification-only symbols subject, only `netlist`,
+`parts_subset` and topology-only `hardware_interface` checks, and captured sibling
+`block-contract.json` declarations binding the exact source-phase criteria to the
+immutable baseline. Adaptation checks cannot execute or earn source credit in this
+mode. Every deferred requirement, condition and source remains captured and is
+listed as mandatory and not evaluated. Board/package acceptance scopes and mixed
+check families refuse this mode. The required board remains captured context;
+source purpose coverage establishes no electrical, thermal, layout, return-path,
+supplier or board qualification. A custom lens alone cannot select this exception.
 Harness, native model, effort and timeout are
 required for every reviewer and adjudicator. Timeouts are finite 1–3600 seconds,
 further bounded by the run deadline. Supported effort values are low/medium/high/
@@ -67,6 +80,14 @@ locator choices. Reviewers use line ranges for native KiCad S-expressions and
 other text, JSON pointers for JSON, and XPath for XML. They must omit unused
 locator fields. [Citation errors](result-reference.md#structured-citations)
 identify the file and supplied/required kinds for bounded output resubmission.
+Outgoing citation schemas bind each captured path to locator kinds classified
+from its actual bytes, including JSON/XML documents with unconventional suffixes.
+New experiments use line citations in the caller's own canonical experiment path;
+extract binary evidence to UTF-8 text first. The adjudicator may additionally cite
+already retained reviewer experiments using their actual formats. Schema admission
+does not establish that a locator resolves: the existing semantic validator checks
+every supplied locator, range, containment and link. Formatting retry uses the
+same schema and preserves finding IDs; no citation is automatically repaired.
 
 The existing Bubblewrap mounts protect `/candidate` and separate initial
 reviewers. `/evidence/work` and `/evidence/checks` expose completed native results

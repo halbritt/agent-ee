@@ -1,5 +1,7 @@
 """Locator formats and bounded correction of native-text citations (AGENTEE-204)."""
 import copy
+import re
+from pathlib import Path
 import shutil
 import time
 import unittest
@@ -16,6 +18,78 @@ class CitationLocatorTests(unittest.TestCase):
     setUp = fixture.FindingsTests.setUp
     _review = fixture.FindingsTests._review
     _finding = fixture.FindingsTests._finding
+
+    def test_outgoing_codex_schema_binds_locator_kinds_to_actual_bytes(self):
+        from agent_ee.harnesses import strict_schema
+        from agent_ee.reviewers import EVIDENCE_SCHEMA
+        (self.source / 'spec.md').write_text('Bench source declaration.\n')
+        self.scope_data['inputs'].append(dict(path='source/spec.md', at='spec.md'))
+        write_json(self.scope_path, self.scope_data)
+        previous = self.run_dir
+        self.run_dir = self.root / 'schema-bound'
+        self.run_dir.mkdir()
+        capture(self.scope_path, self.run_dir)
+        shutil.copytree(previous / 'checks', self.run_dir / 'checks')
+        shutil.copytree(previous / 'work', self.run_dir / 'work')
+        (self.run_dir / 'work/rc_transient/data.txt').write_text('{"v": 1}\n')
+        (self.run_dir / 'work/rc_transient/export.xml').write_text('<export/>\n')
+        packet = build_packet(self.run_dir, [self.erc_check, self.rc_check], self.run_id)
+        retained = read_json(Path(__file__).parent / 'fixtures/reviewer-citations/r2-response.json')
+        bad = retained['findings'][0]['evidence'][0]
+
+        def fits(citation, schema):
+            for branch in schema['items']['anyOf']:
+                if set(citation) != set(branch['required']):
+                    continue
+                path = branch['properties']['path']
+                if 'enum' in path and citation['path'] not in path['enum']:
+                    continue
+                if 'pattern' in path and not re.fullmatch(path['pattern'], citation['path']):
+                    continue
+                return True
+            return False
+
+        self.assertTrue(fits(bad, EVIDENCE_SCHEMA))  # The retained R2 failure shape.
+        seen = {}
+        counts = {}
+        def transport(run, role, definition, prompt, schema, timeout, **kwargs):
+            outgoing = strict_schema(schema)['properties']['findings']['items']['properties']['evidence']
+            if role in seen:
+                self.assertEqual(seen[role], outgoing)
+            seen[role] = outgoing
+            counts[role] = counts.get(role, 0) + 1
+            self.assertFalse(fits(bad, outgoing))
+            good = {'path': 'inputs/spec.md', 'locator': 'Bench declaration', 'lines': [1, 1]}
+            self.assertTrue(fits(good, outgoing))
+            self.assertEqual(validate_citation(good, run, require_structured=True), good)
+            for path, field, value in [('work/rc_transient/data.txt', 'pointer', '/v'),
+                                        ('work/rc_transient/export.xml', 'xpath', '.')]:
+                cite = dict(path=path, locator='Actual document', **{field: value})
+                self.assertTrue(fits(cite, outgoing))
+                validate_citation(cite, run, require_structured=True)
+                self.assertTrue(fits({**cite, 'lines': [1, 1]}, outgoing))
+            for path in [f'review-work/{role}/experiments/notes.txt',
+                         f'review-work/{role}/experiments/nested/notes.txt']:
+                self.assertTrue(fits(dict(path=path, locator='Scratch evidence', lines=[1, 1]), outgoing))
+                self.assertFalse(fits(dict(path=path, locator='Scratch evidence', pointer='/v'), outgoing))
+            for path in ['inputs/unknown.txt', 'review-work/peer/experiments/notes.txt',
+                         f'review-work/{role}/experiments/../../inputs/spec.md',
+                         f'review-work/{role}/experiments/./notes.txt', '/inputs/spec.md']:
+                self.assertFalse(fits(dict(path=path, locator='Escape', lines=[1, 1]), outgoing))
+            response = {**copy.deepcopy(retained), **{k: packet[k] for k in
+                        ('candidate_id', 'run_id', 'packet_sha256')}, 'role': role}
+            response['findings'][0]['evidence'] = [bad if counts[role] == 1 else good]
+            return {'execution': 'ok'}, response
+        with patch('agent_ee.reviewers.reviewer_call', side_effect=transport):
+            reviews, records = initial_reviews(self.run_dir, packet, time.monotonic() + 30,
+                                              launch_context={'max_schema_resubmissions': 1})
+        self.assertEqual(len(reviews), 2, records)
+        self.assertEqual(set(seen), {'circuit', 'physical'})
+        self.assertEqual(counts, {'circuit': 2, 'physical': 2})
+        for record in records:
+            first = read_json(self.run_dir / record['attempts'][0]['path'] / 'response.json')
+            self.assertEqual(first['findings'], retained['findings'])
+            self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'ok'])
 
     def test_byte_formats_and_kind_diagnostics(self):
         exp = self.run_dir / 'review-work/circuit/experiments'
