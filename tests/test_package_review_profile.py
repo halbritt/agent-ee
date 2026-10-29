@@ -184,8 +184,8 @@ class NativePackageReviewTests(unittest.TestCase):
 
     Reviewer transport is the existing scripted dispatch boundary (no provider), and the
     reviewer runtime fingerprint is pinned exactly as that fixture's host pins it. The
-    synthetic seven-stage control cannot pass file release, so positive combined
-    acceptance remains covered by the pure tests above.
+    synthetic seven-stage control has an invalid empty package marker and cannot
+    pass file release; positive combined acceptance remains covered by pure tests.
     """
     setUp = RequestedReviewQualificationTests.setUp
     save = RequestedReviewQualificationTests.save
@@ -264,7 +264,9 @@ class NativePackageReviewTests(unittest.TestCase):
         self.assertEqual(row['evidence'][0]['path'], self.package['directory'] + '/review/result.json')
         self.assertEqual(record['dimensions']['checks']['status'], 'pass')
         self.assertEqual(record['summary']['required'], ['file_release', 'engineering_review'])
-        # Fixture limit: this synthetic control cannot release files, so acceptance stays withheld.
+        # The fixture's empty package marker is invalid: the real manufacturing gate must refuse it.
+        self.assertTrue(any(reason.startswith('manufacturing coverage missing: ')
+                            for reason in record['summary']['file_release_blockers']), record)
         file_release = record['dimensions']['file_release']['status']
         self.assertIn(file_release, ('pending', 'failed'))
         self.assertFalse(report['accepted'])
@@ -280,6 +282,8 @@ class NativePackageReviewTests(unittest.TestCase):
         # Independently verified file and check evidence remain visible and unchanged.
         self.assertEqual(record['dimensions']['checks']['status'], 'pass')
         self.assertEqual(record['dimensions']['file_release']['status'], file_release)
+        self.assertTrue(any(reason.startswith('manufacturing coverage missing: ')
+                            for reason in record['summary']['file_release_blockers']), record)
         self.assertEqual((record['dimensions']['supplier']['status'], record['dimensions']['physical']['status']),
                          ('pending', 'pending'))
         self.assertFalse(report['accepted'])
