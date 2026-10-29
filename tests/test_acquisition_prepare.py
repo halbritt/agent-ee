@@ -1,6 +1,7 @@
 """Source-only public acquisition preparation; no native tools or stage execution."""
 import contextlib
-from decimal import Decimal
+from decimal import Decimal, localcontext
+from fractions import Fraction
 import io
 import json
 import os
@@ -9,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agent_ee import acquisition_prepare, build_workflow, requirement_map, spec_record, storage
+from agent_ee import acquisition_prepare, build_workflow, requirement_map, spec_record, storage, interval_assertions
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = Path(os.environ.get('AGENT_EE_ACQUISITION_INPUTS', ROOT / 'build/acquisition-release/inputs'))
@@ -36,6 +37,9 @@ class BriefTests(unittest.TestCase):
             (brief() + brief('100').split(b'\n', 1)[1], 'contradictory_capacitance'),
             (brief('200'), 'unsupported_fixed_recipe_bound'),
             (brief('0'), 'unsupported_fixed_recipe_bound'),
+            (brief('99.999'), 'unsupported_fixed_recipe_bound'),
+            (brief('150.001'), 'unsupported_fixed_recipe_bound'),
+            (brief('125') + brief('150').split(b'\n', 1)[1], 'contradictory_capacitance'),
             (brief().replace(b'acquisition-control', b'another-reference'), 'unsupported_clause'),
         ]
         for raw, code in cases:
@@ -43,6 +47,22 @@ class BriefTests(unittest.TestCase):
                 with self.assertRaises(acquisition_prepare.PreparationRefused) as caught:
                     acquisition_prepare.parse_brief(raw)
                 self.assertEqual(caught.exception.report['findings'][0]['code'], code)
+
+    def test_range_precision_and_zero_padding_are_exact(self):
+        for text in ('100', '125', '150', '000100.' + '0' * 80, '000150.' + '0' * 80,
+                     '100.' + '0' * 24 + '1'):
+            with self.subTest(text=text), localcontext() as context:
+                context.prec = 6
+                selected = acquisition_prepare.parse_brief(brief(text))
+                self.assertEqual(selected['value'], Decimal(text))
+                self.assertIn(text + ' pF', selected['quantity'])
+        raw = brief('100.' + '0' * 25 + '1')
+        with self.assertRaises(acquisition_prepare.PreparationRefused) as caught:
+            acquisition_prepare.parse_brief(raw)
+        report = caught.exception.report
+        self.assertEqual(report['findings'][0]['code'], 'unsupported_fixed_recipe_bound')
+        self.assertIn('precision', report['findings'][0]['message'])
+        self.assertEqual(report['outcome'], 'refused')
 
 
 @unittest.skipUnless(PLAN.is_file() and CPL.is_dir() and TEXT.is_dir(),
@@ -341,3 +361,69 @@ class AcquisitionPreparationTests(unittest.TestCase):
         plan = json.loads((out / 'build-plan.json').read_bytes())
         self.assertEqual((out / 'inputs' / plan['review_profile']).read_bytes(), profile.read_bytes())
         self.assertEqual(plan['verification_timeout_s'], 3600)
+
+    def test_public_range_drives_real_operands_prose_spans_and_interval_verdicts(self):
+        original = json.loads((BASE / 'analysis/electrical-intervals.json').read_bytes())
+        rise_source = next(a for a in original['assertions'] if a['id'] == 'i2c-rise')
+        box = {'pullup_r': interval_assertions.declared_interval(
+            {k: original['parameters']['pullup_r'][k] for k in ('min', 'max')}, 'ohm', 'pullups'),
+            'bus_c': (Fraction(100, 10**12), Fraction(150, 10**12))}
+        enclosure, monotonicity = interval_assertions.enclose(
+            interval_assertions.parse_expression(rise_source['lhs']), box)
+        self.assertEqual(monotonicity['bus_c'], 'nondecreasing')
+        self.assertEqual(enclosure[1], Fraction(8473, 10000) * 2222 * Fraction(150, 10**12))
+        self.assertLess(enclosure[1], Fraction(300, 10**9))
+        identities = set()
+        for cap in ('100', '125', '150'):
+            raw = brief(cap + '.00').replace((cap + '.00 pF').encode(), (cap + '.00\u00a0pF').encode())
+            out, report = self.prepare(raw, 'range-' + cap)
+            identities.add(report['identity'])
+            inputs = out / 'inputs'
+            intervals = json.loads((inputs / 'analysis/electrical-intervals.json').read_bytes())
+            self.assertEqual(intervals['parameters']['bus_c']['max'], cap + 'e-12 F')
+            for parameter in ('pullup_r', 'rise_limit'):
+                self.assertEqual({k:v for k,v in intervals['parameters'][parameter].items() if k != 'requirement'},
+                                 {k:v for k,v in original['parameters'][parameter].items() if k != 'requirement'})
+            # The requirements stage captures this exact spec before checks execute.
+            provenance = inputs / 'requirements-map'
+            provenance.mkdir()
+            (provenance / 'spec.md').write_bytes((inputs / 'spec.md').read_bytes())
+            evaluated = interval_assertions.evaluate_inputs(inputs, {'assertions': 'analysis/electrical-intervals.json'})
+            self.assertEqual(evaluated['execution'], 'ok', evaluated)
+            rise = next(a for a in evaluated['assertions'] if a['id'] == 'i2c-rise')
+            self.assertEqual(rise['verdict'], 'pass')
+            self.assertEqual([{k:v for k,v in a.items() if k != 'requirement'} for a in intervals['assertions']],
+                             [{k:v for k,v in a.items() if k != 'requirement'} for a in original['assertions']])
+            expected = Fraction(8473, 10000) * 2222 * Fraction(int(cap), 10**12)
+            calculated = json.loads((inputs / 'engineering-calculations.json').read_bytes())
+            self.assertEqual(Fraction(calculated['values']['i2c_rise_time']['value']), expected)
+            self.assertIn((cap + '.00\u00a0pF').encode(), (inputs / 'spec.md').read_bytes())
+            self.assertIn((cap + '.00\u00a0pF per line').encode(), (inputs / 'OPERATING.md').read_bytes())
+            crosswalk = json.loads((inputs / 'preparation/source-map.json').read_bytes())
+            self.assertEqual(crosswalk['capacitance_pf'], cap)
+            self.assertEqual(crosswalk['operating_supplement']['status'],
+                             'retained_bound' if cap == '100' else 'superseded_bound')
+            spec = (inputs / 'spec.md').read_bytes()
+            record = spec_record.verify((inputs / 'spec-record.json').read_bytes(), spec)
+            for row in record['requirements'] + record['prose']:
+                locator = row['locator']
+                self.assertEqual(spec_record.sha256(spec[locator['byte_start']:locator['byte_end']]),
+                                 row['text_sha256'])
+            for name in ('circuit.json', 'layout.json', 'groups.json', 'analysis/geometry_model.py'):
+                self.assertEqual((inputs / name).read_bytes(), (BASE / name).read_bytes())
+        self.assertEqual(len(identities), 3)
+
+    def test_canonical_precision_limit_does_not_round_calculation_or_source(self):
+        cap = '100.' + '0' * 24 + '1'
+        with localcontext() as context:
+            context.prec = 6
+            out, report = self.prepare(brief(cap), 'precision')
+        inputs = out / 'inputs'
+        operand = json.loads((inputs / 'analysis/electrical-intervals.json').read_bytes())['parameters']['bus_c']
+        self.assertEqual(operand['max'], cap + 'e-12 F')
+        expected = Fraction(8473, 10000) * 2222 * Fraction(Decimal(cap)) / 10**12
+        calculated = json.loads((inputs / 'engineering-calculations.json').read_bytes())
+        self.assertEqual(Fraction(calculated['values']['i2c_rise_time']['value']), expected)
+        self.assertIn(cap.encode(), (inputs / 'spec.md').read_bytes())
+        self.assertEqual(report['recipe']['helpers']['agent_ee.catalog'],
+                         spec_record.sha256((ROOT / 'src/agent_ee/catalog.py').read_bytes()))

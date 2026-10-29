@@ -6,7 +6,7 @@ docs/acquisition-prepare.md. All output is staged before publication.
 """
 import argparse
 import copy
-from decimal import Decimal
+from decimal import Decimal, Inexact, localcontext
 import json
 import os
 from pathlib import Path
@@ -15,7 +15,7 @@ import shutil
 import stat
 import tempfile
 
-from . import build_plan, profiles, requirement_map, spec_record, storage, typed_overlay
+from . import build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -46,6 +46,12 @@ class PreparationRefused(ValueError):
         super().__init__(message)
         self.report = dict(outcome=outcome, findings=[dict(
             code=code, message=message, byte_start=start, byte_end=end)])
+
+
+def _capacitance_text(value):
+    """Remove spelling-only padding without context-sensitive Decimal.normalize."""
+    text = format(value, 'f')
+    return text.rstrip('0').rstrip('.') if '.' in text else text
 
 
 def parse_brief(raw):
@@ -80,11 +86,18 @@ def parse_brief(raw):
         raise PreparationRefused(code, 'supply exactly one total-line capacitance bound',
                                  start=bounds[0]['span'][0], end=bounds[-1]['span'][1], outcome='refused')
     selected = bounds[0]
-    if selected['value'] not in (Decimal(100), Decimal(150)):
+    if not Decimal(100) <= selected['value'] <= Decimal(150):
         raise PreparationRefused('unsupported_fixed_recipe_bound',
-            'this captured fixed-pullup recipe supports only control 100 pF or variant 150 pF; '
+            'this captured fixed-pullup recipe supports total line capacitance from 100 through 150 pF inclusive; '
             'no alternative part or broader model applicability is inferred',
             start=selected['span'][0], end=selected['span'][1], outcome='refused')
+    try:
+        catalog.decimal_number(_capacitance_text(selected['value']))
+    except ValueError as exc:
+        raise PreparationRefused('unsupported_fixed_recipe_bound',
+            'capacitance exceeds the existing interval checker precision of 28 canonical decimal digits; '
+            'leading integer zeros and trailing fractional zeros do not count',
+            start=selected['span'][0], end=selected['span'][1], outcome='refused') from exc
     return dict(selected, adoption_span=adoption[0])
 
 
@@ -154,6 +167,7 @@ def _revise_overlay(overlay, position, capacitance):
 
 
 def _write_revision(base, revised, selected, overlay):
+    capacitance = _capacitance_text(selected['value'])
     old_spec = (base / 'spec.md').read_bytes()
     new_spec, position = _render_spec(old_spec, selected['quantity'])
     old_record = spec_record.verify((base / 'spec-record.json').read_bytes(), old_spec)
@@ -167,15 +181,18 @@ def _write_revision(base, revised, selected, overlay):
     for name in ('parts.json', 'electrical-locality.json', 'placement.json', 'analysis/electrical-intervals.json'):
         document = _source_bindings(json.loads((base / name).read_bytes()), old_spec, new_spec, position)
         if name.startswith('analysis/'):
-            cap = format(selected['value'].normalize(), 'f')
-            document['parameters']['bus_c'].update(min=cap + 'e-12 F', max=cap + 'e-12 F')
+            document['parameters']['bus_c'].update(min=capacitance + 'e-12 F', max=capacitance + 'e-12 F')
         (revised / name).write_bytes(json_bytes(document))
-    capacitance = format(selected['value'].normalize(), 'f')
     operating = (base / 'OPERATING.md').read_text()
     if operating.count('100 pF per line') != 1:
         raise ValueError('captured operating capacitance instruction differs from this recipe')
     (revised / 'OPERATING.md').write_text(operating.replace('100 pF per line', selected['quantity'] + ' per line'))
-    rise = Decimal('.8473') * Decimal('2222') * selected['value'] * Decimal('1e-12')
+    # 28 admitted coefficient digits plus the two four-digit factors need at most 36.
+    with localcontext() as context:
+        context.prec = 40
+        context.traps[Inexact] = True
+        rise = Decimal('.8473') * Decimal('2222') * Decimal(capacitance) * Decimal('1e-12')
+        rise_ns = rise * Decimal('1e9')
     calculations = json.loads((base / 'engineering-calculations.json').read_bytes())
     calculations['values']['i2c_rise_time'] = dict(value=str(rise), unit='s',
         basis=f'Captured 30..70 percent RC model, total {capacitance} pF, Rmax 2222 ohm; not a waveform measurement')
@@ -186,7 +203,7 @@ def _write_revision(base, revised, selected, overlay):
     review = (base / 'ENGINEERING-REVIEW.md').read_text()
     if review.count('At100pF') != 1 or review.count('188.27ns') != 1:
         raise ValueError('captured engineering narrative differs from this recipe')
-    review = review.replace('At100pF', f'At{capacitance}pF').replace('188.27ns', f'{rise * Decimal("1e9"):f}ns')
+    review = review.replace('At100pF', f'At{capacitance}pF').replace('188.27ns', f'{rise_ns:f}ns')
     (revised / 'ENGINEERING-REVIEW.md').write_text(
         'Preparation transcription only: this inherited narrative is not independent review, judgment or acceptance.\n\n' + review)
     overlay = _revise_overlay(overlay, position, capacitance)
@@ -242,11 +259,11 @@ def _source_map(raw, selected, original_record, record):
     return dict(reference=REFERENCE, brief_sha256=spec_record.sha256(raw),
         original_spec=original_record['spec'], derived_spec=record['spec'],
         adoption_span=selected['adoption_span'], capacitance_span=selected['span'],
-        capacitance_pf=format(selected['value'].normalize(), 'f'),
+        capacitance_pf=_capacitance_text(selected['value']),
         changed_requirement='ACQ-ELEC-5', fields=['analysis/electrical-intervals.json#/parameters/bus_c'],
         operating_supplement=dict(path='operating-supplement/ADS1115-OPERATING.md',
             sha256=spec_record.sha256(supplement), byte_start=start, byte_end=start + len(old_bound),
-            status='superseded_bound' if selected['value'] == 150 else 'retained_bound',
+            status='superseded_bound' if selected['value'] != 100 else 'retained_bound',
             preservation='Power-up and conversion timing/sequence instructions remain in force'),
         requirements=[dict(id=r['id'], original=originals[r['id']]['locator'],
                            derived=r['locator'], text_sha256=r['text_sha256'])
@@ -342,7 +359,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         source_inventory_sha256=spec_record.sha256(json_bytes(before)),
         overlay_sha256=spec_record.sha256(overlay_raw), producer_sha256=spec_record.sha256(Path(__file__).read_bytes()),
         helpers={module.__name__: spec_record.sha256(Path(module.__file__).read_bytes())
-                 for module in (build_plan, requirement_map, spec_record, storage, typed_overlay)},
+                 for module in (build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
         additions={key: spec_record.sha256(json_bytes(files)) for key, files in additions.items()})
     if review_context is not None:
         recipe['review_context'] = review_context

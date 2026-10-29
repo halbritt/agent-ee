@@ -17,8 +17,13 @@ Total I2C line capacitance shall be at most 100 pF per line, including board, ho
 Each nonblank line must be exactly one of these sentences. Surrounding whitespace
 and blank lines are permitted. The quantity accepts ordinary decimal spelling
 (`150.00 pF`) and whitespace including a nonbreaking space before `pF`. Its exact
-spelling is retained in the generated specification. Only values numerically
-equal to **100 or 150 pF** are supported. Missing reference adoption or a missing
+spelling is retained in the generated specification. Finite decimal bounds in
+the continuous **100 through 150 pF inclusive** envelope are supported. The
+existing interval checker limits the canonical decimal coefficient to 28 digits
+(three integer digits and up to 25 fractional digits). Leading integer zeros and
+trailing fractional zeros are ignored for that check, so previously accepted
+zero-padded 100/150 spellings remain accepted. Excess precision refuses with
+`unsupported_fixed_recipe_bound`; it is never silently rounded. Missing reference adoption or a missing
 bound is unresolved. Unknown text, another reference, cable-only capacitance,
 ambiguous values and additional changes refuse. Duplicate or conflicting bounds
 refuse. There is no implicit default, unanswered decision, or generic prose parser.
@@ -125,6 +130,17 @@ total bus-capacitance operand. The retained worst-case RC model predicts
 188.27006 ns at 100 pF and 282.40509 ns at 150 pF. These calculations do not prove
 physical host/cable compliance or broader model applicability. A rejected
 200 pF request concerns this fixed recipe, not all possible acquisition designs.
+For positive fixed pullup resistance, the authored relation
+`rise = .8473 * R * C` is nondecreasing in total capacitance. The existing
+interval checker proves this monotonicity over 100..150 pF and the retained
+2178..2222 ohm pullup interval; the maximum is 282.40509 ns at the upper
+endpoint, below the unchanged 300 ns limit. This justifies interpolation within
+the declared model, not new components, temperature, load or host applicability.
+The preparer uses exact canonical operand text and a local 40-digit calculation
+context with inexact arithmetic trapped: the 28-digit capacitance coefficient
+and two four-digit factors need at most 36 digits. Ambient Decimal precision
+therefore cannot silently round the captured operand or RC transcription.
+Control 100 and variant 150 are known development cases, not unseen evaluation.
 
 Only the operating supplement's old 100 pF bound is superseded by the selected
 variant. Its power-up and conversion sequencing instructions stay in force, and
