@@ -117,6 +117,91 @@ directory but are never copied into repair inputs. Unsafe entries are not read
 or hashed; the report binds the rejection class. Unexpected harness exceptions
 propagate; they cannot become passes.
 
+## Enclosing case budget
+
+`run` and `run_task` use one monotonic case clock across setup, generation,
+checks, publication and retries. `--timeout` remains a per-generation and
+per-evaluation ceiling; it never extends the enclosing deadline. Evaluation's
+ceiling now starts before its input/runtime capture, rather than after capture.
+The additional public options (Python keywords use underscores) are:
+
+| CLI option | Default | Meaning |
+| --- | --- | --- |
+| `--case-timeout` | `2 * attempts * timeout` | Positive integer seconds for the entire case, at least 2. |
+| `--grading-reserve` | `timeout` | Integer seconds unavailable to generation; at least 1 and less than case timeout. |
+| `--max-work` | `2 * attempts` | Integer phase-admission credits, at least 2. |
+
+The original attempts range/default, 1..3/default3, remains. The ZeroASIC
+campaign explicitly supplies `--attempts 2`; it is not silently inferred.
+Choose calibrated case/reserve values explicitly for qualification. Very small
+budgets can refuse before launch: native runs retain their existing one-second
+launch floor and checks retain their five-second minimum admission window.
+
+A generation credit covers the **whole sandboxed generation subtree**, including
+its preparation, native build, review and internal repairs. A grading credit
+covers one evaluation phase, including its runtime probes and checks. This is
+a trusted coordinator phase counter, not a count of internal native calls,
+provider calls or tokens. Those measurements remain unknown without a separately
+qualified live adapter; this feature adds no provider integration. Credits are
+charged before phase work and are never refunded after failures/timeouts.
+Generation needs two remaining credits, preserving the last credit for grading.
+An odd work cap can therefore leave an unused final grading credit.
+
+Every generation is clamped to original `start + case_timeout - grading_reserve`.
+Grading can use the remaining original case deadline, subject to its own timeout
+ceiling. An intermediate grade can consume that final reserve, but then no repair
+is admitted. A child/retry cannot obtain a fresh allowance. Native setup keeps
+the absolute cutoff, including a late sandbox/host launch; nested native calls
+on the same/copied context cannot widen its deadline or replace its cancellation
+handle. The supported generation sandbox's PID namespace contains subprocesses;
+this is not a claim to contain arbitrary detached host workloads.
+
+The API additionally accepts `cancel=executor.Cancellation()` in `run_task`,
+`evaluate` and `checks.run_checks`. `evaluate(..., deadline=ABSOLUTE_MONOTONIC)`
+clamps its whole operation to the earlier of that deadline and its timeout.
+`native_run.using(deadline=..., cancel=...)` scopes these existing native limits
+without changing current adapter routing; explicitly supplied adapters still
+work as before. Delegated checks retain the same cancellation handle. Neither
+context variables nor this credit counter are a cross-process token meter.
+
+`trial.json` retains its `agent-ee.generation-trial/1` schema and existing
+`generator_sha256`/`evaluations` fields. It additionally records task pins,
+limits, original deadlines, elapsed time, work/attempt admissions and an ordered
+`attempt_records` list. Each attempt is persisted **before preparation**; its
+actual generation status, error and nullable evaluation report remain recorded.
+Final status is `completed`, `attempts_exhausted`, `budget_exhausted`, `cancelled`,
+`interrupted` or `error`. Count started attempts from `attempts_started`, not the
+number of reports: exhaustion can return an empty report list or leave an
+incomplete final attempt. Unexpected exceptions/interrupts still propagate after
+retaining that ledger. Scratch is never reused to restart the clock.
+
+File capture/hashing and terminal metadata use cooperative deadline checkpoints;
+a filesystem call already in progress and existing process cleanup/output-drain
+grace can finish past the cutoff. They grant no further productive work. Late
+grading/publication never supplies case success. A separate externally bounded
+native qualification must demonstrate actual elapsed/descendant cleanup bounds;
+this source feature does not claim hard real-time preemption of Python/file I/O.
+
+New run-task reports bind their case/attempt in the existing evaluation binding.
+The existing series/1 entry optionally adds `case_files`: the ledger plus records
+for **all** started attempts, not only the selected one; unavailable records are
+explicit nulls. Frozen series verification detects edits/deletions to earlier
+failed attempts and the ledger. A selected passing report is refused while its
+case is incomplete/exhausted/late. Historical reports without case bindings keep
+the previous entry shape and verification; no prior evidence is rewritten.
+Aggregation still counts one selected report per task, while the case ledger
+retains the attempt denominator and selection history. It does not turn missing
+reports into success or implement unsupported-refusal evaluation.
+
+For example, a root-authorized invocation can add these options to the ordinary
+`run` command, retaining its task/generator/source/runtime pins:
+
+```sh
+--attempts 2 --timeout 120 --case-timeout 400 --grading-reserve 60 --max-work 4
+```
+
+These example numbers are configuration, not measured native qualification.
+
 ## Scores and immutable reports
 
 A check contributes pass/fail only for `ok/pass` or `ok/defect`. Informational,

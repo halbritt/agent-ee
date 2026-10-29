@@ -193,94 +193,114 @@ def publish_report(store, report):
 
 
 def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', timeout=120,
-             expect_pins=None, execution_work=None):
+             expect_pins=None, execution_work=None, deadline=None, cancel=None, _case=None):
     """Evaluate one retained output; generator result.json claims are never read."""
     from .checks import run_checks
     if type(timeout) is not int or timeout < 1:
         raise ValueError('timeout must be a positive integer')
-    if generation_execution not in ('ok', 'failed'):
-        raise ValueError('generation execution must be ok or failed')
-    task_root, outputs, trial = Path(task_root), Path(outputs), Path(trial)
-    task = pinned_task(task_root, expect_pins=expect_pins)
-    observed, output_error = output_files(outputs)
-    if output_error:
-        generation_execution = 'failed'
-    missing = [] if output_error else sorted(set(task['deliverables']) - set(observed))
-    selected = {k: observed[k] for k in task['deliverables'] if k in observed}
-    environment = evaluator_identity()
-    trial.mkdir(parents=True, exist_ok=False)
-    generation_records = None
-    if execution_work is not None:
-        generation = trial / 'generation'
-        generation.mkdir()
-        for name in RECORDS:
-            source = Path(execution_work) / name
-            if source.is_symlink() or not source.is_file() or source.stat().st_nlink != 1:
-                raise ValueError('non-ordinary executor record')
-            shutil.copyfile(source, generation / name)
-        generation_records = tree_files(generation)
-        generation_execution = executor_outcome(generation)
+    deadline = min(time.monotonic() + timeout, deadline) if deadline is not None else time.monotonic() + timeout
+    with native_run.using(deadline=deadline, cancel=cancel):
+        def checkpoint():
+            if cancel is not None and cancel.cancelled.is_set():
+                raise native_run.DeadlineExhausted('evaluation cancelled')
+            if time.monotonic() >= deadline:
+                raise native_run.DeadlineExhausted('evaluation deadline exhausted')
+        checkpoint()
+        if generation_execution not in ('ok', 'failed'):
+            raise ValueError('generation execution must be ok or failed')
+        task_root, outputs, trial = Path(task_root), Path(outputs), Path(trial)
+        task = pinned_task(task_root, expect_pins=expect_pins)
+        checkpoint()
+        observed, output_error = output_files(outputs)
         if output_error:
             generation_execution = 'failed'
-    shutil.copytree(task_root, trial / 'task')
-    if pinned_task(trial / 'task')['files'] != task['files']:
-        raise ValueError('task changed during capture')
-    checks = []
-    capture_error = None
-    if not missing and output_error is None:
-        inputs = trial / 'evaluation-inputs'
-        shutil.copytree(task_root / 'evaluator', inputs)
+        missing = [] if output_error else sorted(set(task['deliverables']) - set(observed))
+        selected = {k: observed[k] for k in task['deliverables'] if k in observed}
+        environment = evaluator_identity()
+        checkpoint()
+        trial.mkdir(parents=True, exist_ok=False)
+        generation_records = None
+        if execution_work is not None:
+            generation = trial / 'generation'
+            generation.mkdir()
+            for name in RECORDS:
+                checkpoint()
+                source = Path(execution_work) / name
+                if source.is_symlink() or not source.is_file() or source.stat().st_nlink != 1:
+                    raise ValueError('non-ordinary executor record')
+                shutil.copyfile(source, generation / name)
+            generation_records = tree_files(generation)
+            generation_execution = executor_outcome(generation)
+            if output_error:
+                generation_execution = 'failed'
+        checkpoint()
+        shutil.copytree(task_root, trial / 'task')
+        if pinned_task(trial / 'task')['files'] != task['files']:
+            raise ValueError('task changed during capture')
+        checks = []
+        capture_error = None
+        if not missing and output_error is None:
+            inputs = trial / 'evaluation-inputs'
+            shutil.copytree(task_root / 'evaluator', inputs)
+            if generation_records is not None:
+                shutil.copytree(trial / 'generation', inputs / '.generation')
+            for rel in task['deliverables']:
+                checkpoint()
+                dest = inputs / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(outputs / rel, dest)
+                if digest(dest) != selected[rel]:
+                    raise ValueError('output changed during capture')
+            scope = {**task['scope'], 'inputs': [
+                {'path': 'evaluation-inputs/' + rel, 'at': rel} for rel in tree_files(inputs)]}
+            write_json(trial / 'scope.json', scope)
+            run = trial / 'run'
+            run.mkdir()
+            # A generated malformed native file may fail scope/3 capture. Keep that failure unknown.
+            try:
+                checkpoint()
+                capture(trial / 'scope.json', run)
+            except (ValueError, FileNotFoundError) as exc:
+                capture_error = type(exc).__name__
+            else:
+                checkpoint()
+                checks = run_checks(run, deadline, **({} if cancel is None else {"cancel": cancel}))
+                freeze_evidence(run, checks)
+                verify_evidence(run, checks, required=True)
+        checkpoint()
+        current, current_error = output_files(outputs)
+        if (pinned_task(task_root)['files'] != task['files'] or
+                (current, current_error) != (observed, output_error)):
+            raise ValueError('task or output changed during evaluation')
+        if evaluator_identity() != environment:
+            raise ValueError('evaluator runtime changed during evaluation')
+        report = {'schema': 'agent-ee.generation-evaluation/1', 'task': task['id'],
+                  'domain': task['domain'], 'difficulty': task['difficulty'], 'fingerprint': task['fingerprint'],
+                  'binding': {'task_files': task['files'], 'outputs': selected, 'evaluator': environment,
+                              'generation_execution': generation_execution, 'timeout_s': timeout,
+                              'output_error': output_error},
+                  'generation': {'execution': generation_execution, 'missing_deliverables': missing,
+                                 'output_error': output_error},
+                  'evaluation': {'capture_error': capture_error,
+                                 'checks': [{k: c[k] for k in ('id', 'kind', 'execution', 'outcome')} for c in checks]},
+                  'scoring': score(task['rules'], checks, missing)}
         if generation_records is not None:
-            shutil.copytree(trial / 'generation', inputs / '.generation')
-        for rel in task['deliverables']:
-            dest = inputs / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(outputs / rel, dest)
-            if digest(dest) != selected[rel]:
-                raise ValueError('output changed during capture')
-        scope = {**task['scope'], 'inputs': [
-            {'path': 'evaluation-inputs/' + rel, 'at': rel} for rel in tree_files(inputs)]}
-        write_json(trial / 'scope.json', scope)
-        run = trial / 'run'
-        run.mkdir()
-        # A generated malformed native file may fail scope/3 capture. Keep that failure unknown.
-        try:
-            capture(trial / 'scope.json', run)
-        except (ValueError, FileNotFoundError) as exc:
-            capture_error = type(exc).__name__
-        else:
-            checks = run_checks(run, time.monotonic() + timeout)
-            freeze_evidence(run, checks)
-            verify_evidence(run, checks, required=True)
-    current, current_error = output_files(outputs)
-    if (pinned_task(task_root)['files'] != task['files'] or
-            (current, current_error) != (observed, output_error)):
-        raise ValueError('task or output changed during evaluation')
-    if evaluator_identity() != environment:
-        raise ValueError('evaluator runtime changed during evaluation')
-    report = {'schema': 'agent-ee.generation-evaluation/1', 'task': task['id'],
-              'domain': task['domain'], 'difficulty': task['difficulty'], 'fingerprint': task['fingerprint'],
-              'binding': {'task_files': task['files'], 'outputs': selected, 'evaluator': environment,
-                          'generation_execution': generation_execution, 'timeout_s': timeout,
-                          'output_error': output_error},
-              'generation': {'execution': generation_execution, 'missing_deliverables': missing,
-                             'output_error': output_error},
-              'evaluation': {'capture_error': capture_error,
-                             'checks': [{k: c[k] for k in ('id', 'kind', 'execution', 'outcome')} for c in checks]},
-              'scoring': score(task['rules'], checks, missing)}
-    if generation_records is not None:
-        report['binding']['generation_records'] = generation_records
-    report['result'] = combined_result(generation_execution, report['scoring'])
-    path = publish_report(store, report)
-    receipt = {'schema': 'agent-ee.generation-evaluation-record/1',
-               'report': str(path.resolve()), 'report_sha256': digest(path)}
-    write_json(trial / 'evaluation.json', receipt)
-    # Keep mutable location metadata outside the deterministic report bytes.
-    records = path.parent / 'trials'
-    records.mkdir(exist_ok=True)
-    write_json(records / (identity(str(trial.resolve())) + '.json'),
-               {'trial': str(trial.resolve()), **receipt})
-    return path
+            report['binding']['generation_records'] = generation_records
+        if _case is not None:
+            report['binding']['case'] = _case
+        checkpoint()
+        report['result'] = combined_result(generation_execution, report['scoring'])
+        path = publish_report(store, report)
+        receipt = {'schema': 'agent-ee.generation-evaluation-record/1',
+                   'report': str(path.resolve()), 'report_sha256': digest(path)}
+        write_json(trial / 'evaluation.json', receipt)
+        # Keep mutable location metadata outside the deterministic report bytes.
+        records = path.parent / 'trials'
+        records.mkdir(exist_ok=True)
+        write_json(records / (identity(str(trial.resolve())) + '.json'),
+                   {'trial': str(trial.resolve()), **receipt})
+        checkpoint()
+        return path
 
 
 def executor_outcome(root):
@@ -306,56 +326,136 @@ def combined_result(generation_execution, scoring):
             'overall_pass': False if generation_execution == 'failed' else scoring['overall_pass']}
 
 
-def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, expect_pins=None):
-    """One initial attempt plus at most two repairs, each in its own offline sandbox."""
+def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, expect_pins=None,
+             case_timeout=None, grading_reserve=None, max_work=None, cancel=None):
+    """One finite case; a work credit admits one generation subtree or grading phase.
+
+    The generation sandbox's PID namespace contains its child preparation/build/review.
+    This counter is phase admissions, not a token or internal native-call meter.
+    """
     if type(attempts) is not int or not 1 <= attempts <= 3:
         raise ValueError('attempts must be 1..3')
     if type(timeout) is not int or timeout < 1:
         raise ValueError('timeout must be a positive integer')
+    case_timeout = 2 * attempts * timeout if case_timeout is None else case_timeout
+    grading_reserve = timeout if grading_reserve is None else grading_reserve
+    max_work = 2 * attempts if max_work is None else max_work
+    if type(case_timeout) is not int or case_timeout < 2:
+        raise ValueError('case_timeout must be an integer >= 2')
+    if type(grading_reserve) is not int or not 1 <= grading_reserve < case_timeout:
+        raise ValueError('grading_reserve must be an integer in [1, case_timeout)')
+    if type(max_work) is not int or max_work < 2:
+        raise ValueError('max_work must be an integer >= 2')
+    started = time.monotonic()
+    deadline, productive = started + case_timeout, started + case_timeout - grading_reserve
+    cancel = cancel if cancel is not None else native_run.Cancellation()
     task_root, scratch = Path(task_root), Path(scratch)
     task = pinned_task(task_root, expect_pins=expect_pins)
     scratch.mkdir(parents=True, exist_ok=False)
-    public = scratch / 'public'
-    public.mkdir()
-    shutil.copyfile(task_root / task['prompt'], public / 'prompt.md')
-    shutil.copyfile(generator, public / 'generator.py')
-    generator_hash = digest(public / 'generator.py')
-    reports = []
-    previous = None
-    for index in range(attempts):
-        work = scratch / f'attempt-{index + 1}'
-        work.mkdir()
-        (work / 'output').mkdir()
-        if previous is not None:
-            prior = strict_json(reports[-1].read_bytes())
-            if previous.exists() and prior['generation']['output_error'] is None:
-                shutil.copytree(previous, work / 'previous')
-            else:
-                (work / 'previous').mkdir()
-            write_json(work / 'feedback.json', {
-                'checks': prior['evaluation']['checks'],
-                'missing_deliverables': prior['generation']['missing_deliverables']})
-        record = native_run.run(
-            native_run.Intent(
-                'generation',
+    ledger = {'schema': 'agent-ee.generation-trial/1', 'generator_sha256': None, 'evaluations': [],
+              'task_pins': task['files']['pins.json'], 'limits': {'attempts': attempts, 'timeout_s': timeout,
+              'case_timeout_s': case_timeout, 'grading_reserve_s': grading_reserve, 'max_work': max_work},
+              'started': started, 'deadline': deadline, 'productive_deadline': productive,
+              'work_started': 0, 'attempts_started': 0, 'attempt_records': [], 'status': 'running'}
+    def save():
+        ledger['elapsed_s'] = time.monotonic() - started
+        write_json(scratch / 'trial.json', ledger)
+    def admit(phase):
+        if cancel.cancelled.is_set():
+            raise native_run.DeadlineExhausted('case cancelled')
+        limit = productive if phase == 'generation' else deadline
+        if time.monotonic() >= limit or ledger['work_started'] >= max_work - (phase == 'generation'):
+            raise native_run.DeadlineExhausted('case ' + phase + ' time/work exhausted')
+        ledger['work_started'] += 1
+        save()  # No refund after a failed launch, timeout, or missing output.
+    reports, previous = [], None
+    try:
+        if cancel.cancelled.is_set() or time.monotonic() >= productive:
+            raise native_run.DeadlineExhausted('case stopped before public preparation')
+        public = scratch / 'public'
+        public.mkdir()
+        shutil.copyfile(task_root / task['prompt'], public / 'prompt.md')
+        shutil.copyfile(generator, public / 'generator.py')
+        ledger['generator_sha256'] = digest(public / 'generator.py')
+        save()
+        for index in range(attempts):
+            # Keep the last work credit and final wall reserve for grading.
+            if (cancel.cancelled.is_set() or time.monotonic() >= productive or
+                    ledger['work_started'] >= max_work - 1):
+                ledger['status'] = 'cancelled' if cancel.cancelled.is_set() else 'budget_exhausted'
+                break
+            entry = {'attempt': index + 1, 'status': 'preparing', 'evaluation_report': None,
+                     'generation_execution': None, 'error': None}
+            ledger['attempt_records'].append(entry)
+            ledger['attempts_started'] += 1
+            save()  # Count preparation before touching its work directory.
+            admit('generation')
+            work = scratch / f'attempt-{index + 1}'
+            work.mkdir()
+            (work / 'output').mkdir()
+            if previous is not None:
+                prior = strict_json(reports[-1].read_bytes())
+                if previous.exists() and prior['generation']['output_error'] is None:
+                    shutil.copytree(previous, work / 'previous')
+                else:
+                    (work / 'previous').mkdir()
+                write_json(work / 'feedback.json', {'checks': prior['evaluation']['checks'],
+                    'missing_deliverables': prior['generation']['missing_deliverables']})
+            entry['status'] = 'generating'
+            save()
+            record = native_run.run(native_run.Intent('generation',
                 ['/usr/bin/python3', '/candidate/generator.py', '/candidate/prompt.md', '/work/output'],
-                timeout=timeout,
-            ),
-            inputs=public,
-            work=work,
-        )
-        path = evaluate(task_root, work / 'output', scratch / f'evaluation-{index + 1}', store,
-                        generation_execution='ok' if record['execution'] == 'ok' else 'failed', timeout=timeout,
-                        expect_pins=task['files']['pins.json'], execution_work=work)
-        reports.append(path)
-        # Repair feedback reveals only check status, never evaluator rules or criterion text.
-        report = strict_json(path.read_bytes())
-        if record['execution'] == 'ok' and report['scoring']['overall_pass'] is True:
-            break
-        previous = work / 'output'
-    write_json(scratch / 'trial.json', {'schema': 'agent-ee.generation-trial/1',
-                                      'generator_sha256': generator_hash,
-                                      'evaluations': [str(p) for p in reports]})
+                timeout=timeout), inputs=public, work=work, deadline=productive, cancel=cancel)
+            entry['generation_execution'] = record['execution']
+            entry['status'] = 'grading'
+            save()
+            # Cancellation retains the generation attempt without claiming an evaluation.
+            if not cancel.cancelled.is_set():
+                admit('grading')
+            else:
+                entry['status'] = 'cancelled'
+                ledger['status'] = 'cancelled'
+                break
+            path = evaluate(task_root, work / 'output', scratch / f'evaluation-{index + 1}', store,
+                generation_execution='ok' if record['execution'] == 'ok' else 'failed', timeout=timeout,
+                expect_pins=task['files']['pins.json'], execution_work=work, deadline=deadline, cancel=cancel,
+                _case={'trial': str(scratch.resolve()), 'attempt': index + 1})
+            reports.append(path)
+            ledger['evaluations'].append(str(path))
+            entry.update(status='evaluated', evaluation_report=str(path))
+            report = strict_json(path.read_bytes())
+            if time.monotonic() >= deadline or cancel.cancelled.is_set():
+                raise native_run.DeadlineExhausted('case expired during grading/publication')
+            if record['execution'] == 'ok' and report['result']['overall_pass'] is True:
+                ledger['status'] = 'completed'
+                break
+            previous = work / 'output'
+        else:
+            ledger['status'] = 'attempts_exhausted'
+    except native_run.DeadlineExhausted as exc:
+        ledger['status'] = 'cancelled' if cancel.cancelled.is_set() else 'budget_exhausted'
+        if ledger['attempt_records']:
+            ledger['attempt_records'][-1].update(status=ledger['status'], error=str(exc))
+        # Only the enclosing hard expiry cancels the case; a generation cutoff leaves grading time.
+        if time.monotonic() >= deadline:
+            cancel.cancel()
+    except BaseException as exc:
+        ledger['status'] = ('cancelled' if cancel.cancelled.is_set() else 'interrupted') if isinstance(exc, KeyboardInterrupt) else 'error'
+        if ledger['attempt_records']:
+            ledger['attempt_records'][-1].update(status=ledger['status'], error=type(exc).__name__ + ': ' + str(exc))
+        cancel.cancel()
+        raise
+    finally:
+        for entry in ledger['attempt_records']:
+            record_path = scratch / f"attempt-{entry['attempt']}" / 'execution.json'
+            if entry['generation_execution'] is None and record_path.is_file() and not record_path.is_symlink():
+                entry['generation_execution'] = strict_json(record_path.read_bytes()).get('execution')
+        if ledger['status'] == 'completed' and (time.monotonic() >= deadline or cancel.cancelled.is_set()):
+            ledger['status'] = 'budget_exhausted' if time.monotonic() >= deadline else 'cancelled'
+        save()
+        if ledger['status'] == 'completed' and time.monotonic() >= deadline:
+            ledger['status'] = 'budget_exhausted'
+            save()
     return reports
 
 
@@ -415,6 +515,7 @@ def recorded_evaluation(path, *, expected=None):
             if expected is not None and series_entry(path, report, trial) != expected:
                 raise ValueError('external series evidence digest mismatch')
             replay_report(trial, report)
+            case_files(report, path)
             return report, trial
     raise ValueError('report is not bound to a recorded evaluation trial')
 
@@ -423,13 +524,51 @@ def recorded_report(path):
     return recorded_evaluation(path)[0]
 
 
+def case_files(report, path):
+    """Bind all admitted attempts alongside the selected report, including absent records."""
+    case = report['binding'].get('case')
+    if case is None:
+        return None
+    root = Path(case['trial'])
+    ledger = strict_json((root / 'trial.json').read_bytes())
+    entries = ledger['attempt_records']
+    if (ledger['schema'] != 'agent-ee.generation-trial/1' or
+            ledger['task_pins'] != report['binding']['task_files']['pins.json'] or
+            ledger['attempts_started'] != len(entries) or
+            [e['attempt'] for e in entries] != list(range(1, len(entries) + 1)) or
+            not 1 <= case['attempt'] <= len(entries) or
+            Path(entries[case['attempt'] - 1]['evaluation_report'] or '').resolve() != Path(path).resolve()):
+        raise ValueError('selected report differs from case attempt ledger')
+    if report['result']['overall_pass'] is True and (ledger['status'] != 'completed' or
+            ledger['elapsed_s'] >= ledger['limits']['case_timeout_s']):
+        raise ValueError('exhausted or incomplete case cannot supply success')
+    names = ['trial.json']
+    for entry in entries:
+        n = entry['attempt']
+        names += [f'attempt-{n}/' + name for name in RECORDS]
+        names += [f'evaluation-{n}/evaluation.json']
+    files = {}
+    for name in names:
+        source = root / name
+        if source.is_symlink():
+            raise ValueError('non-ordinary case record')
+        if source.exists() and (not source.is_file() or source.stat().st_nlink != 1):
+            raise ValueError('non-ordinary case record')
+        files[name] = digest(source) if source.is_file() else None
+    return files
+
+
 def series_entry(path, report, trial):
     seal = trial / 'run/work/verification/evidence.json'
-    return {'binding_id': Path(path).parent.name, 'report_sha256': digest(path),
+    entry = {'binding_id': Path(path).parent.name, 'report_sha256': digest(path),
             'task_pins': report['binding']['task_files']['pins.json'],
             'evidence_sha256': digest(seal) if seal.exists() else None,
             'generation_files': tree_files(trial / 'generation')
             if 'generation_records' in report['binding'] else {}}
+    files = case_files(report, path)
+    if files is not None:
+        entry['case_files'] = files
+    return entry
 
 
 def freeze_series(paths, task_pins):
@@ -471,7 +610,8 @@ def expected_series(paths, manifest, expect_pins):
         raise ValueError('empty external series')
     expected = {}
     for entry in entries:
-        exact_fields(entry, ('binding_id', 'report_sha256', 'task_pins', 'evidence_sha256', 'generation_files'))
+        exact_fields(entry, ('binding_id', 'report_sha256', 'task_pins', 'evidence_sha256', 'generation_files',
+                            *(['case_files'] if 'case_files' in entry else [])))
         if entry['binding_id'] in expected or not entry['generation_files']:
             raise ValueError('duplicate or unauthenticated external series entry')
         expected[entry['binding_id']] = entry
@@ -581,6 +721,9 @@ def main(argv=None):
         run.add_argument('--' + name, required=True)
     run.add_argument('--attempts', type=int, default=3)
     run.add_argument('--timeout', type=int, default=120)
+    run.add_argument('--case-timeout', type=int, help='one enclosing case limit in seconds (default: 2*attempts*timeout)')
+    run.add_argument('--grading-reserve', type=int, help='final seconds unavailable to generation (default: timeout)')
+    run.add_argument('--max-work', type=int, help='case phase admissions: generation subtree or grading (default: 2*attempts)')
     run.add_argument('--expect-pins', help='externally retained SHA-256 of task pins.json')
     split = sub.add_parser('split')
     split.add_argument('--exclusions', required=True)
@@ -598,7 +741,8 @@ def main(argv=None):
     if args.command == 'run':
         result = [str(p) for p in run_task(args.task, args.generator, args.scratch, args.store,
                                          attempts=args.attempts, timeout=args.timeout,
-                                         expect_pins=args.expect_pins)]
+                                         expect_pins=args.expect_pins, case_timeout=args.case_timeout,
+                                         grading_reserve=args.grading_reserve, max_work=args.max_work)]
     elif args.command == 'split':
         result = split_tasks(args.tasks, strict_json(Path(args.exclusions).read_bytes()), seed=args.seed)
     elif args.command == 'freeze':

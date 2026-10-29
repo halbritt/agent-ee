@@ -5,6 +5,7 @@ import io
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from agent_ee.generation_benchmark import (aggregate, average_scores, evaluate, pinned_task, publish_report,
@@ -294,6 +295,281 @@ class ScoringTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), original)
 
 
+class CaseBudgetTests(unittest.TestCase):
+    def setUp(self):
+        from agent_ee import native_run
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.generator = self.root / 'generator.py'
+        self.generator.write_text('raise SystemExit(23)\n')
+        self.clock = 1000.0
+        self.generation_seconds = 1
+        self.grade_seconds = 0
+        self.grade_starts = []
+        self.execution = 'failed'
+        self.stack = contextlib.ExitStack()
+        self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch('time.monotonic', lambda: self.clock))
+        self.stack.enter_context(patch.object(benchmark, 'evaluator_identity', self.environment))
+        self.adapter = native_run.Recorded(self.generate)
+        self.stack.enter_context(native_run.using(self.adapter))
+
+    def environment(self):
+        self.grade_starts.append(self.clock)
+        self.clock += self.grade_seconds / 2
+        return {'authored': 'CPU evaluator identity'}
+
+    def generate(self, call):
+        from agent_ee import native_run
+        self.clock += min(self.generation_seconds, call.timeout)
+        return native_run.Outcome(execution='timeout' if self.generation_seconds >= call.timeout else self.execution,
+                                  exit_code=23, stderr=b'authored failed generator')
+
+    def run_case(self, **kwargs):
+        return run_task(FIXTURE, self.generator, self.root / 'trial', self.root / 'store',
+                        attempts=2, timeout=100, case_timeout=100, grading_reserve=20, **kwargs)
+
+    def ledger(self):
+        return read_json(self.root / 'trial/trial.json')
+
+    def test_generation_and_grading_share_one_clock_and_work_counter_across_retries(self):
+        self.generation_seconds = 25
+        self.grade_seconds = 10
+        reports = self.run_case()
+        self.assertEqual(len(reports), 2)
+        self.assertEqual([c.timeout for c in self.adapter.calls], [80, 45])
+        ledger = self.ledger()
+        self.assertEqual((ledger['attempts_started'], ledger['work_started']), (2, 4))
+        self.assertEqual(ledger['elapsed_s'], 70)
+        self.assertEqual(ledger['status'], 'attempts_exhausted')
+        self.assertTrue(all(read_json(p)['result']['overall_pass'] is False for p in reports))
+
+    def test_generation_stops_at_productive_cutoff_and_reserved_grading_still_runs(self):
+        self.generation_seconds = 1000
+        self.grade_seconds = 18
+        reports = self.run_case()
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(self.adapter.calls[0].timeout, 80)
+        self.assertEqual(self.grade_starts[0], 1080)
+        ledger = self.ledger()
+        self.assertEqual(ledger['elapsed_s'], 98)
+        self.assertEqual(ledger['status'], 'budget_exhausted')
+        self.assertEqual(ledger['attempt_records'][0]['generation_execution'], 'timeout')
+        self.assertFalse((self.root / 'trial/attempt-2').exists())
+        self.assertFalse(read_json(reports[0])['result']['overall_pass'])
+
+    def test_grading_exhaustion_keeps_started_attempt_and_partial_evaluation(self):
+        self.generation_seconds = 75
+        self.grade_seconds = 30
+        self.assertEqual(self.run_case(), [])
+        ledger = self.ledger()
+        self.assertEqual((ledger['attempts_started'], ledger['work_started']), (1, 2))
+        self.assertEqual(ledger['status'], 'budget_exhausted')
+        self.assertIsNone(ledger['attempt_records'][0]['evaluation_report'])
+        self.assertTrue((self.root / 'trial/attempt-1/execution.json').is_file())
+        self.assertTrue((self.root / 'trial/evaluation-1').is_dir())
+
+    def test_work_exhaustion_never_refunds_failed_generation_or_missing_output(self):
+        reports = self.run_case(max_work=2)
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(self.ledger()['work_started'], 2)
+        self.assertEqual(self.ledger()['attempts_started'], 1)
+        self.assertEqual(self.ledger()['status'], 'budget_exhausted')
+        self.assertEqual(read_json(reports[0])['generation']['missing_deliverables'], ['circuit.kicad_sch'])
+        self.assertFalse((self.root / 'trial/attempt-2').exists())
+
+    def test_unexpected_generation_error_retains_admission_before_propagating(self):
+        self.adapter.responder = lambda call: OSError('authored launch failure')
+        with self.assertRaisesRegex(OSError, 'authored launch failure'):
+            self.run_case()
+        ledger = self.ledger()
+        self.assertEqual((ledger['attempts_started'], ledger['work_started']), (1, 1))
+        self.assertEqual(ledger['status'], 'error')
+        self.assertIsNone(ledger['attempt_records'][0]['evaluation_report'])
+        self.assertIn('authored launch failure', ledger['attempt_records'][0]['error'])
+
+    def test_pre_cancelled_case_admits_no_attempt_or_public_preparation(self):
+        from agent_ee import native_run
+        cancel = native_run.Cancellation()
+        cancel.cancel()
+        self.assertEqual(self.run_case(cancel=cancel), [])
+        ledger = self.ledger()
+        self.assertEqual((ledger['status'], ledger['attempts_started'], ledger['work_started']),
+                         ('cancelled', 0, 0))
+        self.assertFalse((self.root/'trial/public').exists())
+        self.assertFalse(self.adapter.calls)
+
+    def test_cancellation_reaches_generation_and_retains_interrupted_admission(self):
+        from agent_ee import native_run
+        cancel = native_run.Cancellation()
+        def cancelled(call):
+            cancel.cancel()
+            return native_run.Outcome()
+        self.adapter.responder = cancelled
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_case(cancel=cancel)
+        ledger = self.ledger()
+        self.assertEqual(ledger['attempts_started'], 1)
+        self.assertIsNone(ledger['attempt_records'][0]['evaluation_report'])
+        self.assertEqual(read_json(self.root/'trial/attempt-1/execution.json')['execution'], 'interrupted')
+        self.assertEqual(len(self.adapter.calls), 1)
+
+    def test_cancel_during_grading_retains_case_and_cannot_start_retry(self):
+        from agent_ee import native_run
+        cancel = native_run.Cancellation()
+        def cancelled_identity():
+            cancel.cancel()
+            return {'authored': 'cancelled runtime probe'}
+        with patch.object(benchmark, 'evaluator_identity', cancelled_identity):
+            self.assertEqual(self.run_case(cancel=cancel), [])
+        ledger = self.ledger()
+        self.assertEqual((ledger['status'], ledger['attempts_started'], ledger['work_started']),
+                         ('cancelled', 1, 2))
+        self.assertEqual(ledger['attempt_records'][0]['generation_execution'], 'failed')
+        self.assertIsNone(ledger['attempt_records'][0]['evaluation_report'])
+        self.assertEqual(len(self.adapter.calls), 1)
+
+    def test_series_authenticates_all_started_attempts_including_failed_ones(self):
+        reports = self.run_case()
+        pins = {'original-series': digest(FIXTURE / 'pins.json')}
+        manifest = self.root / 'series.json'
+        write_json(manifest, benchmark.freeze_series([reports[-1]], pins))
+        anchor = digest(manifest)
+        entry = read_json(manifest)['evaluations'][0]
+        self.assertIn('attempt-1/execution.json', entry['case_files'])
+        self.assertIn('attempt-2/execution.json', entry['case_files'])
+        self.assertEqual([r['failed'] for r in aggregate([reports[-1]], manifest=manifest, expect_pins=anchor)['rows']], [1, 1])
+        (self.root / 'trial/attempt-1/stderr.log').write_text('changed earlier failed attempt')
+        with self.assertRaises(ValueError):
+            aggregate([reports[-1]], manifest=manifest, expect_pins=anchor)
+
+    def test_case_exhaustion_cannot_be_selected_as_success(self):
+        reports = self.run_case(max_work=2)
+        report = read_json(reports[0])
+        report['result']['overall_pass'] = True
+        with self.assertRaisesRegex(ValueError, 'case cannot supply success'):
+            benchmark.case_files(report, reports[0])
+
+    def test_invalid_case_limits_refuse_before_scratch_and_cli_threads_limits(self):
+        for kwargs in ({'case_timeout': 0}, {'case_timeout': True}, {'grading_reserve': 0},
+                       {'case_timeout': 100, 'grading_reserve': 100}, {'max_work': 1}, {'max_work': True}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                run_task(FIXTURE, self.generator, self.root/'unused', self.root/'store', **kwargs)
+        self.assertFalse((self.root/'unused').exists())
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(['run', '--task', str(FIXTURE), '--generator', str(self.generator),
+                  '--scratch', str(self.root/'cli'), '--store', str(self.root/'store'),
+                  '--attempts', '2', '--timeout', '10', '--case-timeout', '30',
+                  '--grading-reserve', '5', '--max-work', '2'])
+        ledger = read_json(self.root/'cli/trial.json')
+        self.assertEqual(ledger['limits'], {'attempts': 2, 'timeout_s': 10,
+            'case_timeout_s': 30, 'grading_reserve_s': 5, 'max_work': 2})
+
+
+class BudgetBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.clock = 1000.0
+        self.stack = contextlib.ExitStack()
+        self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch('time.monotonic', lambda: self.clock))
+
+    def test_nested_native_deadline_cannot_be_renewed(self):
+        from agent_ee import native_run
+        boundary = native_run.Recorded()
+        owner = self
+        class Outer:
+            def run(self, intent, **kwargs):
+                owner.clock += 20
+                return native_run.run(native_run.Intent('nested', ['authored'], timeout=1000, isolation='host'),
+                    work=owner.root/'nested', deadline=5000, adapter=boundary)
+        native_run.run(native_run.Intent('outer', ['authored'], timeout=1000),
+            work=self.root/'outer', deadline=1050, adapter=Outer())
+        self.assertEqual(boundary.calls[0].timeout, 30)
+        self.assertIsNone(native_run._deadline.get())
+
+    def test_limit_scope_preserves_routing_and_refuses_replacement_cancel(self):
+        from agent_ee import native_run
+        cancel = native_run.Cancellation()
+        adapter = native_run.Recorded()
+        with native_run.using(adapter), native_run.using(deadline=1050, cancel=cancel):
+            native_run.run(native_run.Intent('probe', ['authored'], timeout=1000, isolation='host'),
+                work=self.root/'probe', deadline=2000)
+            self.assertEqual(adapter.calls[0].timeout, 50)
+            with self.assertRaisesRegex(ValueError, 'enclosing cancellation'):
+                native_run.run(native_run.Intent('probe', ['authored'], isolation='host'),
+                    work=self.root/'replacement', cancel=native_run.Cancellation())
+            self.clock = 1050
+            with self.assertRaises(native_run.DeadlineExhausted):
+                native_run.run(native_run.Intent('probe', ['authored'], isolation='host'),
+                    work=self.root/'late', deadline=2000)
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertIsNone(native_run._deadline.get())
+        self.assertIsNone(native_run._cancel.get())
+
+    def test_sandbox_setup_consumes_original_deadline_and_refuses_late_spawn(self):
+        from agent_ee import native_run, executor
+        candidate = self.root/'candidate';candidate.mkdir()
+        def prepare(*a, **kw):
+            self.clock = 1050
+            return ['authored sandbox']
+        @contextlib.contextmanager
+        def no_signal():
+            yield []
+        with patch.object(executor, 'sandbox_argv', prepare), patch.object(executor, 'held_interrupt', no_signal), \
+             patch('subprocess.Popen', side_effect=AssertionError('late real child')) as launch:
+            record = native_run.run(native_run.Intent('generation', ['authored'], timeout=1000),
+                inputs=candidate, work=self.root/'generation', deadline=1050)
+        launch.assert_not_called()
+        self.assertEqual(record['execution'], 'not_run')
+        self.assertTrue((self.root/'generation/execution.json').is_file())
+
+    def test_host_setup_consumes_original_deadline_and_refuses_late_spawn(self):
+        from agent_ee import native_run
+        @contextlib.contextmanager
+        def slow_setup():
+            self.clock = 1050
+            yield []
+        with patch.object(native_run, 'held_interrupt', slow_setup), \
+             patch('subprocess.Popen', side_effect=AssertionError('late real child')) as launch:
+            record = native_run.run(native_run.Intent('generation', ['authored'], timeout=1000, isolation='host'),
+                work=self.root/'generation', deadline=1050)
+        launch.assert_not_called()
+        self.assertEqual(record['execution'], 'timeout')
+
+    def test_check_cancellation_reaches_delegates_and_prevents_native_launch(self):
+        from agent_ee import native_run, checks
+        cancel = native_run.Cancellation()
+        manifest = {'candidate_id': 'authored', 'scope': {'checks': [{'id': 'erc', 'kind': 'erc'}]}}
+        write_json(self.root/'candidate.json', manifest)
+        observed = []
+        def boundary(intent, **kwargs):
+            observed.append(kwargs['cancel'])
+            cancel.cancel()
+            return {'execution': 'interrupted', 'exit_code': None}
+        ctx = checks.Ctx(self.root, manifest, manifest['scope']['checks'][0], 1100, cancel=cancel)
+        with patch.object(native_run, 'run', boundary):
+            child = ctx.evaluate(lambda c: c.run_native(native_run.Intent('probe', ['authored'])))
+        self.assertIs(observed[0], cancel)
+        with patch.object(native_run, 'run', side_effect=AssertionError('cancelled child')):
+            result = checks.run_checks(self.root, 1100, cancel=cancel)
+        self.assertEqual(result[0]['execution'], 'interrupted')
+        self.assertEqual(result[0]['outcome'], 'unknown')
+
+    def test_process_group_control_refuses_unsafe_ids_before_signal(self):
+        from agent_ee import native_run
+        from types import SimpleNamespace
+        with patch('os.killpg', side_effect=AssertionError('unsafe signal')) as signal:
+            for pid in (-1, 0, 1, True):
+                for control in (native_run._kill_group, lambda p: native_run._stop_group(p, 1)):
+                    with self.subTest(pid=pid), self.assertRaisesRegex(ValueError, 'unsafe owned process group'):
+                        control(SimpleNamespace(pid=pid))
+            signal.assert_not_called()
+
+
 class NativeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -332,6 +608,11 @@ class NativeTests(unittest.TestCase):
             'task_pins': digest(FIXTURE / 'pins.json'),
             'evidence_sha256': digest(trial / 'run/work/verification/evidence.json'),
             'generation_files': report['binding'].get('generation_records', {})}]}
+        if 'case' in report['binding']:
+            root = self.root / 'trial'
+            names = ['trial.json', 'evaluation-1/evaluation.json'] + [
+                'attempt-1/' + name for name in benchmark.RECORDS]
+            manifest['evaluations'][0]['case_files'] = {name: digest(root/name) for name in names}
         self.assertEqual(manifest, benchmark.freeze_series(
             [path], {'original-series': digest(FIXTURE / 'pins.json')}))
         target = self.root / 'external-series.json'

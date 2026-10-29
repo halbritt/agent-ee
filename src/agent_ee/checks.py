@@ -107,7 +107,7 @@ class CheckError(Exception):
 class Ctx:
     """One check's run context: sandbox invocation, evidence, result record."""
 
-    def __init__(self, run_dir, manifest, spec, deadline, *, context=None, params=None):
+    def __init__(self, run_dir, manifest, spec, deadline, *, context=None, params=None, cancel=None):
         self.run_dir = Path(run_dir)
         self.manifest = manifest
         self.scope = manifest["scope"]
@@ -115,6 +115,7 @@ class Ctx:
         self.cid = spec["id"]
         self.params = spec.get("params", {}) if params is None else params
         self.deadline = deadline
+        self.cancel = cancel
         self.context = {} if context is None else context
         self.inputs = self.run_dir / "inputs"
         self.work = self.run_dir / "work" / self.cid
@@ -132,7 +133,7 @@ class Ctx:
         """Return an isolated sub-result, retaining this check's identity and evidence paths."""
         from copy import deepcopy
         child = Ctx(self.run_dir, self.manifest, self.spec, self.deadline,
-                    params=deepcopy(self.params if params is None else params),
+                    params=deepcopy(self.params if params is None else params), cancel=self.cancel,
                     context=self.context if context is None else context)
         if location is not None:
             child.result['location'] = location
@@ -152,7 +153,7 @@ class Ctx:
             raise CheckError('malformed', str(exc)) from exc
 
     def remaining(self):
-        return self.deadline - time.monotonic()
+        return 0 if self.cancel is not None and self.cancel.cancelled.is_set() else self.deadline - time.monotonic()
 
     def evidence(self, *names):
         for name in names:
@@ -164,9 +165,11 @@ class Ctx:
         """One native run for this check: the check deadline clamps it and the run's baseline is
         mounted, both by native_run. A spent deadline is an interrupted check (exhausted names it)."""
         try:
+            if self.cancel is not None and self.cancel.cancelled.is_set():
+                raise CheckError("interrupted", "case cancelled before native check")
             return dict(native_run.run(intent, inputs=self.inputs, work=self.work if work is None else work,
                                        deadline=self.deadline, baseline=self.run_dir / "baseline.json",
-                                       mounts=mounts))
+                                       mounts=mounts, **({} if self.cancel is None else {"cancel": self.cancel})))
         except native_run.DeadlineExhausted:
             raise CheckError("interrupted", exhausted) from None
 
@@ -1182,7 +1185,7 @@ CHECK_FUNCS = CheckFunctions()
 
 # ------------------------------------------------------------------ entry point
 
-def run_checks(run_dir, deadline, **context):
+def run_checks(run_dir, deadline, *, cancel=None, **context):
     """Run every scope check; write checks/<id>.json immediately; return results."""
     from .check_registry import registry
     registry.validate_context(context)
@@ -1203,7 +1206,7 @@ def run_checks(run_dir, deadline, **context):
             continue
         seen.add(cid)
         registration = registry.execution(spec.get('kind'))
-        ctx = Ctx(run_dir, manifest, spec, deadline, context=registration.context_values(context))
+        ctx = Ctx(run_dir, manifest, spec, deadline, context=registration.context_values(context), cancel=cancel)
         func = CHECK_FUNCS.get(spec.get("kind"))
         try:
             if all(requirement(ctx, results) for requirement in registration.early_prerequisites):

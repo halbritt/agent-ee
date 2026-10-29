@@ -188,6 +188,9 @@ def completed(execution, *, text=False):
 # --- the one entry point ---------------------------------------------------------------------
 
 _active = contextvars.ContextVar("agent_ee_native_adapter", default=None)
+_deadline = contextvars.ContextVar("agent_ee_native_deadline", default=None)
+_cancel = contextvars.ContextVar("agent_ee_native_cancel", default=None)
+_KEEP_ADAPTER = object()
 
 
 def clamp(intent, deadline):
@@ -237,22 +240,46 @@ def run(intent, *, work, inputs=None, deadline=None, mounts=(), baseline=None, c
     """
     if not isinstance(intent, Intent):
         raise TypeError("native run needs an Intent")
+    enclosing = _deadline.get()
+    deadline = enclosing if deadline is None else deadline if enclosing is None else min(deadline, enclosing)
+    if _cancel.get() is not None and cancel is not None and cancel is not _cancel.get():
+        raise ValueError("cannot replace enclosing cancellation handle")
+    cancel = _cancel.get() or cancel
     timeout = clamp(intent, deadline)
     mounts = (*baseline_mounts(baseline), *mounts)
     chosen = adapter or _active.get() or DEFAULT_ADAPTERS[intent.isolation]
-    return chosen.run(intent, inputs=inputs, work=work, timeout=timeout, mounts=mounts,
-                      cancel=cancel, on_line=on_line, on_launch=on_launch, on_tick=on_tick,
-                      **({} if sink is None else {"sink": sink}),
-                      **({} if stderr_sink is None else {"stderr_sink": stderr_sink}))
+    token = _deadline.set(deadline)
+    cancel_token = _cancel.set(cancel)
+    try:
+        return chosen.run(intent, inputs=inputs, work=work, timeout=timeout, mounts=mounts,
+                          cancel=cancel, on_line=on_line, on_launch=on_launch, on_tick=on_tick,
+                          **({} if sink is None else {"sink": sink}),
+                          **({} if stderr_sink is None else {"stderr_sink": stderr_sink}))
+    finally:
+        _cancel.reset(cancel_token)
+        _deadline.reset(token)
 
 
 @contextlib.contextmanager
-def using(adapter):
-    """Route every run() in this context (and its threads' copied contexts) to adapter."""
-    token = _active.set(adapter)
+def using(adapter=_KEEP_ADAPTER, *, deadline=None, cancel=None):
+    """Scope adapter routing and optional enclosing limits without widening outer limits.
+
+    Omitting adapter keeps current routing. Copied thread contexts inherit this scope;
+    subprocesses remain confined by their enclosing sandbox/PID namespace supervisor.
+    """
+    selected = _active.get() if adapter is _KEEP_ADAPTER else adapter
+    enclosing = _deadline.get()
+    deadline = enclosing if deadline is None else deadline if enclosing is None else min(deadline, enclosing)
+    if _cancel.get() is not None and cancel is not None and cancel is not _cancel.get():
+        raise ValueError("cannot replace enclosing cancellation handle")
+    token = _active.set(selected)
+    clock_token = _deadline.set(deadline)
+    cancel_token = _cancel.set(_cancel.get() or cancel)
     try:
-        yield adapter
+        yield selected
     finally:
+        _cancel.reset(cancel_token)
+        _deadline.reset(clock_token)
         _active.reset(token)
 
 
@@ -275,7 +302,8 @@ class Sandbox:
             return self._bounded(intent, inputs=inputs, work=work, timeout=timeout, mounts=mounts, cancel=cancel)
         record = executor.execute(inputs, work, list(intent.argv), timeout=timeout, stdin=intent.stdin,
                                   network=intent.network, extra_ro=tuple(mounts), cancellation=cancel,
-                                  skip_visuals=intent.skip_visuals)
+                                  skip_visuals=intent.skip_visuals,
+                                  **({} if _deadline.get() is None else {"deadline": _deadline.get()}))
         return Execution(record, *_read_logs(work))
 
 
@@ -363,7 +391,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
         input_stream.seek(0)
         try:
             with held_interrupt() as interrupt, cancel.launch_lock:
-                if not cancel.cancelled.is_set():
+                expired = _deadline.get() is not None and time.monotonic() >= _deadline.get()
+                if not cancel.cancelled.is_set() and not expired:
                     proc = subprocess.Popen(list(argv), stdin=input_stream, stdout=subprocess.PIPE,
                                             stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
                                             start_new_session=True,
@@ -372,8 +401,10 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
             fields["execution"] = "unavailable"
             fields["launch_error"] = exc
             return fields, str(exc).encode(), b""
+    if proc is not None and (type(proc.pid) is not int or proc.pid <= 1):
+        raise ValueError("unsafe owned process group")
     if proc is None:
-        fields["execution"] = "interrupted"
+        fields["execution"] = "timeout" if expired else "interrupted"
         if interrupt:
             stop = KeyboardInterrupt()
             stop.native_execution = (fields, b"", b"")
@@ -383,6 +414,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
     if log_bytes is not None:
         fields["logs_truncated"] = False
     limit_at = float("inf") if timeout is None else start + timeout
+    if _deadline.get() is not None:
+        limit_at = min(limit_at, _deadline.get())
     try:
         with selectors.DefaultSelector() as selector:
             for stream in (proc.stdout, proc.stderr):
@@ -507,6 +540,8 @@ def supervise(argv, *, timeout, stdin=None, cancel=None, env=None, cwd=None, on_
 
 def _stop_group(proc, grace):
     """SIGTERM the group and allow grace seconds before SIGKILL; kill at once without a grace."""
+    if type(proc.pid) is not int or proc.pid <= 1:
+        raise ValueError("unsafe owned process group")
     if grace:
         try:
             os.killpg(proc.pid, signal.SIGTERM)
@@ -541,6 +576,8 @@ def _supervised(finish, argv, **options):
 
 
 def _kill_group(proc):
+    if type(proc.pid) is not int or proc.pid <= 1:
+        raise ValueError("unsafe owned process group")
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except ProcessLookupError:

@@ -212,14 +212,14 @@ def _displace(directory, before):
 
 
 def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra_ro=(), cancellation=None,
-            skip_visuals=None):
+            skip_visuals=None, deadline=None):
     # A tool may change files in place; no digest observation spans its run (AGENTEE-250).
     visual_policy(skip_visuals)  # An invalid policy refuses before the work directory is touched.
     forget_scope()
     work, directory = _open_work(work)
     try:
         return _execute(inputs, work, directory, argv, timeout=timeout, stdin=stdin, network=network,
-                        extra_ro=extra_ro, cancellation=cancellation, skip_visuals=skip_visuals)
+                        extra_ro=extra_ro, cancellation=cancellation, skip_visuals=skip_visuals, deadline=deadline)
     finally:
         os.close(directory)
         forget_scope()
@@ -244,7 +244,7 @@ def held_interrupt():
         signal.signal(signal.SIGINT, previous)
 
 
-def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro, cancellation, skip_visuals):
+def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro, cancellation, skip_visuals, deadline=None):
     extra_ro = tuple(extra_ro)
     command = sandbox_argv(inputs, work, argv, network=network, extra_ro=extra_ro, skip_visuals=skip_visuals)
     record = {"argv": list(map(str, argv)), "sandbox_argv": command,
@@ -263,13 +263,15 @@ def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro
                 input_stream.write(stdin.encode())
             input_stream.seek(0)
             with held_interrupt() as interrupt, cancellation.launch_lock:
-                if cancellation.cancelled.is_set():
+                if cancellation.cancelled.is_set() or (deadline is not None and time.monotonic() >= deadline):
                     proc = None
                 else:
                     proc = subprocess.Popen(command, stdin=input_stream, stdout=subprocess.PIPE,
                                             stderr=subprocess.PIPE, start_new_session=True,
                                             pass_fds=tuple(source for source, _ in extra_ro
                                                            if isinstance(source, int)))
+        if proc is not None and (type(proc.pid) is not int or proc.pid <= 1):
+            raise ValueError("unsafe owned process group")
         if proc is None and interrupt:
             raise KeyboardInterrupt
         if proc is not None:
@@ -279,6 +281,8 @@ def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro
                         if cancellation.cancelled.is_set() or interrupt:
                             raise KeyboardInterrupt
                         remaining = timeout - (time.monotonic() - start)
+                        if deadline is not None:
+                            remaining = min(remaining, deadline - time.monotonic())
                         if remaining <= 0:
                             raise subprocess.TimeoutExpired(command, timeout)
                         try:
