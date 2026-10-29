@@ -471,7 +471,7 @@ def combined_result(generation_execution, scoring):
 
 def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, expect_pins=None,
              case_timeout=None, grading_reserve=None, max_work=None, cancel=None,
-             completion_context=None, expect_context=None):
+             completion_context=None, expect_context=None, completion_policy=None, expect_completion_policy=None):
     """One finite case; a work credit admits one generation subtree or grading phase.
 
     The generation sandbox's PID namespace contains its child preparation/build/review.
@@ -582,7 +582,7 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
                         entry['status'] = 'qualifying'; save()
                         completion_record = acquisition_completion.complete(public, work, scratch / f'production-{index + 1}',
                             scratch / 'completion-context', expect_context, attempt=index + 1,
-                            deadline=productive, cancel=cancel)
+                            deadline=productive, cancel=cancel, policy=completion_policy, expect_policy=expect_completion_policy)
                         entry['qualification_execution'] = completion_record['execution']
                         finished = time.monotonic()
                         completion_work = acquisition_completion.retain(scratch / f'completion-{index + 1}',
@@ -978,6 +978,8 @@ def main(argv=None):
     run.add_argument('--expect-pins', help='externally retained SHA-256 of task pins.json')
     run.add_argument('--completion-context', help='trusted pinned public acquisition context, separate from private task')
     run.add_argument('--expect-context', help='externally retained SHA-256 of public context pins.json')
+    run.add_argument('--completion-policy', help='trusted parent-only judgment seat policy; never writer supplied')
+    run.add_argument('--expect-completion-policy', help='external SHA-256 of trusted seat policy')
     split = sub.add_parser('split')
     split.add_argument('--exclusions', required=True)
     split.add_argument('--seed', default='0')
@@ -996,7 +998,8 @@ def main(argv=None):
                                          attempts=args.attempts, timeout=args.timeout,
                                          expect_pins=args.expect_pins, case_timeout=args.case_timeout,
                                          grading_reserve=args.grading_reserve, max_work=args.max_work,
-                                         completion_context=args.completion_context, expect_context=args.expect_context)]
+                                         completion_context=args.completion_context, expect_context=args.expect_context,
+                                         completion_policy=args.completion_policy, expect_completion_policy=args.expect_completion_policy)]
     elif args.command == 'split':
         result = split_tasks(args.tasks, strict_json(Path(args.exclusions).read_bytes()), seed=args.seed)
     elif args.command == 'freeze':

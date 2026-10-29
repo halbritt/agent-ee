@@ -1,74 +1,61 @@
 # Acquisition completion in generation cases
 
-`generation_benchmark.run_task` retains its legacy defaults. Opt-in acquisition
-mode adds `completion_context=PATH, expect_context=SHA256` (CLI
-`--completion-context`, `--expect-context`) and permits at most two attempts.
-The public generator still sees only its script, prompt and its own writable
-scratch. It cannot select a command, source module, credential or evaluator path.
-
-The coordinator context is separate from the private task and never mounted
-into the writer. Its `pins.json` is:
-
-```json
-{"schema":"agent-ee.acquisition-context-pins/1","files":{"context.json":"SHA256","...":"SHA256"}}
-```
-
-The external pins-file digest authenticates its complete ordinary file tree.
-`context.json` has exactly `schema`, `plan`, `added_sources`, `review_profile`:
-
-```json
-{"schema":"agent-ee.acquisition-completion/1","plan":"reference/build.json","added_sources":{"cpl":"cpl","manufacturer-text":"manufacturer-text"},"review_profile":"profile.json"}
-```
-
-Paths are canonical and contained; the reference plan's source cannot escape
-this public context. Root must provide/freeze the actual qualified role/group,
-reference/catalog and review context. This module does not qualify a new part or
-apply a per-case catalog exclusion; unsupported task/context shapes refuse.
-
-The generator emits **only** `output/request.json`, at most4096 bytes:
+`generation_benchmark.run_task` keeps its existing defaults. Opt-in acquisition
+uses `completion_context=PATH, expect_context=SHA256` (CLI
+`--completion-context`, `--expect-context`) and at most two attempts. The writer
+sees only public script/prompt inputs and its own scratch. It emits only bounded
+`output/request.json`:
 
 ```json
 {"schema":"agent-ee.acquisition-request/1","brief_sha256":"EXACT_PROMPT_SHA256","action":"prepare"}
 ```
 
-Second-attempt action is `repair`. Neither native outputs nor `refusal.json`
-from the writer are accepted in this mode. The fixed trusted module alone calls
-`acquisition_prepare.prepare`; only its actual `PreparationRefused.report` can
-supply a refusal for independent private-oracle grading.
+The trusted public context is a separate ordinary file tree. `pins.json` has
+`schema: agent-ee.acquisition-context-pins/1` and `files`, the exact inventory
+excluding itself; its externally supplied SHA-256 binds that inventory.
+`context.json` has exactly `schema`, `plan`, `added_sources`, `review_profile`,
+plus optional `prepare_options`:
 
-Each attempt debits generation, trusted completion and grading admissions in the
-existing ledger. Default acquisition work allowance is three credits per attempt;
-the case wall budget is **not increased**. Generation and completion share the
-original productive cutoff; grading keeps the original final reserve. The
-trusted Host child is supervised by existing `native_run`, outside the writer's
-extra sandbox but inside the admitted outer runtime. Production is at the
-trial-owned sibling `production-N`; generation cannot write it. Cleanup errors,
-late zero exits and missing terminal records cannot establish success. Raw
-completion records and all production failures enter authenticated series
-custody. Untrusted request trees are never copied into acquisition repairs.
+```json
+{"schema":"agent-ee.acquisition-completion/1","plan":"recipe/build.json","added_sources":{"cpl":"additions/cpl","manufacturer-text":"additions/manufacturer-text"},"review_profile":"review-profile.json","prepare_options":{"final_groups":true}}
+```
 
-Accepted packages are replayed with the **existing production qualification
-verifier**, all seven sealed stages, the requested full package review, final
-native hashes and the complete retained tree. There is no adapter-owned release
-boolean. Existing `evaluate`, baseline checks, evidence seals and series replay
-grade those exact candidate bytes. Read-only qualification (`persist=False`)
-preserves original records. Offline replay supplies the previously bound runtime
-observations through the existing verifier's `host` seam and checks current
-source identity; it launches no new native/model processes. Supplier and physical
-limitations remain separate; differing scope candidate IDs are not equated.
+All paths are canonical, contained in the pinned tree, and of the required file
+or directory type. Additions also allow `operating-supplement`,
+`source-supplement`, and `power-repair`. Optional preparation arguments preserve
+`acquisition_prepare.prepare` defaults: role context/hash/source, alternative
+context/hash/source, evaluation context/hash, expected intent/hash and parts
+receipt/hash, final groups, address tie, and verification timeout. Related
+argument groups must be complete. Files have explicit existing hash arguments;
+source directories are covered by the complete context inventory. This adapter
+adds no alternative selector or qualification rule.
 
-## Unresolved composition (fail closed)
+The parent also receives `completion_policy=PATH,
+expect_completion_policy=SHA256` (CLI `--completion-policy`,
+`--expect-completion-policy`). This separately pinned, parent-only JSON contains:
 
-The default fixed child currently completes genuine preparation refusals only.
-Supported preparation stops at `CompletionUnavailable`: no judgment author or
-verifier is fabricated, and no package/build acceptance is claimed. Actual
-campaign repair remains unwired and refuses. Native/provider jobs in source
-qualification are zero.
+```json
+{"author":{"harness":"codex","model":"POLICY_MODEL_A","effort":"high","timeout_s":300},"verifier":{"harness":"claude","model":"POLICY_MODEL_B","effort":"high","timeout_s":300},"private_evaluator_pair":["HARNESS","MODEL"],"launch_environment":{"run_id":"UNIQUE_CASE","policy_files":{},"runtime_files":{}}}
+```
 
-`acquisition_completion.complete_prepared` is the trusted **parent-side**
-production-module entry for the next integration. It imports only the fixed
-`agent_ee.judgment_seats` module (no configurable shell/module). It builds actual
-artwork, calls:
+The environment maps must contain the actual final composed source/runtime
+pins expected by ordinary reviewer preflight. These example values are not a
+runnable policy. Author/verifier pairs must differ from each other and from the
+private evaluator. Existing package-review pairs may be reused through separate
+calls. Seats require source-inspection tools and use subscription routes only;
+authentication/quota failures do not retry or fall back.
+
+`acquisition_completion.complete` supervises the fixed preparation child with
+existing `native_run`. Only a genuine `PreparationRefused.report` can supply a
+refusal. Otherwise the child emits `{"kind":"prepared"}`, an intermediate
+terminal. The trusted parent calls `complete_prepared`, using the SAME parent
+Cancellation object and original absolute productive cutoff. No Python object
+identity is serialized to the child. Raw child execution and separate
+`parent-completion.json` records are preserved; a zero child exit alone cannot
+supply a package. Missing records, parent failure, cleanup failure, late finish,
+cancellation and retention failure cannot count as success.
+
+`complete_prepared` builds through actual artwork, then invokes the fixed module:
 
 ```python
 judgment_seats.produce(build_run, out, author=author, verifier=verifier,
@@ -76,28 +63,38 @@ judgment_seats.produce(build_run, out, author=author, verifier=verifier,
     cancellation=cancellation, launch_environment=launch_environment, host=host)
 ```
 
-It passes the SAME original cancellation object and absolute productive deadline.
-The future producer return contract is `execution`, `outcome`,
-`judgment_directory`, `judgment_inventory`, `producer_receipt`,
-`producer_receipt_sha256`. The directory and receipt must be owned beneath `out`;
-the helper adopts their exact pinned records without overwriting prior testimony,
-then resumes the same build through package/full review and replays qualification.
-This return shape needs alignment/review with agent690's forthcoming module.
-Author and verifier harness/model pairs differ from each other and the evaluator;
-they may overlap package reviewer models through separate independent calls.
+The producer captures exact artwork/source bytes, specification spans, board
+and scope hashes, applicability, and completed public stage evidence. Two
+serial batch calls use existing `reviewer_call`/`structured_call`/preflight,
+with no schema retries. They author fresh `engineering-judgment/1` testimony
+and independent `judgment-verification/1` witnesses. Actual call records,
+prompts, schemas, responses, native streams, invocation IDs and output hashes
+remain outside published judgment documents. Witness validation is strict even
+when author testimony records unresolved defects. A negative or dissent remains
+negative. The source material and check observations support actual reasoning;
+check statuses never generate testimony.
 
-**This parent-side composition is not yet wired into the default supervised
-child.** Python cancellation-object identity cannot be serialized across a Host
-process boundary. Root must finish that composition while preserving the existing
-case supervisor and every phase deadline; this source does not claim otherwise.
-No supported design can pass until the genuine seats, role context and repair
-handoff are reviewed and connected. The private four-case oracle remains701-owned.
+The producer returns `execution`, `outcome`, `judgment_directory`,
+`judgment_inventory`, `producer_receipt`, `producer_receipt_sha256`.
+`judgment_seats.verify` replays both call/output bindings without another launch.
+The parent adopts only verified fresh records into the prepared source, refuses
+to overwrite existing testimony, then resumes through the package stage. Only
+existing full production qualification, seven-stage custody and requested full
+package review can establish a package binding. The adapter adds no release
+boolean. Read-only replay uses frozen runtime observations and current policy
+source identity. Source readiness and pure tests are not native qualification.
 
-Public interface direction was reviewed by701 at
-`a61c4921-6289-40b6-843c-0ad0665212ae@1`; that was not implementation approval.
-One later native admission experiment is a disposable non-G4 public control,
-one attempt and one case clock, including actual preparation/native build,
-author/verifier calls, package/full review and independent evaluator capture.
-Root must pin the reviewed composition/image/context/profile and choose finite
-budgets; no measured fit for that complete run is known. Through-artwork plus
-post-case review is not this experiment and cannot qualify G4.
+Generation, preparation, build, seats, package and grading retain the original
+case budget and cancellation. Parent completion cannot consume the final grading
+reserve or renew the productive clock. Raw failures stay in series custody.
+Supplier/physical acceptance remains outside these software results.
+
+The optional completion seam `public_context=PATH,
+public_context_sha256=SHA256` (fixed child flags `--public-context`,
+`--expect-public-context`) reserves the pinned public per-case protocol.
+Transport/hash/replay in `generation_benchmark` and the catalog selector are
+separately owned integrations. Until connected, supplying it explicitly refuses;
+no private evaluator logic or duplicate selector lives here. Attempt two's
+campaign repair connector also remains explicit `CompletionUnavailable`.
+Root must assemble/freeze final role context, seat policy and complete composed
+source/runtime identity before any execution. No full runtime fit is claimed.

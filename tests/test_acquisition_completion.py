@@ -200,17 +200,17 @@ class AcquisitionBoundaryTests(benchmark_tests.RefusalTests):
         self.assertEqual(read_json(self.root/'trial/completion-1/execution.json')['exit_code'],0)
         self.assertIn('cleanup incomplete',read_json(self.root/'trial/completion-1/receipt.json')['error'])
 
-    def test_supported_preparation_cannot_skip_the_unwired_judgment_edge(self):
-        # The producer API is the boundary here; no prepared target is made.
+    def test_supported_preparation_is_intermediate_and_never_an_accepted_package(self):
         from agent_ee import acquisition_prepare
         output=self.root/'request';output.mkdir()
         write_json(output/'request.json',dict(schema=completion.REQUEST,
             brief_sha256=digest(self.task/'prompt.md'),action='prepare'))
         with patch.object(acquisition_prepare,'prepare',return_value={'status':'prepared'}):
-            with self.assertRaisesRegex(completion.CompletionUnavailable,'judgment author/verifier'):
-                completion.produce(self.public,self.context_pin,self.task/'prompt.md',output,
-                    self.root/'unwired',attempt=1,deadline=time.monotonic()+30)
-        self.assertFalse((self.root/'unwired/completion.json').exists())
+            completion.produce(self.public,self.context_pin,self.task/'prompt.md',output,
+                self.root/'prepared-only',attempt=1,deadline=time.monotonic()+30)
+        self.assertEqual(read_json(self.root/'prepared-only/completion.json'), {'kind':'prepared'})
+        with self.assertRaises(FileNotFoundError):
+            completion.terminal(self.root/'prepared-only',time.monotonic()+30)
 
     def test_actual_zero_exit_after_productive_cutoff_is_retained_failure(self):
         clock=[1000.0]
@@ -265,7 +265,7 @@ class ProductionVerifierTests(unittest.TestCase):
         self.assertEqual((root/'qualification.json').read_bytes(),original)
 
     def test_missing_fixed_judgment_module_refuses_before_build_or_seat_launch(self):
-        with self.assertRaises(completion.CompletionUnavailable):
+        with patch('importlib.util.find_spec',return_value=None), self.assertRaises(completion.CompletionUnavailable):
             completion.complete_prepared(self.fixture.root,self.fixture.root/'build',self.fixture.root/'seats',
                 author={},verifier={},private_evaluator_pair=('private','evaluator'),
                 deadline=time.monotonic()+30,cancellation=native_run.Cancellation(),launch_environment={})
@@ -286,3 +286,126 @@ class ProductionVerifierTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             completion.package_binding(self.fixture.root,time.monotonic()+30,
                 environment={'policy_files':benchmark.policy_files(),'runtime_files':{}})
+
+
+class ParentCompletionTests(unittest.TestCase):
+    """CPU_MOCK_ONLY orchestration; production verifier/seat tests are separate."""
+    def setUp(self):
+        import tempfile
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name);self.public=self.root/'public';self.public.mkdir()
+        self.work=self.root/'trial/generation-1';self.work.mkdir(parents=True)
+        self.prod=self.root/'trial/production-1'
+        self.cancel=native_run.Cancellation();self.deadline=time.monotonic()+20
+        self.policy=self.root/'policy.json'
+        self.data=dict(author=dict(harness='codex',model='owned-author',effort='high',timeout_s=10),
+            verifier=dict(harness='claude',model='owned-verifier',effort='high',timeout_s=10),
+            private_evaluator_pair=['agy','private'],launch_environment=dict(run_id='owned-parent',policy_files={},runtime_files={}))
+        write_json(self.policy,self.data)
+        self.binding=dict(root='CPU_MOCK_ONLY',candidate='candidate',verifier_environment={})
+        self.child_mode='prepared';self.calls=[]
+
+    def child(self, call):
+        self.calls.append(call)
+        self.assertIs(native_run._cancel.get(),self.cancel)
+        self.assertLessEqual(call.timeout,self.deadline-time.monotonic()+.1)
+        self.assertNotIn(str(self.policy),call.intent.argv)
+        self.prod.mkdir()
+        if self.child_mode!='missing':write_json(self.prod/'completion.json',dict(kind=self.child_mode))
+        return native_run.Outcome()
+
+    def finish(self, *args, **kw):
+        self.assertEqual(args,(self.prod/'prepared',self.prod/'build',self.prod/'seats'))
+        self.assertIs(kw['cancellation'],self.cancel)
+        self.assertEqual(kw['deadline'],self.deadline)
+        return self.binding
+
+    def run_parent(self, finish=None):
+        with native_run.using(native_run.Recorded(self.child)), patch.object(completion,'context',return_value=({},{})), \
+                patch.object(completion,'complete_prepared',side_effect=finish or self.finish) as parent:
+            raw=completion.complete(self.public,self.work,self.prod,self.public,'unused',attempt=1,
+                deadline=self.deadline,cancel=self.cancel,policy=self.policy,expect_policy=digest(self.policy))
+        return raw,parent
+
+    def test_parent_consumes_prepared_on_same_clock_and_cancel_after_real_child_record(self):
+        raw,called=self.run_parent()
+        self.assertEqual(raw['execution'],'ok');called.assert_called_once()
+        final,parent=completion.terminal(self.prod,self.deadline)
+        self.assertEqual(final,dict(kind='package'));self.assertEqual(parent['package'],self.binding)
+        self.assertEqual(read_json(self.root/'trial/completion-1/parent-completion.json'),parent)
+        self.assertEqual(read_json(self.prod/'completion.json'),dict(kind='prepared'))
+        parent['deadline']+=1;write_json(self.prod/'parent-completion.json',parent)
+        with self.assertRaises(ValueError):completion.terminal(self.prod,self.deadline)
+
+    def test_parent_failure_keeps_raw_child_exit_and_failure_never_supplies_package(self):
+        def fail(*a,**kw):
+            self.finish(*a,**kw)
+            raise RuntimeError('CPU_MOCK_ONLY qualification failure')
+        raw,_=self.run_parent(fail)
+        self.assertEqual(raw['execution'],'ok')
+        parent=read_json(self.prod/'parent-completion.json')
+        self.assertEqual(parent['execution'],'failed');self.assertIn('qualification failure',parent['error'])
+        self.assertIsNone(parent['package'])
+        with self.assertRaises(ValueError):completion.terminal(self.prod,self.deadline)
+
+    def test_missing_terminal_and_direct_child_package_do_not_start_seats(self):
+        self.child_mode='missing'
+        _,called=self.run_parent();called.assert_not_called()
+        self.assertEqual(read_json(self.prod/'parent-completion.json')['execution'],'failed')
+        write_json(self.prod/'completion.json',dict(kind='package'))
+        with self.assertRaises(ValueError):completion.terminal(self.prod,self.deadline)
+
+    def test_parent_cancellation_after_child_retains_separate_failure(self):
+        def finish(*args,**kw):
+            binding=self.finish(*args,**kw);self.cancel.cancelled.set();return binding
+        _,parent=self.run_parent(finish)
+        parent.assert_called_once()
+        self.assertEqual(read_json(self.prod/'parent-completion.json')['execution'],'failed')
+
+    def test_complete_prepared_adopts_only_verified_fresh_records_before_package(self):
+        from agent_ee import judgment_seats
+        from agent_ee.requirement_map import input_inventory
+        prepared=self.root/'prepared';prepared.mkdir();(prepared/'source').mkdir()
+        write_json(prepared/'build-plan.json',dict(source='source',judgments='judgments'))
+        build=self.root/'build';out=self.root/'seats';events=[]
+        def workflow(plan,run,**kw):
+            self.assertIs(native_run._cancel.get(),self.cancel)
+            self.assertEqual(native_run._deadline.get(),self.deadline)
+            events.append(kw)
+            if kw.get('resume'):
+                self.assertTrue((prepared/'source/judgments/record.json').is_file())
+                self.assertEqual(events[-2],'verified')
+                return dict(status='accepted')
+            return dict(completed=[dict(stage=k) for k in completion.retained_run.STAGES[:-1]])
+        def produce(run,target,**kw):
+            self.assertEqual(kw['deadline'],self.deadline);self.assertIs(kw['cancellation'],self.cancel)
+            records=target/'judgments';records.mkdir(parents=True)
+            write_json(records/'record.json',dict(classification='CPU_MOCK_ONLY'))
+            write_json(target/'producer-receipt.json',dict(classification='CPU_MOCK_ONLY'))
+            return dict(execution='ok',outcome='criteria_satisfied',judgment_directory=str(records),
+                judgment_inventory=input_inventory(records),producer_receipt=str(target/'producer-receipt.json'),
+                producer_receipt_sha256=digest(target/'producer-receipt.json'))
+        with patch('agent_ee.build_workflow.run',side_effect=workflow), \
+                patch.object(judgment_seats,'produce',side_effect=produce), \
+                patch.object(judgment_seats,'verify',side_effect=lambda *a:events.append('verified')), \
+                patch.object(completion,'package_binding',return_value=self.binding) as binding:
+            actual=completion.complete_prepared(prepared,build,out,**self.data,deadline=self.deadline,cancellation=self.cancel)
+        self.assertEqual(actual,self.binding)
+        self.assertEqual(events,[dict(through='artwork'),'verified',dict(resume=True)])
+        binding.assert_called_once_with(build,self.deadline,self.cancel)
+        self.assertIsNone(native_run._cancel.get())
+        self.assertIsNone(native_run._deadline.get())
+
+    def test_existing_prepare_options_are_contained_pinned_and_defaults_unchanged(self):
+        self.assertEqual(completion.preparation_options(self.root,{}),{})
+        for name in ('roles','alternative'): (self.root/name).mkdir()
+        for name in ('roles.json','alternative.json','intent.json','parts.json'):
+            write_json(self.root/name,dict(classification='CPU_MOCK_ONLY'))
+        options=dict(role_context='roles.json',role_context_sha256=digest(self.root/'roles.json'),role_source='roles',
+            alternative_context='alternative.json',alternative_context_sha256=digest(self.root/'alternative.json'),alternative_source='alternative',
+            final_groups=True,addr_tie='GND',verification_timeout_s=12)
+        self.assertEqual(completion.preparation_options(self.root,dict(prepare_options=options))['role_source'],self.root/'roles')
+        for change in ({'role_context':'../escape'}, {'role_context_sha256':'0'*64}, {'unknown':True}, {'final_groups':1}):
+            with self.assertRaises(ValueError):completion.preparation_options(self.root,dict(prepare_options=options|change))
+        (self.root/'link').symlink_to('/etc')
+        with self.assertRaises(ValueError):completion.preparation_options(self.root,dict(prepare_options=options|{'role_source':'link'}))
