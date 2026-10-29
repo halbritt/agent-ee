@@ -17,6 +17,7 @@ from pathlib import Path
 from agent_ee import candidate, checks, executor, generate as g
 from agent_ee.kicad_quirks import (VariantError, erc_coordinate_regime, erc_locations,
                                    schematic_variant_clauses, validate_bom_variants, variant_registry)
+from agent_ee.storage import digest
 
 try:
     from toolchain import require_toolchain
@@ -366,7 +367,11 @@ class GeneratorBomVariantTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(stage.receipt['details']['bom_variant']['registered'], ['FULL'])
         bom = next(c for c in stage.receipt['commands'] if c['label'] == 'bom')
-        self.assertEqual(bom['argv'][-3:], ['--variant', 'FULL', '/candidate/project/fab.kicad_sch'])
+        self.assertEqual(bom['argv'][-3:-1], ['--variant', 'FULL'])
+        bom_input = Path(bom['argv'][-1])
+        self.assertEqual(bom_input, Path('/work/out/checks/work/fab/steps/bom/project/project/fab.kicad_sch'))
+        self.assertEqual(digest(stage.dir / 'export-fab/run' / bom_input.relative_to('/work')),
+                         digest(self.state['reviewed_inputs'] / 'project/fab.kicad_sch'))
         self.assertEqual(bom['exit_code'], 0)
         self.assertTrue(any(i['role'] == 'reviewed project file (variant registry)' for i in stage.receipt['inputs']))
 
