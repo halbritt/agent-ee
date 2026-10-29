@@ -462,3 +462,22 @@ the full variant checks and verify the actual copied schematic's identity.
 This list is a remaining verification queue, not proof that only five defects
 exist. Campaign acceptance remains **0/4**, main is unchanged, and the board,
 supplier, full-gate and integration limits above still apply.
+
+
+### Remaining generator fabrication controls pass
+
+The generator BOM-variant test now verifies the actual disposable schematic
+path and its hash against the original reviewed input (`b850f958`). Independent
+source review confirmed that FULL variant, registered-project, exit-code and
+project-input assertions remain intact; production code was not changed.
+
+On `b850f958b26e0bfc27c0d49e5b8b87dcfe47b2a9`, the two existing generator
+fabrication controls and the registered BOM-variant control all passed under
+native KiCad, actual exit 0 in 11.7 seconds. Evidence and real stage receipts
+are retained in `generator-fab-native-r1` beneath the host evidence root.
+The corrected package fixture still requires supplier preview, and it is not
+the campaign board. Of the original 24 counted diagnostic problems, 22 now
+have direct rerun evidence; the two visual controls remain pending. Agent-697
+has finished its source assignment and its waiting native notice will be read
+at the next turn boundary. Full strict, landing and campaign acceptance remain
+open; acceptance is still **0/4**.
