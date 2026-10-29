@@ -129,12 +129,13 @@ def _compile_scaffold_requirements(plan, candidate, stage_dir):
 
 
 
-def _package(plan, candidate, stage_dir, scope, accounting):
+def _package(plan, candidate, stage_dir, scope, accounting, profile=None):
     if {'block_contract', 'block_source'} & plan['placement'].keys():
         raise ValueError('strict block contract package acceptance requires final artwork revalidation; '
                          'use --through artwork; package bridge is not implemented')
     qualification.manufacturing_coverage(plan, scope, accounting)
-    result = retained_run.review_candidate(candidate_scope(scope, candidate), stage_dir, plan.get('verification_timeout_s', 3600))
+    result = retained_run.review_candidate(candidate_scope(scope, candidate), stage_dir,
+                                           plan.get('verification_timeout_s', 3600), profile=profile)
     artifacts = qualification.package_artifacts(result, scope, candidate)
     extra = {}
     if plan['schema'] == TYPED_SCHEMA:
@@ -273,5 +274,7 @@ def execute(attempt, plan, previous, *, diagnostic=False):
     elif stage == 'artwork':
         _artwork(candidate, directory, scope['board'])
     elif stage == 'package':
-        _package(plan, candidate, directory, scope, retained_run.accounting(out)['requirements'])
+        profile = (str(retained_run.retained_path(out, 'source/' + plan['review_profile']))
+                   if 'review_profile' in plan else None)
+        _package(plan, candidate, directory, scope, retained_run.accounting(out)['requirements'], profile)
     return candidate

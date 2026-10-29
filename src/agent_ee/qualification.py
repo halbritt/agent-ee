@@ -100,8 +100,11 @@ def _record(mode, dimensions, *, claims_withheld=True, coverage=None, methods=No
 
 def summary(out, record):
     """Project a persisted qualification record into the build or review report."""
-    return dict(path='qualification.json', sha256=retained_run.qualification_digest(Path(out)),
+    projected = dict(path='qualification.json', sha256=retained_run.qualification_digest(Path(out)),
         mode=record['mode'], dimensions={name: row['status'] for name, row in record['dimensions'].items()})
+    if 'required' in record['summary']:
+        projected['required'] = record['summary']['required']
+    return projected
 
 
 def _dimension(status='not_assessed', *, binding=None, evidence=(), reason=None):
@@ -187,6 +190,16 @@ def checks_dimension(root, review):
         status = 'failed'
     return dict(_dimension(status, binding=binding, evidence=[_evidence(root, directory / 'review/result.json')]),
                 executed=[{key: row[key] for key in ('id', 'kind', 'execution', 'outcome')} for row in rows])
+
+
+def _requested_review(root, report, plan, review):
+    """The plan's full package review, bound to its pinned profile; never a foreign result."""
+    if review is None or review.binding.get('stage') != 'package':
+        return _dimension(reason='Requested package engineering review is absent')
+    manifest = read_json(review.directory / 'review/candidate.json')
+    if manifest.get('profile_sha256') != report['inputs']['source'].get(plan['review_profile']):
+        raise QualificationError('package review profile differs from the captured build profile')
+    return _review_dimension(root, review)
 
 
 def _review_dimension(root, review):
@@ -475,7 +488,9 @@ def _assess(out):
     for name in ('supplier', 'physical'):
         dimensions[name] = _dimension('pending', reason='No supplier or physical validation performed')
     dimensions['checks'] = checks_dimension(root, review)
-    dimensions['engineering_review'] = _review_dimension(root, review)
+    requested = plan is not None and 'review_profile' in plan
+    dimensions['engineering_review'] = (_requested_review(root, report, plan, review) if requested
+                                        else _review_dimension(root, review))
     coverage = requirement_map.coverage_view(receipt, rows)
     methods = _methods(root, review)
     rules = rules_register(root, review)
@@ -590,6 +605,10 @@ def _assess(out):
         package_records=package_records, summary=dict(pending_required=sorted(
             rid for rid, clause in coverage.items() if clause['status'] not in ('pass', 'recorded', 'not_applicable')),
             file_release_blockers=blockers))
+    if requested:
+        # A requested full review is part of acceptance; file evidence keeps its own dimension.
+        record['summary']['required'] = ['file_release', 'engineering_review']
+        record['accepted'] = record['accepted'] and dimensions['engineering_review']['status'] == 'pass'
     if retained_run.snapshot(root) != report:
         raise QualificationError('Build evidence changed during qualification assessment', integrity=True)
     if review is not None:

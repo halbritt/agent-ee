@@ -19,7 +19,7 @@ def _keys(value, required, optional=()):
 
 def validate_plan(plan):
     _keys(plan, ('schema', 'source', 'requirements', 'parts', 'envelope', 'placement'),
-          ('verification_timeout_s', 'judgments'))
+          ('verification_timeout_s', 'judgments', 'review_profile'))
     if plan['schema'] not in (SCHEMA, TYPED_SCHEMA) or not isinstance(plan['source'], str) or not plan['source']:
         raise ValueError('expected agent-ee.build-plan/1 or /2 with a source directory')
     typed = plan['schema'] == TYPED_SCHEMA
@@ -40,6 +40,16 @@ def validate_plan(plan):
              plan['placement']['intent'], plan['placement']['groups']]
     if 'planes' in plan['placement']:
         paths.append(plan['placement']['planes'])
+    if 'review_profile' in plan:
+        # A requested full package review; its profile is pinned like any other build input.
+        if not typed:
+            raise ValueError('review_profile requires a typed build-plan/2')
+        if not isinstance(plan['review_profile'], str):
+            raise ValueError('review_profile must be a source-relative path')
+        if any(plan['review_profile'] == reserved or plan['review_profile'].startswith(reserved + '/')
+               for reserved in ('build-generated', requirement_map.PROVENANCE)):
+            raise ValueError('review_profile occupies a generated namespace')
+        paths.append(plan['review_profile'])
     for key in ('block_contract', 'block_source'):
         if key in plan['placement']:
             paths.append(plan['placement'][key])
@@ -101,4 +111,11 @@ def admit_source(plan_path, out):
     source = (plan_path.parent / plan['source']).resolve()
     if out == source or source in out.parents:
         raise ValueError('build output must be outside the source bundle')
-    return plan_path, out, raw, plan, source, source_inventory(source, plan)
+    files = source_inventory(source, plan)
+    if 'review_profile' in plan:
+        # Validate the exact pinned bytes before any stage can launch reviewers.
+        if plan['review_profile'] not in files:
+            raise ValueError('review_profile is not a captured regular source file')
+        from .profiles import validate_profile
+        validate_profile(strict_json((source / plan['review_profile']).read_bytes()))
+    return plan_path, out, raw, plan, source, files

@@ -197,6 +197,31 @@ software file claim. Supplier and physical dimensions stay pending, and every
 outstanding delivery, judgment or physical obligation remains visible in
 `coverage` and `summary.pending_required`.
 
+A typed plan may also request a full engineering review with an optional
+top-level `review_profile`, a source-relative `agent-ee.profile/1` file such as
+`"review_profile": "review/profile.json"`. It is an ordinary captured input.
+It must be a regular file outside the judgments directory and outside the
+`build-generated` and `requirements-map` namespaces. Admission validates the
+profile before any stage runs. Its bytes are part of the build identity, so a
+changed profile refuses `--resume` and needs a new run. The package stage then
+runs its ordinary review with the retained copy of that profile: the isolated
+initial reviewers and adjudicator use the profile's subscription routes, with
+no fallback. The engineering result is projected from that package review only.
+It must use the pinned profile hash; a review made with another profile is an
+assessment failure, never reused evidence.
+
+With `review_profile`, `accepted:true` and CLI success additionally require
+`engineering_review: pass`, which means the review completed and was adjudicated
+`criteria_satisfied`. The qualification summary lists
+`required: ["file_release", "engineering_review"]`. A defect outcome gives
+`engineering_review: failed`. A failed, unavailable, timed-out or
+unadjudicated reviewer gives `not_assessed`. In both cases the run reports
+`status: failed` with the reason `Requested engineering review is <status>`,
+and `file_release` keeps its own status from the unchanged file evidence. The
+review does not establish supplier confirmation or physical validation; those
+dimensions stay pending. Without `review_profile`, acceptance is the file claim
+above, unchanged.
+
 Operational assessment supports only the explicitly compiled
 `public_build_and_resume` criterion. It requires all seven verified stage trees
 and an interrupted/failed attempt followed by the completed attempt of that
@@ -253,6 +278,20 @@ changes only copies, and checks refusal bytes, migration and corruption; a
 typed input also exercises its frozen judgment directory.
 
 ## Authored judgments and package records
+
+Judgments that bind a candidate must exist before the first package attempt,
+because that attempt freezes the judgments directory even if it fails. For a
+new or changed design, use this order:
+
+```sh
+agent-ee build run build.json --out RUN --through artwork
+# Author judgments for RUN's artwork board and scope in the declared judgments
+# directory, and add independent witnesses under judgments/verification/.
+agent-ee build run build.json --out RUN --resume
+```
+
+The resume uses the same plan, source and runtime. Only the declared judgments
+directory is excluded from the source pin before it is frozen.
 
 Judgment paths in the typed map are relative to the declared judgments
 directory. No stage before package reads or copies that directory. At package

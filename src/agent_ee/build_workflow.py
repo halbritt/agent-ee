@@ -230,11 +230,14 @@ def _assess_report(out, report, *, typed=False):
         report['qualification'] = qualification.summary(out, record)
         report['accepted'] = record['accepted']
         if len(report['completed']) == len(STAGES):
-            pending = record['dimensions']['file_release']['status'] == 'pending'
+            file_release = record['dimensions']['file_release']['status']
+            pending = file_release == 'pending'
             report['status'] = 'accepted' if report['accepted'] else 'pending' if pending else 'failed'
             if not report['accepted']:
                 report['reason'] = ('Required file-release evidence is pending' if pending
-                                    else 'QualificationError: required file-release evidence failed')
+                                    else 'QualificationError: required file-release evidence failed' if file_release != 'pass'
+                                    else 'Requested engineering review is '
+                                         + record['dimensions']['engineering_review']['status'])
     retained_run.write_report(out, report)
     return report
 
