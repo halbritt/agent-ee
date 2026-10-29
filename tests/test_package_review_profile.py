@@ -1,8 +1,11 @@
 """A plan-requested full package review: pinned profile, stage binding and combined acceptance."""
+import contextlib
 import copy
 import hashlib
+import io
 import json
 from pathlib import Path
+import shutil
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -174,3 +177,110 @@ class RequestedReviewQualificationTests(unittest.TestCase):
         report = self.assess(self.review(profile=PROFILE + b' '))
         self.assertFalse(report['accepted'])
         self.assertIn('package review profile differs from the captured build profile', report['reason'])
+
+
+class NativePackageReviewTests(unittest.TestCase):
+    """Real capture, full run_review, checked_review/verify_review and package qualification.
+
+    Reviewer transport is the existing scripted dispatch boundary (no provider), and the
+    reviewer runtime fingerprint is pinned exactly as that fixture's host pins it. The
+    synthetic seven-stage control cannot pass file release, so positive combined
+    acceptance remains covered by the pure tests above.
+    """
+    setUp = RequestedReviewQualificationTests.setUp
+    save = RequestedReviewQualificationTests.save
+    complete_control = RequestedReviewQualificationTests.complete_control
+
+    def compose(self):
+        from tests.test_concurrent_reviews import ConcurrentReviewTests
+        from tests.toolchain import require_toolchain
+        require_toolchain(native=True)
+        self.reviews = ConcurrentReviewTests('setUp')
+        self.reviews.setUp()
+        self.addCleanup(self.reviews.doCleanups)
+        for definition in (*self.reviews.profile['reviewers'], self.reviews.profile['adjudicator']):
+            definition['timeout_s'] = 120
+        self.reviews.settings = {role: {'sleep': 0, 'fail': False} for role in ('circuit', 'physical')}
+        self.complete_control(typed=True)
+        write_json(self.root / 'source/profile.json', self.reviews.profile)
+        plan = read_json(self.root / 'build-plan.json')
+        plan['review_profile'] = 'profile.json'
+        build_plan.validate_plan(plan)
+        write_json(self.root / 'build-plan.json', plan)
+        self.report['inputs']['plan_sha256'] = digest(self.root / 'build-plan.json')
+        self.report['inputs']['source'] = build._inventory(self.root / 'source')
+        self.report['identity'] = identity(self.report['inputs'])
+        self.package = self.report['completed'][-1]
+        self.stage = self.root / self.package['directory']
+        candidate = self.root / self.package['candidate']
+        fixture = Path(__file__).resolve().parents[1] / 'fixtures/rc'
+        shutil.copytree(fixture / 'control', candidate / 'project')
+        shutil.copytree(fixture / 'requirements', candidate / 'requirements')
+        shutil.copytree(self.reviews.root / 'source', candidate / 'design')
+        self.scope = read_json(fixture / 'control.scope.json')
+        retargeted = {'control': candidate / 'project', 'requirements': candidate / 'requirements'}
+        for entry in self.scope['inputs']:
+            entry['path'] = str(retargeted.get(entry['path'], entry['path']))
+        self.scope['inputs'].append({'path': str(candidate / 'design'), 'at': 'design'})
+        self.scope['checks'] = [{'id': 'netlist', 'kind': 'netlist'}]
+        self.scope['skip_visuals'] = True
+        self.board = candidate / self.scope['board']
+
+    def pinned_runtime(self):
+        from agent_ee import preflight, run_record
+        runtime = lambda **kwargs: copy.deepcopy(self.reviews.host['runtime_files'])
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(run_record, 'runtime_files', runtime))
+        stack.enter_context(mock.patch.object(preflight, 'runtime_files', runtime))
+        return stack
+
+    def package_review(self):
+        """The exact package call: review_candidate with the retained profile copy."""
+        for stale in ('review', 'scope.json'):
+            path = self.stage / stale
+            shutil.rmtree(path) if path.is_dir() else path.unlink(missing_ok=True)
+        with self.pinned_runtime(), mock.patch('agent_ee.reviewers.dispatch', side_effect=self.reviews.harness), \
+                contextlib.redirect_stdout(io.StringIO()):
+            retained_run.review_candidate(self.scope, self.stage, 600, profile=str(self.root / 'source/profile.json'))
+        candidate = self.root / self.package['candidate']
+        write_json(self.stage / 'applicability-inventory.json', dict(inputs=build._inventory(candidate),
+            values=qualification.applicability_facts(candidate, read_json(self.root / 'build-plan.json'))))
+        self.package['tree'] = test_qualification.tree_identity(self.stage)
+        self.save()
+        with self.pinned_runtime():
+            report = build._assess_report(self.root, copy.deepcopy(self.report), typed=True)
+        return report, read_json(self.root / 'qualification.json'), read_json(self.stage / 'review/result.json')
+
+    def test_completed_and_incomplete_package_reviews_project_through_real_custody(self):
+        self.compose()
+        report, record, result = self.package_review()
+        self.assertEqual((result['outcome'], result['adjudicated']), ('criteria_satisfied', True), result)
+        manifest = read_json(self.stage / 'review/candidate.json')
+        self.assertEqual(manifest['profile_sha256'], self.report['inputs']['source']['profile.json'])
+        self.assertEqual(manifest['scope']['review_profile'], self.reviews.profile)
+        row = record['dimensions']['engineering_review']
+        self.assertEqual(row['status'], 'pass', record)
+        self.assertEqual((row['binding']['stage'], row['binding']['board_sha256']), ('package', digest(self.board)))
+        self.assertEqual(row['evidence'][0]['path'], self.package['directory'] + '/review/result.json')
+        self.assertEqual(record['dimensions']['checks']['status'], 'pass')
+        self.assertEqual(record['summary']['required'], ['file_release', 'engineering_review'])
+        # Fixture limit: this synthetic control cannot release files, so acceptance stays withheld.
+        file_release = record['dimensions']['file_release']['status']
+        self.assertIn(file_release, ('pending', 'failed'))
+        self.assertFalse(report['accepted'])
+        self.assertNotEqual(report['status'], 'accepted')
+
+        self.reviews.settings['physical']['fail'] = True
+        report, record, result = self.package_review()
+        self.assertEqual((result['outcome'], result['adjudicated']), ('incomplete', False), result)
+        self.assertEqual([r['execution'] for r in result['review_executions']], ['ok', 'failed'])
+        row = record['dimensions']['engineering_review']
+        self.assertEqual(row['status'], 'not_assessed', record)
+        self.assertIn('No complete full engineering review', row['reason'])
+        # Independently verified file and check evidence remain visible and unchanged.
+        self.assertEqual(record['dimensions']['checks']['status'], 'pass')
+        self.assertEqual(record['dimensions']['file_release']['status'], file_release)
+        self.assertEqual((record['dimensions']['supplier']['status'], record['dimensions']['physical']['status']),
+                         ('pending', 'pending'))
+        self.assertFalse(report['accepted'])
+        self.assertFalse(record['accepted'])
