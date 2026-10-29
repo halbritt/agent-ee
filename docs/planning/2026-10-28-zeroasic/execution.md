@@ -582,3 +582,68 @@ imported esp_prog M1 closure, independent verification and reproducible release
 evidence. Passing tests or landing code cannot complete that goal. The owner’s
 constraint against new generic validation infrastructure and all declared
 acceptance/custody boundaries remain in force. Current acceptance is **0/4**.
+
+### CI launch correction and current original esp_prog result
+
+Existing CI preflight on `f19f73dcdf4c9cc42fdaba02c1af58f8d8750725`
+passed cheap checks, doctor, sandbox admission and the RC control/seeded action
+gates: actual exit 0 in 33.85 seconds. Checks-only review's expected nonzero
+status was evaluated by the existing action gate, not treated as acceptance.
+Evidence is under `ci-preflight-r1` at the host evidence root.
+
+The coordinator omitted the retained private-input environment from the next
+full strict invocation. Required acquisition tests therefore skipped. R5 was
+stopped rather than allowed to consume the remaining budget: actual exit 143
+after 836.62 seconds. Its partial logs, exact command and cancellation are
+retained under `full-strict-r5`; the owned container was removed and admission
+returned to zero. This is **not a full-suite pass**. The next authoritative full
+run must include the staged input environment and explicit acquisition plan
+locator, after the pending production changes are integrated. No new controller
+or runtime profile is needed.
+
+One separately admitted public `place run` then consumed the **original**
+esp_prog board `b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7`
+and its original project, intent and groups on the same frozen source. Only four
+config paths were rebound to the staged exact copies. Original seeds,
+100000 steps per seed, shortlist six, rules and 1200-second job budget were
+preserved; the enclosing grant was 1800 seconds with a 300-second grading
+reserve. Actual outer exit was 0 in 620.54 seconds. All four original input
+hashes remained unchanged. The job performed six search seeds and two routing
+trials inside one invocation; its first trial left one open and remains failed.
+
+The selected board is
+`875d0bd2526e05d367bed3c1ed819d611c6c63b14b0d9482d0de92ca45511071`.
+Its saved native DRC has zero errors and zero opens. CON1 and CON2 are on the
+declared east edge; USB1 is on the declared west edge. Native identity checks
+report preserved integrity. There are **255 warnings**: 21 library, 6 silk/edge,
+46 silk/copper, 162 silk overlaps and 20 text-height findings. Group views are
+retained but explicitly have `acceptance_assessed: false`; locality and strict
+grouping are not declared by this original input. The job itself reports
+`accepted: false` and `clean: false`. Readable artwork, group/relationship
+acceptance, assembly/profile/site/cable evidence and M1 release remain open.
+Evidence is under `esp-original-native-r1`; job-report SHA256 is
+`50e73814ec18b1c34a4442e18fb33db922a4ee585218c0c838acecb879442f12`.
+Native admission is free after completion. Agent-695 owns a bounded read-only
+independent outcome audit; no second placement run is granted.
+
+Two source implementation grants now address demonstrated product gaps:
+agent-691 reuses the existing native block-contract evaluator to bind final
+artwork to strict package qualification, and agent-693 captures an explicitly
+requested review profile through the public acquisition preparer. Each works
+in an isolated worktree; neither may run native jobs or land independently.
+Their source reviews and target verification remain pending. The acquisition
+access/body-gap and local-return production repair are still unresolved;
+independent audits reject treating fixed poses as movement commands or giving
+zone traversal zero length. No third saved-board repair is admitted.
+
+Agent-692 produced one separate offline alternative-input draft with the
+existing catalog and part validators: one invocation, exit 0 in 0.468 seconds.
+The derived catalog preserves both original observation windows and all twelve
+raw responses; it does not reset freshness or claim a new network capture.
+Independent source review approved only that draft's custody and purchasing
+bindings (audit SHA256
+`71ea6466db1199a93d3248e89278dbd8a067754c029bd058483e0e43732a088a`).
+It is not adopted into a run and does not prove automatic selection, assembly
+eligibility or a fresh accepted board. Supplier/physical statuses remain
+pending. Old preparation, stock-query and saved-board repair limits remain
+exhausted. G4 is unstarted and campaign acceptance remains **0/4**.
