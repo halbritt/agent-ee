@@ -116,9 +116,12 @@ def _mechanics_basis(placement, original, scope, normalized, capture, recipe_nam
     if len(rows) != len(problem['footprints']) or set(rows) != {fp['uuid'] for fp in facts['footprints']}:
         raise ValueError('mechanics original problem owner coverage differs')
     attached = {fp['uuid']: fp for fp in description['footprints']}
+    fixed_owners = placement_problem.fixed_pose_owners(
+        normalized['intent'].get('fixed_poses', []), facts['footprints'])
     for fp in facts['footprints']:
         row = rows[fp['uuid']]
-        if (row['native_ref'] != fp['ref'] or row['role'] != ('fixed_body' if fp['locked'] else 'movable')
+        if (row['native_ref'] != fp['ref'] or row['role'] != (
+                'fixed_body' if fp['locked'] or fp['uuid'] in fixed_owners else 'movable')
                 or row['pose'] != dict(x_nm=fp['position_nm'][0], y_nm=fp['position_nm'][1],
                                        quarter_turns=int(fp['rotation_deg']//90)%4)
                 or any(row.get(k) != attached[fp['uuid']][k] for k in ('source_body_local_nm','access_local_nm'))

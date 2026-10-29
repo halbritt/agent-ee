@@ -10,6 +10,7 @@ from agent_ee import (acquisition_mechanics as mechanics, block_package, placeme
                       placement_job, placement_problem, retained_run, native_run, routed_artwork)
 from agent_ee.storage import canonical, digest, identity, read_json, write_json
 from tests.test_prepared_block_contract import fixture, FinalArtworkBlockProofTests
+from tests.test_placement_problem import board as described_board, footprint as described_footprint
 
 
 class MechanicsPackageTests(unittest.TestCase):
@@ -58,14 +59,13 @@ class MechanicsPackageTests(unittest.TestCase):
         write_json(source/'placement-mechanics.json',mechanics.declaration(source))
         self.recipe=mechanics.load(source/'placement-mechanics.json')
         self.groups={'groups':[dict(name='device',anchor='U1',refs=members)]}
-        for name,value in [('contract.json',contract),('intent.json',{}),('groups.json',self.groups),
+        self.intent={'fixed_poses':[dict(ref='C2',x=2,y=2,rot=0,side='F',basis='mechanical')]}
+        for name,value in [('contract.json',contract),('intent.json',self.intent),('groups.json',self.groups),
                            ('locality.json',contract['relationships'])]:write_json(source/name,value)
         self.scope=dict(board='board.kicad_pcb',checks=[dict(kind='placement',params=dict(
             criterion='electrical-locality/1',locality='locality.json'))])
         self.plan={'placement':dict(block_contract='contract.json',intent='intent.json',groups='groups.json',
                                     mechanics='placement-mechanics.json')}
-        self.records=[dict(uuid=f['uuid'],native_ref=f['ref'],role='fixed_body' if f['locked'] else 'movable')
-                      for f in self.facts['footprints']]
         self.report=retained_run.initialize(self.root,dict(plan_sha256='a'*64,source=retained_run._inventory(source),runtime={}))
         previous=source
         for name in retained_run.STAGES[:5]:
@@ -74,25 +74,27 @@ class MechanicsPackageTests(unittest.TestCase):
             if name=='placement-routing':
                 self.placement=stage
                 self.placement_candidate=candidate
-                normalized=placement_job.normalize_intent({},self.groups,locality=contract['relationships'],
+                normalized=placement_job.normalize_intent(self.intent,self.groups,locality=contract['relationships'],
                     board_sha256=self.facts['board_sha256'],groups_sha256=digest(candidate/'groups.json'))
-                binding=placement_contract.bind(self.facts,contract,normalized,self.records)
                 self.bound=mechanics.bind(self.recipe,self.facts)
+                desc=described_board();desc['footprints']=[]
+                for i,f in enumerate(self.facts['footprints']):
+                    row=described_footprint(i,f['ref'],*f['position_nm'],locked=f['locked'])
+                    row['uuid']=f['uuid']
+                    row['pads']=[dict(uuid=p['uuid'],number=p['number'],net=p['net'],
+                        local_nm=list(placement_job._unrotate(p['position_nm'][0]-f['position_nm'][0],
+                            p['position_nm'][1]-f['position_nm'][1],0)),half_nm=[100000,100000]) for p in f['pads']]
+                    desc['footprints'].append(row)
+                mechanics.attach(desc,self.bound,self.facts)
+                problem,self.records=placement_problem.capture(desc,normalized,
+                    locality_footprints=self.facts['footprints'])
+                binding=placement_contract.bind(self.facts,contract,normalized,self.records)
                 write_json(stage.directory/'placement-config.json',dict(inputs={k:dict(path=str(candidate/v),sha256=digest(candidate/v))
                     for k,v in dict(board='board.kicad_pcb',project='board.kicad_pro',intent='intent.json',groups='groups.json',
                         locality='locality.json',block_contract='contract.json',mechanics='placement-mechanics.json').items()}))
                 self.capture=dict(block_contract=binding,mechanics=self.bound,board_sha256=self.facts['board_sha256'],
                     pcbnew_version=self.facts['pcbnew_version'],facts_sha256=identity(self.facts))
                 write_json(stage.directory/'placement/capture.json',self.capture)
-                # Only data needed for original owner/model identity replay, not another geometry evaluator.
-                desc={'footprints':[dict(f) for f in self.facts['footprints']]}
-                mechanics.attach(desc,self.bound,self.facts)
-                problem={'schema':placement_problem.INPUT_SCHEMA,'mechanics':desc['mechanics'],'footprints':[dict(uuid=f['uuid'],native_ref=f['ref'],
-                    role='fixed_body' if f['locked'] else 'movable',pose=dict(x_nm=f['position_nm'][0],
-                    y_nm=f['position_nm'][1],quarter_turns=0),pads=[dict(uuid=p['uuid'],number=p['number'],net=p['net'],
-                    local_nm=[p['position_nm'][0]-f['position_nm'][0],p['position_nm'][1]-f['position_nm'][1]]) for p in f['pads']],source_body_local_nm=f['source_body_local_nm'],
-                    access_local_nm=f['access_local_nm']) for f in desc['footprints']]}
-                problem['problem_sha256']=placement_problem.identity(problem)
                 write_json(stage.directory/'placement/problem.json',problem)
                 final=stage.directory/'placement/final-a1/board.kicad_pcb';final.parent.mkdir();final.write_bytes(board)
                 write_json(stage.directory/'placement/job-report.json',dict(status='completed',
@@ -123,6 +125,20 @@ class MechanicsPackageTests(unittest.TestCase):
             self.assertEqual(proof['basis']['declarations'][name],pin)
         retained_run.record_completion(self.root,self.report,self.artwork,self.candidate);retained_run.write_report(self.root,self.report)
         self.assertEqual(block_package.verify(self.root,self.candidate,self.scope,self.plan)['board_sha256'],digest(self.candidate/self.scope['board']))
+
+    def test_declared_fixed_unlocked_owner_passes_but_resealed_role_change_refuses(self):
+        owner=next(f for f in self.facts['footprints'] if f['ref']=='C2')
+        self.assertFalse(owner['locked'])
+        path=self.placement.directory/'placement/problem.json'
+        problem=read_json(path)
+        row=next(f for f in problem['footprints'] if f['native_ref']=='C2')
+        self.assertEqual(row['role'],'fixed_body')
+        self.produce()
+        row['role']='movable'
+        problem['problem_sha256']=placement_problem.identity(problem)
+        write_json(path,problem);self.reseal()
+        with self.assertRaisesRegex(ValueError,'native owner/pose differs'):
+            self.produce()
 
     def test_resealed_missing_or_rehashed_original_evidence_refuses(self):
         job=self.placement.directory/'placement';files={name:(job/name).read_bytes() for name in ('capture.json','problem.json')}

@@ -6,6 +6,8 @@ It reconstructs original native references from the block binding's explicit UUI
 aliases, checks the original capture identity, and requires exact equality with a
 fresh source-model mechanics binding. The retained problem must have its correct
 self-identity and matching source body, access, native owner, pose and pad data.
+Fixed body roles include exact original poses declared by the authenticated intent
+as well as native locks, using the placement problem builder's owner resolver.
 
 The package proof pins the capture, problem, configuration, completed job result
 and actual accepted final-placement board. Mechanics must have passed on that
