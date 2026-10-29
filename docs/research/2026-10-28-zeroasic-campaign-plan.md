@@ -22,6 +22,16 @@ Acquisition engineering, negative/resume checks and the four-case acceptance
 series remain required. The owner subsequently instructed **"do that and then
 resume work"** on 2026-10-29, authorizing execution under this amended scope.
 
+## Execution recovery — 2026-10-29
+
+Agent-706 resumes the acquisition-only campaign under the owner's direct
+instruction to diagnose stalled progress, correct the plan and continue.
+The [recovery sequence](../planning/2026-10-28-zeroasic/recovery-2026-10-29.md)
+connects the existing role, final-group and repair capabilities to production,
+adds the missing evaluation adapter to the critical path, and replaces
+per-command pure-test micro-grants with enclosing development budgets.
+The acceptance contract and measured-series attempt limits below remain.
+
 ## Destination and success criteria
 
 The first campaign delivers autonomous preparation and engineering acceptance
