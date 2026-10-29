@@ -225,6 +225,10 @@ class NativePackageReviewTests(unittest.TestCase):
         self.scope['checks'] = [{'id': 'netlist', 'kind': 'netlist'}]
         self.scope['skip_visuals'] = True
         self.board = candidate / self.scope['board']
+        scaffold = next(row for row in self.report['completed'] if row['stage'] == 'scaffold')
+        scaffold_directory = self.root / scaffold['directory']
+        write_json(scaffold_directory / 'product/scope.json', self.scope)
+        scaffold['tree'] = test_qualification.tree_identity(scaffold_directory)
 
     def pinned_runtime(self):
         from agent_ee import preflight, run_record
