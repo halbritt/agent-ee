@@ -6,6 +6,8 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
+import stat
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -143,6 +145,36 @@ class AcquisitionPreparationTests(unittest.TestCase):
                 self.assertEqual(report['accounting']['obligations']['judgment'], 14)
                 self.assertEqual(report['accounting']['judgment_records_present'], [])
         self.assertEqual(requirement_map.input_inventory(BASE), before)
+
+    def test_read_only_capture_prepares_without_changing_source_bytes_or_modes(self):
+        capture = self.root / 'captured'
+        capture.mkdir()
+        source = capture / 'inputs'
+        shutil.copytree(BASE, source)
+        plan = capture / 'build.json'
+        plan.write_bytes(PLAN.read_bytes())
+        files = [p for p in source.rglob('*') if p.is_file()]
+        directories = [source, *[p for p in source.rglob('*') if p.is_dir()]]
+        for path in files:
+            path.chmod(0o444)
+        for path in directories:
+            path.chmod(0o555)
+        before = requirement_map.input_inventory(source)
+        raw = self.root / 'readonly.md'
+        raw.write_bytes(brief('150'))
+        out = self.root / 'readonly-prepared'
+        try:
+            report = acquisition_prepare.prepare(raw, plan, out, added_sources=self.sources)
+            self.assertEqual(report['outcome'], 'prepared')
+            self.assertIn(b'at most 150 pF total line capacitance',
+                          (out / 'inputs/spec.md').read_bytes())
+            self.assertEqual(requirement_map.input_inventory(source), before)
+            self.assertTrue(all(stat.S_IMODE(p.stat().st_mode) == 0o444 for p in files))
+            self.assertTrue(all(stat.S_IMODE(p.stat().st_mode) == 0o555 for p in directories))
+            self.assertEqual(plan.read_bytes(), PLAN.read_bytes())
+        finally:
+            for path in directories:
+                path.chmod(0o700)
 
     def test_multibyte_non_equal_length_quantity_relocates_all_source_spans(self):
         raw = brief('150.00').replace(b'150.00 pF', '150.00\u00a0pF'.encode())

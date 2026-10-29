@@ -462,7 +462,12 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     with tempfile.TemporaryDirectory(prefix=out.name + '.prepare-', dir=out.parent) as scratch:
         scratch = Path(scratch)
         revised, bundle = scratch / 'revision', scratch / 'bundle'
-        shutil.copytree(base, revised)
+        # Captures may be read-only; the owned revision needs writable copies.
+        revised.mkdir()
+        for name in before:
+            target = revised / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(base / name, target)
         overlay, original_record, record = _write_revision(base, revised, selected, overlay)
         provenance = revised / 'preparation'
         provenance.mkdir()
