@@ -44,9 +44,13 @@ def projected_inventory(original, context, captures):
     return projected
 
 
-def materialize(original, destination, context, captures, expected):
+def materialize(original, destination, context, captures, expected, *, power_repair_captures=None):
     shutil.copytree(original, destination)
-    for name, raw in supplier_files(context, captures).items():
+    files = supplier_files(context, captures)
+    if power_repair_captures is not None:
+        from . import acquisition_power_repair
+        files.update(acquisition_power_repair.supplier_files(power_repair_captures))
+    for name, raw in files.items():
         path = Path(destination) / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(raw)
@@ -66,8 +70,10 @@ def finalize(revised, overlay, cpl_root):
         raise ValueError('selected acquisition needs exactly one CPL rotation check')
     check = checks[0]
     paths = list(check['params']['supplier_footprints'])
-    if (Path(cpl_root) / 'supplier/C468683.provenance.json').is_file():
-        paths.append('cpl/supplier/C468683.provenance.json')
+    for selected_id in ('C468683', 'C137695'):
+        source = 'cpl/supplier/' + selected_id + '.provenance.json'
+        if (Path(cpl_root) / source.removeprefix('cpl/')).is_file() and source not in paths:
+            paths.append(source)
     def read(path):
         if not path.startswith('cpl/'):
             raise ValueError('CPL supplier source is outside the admitted CPL input')
@@ -84,6 +90,8 @@ def finalize(revised, overlay, cpl_root):
     before = roster_path.read_bytes()
     old = strict_json(before)
     expected = (selected - {'C468683'}) | {'C37593'} if 'C468683' in selected else selected
+    if 'C137695' in selected:
+        expected = expected - {'C137695'}
     if not isinstance(old, list) or len(old) != len(set(old)) or set(old) != expected:
         raise ValueError('historical assembly allocation roster differs from admitted original selections')
     roster_path.write_bytes(json_bytes(sorted(selected)))
@@ -96,6 +104,8 @@ def finalize(revised, overlay, cpl_root):
     from .acquisition_alternative import _assembly_check
     mapping = strict_json((revised / 'requirement-map.json').read_bytes())
     question['sources'].append(_assembly_check(mapping)['params']['catalog'] + ' (operative stock capture; freshness remains run-bound)')
+    if 'C137695' in selected:
+        question['sources'].append('preparation/power-repair/decision.json (explicit R6 exception, not supplier approval)')
     if roster_path.read_bytes() != before:
         question['sources'].append('history/acquisition-preparation-original/assembly-release-ids.json (historical choices only)')
     report = dict(roster=dict(path='assembly-release-ids.json', before_sha256=sha256(before).hexdigest(),

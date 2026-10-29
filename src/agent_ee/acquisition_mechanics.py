@@ -3,7 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 import hashlib
 
-from . import acquisition_source_supplement
+from . import acquisition_source_supplement, acquisition_power_repair
 from .catalog import strict_json
 from .mechanical_reservations import _native_owner, _current_owner, _sha
 from .storage import canonical, digest
@@ -21,6 +21,9 @@ def declaration(root):
     sources = {rel: digest(root / rel) for rel in SOURCES}
     if sources['analysis/geometry-model.json'] == acquisition_source_supplement.CORRECTED_MODEL:
         sources.update(acquisition_source_supplement.geometry_sources())
+    if sources['analysis/geometry-model.json'] == acquisition_power_repair.MODEL:
+        sources.update(acquisition_source_supplement.geometry_sources())
+        sources.update(acquisition_power_repair.geometry_sources())
     return {'schema': SCHEMA, 'sources': sources}
 
 
@@ -67,7 +70,9 @@ def _version(document):
     sources = document['sources']
     model = sources['analysis/geometry-model.json']
     extra = acquisition_source_supplement.geometry_sources() if model == acquisition_source_supplement.CORRECTED_MODEL else {}
-    if (model not in (MODEL, acquisition_source_supplement.CORRECTED_MODEL)
+    if model == acquisition_power_repair.MODEL:
+        extra = {**acquisition_source_supplement.geometry_sources(), **acquisition_power_repair.geometry_sources()}
+    if (model not in (MODEL, acquisition_source_supplement.CORRECTED_MODEL, acquisition_power_repair.MODEL)
             or sources['analysis/geometry_model.py'] != CHECKER
             or set(sources) != set(SOURCES) | set(extra)
             or any(sources.get(name) != pin for name, pin in extra.items())):

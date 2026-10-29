@@ -327,3 +327,69 @@ independent judgments, supplier and physical obligations remain separate.
 
 Omitting this optional input preserves the historical recipe path. It composes
 with the existing captured carrier context and supported 100–150 pF briefs.
+
+## Explicit R6 power-repair exception
+
+The finite R6 repair uses the same public preparer and original captured recipe:
+
+```sh
+--added-input power-repair=/absolute/path/reviewed-power-repair
+```
+
+It requires the captured ADC carrier context and exact `source-supplement`.
+Omitting it preserves the original R6 and no-repair path. This input is an
+explicit exception to the retained original-reference adoption sentence: its
+separately hashed `activation.txt` permits only R6 = YAGEO RC0603FR-07620RL,
+C137695, 620 ohm, 1%, 0603, and the reviewed seven-case power analysis. The
+complete owned input closure must match
+`fixtures/acquisition-typed/power-repair.json`; missing, changed or unrelated
+sources refuse. The original 198-file admission, brief and specification remain
+unchanged. No arbitrary part selector, patch language or caller-qualified flag
+is introduced.
+
+Preparation applies ADC selection, then this R6 exception, then the exact source
+supplement. It finalizes the combined supplier list, selected-allocation roster,
+assembly question and authored membership binding after both selections, before
+archiving originals, mechanics binding and the existing typed seal. R3/R4 retain
+C114662/2.2 kohm; all 17 references/instances, CAD assignments, footprints and nets
+remain. Exact C137695 supplier raw/provenance is carried through the owned CPL
+added-input revision; policy, tolerances and native pad/rotation rules remain.
+No supplier assembly approval follows from stock or raw supplier flags.
+
+The existing two-parent algebra combines the unchanged ADC 12-observation union
+with the retained single-ID R6 capture. The resulting 13-observation catalog
+keeps every original response/fetch time and the conservative parent window.
+All named records and parts replay against this catalog. The new exact YAGEO PDF
+has a derived capture manifest preserving its actual earlier HTTP timestamp;
+it is not a new download. Parent/HTTP/source custody remains captured.
+
+R6's nominal-25 C interval is 613.8–626.2 ohm. The input-current equation counts
+two 2.2 kohm pullups plus the independent output bleed. Exact rational budget
+values are retained with displayed decimals. Every output-bleed model uses the
+adverse 626.2 ohm value. Four removal cases use the reviewed source-only derivative
+and zero minimum ADC load: two retained 200 microampere stresses and two explicitly
+extrapolated 20/25 microampere sensitivities. Those sensitivities are not
+manufacturer guarantees below 1.6 V. Three startup cases retain the original
+12.65 microfarad COUT case and the 3 microfarad/100 and 5 milliohm brackets.
+Only the 100 milliohm case adopts the separately authorized 1 microsecond step;
+its historical convergence evidence used old R6/4.752 V and grants no new pass.
+There is no C_PAD, solver regularization, threshold or capacitor-value change.
+All seven checks use the specification's 4.75 V minimum supply.
+
+The larger load withdraws the old 0.45 V-at-10 mA diode transfer. The calculation
+uses a **conditional** monotonic interpretation of the captured 1 V-at-250 mA
+point at nominal 25 C and the 20 mA supply contract: 3.75 V after the diode,
+3.74 V after the retained 10 mV wiring allowance, versus the DBV accuracy floor
+of 3.6 V. The 1 mA loaded ground-current allowance is assumed; TI provides no
+loaded maximum. Conditional U1 power/thermal rows use DBV 187.1 C/W and explicitly
+retain board/temperature limitations. Geometry keeps all body sizes and tolerances,
+changes R6 attribution to its exact sheet, and uses the revised current estimate
+in the existing rail-drop model. Only the finite combined model/source version
+is admitted; numerical limits are not relaxed.
+
+The activation, complete captures, helper/descriptor pins, decisions, catalog
+parents, before/after diagnostic motivation, edits and original archive enter
+source identity. All source and copied capture bytes are rechecked before atomic
+publication. Generated narrative and judgment briefs expose the exception; no
+judgment, witness, native result or qualification is produced. Fresh native
+620 ohm/4.75 V checks, independent review and supplier/physical obligations remain.

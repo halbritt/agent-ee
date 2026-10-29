@@ -16,7 +16,7 @@ import shutil
 import stat
 import tempfile
 
-from . import acquisition_source_supplement, acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
+from . import acquisition_power_repair, acquisition_source_supplement, acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +38,10 @@ REVISION_BASIS = {
     'placement.json': 'Rebind embedded locality; preserve placement geometry and policy',
     'analysis/electrical-intervals.json': 'Update only bus capacitance and operative source bindings',
     'OPERATING.md': 'Apply selected total bus capacitance and source-qualified ADC applicability labels',
+    'analysis/power-startup/corners.lib': 'Explicit R6+1% adverse626.2ohm; all other original corner values retained',
+    'analysis/power-removal/corners.lib': 'Explicit R6+1% adverse626.2ohm; unused historical model remains documentary',
+    'analysis/power-startup/README.md': 'Declare seven reviewed source cases, assumptions and convergence history without inherited pass',
+    'analysis/power-removal/README.md': 'Declare corrected source-only removal derivative, zero ADC minimum and retained200uA stress',
     'analysis/geometry-model.json': 'Correct C4/C5 exact Murata attribution; numerical geometry unchanged',
     'engineering-calculations.json': 'Recompute RC operand; bind captured sources and rate-qualified ADC terms',
     'ENGINEERING-REVIEW.md': 'Transcribe changed arithmetic and withhold inherited review credit',
@@ -248,7 +252,7 @@ def _load_overlay(before, sources):
                           ('requirement-map.json', 'requirement_map_sha256')]:
         if before[filename] != overlay['base'][key]:
             raise ValueError(f'{filename}: captured base differs from the selected typed overlay')
-    original_sources = {k: v for k, v in sources.items() if k != acquisition_source_supplement.AT}
+    original_sources = {k: v for k, v in sources.items() if k not in (acquisition_source_supplement.AT, acquisition_power_repair.AT)}
     if original_sources.keys() != overlay['added_inputs'].keys():
         raise ValueError('added inputs must supply exactly cpl, manufacturer-text and operating-supplement')
     additions = {key: requirement_map.input_inventory(path) for key, path in original_sources.items()}
@@ -260,6 +264,11 @@ def _load_overlay(before, sources):
         files = {name: spec_record.sha256(raw) for name, raw in captured.items()}
         additions[acquisition_source_supplement.AT] = files
         overlay['added_inputs'][acquisition_source_supplement.AT] = dict(files=files)
+    if acquisition_power_repair.AT in sources:
+        captures = acquisition_power_repair.read(sources[acquisition_power_repair.AT])
+        files = {n: spec_record.sha256(b) for n, b in captures.items()}
+        additions[acquisition_power_repair.AT] = files
+        overlay['added_inputs'][acquisition_power_repair.AT] = dict(files=files)
     return raw, overlay, additions
 
 
@@ -415,7 +424,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         source_inventory_sha256=spec_record.sha256(json_bytes(before)),
         overlay_sha256=spec_record.sha256(overlay_raw), producer_sha256=spec_record.sha256(Path(__file__).read_bytes()),
         helpers={module.__name__: spec_record.sha256(Path(module.__file__).read_bytes())
-                 for module in (acquisition_local_return, acquisition_mechanics, build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
+                 for module in (acquisition_local_return, acquisition_mechanics, acquisition_source_supplement, acquisition_power_repair, build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
         additions={key: spec_record.sha256(json_bytes(files)) for key, files in additions.items()})
     if review_context is not None:
         recipe['review_context'] = review_context
@@ -437,6 +446,18 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         recipe['source_supplement_pins_sha256'] = storage.digest(acquisition_source_supplement.PINS)
         recipe['helpers'][acquisition_source_supplement.__name__] = storage.digest(
             Path(acquisition_source_supplement.__file__))
+    repair_captures = None
+    if acquisition_power_repair.AT in sources:
+        if alternative is None or supplement_captures is None:
+            raise ValueError('explicit R6 power repair requires captured ADC context and exact source supplement')
+        repair_captures = acquisition_power_repair.read(sources[acquisition_power_repair.AT])
+        recipe['power_repair_pins_sha256'] = storage.digest(acquisition_power_repair.PINS)
+        for module in (acquisition_power_repair, acquisition_power_repair.active_spice):
+            recipe['helpers'][module.__name__] = storage.digest(Path(module.__file__))
+        for name, captured in acquisition_power_repair.supplier_files(repair_captures).items():
+            if name in recipe['selected_cpl_inventory']:
+                raise ValueError('R6 supplier capture would overwrite original CPL input')
+            recipe['selected_cpl_inventory'][name] = spec_record.sha256(captured)
     identity = spec_record.sha256(json_bytes(recipe))
     with tempfile.TemporaryDirectory(prefix=out.name + '.prepare-', dir=out.parent) as scratch:
         scratch = Path(scratch)
@@ -466,10 +487,37 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                 revised, context_doc, context_captures, alternative['evaluation_as_of'])
             selected_cpl = scratch / 'selected-cpl'
             acquisition_selected_cpl.materialize(sources['cpl'], selected_cpl, context_doc,
-                context_captures, recipe['selected_cpl_inventory'])
-            selected_closure = acquisition_selected_cpl.finalize(revised, overlay, selected_cpl)
+                context_captures, recipe['selected_cpl_inventory'], power_repair_captures=repair_captures)
             sources['cpl'] = selected_cpl
             overlay['added_inputs']['cpl']['files'] = recipe['selected_cpl_inventory']
+        repair_report = None
+        if repair_captures is not None:
+            repair_report = acquisition_power_repair.apply(
+                revised, overlay, repair_captures, alternative['evaluation_as_of'])
+            (provenance / 'power-repair-pins.json').write_bytes(acquisition_power_repair.PINS.read_bytes())
+        supplement_report = None
+        if supplement_captures is not None:
+            source_files = requirement_map.input_inventory(revised)
+            source_files.update({at + '/' + n: h for at, files in additions.items() for n, h in files.items()})
+            # A selected purchasing display label may change circuit bytes; the
+            # authored calculation source remains captured in the original archive.
+            source_files.update({'history/acquisition-preparation-original/' + n: h
+                                 for n, h in before.items() if source_files.get(n) != h})
+            supplement_report = acquisition_source_supplement.apply(
+                revised, overlay, supplement_captures, source_files)
+            (provenance / 'source-supplement-pins.json').write_bytes(
+                acquisition_source_supplement.PINS.read_bytes())
+        if repair_report is not None:
+            acquisition_power_repair.finalize_geometry(revised)
+            for brief in overlay['judgments'].values():
+                brief['questions'] = [q.replace('Power-model correction remains pending;',
+                    'Reviewed power-model source correction is admitted; fresh native evaluation remains pending;')
+                    for q in brief['questions']]
+        # Derive against the same serialized overlay the seal consumer reads;
+        # added-input object order must not change the predicted map bytes.
+        overlay = typed_overlay.load_overlay(json_bytes(overlay))
+        if alternative_report is not None:
+            selected_closure = acquisition_selected_cpl.finalize(revised, overlay, selected_cpl)
             # Match the ordinary compiler's actual authored requirement mapping,
             # while it still remains a source revision, before archive and seal.
             operative = typed_overlay.derive_map(
@@ -483,19 +531,12 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             membership_binding = _bind_parts_membership(revised, membership_scope)
             overlay['base']['requirement_map_sha256'] = spec_record.sha256(
                 (revised / 'requirement-map.json').read_bytes())
-        supplement_report = None
-        if supplement_captures is not None:
-            source_files = requirement_map.input_inventory(revised)
-            source_files.update({'manufacturer-text/' + n: h for n, h in additions['manufacturer-text'].items()})
-            # A selected purchasing display label may change circuit bytes; the
-            # authored calculation source remains captured in the original archive.
-            source_files.update({'history/acquisition-preparation-original/' + n: h
-                                 for n, h in before.items() if source_files.get(n) != h})
-            supplement_report = acquisition_source_supplement.apply(
-                revised, overlay, supplement_captures, source_files)
-            (provenance / 'source-supplement-pins.json').write_bytes(
-                acquisition_source_supplement.PINS.read_bytes())
         changed = _archive_revision(base, revised, before, identity)
+        if repair_report is not None:
+            ledger_path = provenance / 'edit-ledger.json'
+            ledger = json.loads(ledger_path.read_bytes())
+            ledger['power_repair'] = repair_report
+            ledger_path.write_bytes(json_bytes(ledger))
         if supplement_report is not None:
             ledger_path = provenance / 'edit-ledger.json'
             ledger = json.loads(ledger_path.read_bytes())
@@ -552,6 +593,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             report['alternative'] = dict(selected=alternative_report['selected'],
                 decision=alternative_report['decision'], catalog=alternative_report['catalog'],
                 context=alternative)
+        if repair_report is not None:
+            report['power_repair'] = repair_report
         (bundle / 'preparation.json').write_bytes(json_bytes(report))
         if review_context is not None:
             if ((bundle / 'inputs' / REVIEW_PROFILE).read_bytes() != profile_raw
@@ -577,6 +620,13 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             for name, captured in supplement_captures.items():
                 if (bundle / 'inputs' / acquisition_source_supplement.AT / name).read_bytes() != captured:
                     raise ValueError('sealed source supplement differs from admitted bytes')
+        if repair_captures is not None:
+            if (storage.digest(acquisition_power_repair.PINS) != recipe['power_repair_pins_sha256']
+                    or acquisition_power_repair.read(sources[acquisition_power_repair.AT]) != repair_captures):
+                raise ValueError('power repair source changed before publication')
+            for name, captured in repair_captures.items():
+                if (bundle / 'inputs' / acquisition_power_repair.AT / name).read_bytes() != captured:
+                    raise ValueError('sealed power repair source differs from admitted capture')
         rename_noreplace(bundle, out)
     return report
 
