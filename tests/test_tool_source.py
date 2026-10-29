@@ -232,8 +232,9 @@ prune(older_than_days=0)
     def test_fixture_cleanup_retains_refused_receipts_on_exception(self):
         from tests.receipt_diagnostics import ReceiptTemporaryDirectory
         retained = self.root / 'retained'
-        os.environ.pop('AGENT_EE_REFUSED_RECEIPTS', None)
-        with mock.patch('tests.receipt_diagnostics.RETENTION_ROOT', retained):
+        with mock.patch.dict(os.environ), \
+                mock.patch('tests.receipt_diagnostics.RETENTION_ROOT', retained):
+            os.environ.pop('AGENT_EE_REFUSED_RECEIPTS', None)
             with self.assertRaisesRegex(RuntimeError, 'fixture failed'):
                 with ReceiptTemporaryDirectory(dir=self.root) as tmp:
                     receipt = Path(tmp) / 'run' / 'receipt.json'
@@ -418,7 +419,7 @@ prune(older_than_days=0)
     def test_repository_wide_step_builders_mount_only_snapshots(self):
         """Discover source-mount constructors; every discovered builder must be exercised."""
         import ast
-        from agent_ee import (add_planes, binding_fill, block_variant_stage, parts_stage,
+        from agent_ee import (add_planes, binding_fill, block_source_stage, block_variant_stage, parts_stage,
                               placement_adapter, pod_driver, rung1_stages, scaffold,
                               schematic_stage)
         route = require_kicad_route()
@@ -444,6 +445,10 @@ prune(older_than_days=0)
             'binding_fill.configuration': [binding_fill.configuration(self.source, intent='intent.json',
                 manifest='parts.json', part_refs='refs.json', deviations='deviations.json',
                 captures='.', dependencies=[])],
+            'block_source_stage._spec': [block_source_stage.configuration(self.source, self.root,
+                {'board': 'b.kicad_pcb', 'checks': []},
+                {'placement': {'block_source': 'block-source.json', 'intent': 'intent.json',
+                               'groups': 'groups.json'}})],
             'block_variant_stage.step': [block_variant_stage.step(self.source,
                 scope={'board': 'b.kicad_pcb', 'schematic': 'b.kicad_sch'}, declaration=declaration,
                 mutable_inputs=['b.kicad_pcb', 'b.kicad_sch', *block_variant_stage.output_paths(section)])],

@@ -1744,8 +1744,10 @@ class StepExecutionTests(StepFixture):
             with self.subTest(schema=schema):
                 retained = self.root / schema.rsplit('/', 1)[1]
                 output = io.StringIO()
-                with patch.object(receipt_diagnostics, 'RETENTION_ROOT', retained), \
+                with patch.dict(os.environ), \
+                        patch.object(receipt_diagnostics, 'RETENTION_ROOT', retained), \
                         contextlib.redirect_stderr(output):
+                    os.environ.pop('AGENT_EE_REFUSED_RECEIPTS', None)
                     with receipt_diagnostics.ReceiptTemporaryDirectory(dir=self.root) as tmp:
                         write_json(Path(tmp) / 'receipt.json', {'schema': schema, 'status': 'refused',
                                                               'violations': ['test-refusal']})
