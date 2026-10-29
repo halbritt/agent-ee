@@ -410,7 +410,12 @@ class CustomPadIndexTests(unittest.TestCase):
             execution = execute(root, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.footprint_library',
                 '/candidate/manifest.json', '--captures', '/candidate',
                 '--assignments', '/candidate/assignments.json', '--out', '/work/result.json'])
-            self.assertEqual(execution['execution'], 'ok', (work / 'console.log').read_text())
+            result_path = work / 'result.json'
+            self.assertEqual(execution['execution'], 'ok', {
+                'execution': execution,
+                'result': result_path.read_text() if result_path.is_file() else None,
+                'console': (work / 'console.log').read_text(),
+            })
             report = json.loads((work / 'result.json').read_text())
             self.assertEqual(report['outcome'], 'pass', report['findings'])
             self.assertEqual(report['index']['footprints'][0]['electrical_numbers'], ['1', '2'])
