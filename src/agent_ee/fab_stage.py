@@ -238,7 +238,7 @@ def step(source_root, board, schematic, bom_variant=None):
     source_root = snapshot(source_root)
     return {'schema': 'agent-ee.stage-step/1', 'stage': 'fab', 'step': 'export-fab',
             'argv': ['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
-                     '-m', 'agent_ee.fab_stage',
+                     '-c', 'from agent_ee.fab_stage import _stage_main; raise SystemExit(_stage_main())',
                      '--board', board, '--schematic', schematic]
                     + (['--bom-variant', bom_variant] if bom_variant is not None else []),
             'mounts': [{'source': str(Path(source_root).absolute()), 'at': '/tool/agent-ee'},
@@ -348,6 +348,76 @@ def package(run, target, manifest_path):
         data['bom_variant'] = manifest['bom_variant']
     write_json(manifest_path, data)
     return data
+
+
+class _FabStageExecution:
+    """Native fab checks inside the fixed receipted producer's existing sandbox."""
+
+    def __init__(self):
+        from .forward_annotation import _StageExecution
+        self.stage = _StageExecution(_fab_templates=True)
+
+    def run(self, intent, *, inputs, work, timeout, mounts, cancel,
+            on_line=None, on_launch=None, on_tick=None, **callbacks):
+        from dataclasses import replace
+        from . import native_run
+        from .checks import CheckError
+        from .stage_receipts import file_tree
+        from .executor import SANDBOX_PATH
+        if (intent.isolation != 'sandbox' or intent.network or intent.remount_ro
+                or intent.log_bytes is not None or callbacks
+                or any(v is not None for v in (on_line, on_launch, on_tick))):
+            raise ValueError('unsupported receipted fab child intent')
+        inputs, work = Path(inputs).resolve(), Path(work).resolve()
+        if (not inputs.is_relative_to(self.stage.scratch)
+                or not work.is_relative_to(self.stage.scratch)):
+            raise ValueError('fab child paths must stay in stage scratch')
+        # The only additional check mount is its captured baseline, never a new
+        # host path. Keep it in the immutable before/after observation as well.
+        protected = [inputs]
+        for source, target in mounts:
+            source = Path(source).resolve()
+            if target != native_run.BASELINE_AT or not source.is_relative_to(self.stage.scratch):
+                raise ValueError('unsupported receipted fab child mount')
+            protected.append(source)
+        def identity():
+            records = []
+            for path in protected:
+                if path == inputs:
+                    files, other = file_tree(path)
+                    if other:
+                        raise CheckError('malformed', 'fab child inputs must be regular captured files')
+                    records.append(files)
+                else:
+                    records.append(digest(path))
+            return records
+        before = identity()
+        def concrete(arg):
+            for virtual, actual in (('/candidate', inputs), ('/work', work)):
+                if arg == virtual or arg.startswith(virtual + '/'):
+                    path = actual / arg.removeprefix(virtual).lstrip('/')
+                    if not path.resolve().is_relative_to(actual):
+                        raise ValueError('fab child path escapes its private directory')
+                    return str(path)
+            return arg
+        env = self.stage.environment(inputs, work)
+        env.update(PATH=SANDBOX_PATH, LANG='C.UTF-8')
+        child = replace(intent, argv=tuple(concrete(arg) for arg in intent.argv),
+                        isolation='host', env=env, cwd=str(work))
+        try:
+            # Host here means no second namespace: the enclosing receipted
+            # bwrap still owns the readonly source, network and PID boundary.
+            return native_run.Host().run(child, inputs=None, work=work, timeout=timeout,
+                                         mounts=(), cancel=cancel)
+        finally:
+            if identity() != before:
+                raise CheckError('malformed', 'fab child changed its captured inputs')
+
+
+def _stage_main(argv=None):
+    from . import native_run
+    with native_run.using(_FabStageExecution()):
+        return main(argv)
 
 
 def main(argv=None):

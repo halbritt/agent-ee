@@ -308,14 +308,14 @@ def _captures(manifest, root):
 
 
 class _StageExecution:
-    """Private to schematic_stage.main's fixed, already sandboxed annotation.
+    """Private to fixed, already sandboxed schematic and fab stage entrypoints.
 
     This is not a host execution option for the standalone annotator. Refuse a
     normal host/container view, even when it happens to contain /candidate.
     The receipted launcher owns network/PID confinement and mount identities;
     this check verifies its filesystem view before choosing supervised children.
     """
-    def __init__(self):
+    def __init__(self, *, _fab_templates=False):
         try:
             mounts, ids = {}, set()
             for line in Path('/proc/self/mountinfo').read_text().splitlines():
@@ -343,6 +343,9 @@ class _StageExecution:
                     '/lib', '/lib64', '/bin', '/sbin')
         required = {'/candidate': 'ro', '/app': 'ro', '/tool/agent-ee': 'ro',
                     '/work': 'rw', '/usr': 'ro', '/etc': 'ro'}
+        if _fab_templates:
+            readonly += ('/tool/fixtures/fab-export',)
+            required['/tool/fixtures/fab-export'] = 'ro'
         special = {'/': 'tmpfs', '/proc': 'proc', '/dev': 'tmpfs', '/tmp': 'tmpfs',
                    '/dev/pts': 'devpts', '/dev/shm': 'tmpfs', '/dev/mqueue': 'mqueue'}
         devices = {'/dev/' + name for name in ('null', 'zero', 'full', 'random', 'urandom', 'tty')}
