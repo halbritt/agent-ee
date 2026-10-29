@@ -72,6 +72,16 @@ class FabStageExecutionTests(unittest.TestCase):
             self.assertEqual(fab_stage.main(['--board', 'b', '--schematic', 's']), 0)
         sandbox.assert_called_once()
 
+    def test_baseline_argument_resolves_only_to_the_captured_file(self):
+        intent = native_run.Intent('read-baseline', ['/usr/bin/cat', native_run.BASELINE_AT])
+        with native_run.using(self.execution()), patch.object(native_run.Host, 'run', return_value={}) as host:
+            native_run.run(intent, inputs=self.inputs, work=self.root / 'work', baseline=self.baseline)
+            self.assertEqual(host.call_args.args[0].argv, ('/usr/bin/cat', str(self.baseline)))
+            host.reset_mock()
+            with self.assertRaisesRegex(ValueError, 'baseline was not captured'):
+                native_run.run(intent, inputs=self.inputs, work=self.root / 'work')
+            host.assert_not_called()
+
     def test_mount_guard_requires_readonly_templates_and_rejects_extra_host_mount(self):
         from agent_ee.forward_annotation import AnnotationError
         for view in (mount_view(), mount_view() + '\n99 0 0:1 / /tool/fixtures/fab-export rw - ext4 none rw',

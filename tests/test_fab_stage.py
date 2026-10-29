@@ -526,7 +526,7 @@ class DeclaredFabStepTests(unittest.TestCase):
         import time
         from agent_ee.checks import Ctx, CheckError
         # An original wrapper runs the real producer and changes its output before receipt sealing.
-        code = ("from agent_ee.fab_stage import main; main(['--board','project/rung1_rc.kicad_pcb',"
+        code = ("from agent_ee.fab_stage import _stage_main as main; main(['--board','project/rung1_rc.kicad_pcb',"
                 "'--schematic','project/rung1_rc.kicad_sch']); "
                 "from pathlib import Path; from agent_ee.storage import digest,read_json,write_json; "
                 "p=Path('/work/out/fab/bom.csv'); p.write_bytes(p.read_bytes()+b'\\n'); q=Path('/work/out/fab/cpl.csv'); q.write_bytes(q.read_bytes()+b'\\n'); "
@@ -554,7 +554,7 @@ class DeclaredFabStepTests(unittest.TestCase):
         for label, relative in (('package', 'out/fab-manifest.json'),
                                 ('native', 'out/checks/work/fab/fab/manifest.json')):
             with self.subTest(manifest=label):
-                code = ("from agent_ee.fab_stage import main; main(['--board','project/rung1_rc.kicad_pcb',"
+                code = ("from agent_ee.fab_stage import _stage_main as main; main(['--board','project/rung1_rc.kicad_pcb',"
                         "'--schematic','project/rung1_rc.kicad_sch']); from pathlib import Path; "
                         f"Path('/work/{relative}').write_text('[]')")
                 spec = {**self.spec, 'argv': self.spec['argv'][:5] + ['-c', code]}

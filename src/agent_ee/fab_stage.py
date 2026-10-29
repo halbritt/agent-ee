@@ -375,10 +375,13 @@ class _FabStageExecution:
         # The only additional check mount is its captured baseline, never a new
         # host path. Keep it in the immutable before/after observation as well.
         protected = [inputs]
+        baseline = None
         for source, target in mounts:
             source = Path(source).resolve()
-            if target != native_run.BASELINE_AT or not source.is_relative_to(self.stage.scratch):
+            if (target != native_run.BASELINE_AT or baseline is not None
+                    or not source.is_relative_to(self.stage.scratch)):
                 raise ValueError('unsupported receipted fab child mount')
+            baseline = source
             protected.append(source)
         def identity():
             records = []
@@ -393,6 +396,10 @@ class _FabStageExecution:
             return records
         before = identity()
         def concrete(arg):
+            if arg == native_run.BASELINE_AT:
+                if baseline is None:
+                    raise ValueError('fab child baseline was not captured')
+                return str(baseline)
             for virtual, actual in (('/candidate', inputs), ('/work', work)):
                 if arg == virtual or arg.startswith(virtual + '/'):
                     path = actual / arg.removeprefix(virtual).lstrip('/')
