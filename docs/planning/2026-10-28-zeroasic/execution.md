@@ -306,3 +306,33 @@ Records are in `existing-failures-diagnostic-r1`, `child-failure-diagnostics-r1`
 beneath the host evidence root. Original failures remain retained. Full strict
 qualification and trunk landing remain open, and no board or campaign acceptance
 follows from this test progress.
+
+### Retained fabrication, annotation and citation failures
+
+Independent source review approved agent-697's fabrication change, integrated
+as `2776ba8a`. Follow-up `d81fe1de` maps the captured baseline argument and
+updates two existing negative-control wrappers to use the private stage entry.
+Twenty-three pure tests passed. An earlier invocation also named a nonexistent
+test module and remains recorded as failed; its removal corrected the command.
+
+The first existing native fabrication test on `d81fe1de` failed in 4.4 seconds.
+A second diagnostic on `e7c9e4ad` retained the fixture before cleanup and ran the
+existing schematic and rating cases as well. All three failed; the command
+exited 1 in 10.1 seconds. No acceptance predicate was relaxed. The retained
+fabrication evidence shows that netlist and geometry now execute successfully,
+but the native stats call changes its private captured input tree. The mutation
+guard correctly refuses the package. Its exact changed files require inspection
+before any further repair; ignoring input mutations is not an acceptable fix.
+
+The same diagnostic now proves nested Bubblewrap namespace denial in both
+legacy forward-annotation planning and the citation extractor's version probe.
+`e7c9e4ad` preserves the actual probe record and console in the existing binding
+failure reason. The declared extractor version has not been changed, and this
+failure is not evidence of a different installed version. No generic retention
+or execution framework was added.
+
+Evidence is in `fab-stage-native-r1` and `retained-child-failures-r2` beneath the
+host evidence root. The latter retains 3,317 fixture files with hashes. Both
+native invocations have exited and admission is free. Agent-690's custom-pad
+repair remains separate. Full strict qualification and landing remain open;
+the board repair cap remains exhausted and campaign acceptance remains **0/4**.
