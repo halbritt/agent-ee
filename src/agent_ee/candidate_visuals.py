@@ -21,6 +21,8 @@ def skip_requested(value):
 
 def produce(board, out, *, skip=False, inputs=None):
     """Run native imaging networklessly and retain explicit missing coverage."""
+    requested_board, requested_out = Path(board).absolute(), Path(out).absolute()
+    requested_inputs = requested_board.parent if inputs is None else Path(inputs).absolute()
     board, out = Path(board).resolve(), Path(out)
     inputs = board.parent if inputs is None else Path(inputs).resolve()
     relative = board.relative_to(inputs).as_posix()
@@ -31,13 +33,30 @@ def produce(board, out, *, skip=False, inputs=None):
     skip = skip or environment_skip == '1'
     if out.exists() or out.is_symlink():
         raise FileExistsError(out)
+    enclosed, captured = False, None
+    if not skip:
+        from .footprint_probe import _enclosing_sandbox
+        enclosed = _enclosing_sandbox()
+        if enclosed:
+            from .stage_receipts import file_tree
+            if any(p.is_symlink() for path in (requested_board, requested_inputs, requested_out)
+                   for p in (path, *path.parents)):
+                raise ValueError('candidate imaging paths must not contain links')
+            out = out.resolve()
+            if inputs.is_relative_to(out):
+                raise ValueError('candidate imaging output must not contain its inputs')
+            # Inventory before creating an output below the input root. Copying
+            # this finite roster cannot recurse into the newly owned output.
+            captured, other = file_tree(inputs)
+            if other or relative not in captured:
+                raise ValueError('candidate imaging inputs must be regular captured files')
     out.mkdir(parents=True)
     board_hash = digest(board)
     report = {'schema': 'agent-ee.candidate-visuals/1', 'board_sha256': board_hash,
               'status': 'skipped' if skip else 'unavailable', 'images': [],
               'reason': 'explicit skip_visuals/AGENT_EE_SKIP_VISUALS flag' if skip else None}
     if not skip:
-        execution = native_run.run(
+        execution = _enclosed_imaging(board, inputs, out, relative, captured) if enclosed else native_run.run(
             native_run.Intent(
                 'candidate_visuals',
                 ['/usr/bin/python3', '-B', '-m', 'agent_ee.candidate_visuals', relative],
@@ -59,6 +78,47 @@ def produce(board, out, *, skip=False, inputs=None):
     write_json(out / 'manifest.json', report)
     return report
 
+
+
+def _enclosed_imaging(board, inputs, out, relative, captured):
+    """One supervised imaging child within the already verified /app executor."""
+    from .stage_receipts import file_tree
+    work = out / 'native'
+    private = work / 'inputs'
+    private.mkdir(parents=True)
+    copied = None
+    try:
+        for rel in captured:
+            target = private / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(inputs / rel, target, follow_symlinks=False)
+        copied, other = file_tree(private)
+        if other or copied != captured or digest(private / relative) != digest(board):
+            raise ValueError('candidate imaging private project copy changed')
+        environment = dict(os.environ, PYTHONPATH='/app', HOME=str(work / 'home'),
+                           KICAD_CONFIG_HOME=str(work / 'kicad-config'))
+        command = ('from agent_ee.candidate_visuals import native; from pathlib import Path; '
+                   'import sys; native(Path(sys.argv[1]), Path(sys.argv[2]))')
+        return native_run.run(native_run.Intent('candidate_visuals',
+            ['/usr/bin/python3', '-B', '-P', '-c', command, str(private / relative), str(work)],
+            timeout=180, isolation='host', env=environment), work=work)
+    finally:
+        after, other = file_tree(inputs)
+        if out.is_relative_to(inputs):
+            owned = out.relative_to(inputs).as_posix() + '/'
+            after = {k: v for k, v in after.items() if not k.startswith(owned)}
+            other = [k for k in other if not k.startswith(owned) and k != owned[:-1]]
+        if other or after != captured:
+            raise ValueError('candidate imaging changed its captured inputs')
+        if copied is not None:
+            after, other = file_tree(private)
+            preferences = str(Path(relative).with_suffix('.kicad_prl'))
+            pref = private / preferences
+            if (other or (pref.exists() and not pref.is_file())
+                    or (preferences in copied and preferences not in after)
+                    or {k: v for k, v in after.items() if k != preferences} !=
+                       {k: v for k, v in copied.items() if k != preferences}):
+                raise ValueError('candidate imaging changed its private project')
 
 def capture_visuals(run_dir):
     """Attach coordinator imaging after pure input capture and scope admission."""
