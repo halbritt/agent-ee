@@ -83,7 +83,7 @@ never drawn smaller than they are. The probe records the error as
 
 SMD/via comparisons use exact rational squared distances for the threshold;
 rounded millimetres appear only in reports. This detects annular-ring overlap
-even when the via center lies outside the pad. Custom SMD shapes, missing pad
+even when the via center lies outside the pad. Custom SMD shapes require the explicit finite coverage witness below; missing pad
 polygons/layer inventories and per-layer padstack sizes refuse coverage. The
 rule does not compare PTH pads, mask or paste openings. Apply additional checks
 when those manufacturing features impose separate constraints.
@@ -170,3 +170,34 @@ cannot see:
   predict warp.
 - The skew rule uses lengths from each net as a whole. It does not take
   per-segment pairing or via barrel lengths into account.
+
+
+## Finite custom-SMD copper coverage for DFM-013
+
+A NORMAL, single-outer-layer SMD custom pad may be evaluated only when the saved
+source contains one filled zero-stroke `gr_poly` with a rectangular anchor.
+Unknown source options/primitives, nonstandard padstacks, holes, multiple native
+outlines, arcs and missing/degenerate contours remain unsupported. No anchor-box
+or pad-centre substitution is made.
+
+`geometry_probe --dfm` retains the complete board-space native
+`GetEffectivePolygon(layer, ERROR_OUTSIDE)` contours. It now also retains raw
+and copied-`Unfracture` topology, including actual hole contours. Measurement
+polygons are never unfractured in place. Existing native merged-primitive hole
+checks are reused; the source pad identity, vertex count, anchor and merged local
+polygons are retained. An independent native `TransformShapeToPolygon` outward
+whole-pad set must be contained by the effective polygon, including the anchor
+and primitives. No hand-converted source-point geometry is used for measurement.
+
+The pad's `custom_copper` witness uses `agent-ee.custom-smd-copper/1`, binds pad
+and owner UUIDs, source-pad digest, API/error direction, max error, recipe and
+all declared layer polygon digests/topology. Missing/malformed witnesses or
+uncovered layers refuse; a CUSTOM label alone never grants coverage. Existing
+standard-shape facts remain consumable without this new custom witness.
+The existing exact squared centre-to-polygon distance comparison still uses the
+complete via copper radius and the unchanged captured profile gap, including
+same-net pairs. The selected 0.1 mm policy is not changed by this extension.
+Outward polygon approximation can conservatively report a close approach; it
+cannot justify replacing full copper with the anchor or an inscribed shape.
+Native regressions and saved read-only target facts are qualification evidence,
+not supplier/process/physical or M1/G4 acceptance.

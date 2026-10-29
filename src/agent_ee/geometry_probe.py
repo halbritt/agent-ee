@@ -263,6 +263,86 @@ def saved_thickness(board_path):
         return None, f"saved board thickness unreadable: {exc}"
 
 
+CUSTOM_COPPER_SCHEMA = 'agent-ee.custom-smd-copper/1'
+
+
+def _polygon_topology(poly):
+    """Retain holes on an unfractured COPY, never alter measured copper."""
+    import pcbnew as k
+    def record(value):
+        outer, _ = outlines(value)
+        holes = [[[[int(value.Hole(i, h).CPoint(j).x), int(value.Hole(i, h).CPoint(j).y)]
+                   for j in range(value.Hole(i, h).PointCount())]
+                  for h in range(value.HoleCount(i))] for i in range(value.OutlineCount())]
+        return dict(outlines_nm=outer, holes_nm=holes, arcs=int(value.ArcCount()))
+    unfractured = k.SHAPE_POLY_SET(poly)
+    unfractured.Unfracture()
+    return dict(saved=record(poly), unfractured=record(unfractured))
+
+
+def _custom_copper(pad, node, layers, polygons, topology, max_error):
+    import hashlib, json
+    import pcbnew as k
+    from .symbol_library import children, nanometres
+    from .placement_probe import custom_pad_geometry
+    result = dict(schema=CUSTOM_COPPER_SCHEMA, status='unsupported',
+                  pad_uuid=pad.m_Uuid.AsString(), footprint_uuid=pad.GetParent().m_Uuid.AsString(),
+                  recipe='single-filled-gr_poly+rect-anchor/1', api='GetEffectivePolygon/ERROR_OUTSIDE',
+                  max_error_nm=max_error)
+    try:
+        if (node is None or node[2:4] != ['smd', 'custom'] or padstack_mode(pad) != 'NORMAL'
+                or len(layers) != 1 or layers[0] not in ('F.Cu', 'B.Cu')):
+            raise ValueError('custom SMD requires unique saved source, NORMAL stack and one outer layer')
+        allowed = {'at', 'size', 'layers', 'net', 'uuid', 'solder_mask_margin', 'clearance',
+                   'options', 'primitives', 'pinfunction', 'pintype', 'zone_connect'}
+        if (any(not isinstance(c, list) or not c or c[0] not in allowed for c in node[4:])
+                or len({c[0] for c in node[4:]}) != len(node[4:])
+                or children(node, 'options') != [['options', ['clearance', 'outline'], ['anchor', 'rect']]]):
+            raise ValueError('unsupported custom pad source options/geometry')
+        primitives = children(node, 'primitives')
+        if len(primitives) != 1 or len(primitives[0]) != 2:
+            raise ValueError('custom pad requires one source primitive')
+        primitive = primitives[0][1]
+        if (not isinstance(primitive, list) or primitive[:1] != ['gr_poly'] or len(primitive) != 4
+                or children(primitive, 'width') != [['width', '0']]
+                or children(primitive, 'fill') != [['fill', 'yes']] or len(children(primitive, 'pts')) != 1):
+            raise ValueError('custom pad requires one filled zero-stroke gr_poly')
+        pts = children(primitive, 'pts')[0][1:]
+        if not 3 <= len(pts) <= 10000 or any(not isinstance(v, list) or len(v) != 3 or v[0] != 'xy' for v in pts):
+            raise ValueError('unsupported custom polygon vertices')
+        points = [[nanometres(t) for t in v[1:]] for v in pts]
+        if pad.GetAnchorPadShape(k.PADSTACK.ALL_LAYERS) != k.PAD_SHAPE_RECTANGLE:
+            raise ValueError('custom anchor is not a native rectangle')
+        merged = custom_pad_geometry(pad)  # Existing native merge + copied Unfracture hole check.
+        if len(merged['merged_polygons_nm']) != 1:
+            raise ValueError('custom primitive merge has multiple contours')
+        for layer in layers:
+            native_layer = k.F_Cu if layer == 'F.Cu' else k.B_Cu
+            whole = k.SHAPE_POLY_SET()
+            pad.TransformShapeToPolygon(whole, native_layer, 0, max_error, k.ERROR_OUTSIDE)
+            whole.BooleanSubtract(pad.GetEffectivePolygon(native_layer, k.ERROR_OUTSIDE))
+            if not whole.IsEmpty():
+                raise ValueError('effective custom polygon does not cover whole native pad shape')
+            data = topology[layer]
+            for stage in ('saved', 'unfractured'):
+                shape = data[stage]
+                if (len(shape['outlines_nm']) != 1 or shape['arcs'] or any(shape['holes_nm'])
+                        or len(shape['outlines_nm'][0]) < 3):
+                    raise ValueError('custom copper holes/arcs/multiple or missing contours unsupported')
+            contour = polygons[layer][0]
+            if not sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(contour,contour[1:]+contour[:1])):
+                raise ValueError('custom native copper is degenerate')
+        result.update(status='qualified', source_pad_sha256=hashlib.sha256(
+            json.dumps(node,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
+            source_vertex_count=len(points), native_anchor=merged['anchor'], anchor_shape='RECTANGLE',
+            merged_pad_local_polygons_nm=merged['merged_polygons_nm'],
+            layers={layer:dict(status='complete', whole_shape_covered=True, topology=topology[layer], polygon_sha256=hashlib.sha256(
+                json.dumps(polygons[layer],separators=(',',':')).encode()).hexdigest()) for layer in layers})
+    except (ValueError, TypeError, AttributeError, RuntimeError) as exc:
+        result['reason'] = str(exc)
+    return result
+
+
 def dfm_facts(board, board_path):
     import pcbnew
     settings = board.GetDesignSettings()
@@ -277,16 +357,19 @@ def dfm_facts(board, board_path):
         facts["board_thickness_problem"] = thickness_problem
         facts["native_thickness_default_nm"] = int(settings.GetBoardThickness())
 
+    from .placement_probe import _custom_pad_nodes
+    custom_nodes = _custom_pad_nodes(Path(board_path).read_bytes())
     pads, courtyards = [], []
     for fp in board.GetFootprints():
         side = board.GetLayerName(fp.GetLayer())
         for pad in fp.Pads():
             layers = [board.GetLayerName(l) for l in copper if pad.IsOnLayer(l) and pad.FlashLayer(l)]
-            polygons = {}
+            polygons, topology = {}, {}
             for layer in copper:
                 if pad.IsOnLayer(layer) and pad.FlashLayer(layer):
-                    polygons[board.GetLayerName(layer)], _ = outlines(
-                        pad.GetEffectivePolygon(layer, pcbnew.ERROR_OUTSIDE))
+                    poly = pad.GetEffectivePolygon(layer, pcbnew.ERROR_OUTSIDE)
+                    polygons[board.GetLayerName(layer)], _ = outlines(poly)
+                    topology[board.GetLayerName(layer)] = _polygon_topology(poly)
             pads.append({
                 "uuid": pad.m_Uuid.AsString(), "ref": fp.GetReference(), "pad": pad.GetNumber(),
                 "footprint_uuid": fp.m_Uuid.AsString(), "net": pad.GetNetname(),
@@ -296,7 +379,10 @@ def dfm_facts(board, board_path):
                 "size_nm": nm(pad_vec(pad, pad.GetSize)), "offset_nm": nm(pad_vec(pad, pad.GetOffset)),
                 "drill_shape": enum_name(pad.GetDrillShape(), "PAD_DRILL_SHAPE_", ("CIRCLE", "OBLONG")),
                 "drill_nm": nm(pad_vec(pad, pad.GetDrillSize)),
-                "copper_layers": layers, "polygons_nm": polygons})
+                "copper_layers": layers, "polygons_nm": polygons, "polygon_topology": topology})
+            if pads[-1]['shape'] == 'CUSTOM':
+                pads[-1]['custom_copper'] = _custom_copper(pad, custom_nodes.get(pad.m_Uuid.AsString()),
+                    layers, polygons, topology, max_error)
         fp.BuildCourtyardCaches()
         courtyard_layer = pcbnew.B_CrtYd if fp.GetLayer() == pcbnew.B_Cu else pcbnew.F_CrtYd
         contours, holes = outlines(fp.GetCourtyard(courtyard_layer))

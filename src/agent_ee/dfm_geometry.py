@@ -95,7 +95,7 @@ RULES = {
         ('min_gap_mm',),
         (
             'outer-layer SMD pad copper to complete via copper disk, including same-net pairs; PTH pads, solder-mask and paste openings are not measured',
-            'curved pad polygons use pcbnew ERROR_OUTSIDE approximations; custom pads and per-layer padstacks are unsupported',
+            'curved pad polygons use pcbnew ERROR_OUTSIDE approximations; custom SMD supports only witnessed hole-free single filled polygon plus rect anchor; other custom geometry and per-layer padstacks are unsupported',
         ),
     ),
 }
@@ -509,6 +509,42 @@ def smd_bridge_gap(rule, facts):
         pairwise_gap(items, limit, eligible, find)
 
 
+def _custom_smd_coverage(pad, facts):
+    import hashlib, json
+    witness = pad.get('custom_copper')
+    if (not isinstance(witness, dict) or witness.get('schema') != 'agent-ee.custom-smd-copper/1'
+            or witness.get('status') != 'qualified' or witness.get('pad_uuid') != pad['uuid']
+            or witness.get('footprint_uuid') != pad['footprint_uuid']
+            or witness.get('recipe') != 'single-filled-gr_poly+rect-anchor/1'
+            or witness.get('api') != 'GetEffectivePolygon/ERROR_OUTSIDE'
+            or type(witness.get('max_error_nm')) is not int or witness['max_error_nm'] < 0
+            or witness['max_error_nm'] != facts['max_error_nm']
+            or witness.get('anchor_shape') != 'RECTANGLE' or type(witness.get('native_anchor')) is not int
+            or not valid_contours(witness.get('merged_pad_local_polygons_nm'))
+            or len(witness['merged_pad_local_polygons_nm']) != 1
+            or not isinstance(witness.get('source_pad_sha256'), str)
+            or not re.fullmatch('[0-9a-f]{64}', witness['source_pad_sha256'])
+            or type(witness.get('source_vertex_count')) is not int or not 3 <= witness['source_vertex_count'] <= 10000
+            or len(pad['copper_layers']) != 1 or pad['copper_layers'][0] not in ('F.Cu', 'B.Cu')
+            or not isinstance(witness.get('layers'), dict) or set(witness['layers']) != set(pad['copper_layers'])):
+        return False
+    for layer, entry in witness['layers'].items():
+        contours = pad['polygons_nm'].get(layer)
+        if not valid_contours(contours) or len(contours) != 1 or not isinstance(entry, dict): return False
+        if (entry.get('status') != 'complete' or entry.get('whole_shape_covered') is not True or entry.get('polygon_sha256') != hashlib.sha256(
+                json.dumps(contours,separators=(',',':')).encode()).hexdigest()): return False
+        topology = entry.get('topology')
+        if not isinstance(topology, dict): return False
+        for stage in ('saved', 'unfractured'):
+            t = topology.get(stage)
+            if (not isinstance(t, dict) or type(t.get('arcs')) is not int or t['arcs'] != 0 or t.get('holes_nm') != [[]]
+                    or not valid_contours(t.get('outlines_nm')) or len(t['outlines_nm']) != 1): return False
+        if topology['saved']['outlines_nm'] != contours: return False
+        c=contours[0]
+        if not sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(c,c[1:]+c[:1])): return False
+    return True
+
+
 def smd_via_clearance(rule, facts):
     """Independent assembly clearance, including same-net copper ignored by DRC."""
     from .board_envelope import distance2, inside as contains
@@ -517,8 +553,10 @@ def smd_via_clearance(rule, facts):
     for pad in facts['pads']:
         if pad['attribute'] != 'SMD':
             continue
-        if pad['padstack_mode'] != 'NORMAL' or pad['shape'] not in (
-                'RECTANGLE', 'ROUNDRECT', 'CIRCLE', 'OVAL', 'TRAPEZOID', 'CHAMFERED_RECT'):
+        custom = pad['shape'] == 'CUSTOM'
+        if pad['padstack_mode'] != 'NORMAL' or (
+                not _custom_smd_coverage(pad, facts) if custom else pad['shape'] not in (
+                'RECTANGLE', 'ROUNDRECT', 'CIRCLE', 'OVAL', 'TRAPEZOID', 'CHAMFERED_RECT')):
             rule.refuse('pad:' + pad['uuid'], 'unsupported SMD shape or per-layer padstack')
             continue
         if not pad['copper_layers'] or not set(pad['copper_layers']) <= set(facts['copper_layers']):

@@ -571,3 +571,145 @@ class CapabilityTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CustomSmdCoverageTests(unittest.TestCase):
+    rule = {'id':'custom-gap', 'rule':'smd_via_clearance', 'min_gap_mm':0.1}
+
+    def custom(self):
+        import hashlib
+        contours=rect(-0.5,-0.5,3,0.5)
+        target=pad('custom','U1','2','V',contours,shape='CUSTOM')
+        topology=dict(saved=dict(outlines_nm=contours,holes_nm=[[]],arcs=0),
+                      unfractured=dict(outlines_nm=contours,holes_nm=[[]],arcs=0))
+        target['custom_copper']=dict(schema='agent-ee.custom-smd-copper/1',status='qualified',
+            pad_uuid=target['uuid'],footprint_uuid=target['footprint_uuid'],
+            recipe='single-filled-gr_poly+rect-anchor/1',api='GetEffectivePolygon/ERROR_OUTSIDE',
+            max_error_nm=5000,source_pad_sha256='a'*64,source_vertex_count=4,
+            anchor_shape='RECTANGLE',native_anchor=1,merged_pad_local_polygons_nm=contours,
+            layers={'F.Cu':dict(status='complete',whole_shape_covered=True,topology=topology,polygon_sha256=hashlib.sha256(
+                json.dumps(contours,separators=(',',':')).encode()).hexdigest())})
+        return target
+
+    def test_custom_extension_uses_full_via_disk_and_exact_point1_gap(self):
+        target=self.custom()
+        for x,outcome in ((2,'defect'),(3.399999,'defect'),(3.4,'pass'),(3.400001,'pass')):
+            with self.subTest(x=x):
+                result=run(self.rule,pads=[target],vias=[via('v',x,0,0.6,0.3)])
+                self.assertEqual((result['execution'],result['status']),('ok',outcome),result)
+                self.assertEqual(result['checked'],1)
+
+    def test_custom_missing_holes_unknown_topology_stack_and_polygon_drift_refuse(self):
+        variants=[]
+        a=self.custom();a.pop('custom_copper');variants.append(a)
+        for patch in (dict(padstack_mode='CUSTOM'),dict(copper_layers=[]),dict(copper_layers=['F.Cu','B.Cu'])):
+            a=self.custom();a.update(patch);variants.append(a)
+        for field,value in (('status','unsupported'),('pad_uuid','other'),('source_pad_sha256','invalid'),('layers',{}),('merged_pad_local_polygons_nm',[]),('anchor_shape','CIRCLE')):
+            a=self.custom();a['custom_copper'][field]=value;variants.append(a)
+        for stage in ('saved','unfractured'):
+            a=self.custom();a['custom_copper']['layers']['F.Cu']['topology'][stage]['holes_nm']=[[[[0,0],[1,0],[0,1]]]];variants.append(a)
+        a=self.custom();a['polygons_nm']['F.Cu'][0][1][0]+=1;variants.append(a)
+        a=self.custom();a['custom_copper']['layers']['F.Cu']['topology'].pop('unfractured');variants.append(a)
+        a=self.custom();a['custom_copper']['layers']['F.Cu'].pop('whole_shape_covered');variants.append(a)
+        for i,target in enumerate(variants):
+            with self.subTest(i=i):
+                result=run(self.rule,pads=[target],vias=[via('v',4,0,0.6,0.3)])
+                self.assertEqual(result['execution'],'unsupported',result)
+
+
+class NativeCustomSmdTests(unittest.TestCase):
+    """Native saved fixtures retain their inputs/probe/results under ignored build/."""
+    def setUp(self):
+        require_toolchain(native=True)
+        base=Path('build').resolve();base.mkdir(exist_ok=True)
+        self.root=Path(tempfile.mkdtemp(prefix='dfm-custom-',dir=base))
+        print('CUSTOM_DFM_ARTIFACTS',self.root)
+
+    @staticmethod
+    def fixture(directory, *, raw_pad=None, angle=0, back=False):
+        import pcbnew as k
+        directory.mkdir(parents=True)
+        path=directory/'board.kicad_pcb'
+        b=k.BOARD();b.SetCopperLayerCount(2);k.SaveBoard(str(path),b,True)
+        if raw_pad is None:
+            raw_pad='''(pad "1" smd custom (at 0 0) (size 1 1) (layers "F.Cu")
+ (net "V") (options (clearance outline) (anchor rect))
+ (primitives (gr_poly (pts (xy 0 -0.5) (xy 3 -0.5) (xy 3 0.5) (xy 0 0.5)) (width 0) (fill yes)))'''
+        footprint=f'''(footprint "OwnedCustom" (layer "F.Cu") (at 20 20 {angle})
+ (property "Reference" "U1" (at 0 0) (layer "F.Fab")) {raw_pad})'''
+        data=path.read_bytes();at=data.rstrip().rfind(b')');path.write_bytes(data[:at]+footprint.encode()+data[at:])
+        b=k.LoadBoard(str(path));fp=next(iter(b.GetFootprints()))
+        test_net=k.NETINFO_ITEM(b,'CUSTOM_DFM_TEST');b.Add(test_net)
+        for pad in fp.Pads(): pad.SetNet(test_net)
+        if back: fp.Flip(fp.GetPosition(),k.FLIP_DIRECTION_TOP_BOTTOM)
+        k.SaveBoard(str(path),b,True)
+        return path
+
+    @staticmethod
+    def probe(path, label):
+        import pcbnew as k
+        from agent_ee import geometry_probe
+        board,before=geometry_probe.load_readonly_board(path)
+        facts=geometry_probe.dfm_facts(board,str(path));geometry_probe.verify_unchanged(path,before)
+        write_json(path.parent/(label+'-facts.json'),facts)
+        return facts
+
+    @staticmethod
+    def place_via(path, point):
+        import pcbnew as k
+        b=k.LoadBoard(str(path));pad=next(p for fp in b.GetFootprints() for p in fp.Pads())
+        via=k.PCB_VIA(b);via.SetPosition(k.VECTOR2I(*point));via.SetWidth(600000);via.SetDrill(300000)
+        via.SetLayerPair(k.F_Cu,k.B_Cu);via.SetNet(pad.GetNet());b.Add(via)
+        assert k.SaveBoard(str(path),b,True)
+
+    @staticmethod
+    def evaluate_saved(path,label):
+        facts=NativeCustomSmdTests.probe(path,label)
+        profile=compile_profile(dict(schema='agent-ee.dfm-profile/1',name='custom-native',rules=[CustomSmdCoverageTests.rule]))
+        result=evaluate(facts,profile);write_json(path.parent/(label+'-report.json'),result)
+        return facts,result['rules'][0]
+
+    def test_saved_union_anchor_extension_and_transformed_collision(self):
+        from agent_ee.board_envelope import inside
+        for angle,back in ((0,False),(90,False),(180,True)):
+            path=self.fixture(self.root/f'pose-{angle}-{back}',angle=angle,back=back)
+            before=self.probe(path,'before');pad=before['pads'][0]
+            self.assertEqual(pad['custom_copper']['status'],'qualified',pad['custom_copper'])
+            layer=pad['copper_layers'][0];contour=pad['polygons_nm'][layer][0]
+            xs=[p[0] for p in contour];ys=[p[1] for p in contour]
+            self.assertEqual(sorted((max(xs)-min(xs),max(ys)-min(ys))),[1000000,3500000])
+            # A native-copper interior far outside the nominal 1x1 anchor.
+            samples=[(min(xs)+(max(xs)-min(xs))*i//10,min(ys)+(max(ys)-min(ys))*j//10)
+                     for i in range(1,10) for j in range(1,10)]
+            centre=pad['position_nm']
+            point=next(p for p in samples if inside(p,contour) and max(abs(p[a]-centre[a]) for a in (0,1))>1000000)
+            self.place_via(path,point);_,result=self.evaluate_saved(path,'collision')
+            self.assertEqual((result['execution'],result['status'],result['checked']),('ok','defect',1),result)
+
+    def test_native_straight_edge_gap_099999_1_100001(self):
+        for x,status in ((23399999,'defect'),(23400000,'pass'),(23400001,'pass')):
+            path=self.fixture(self.root/str(x));self.place_via(path,(x,20000000))
+            _,result=self.evaluate_saved(path,'gap')
+            self.assertEqual((result['execution'],result['status']),('ok',status),result)
+
+    def test_existing_standard_smd_native_polygons_still_measure(self):
+        import pcbnew as k
+        path=self.fixture(self.root/'standard')
+        b=k.LoadBoard(str(path));pad=next(p for fp in b.GetFootprints() for p in fp.Pads())
+        pad.SetShape(k.PAD_SHAPE_RECTANGLE);pad.SetSize(k.VECTOR2I(1000000,1000000))
+        k.SaveBoard(str(path),b,True)
+        self.place_via(path,(21000000,20000000));facts,result=self.evaluate_saved(path,'standard')
+        self.assertEqual(facts['pads'][0]['shape'],'RECTANGLE')
+        self.assertNotIn('custom_copper',facts['pads'][0])
+        self.assertEqual((result['execution'],result['status']),('ok','pass'),result)
+
+    def test_native_hole_and_unsupported_source_are_not_qualified(self):
+        # A slit polygon encodes an interior hole; copied Unfracture must expose it.
+        pts='(xy -2 -2) (xy 2 -2) (xy 2 2) (xy -2 2) (xy -2 -2) (xy -1 -1) (xy -1 1) (xy 1 1) (xy 1 -1) (xy -1 -1) (xy -2 -2)'
+        raw=f'''(pad "1" smd custom (at 0 0) (size 0.2 0.2) (layers "F.Cu")
+ (net "V") (options (clearance outline) (anchor rect))
+ (primitives (gr_poly (pts {pts}) (width 0) (fill yes))))'''
+        path=self.fixture(self.root/'hole',raw_pad=raw)
+        facts=self.probe(path,'hole');self.assertEqual(facts['pads'][0]['custom_copper']['status'],'unsupported',facts['pads'][0])
+        self.place_via(path,(25000000,20000000));_,result=self.evaluate_saved(path,'hole-via')
+        self.assertEqual(result['execution'],'unsupported',result)
