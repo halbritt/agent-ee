@@ -287,6 +287,151 @@ class CandidateVisualTests(unittest.TestCase):
                          (manifest['board_sha256'], manifest['board_sha256']))
 
     @native_board_render_test
+    def test_enclosed_imaging_timeout_reaps_render_and_svg_children(self):
+        """The enclosing imaging stop must reap separate native process groups."""
+        from agent_ee import executor
+        from test_render3d import png_bytes
+        cli = os.path.realpath(shutil.which('kicad-cli') or '')
+        self.assertTrue(cli.startswith('/usr/'), cli)
+        # Authored PNGs exercise process lifetime only, never render quality.
+        shim_code = r'''#!/usr/bin/python3
+import json, os, sys, time
+from pathlib import Path
+REAL_CLI = __REAL_CLI__
+args = sys.argv[1:]
+render = args[:2] == ['pcb', 'render'] and '--help' not in args
+svg = args[:3] == ['pcb', 'export', 'svg']
+if not (render or svg):
+    os.execv(REAL_CLI, [REAL_CLI, *args])
+phase = 'render' if render else 'svg'
+pid, pgid = os.getpid(), os.getpgrp()
+assert pid > 1 and pgid > 1
+stat = Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()
+record = dict(pid=pid, pgid=pgid, ppid=os.getppid(), start_ticks=int(stat[19]),
+              pid_namespace=os.readlink('/proc/self/ns/pid'), phase=phase,
+              blocking=phase == os.environ['AGENT_EE_TEST_VISUAL_PHASE'], argv=sys.argv,
+              image_evidence='AUTHORED_LIFECYCLE_ONLY')
+home = Path(os.environ['HOME'])
+assert home.is_dir(), f'production imaging HOME was not created: {home}'
+with (home / f'lifecycle-{pid}-{stat[19]}.json').open('x') as stream:
+    json.dump(record, stream)
+    stream.flush()
+    os.fsync(stream.fileno())
+print(json.dumps(record), flush=True)
+if record['blocking']:
+    time.sleep(30)
+    raise SystemExit('lifecycle shim outlived the outer imaging deadline')
+if not render:
+    raise SystemExit('unexpected unblocked SVG command')
+Path(args[args.index('--output') + 1]).write_bytes(Path(__file__).with_name('lifecycle.png').read_bytes())
+'''
+        observer_code = r'''
+import json, math, os, shutil, sys, time
+from dataclasses import replace
+from pathlib import Path
+from unittest.mock import patch
+from agent_ee import candidate_visuals, footprint_probe, native_run
+
+phase, board_name = sys.argv[1:]
+os.environ['AGENT_EE_TEST_VISUAL_PHASE'] = phase
+assert footprint_probe._enclosing_sandbox(), 'must exercise the recognized /app branch'
+project = Path('/work/project')
+shutil.copytree('/candidate', project)
+proof_path = Path('/work/timeout-proof.json')
+
+def identity(pid):
+    assert pid > 1
+    stat = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+    return dict(pid=pid, pgid=os.getpgid(pid), start_ticks=int(stat[19]), state=stat[0],
+                pid_namespace=os.readlink(f'/proc/{pid}/ns/pid'))
+
+proof = dict(phase=phase, observer=identity(os.getpid()), boundaries=[], processes=[],
+             image_evidence='AUTHORED_LIFECYCLE_ONLY', checked_before_executor_exit=False)
+real_run = native_run.run
+def bounded(intent, **kwargs):
+    if intent.tool == 'candidate_visuals':
+        assert intent.isolation == 'host', 'standalone Sandbox is not this control'
+        assert intent.timeout == 180
+        assert intent.stop_grace_s is not None and math.isfinite(intent.stop_grace_s) and intent.stop_grace_s > 0
+        boundary = dict(argv=list(intent.argv), production_timeout=intent.timeout,
+                        test_timeout=8, stop_grace_s=intent.stop_grace_s)
+        proof['boundaries'].append(boundary)
+        assert 'on_launch' not in kwargs
+        def launched(pid):
+            boundary['supervisor'] = identity(pid)
+        shortened = replace(intent, timeout=8)
+        assert shortened.argv == intent.argv and shortened.stop_grace_s == intent.stop_grace_s
+        return real_run(shortened, **kwargs, on_launch=launched)
+    return real_run(intent, **kwargs)
+
+def survivors(records):
+    found = []
+    for record in records:
+        pid = record['pid']
+        assert pid > 1 and record['pgid'] > 1
+        try:
+            stat = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+        except FileNotFoundError:
+            continue
+        if int(stat[19]) == record['start_ticks']:
+            found.append({**record, 'state_at_observation': stat[0]})  # Zombies are still owned survivors.
+    return found
+
+try:
+    with patch.object(native_run, 'run', side_effect=bounded):
+        report = candidate_visuals.produce(project / board_name, project / 'visuals', inputs=project)
+    proof['report'] = report
+finally:
+    proof['processes'] = [json.loads(p.read_text()) for p in sorted(project.rglob('lifecycle-*.json'))]
+    supervisors = [b['supervisor'] for b in proof['boundaries'] if 'supervisor' in b]
+    owned = [*supervisors, *proof['processes']]
+    limit = time.monotonic() + 1
+    remaining = survivors(owned)
+    proof['remaining_at_return'] = remaining
+    while remaining and time.monotonic() < limit:
+        time.sleep(.02)
+        remaining = survivors(owned)
+    proof.update(remaining=remaining, checked_before_executor_exit=True,
+                 observer_at_check=identity(os.getpid()))
+    proof_path.write_text(json.dumps(proof, indent=2) + '\n')
+assert len(proof['boundaries']) == 1, proof
+supervisor = proof['boundaries'][0]['supervisor']
+blocking = [p for p in proof['processes'] if p['blocking'] and p['phase'] == phase]
+assert len(blocking) >= (2 if phase == 'render' else 1), proof
+assert all(p['ppid'] == supervisor['pid'] and p['pgid'] != supervisor['pgid']
+           and p['pid_namespace'] == supervisor['pid_namespace'] == proof['observer']['pid_namespace']
+           for p in blocking), proof
+assert report['execution']['execution'] == 'timeout' and report['status'] == 'unavailable', proof
+assert not proof['remaining'], proof
+'''
+        for phase in ('render', 'svg'):
+            with self.subTest(phase=phase):
+                root = self.root / ('timeout-' + phase)
+                shim = root / 'shim'
+                shim.mkdir(parents=True)
+                (shim / 'kicad-cli').write_text(shim_code.replace('__REAL_CLI__', repr(cli)))
+                (shim / 'kicad-cli').chmod(0o755)
+                (shim / 'lifecycle.png').write_bytes(png_bytes(1600, 900))
+                (root / 'observer.py').write_text(observer_code)
+                real_sandbox = executor.sandbox_argv
+
+                def with_shim(*args, **kwargs):
+                    command = real_sandbox(*args, **kwargs)
+                    at = command.index('--clearenv')
+                    return [*command[:at], '--ro-bind', str(shim), '/usr/local/bin', *command[at:]]
+
+                work = root / 'executor'
+                with patch.object(executor, 'sandbox_argv', side_effect=with_shim):
+                    execution = executor.execute(self.source, work,
+                        ['/usr/bin/python3', '-B', '-c', observer_code, phase, self.board.name],
+                        timeout=30, network=False, skip_visuals=False)
+                self.assertEqual(execution['execution'], 'ok', (work / 'console.log').read_text()[-8000:])
+                proof = json.loads((work / 'timeout-proof.json').read_text())
+                self.assertTrue(proof['checked_before_executor_exit'])
+                self.assertEqual(proof['remaining'], [])
+                self.assertEqual(proof['observer']['start_ticks'], proof['observer_at_check']['start_ticks'])
+
+    @native_board_render_test
     def test_stock_defaults_and_project_models_survive_proposal_and_imaging(self):
         import pcbnew
         from agent_ee.placer_runner import place_candidate
