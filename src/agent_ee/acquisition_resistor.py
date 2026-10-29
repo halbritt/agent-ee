@@ -397,6 +397,8 @@ def _revise(root, captures, value, qualification, as_of, policy_blob, *, source_
         + ('Unqualified source derivation; dated stock documentary only' if source_derivation else LABEL) + '.\n')
     for name in ('OPERATING.md', 'ENGINEERING-REVIEW.md'):
         path = root / name
+        if source_derivation and name == 'ENGINEERING-REVIEW.md' and not path.exists() and not path.is_symlink():
+            continue
         path.write_bytes(note.encode() + b'\n' + path.read_bytes())
     return dict(selected=ALTERNATIVE, decision=decision, catalog=catblob, qualification_record=qualification,
                 model=dict(path='analysis/geometry-model.json', sha256=storage.digest(model_path)),

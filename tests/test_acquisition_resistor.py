@@ -281,6 +281,40 @@ class ProducerSourceTests(unittest.TestCase):
             resistor.derive_source(SOURCE,bad,source_inventory_sha256='0'*64,capture_source=CAPTURE)
         self.assertFalse(bad.exists())
 
+    def clean_seed(self, name):
+        seed=self.root.parent/name
+        shutil.copytree(SOURCE,seed)
+        for name in ('ENGINEERING-REVIEW.md','history/acquisition-preparation-original/ENGINEERING-REVIEW.md'):
+            path=seed/name
+            self.assertTrue(path.is_file())
+            path.unlink()
+        return seed
+
+    def test_clean_source_derivation_neither_needs_nor_recreates_review(self):
+        seed=self.clean_seed('clean-source-seed');before=requirement_map.input_inventory(seed)
+        destination=self.root.parent/'clean-source-output'
+        report=resistor.derive_source(seed,destination,source_inventory_sha256=storage.identity(before),capture_source=CAPTURE)
+        self.assertEqual(report['qualification'],'unqualified')
+        self.assertEqual(requirement_map.input_inventory(seed),before)
+        inventory=requirement_map.input_inventory(destination)
+        self.assertNotIn('ENGINEERING-REVIEW.md',inventory)
+        self.assertNotIn('history/acquisition-preparation-original/ENGINEERING-REVIEW.md',inventory)
+        self.assertTrue((destination/'OPERATING.md').is_file())
+        self.assertIn(b'ERJ3EKF1001V',(destination/'project/acquisition.kicad_sch').read_bytes())
+
+    def test_clean_source_missing_operating_refuses_and_leaves_no_output(self):
+        seed=self.clean_seed('missing-operating-seed');(seed/'OPERATING.md').unlink()
+        before=requirement_map.input_inventory(seed);destination=self.root.parent/'missing-operating-output'
+        with self.assertRaises(FileNotFoundError):
+            resistor.derive_source(seed,destination,source_inventory_sha256=storage.identity(before),capture_source=CAPTURE)
+        self.assertFalse(destination.exists())
+        self.assertEqual(requirement_map.input_inventory(seed),before)
+
+    def test_target_mode_still_requires_its_review_input(self):
+        (self.root/'ENGINEERING-REVIEW.md').unlink()
+        with self.assertRaises(FileNotFoundError):
+            resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-29T21:20:00+00:00',self.policy_blob)
+
     def test_mechanics_accepts_only_exact_body_derivative_and_all_source_custody(self):
         from agent_ee import acquisition_mechanics
         result=resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-29T21:20:00+00:00',self.policy_blob)
