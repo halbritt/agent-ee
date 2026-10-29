@@ -310,8 +310,15 @@ def _bundle(manifest, inputs, link):
             if (receipt['spec'].get('inputs') != [policy_file] or
                     hashlib.sha256(policy).hexdigest() != receipt['inputs'].get(policy_file)):
                 raise ValueError('carried artwork policy file differs from its receipt input')
+        project = None
+        project_path = routed_artwork.receipt_project(receipt['spec']['argv'])
+        if project_path is not None:
+            project = loaded[routed_artwork.SOURCE_PROJECT].read_bytes()
+            if (receipt['spec'].get('inputs') != [project_path]
+                    or hashlib.sha256(project).hexdigest() != receipt['inputs'].get(project_path)):
+                raise ValueError('carried text-size project differs from receipt input')
         proof = routed_artwork.write_scope(loaded[routed_artwork.SOURCE].read_bytes(), loaded[BOARD].read_bytes(),
-                                           **routed_artwork.receipt_scope(receipt['spec']['argv'], policy))
+                                           **routed_artwork.receipt_scope(receipt['spec']['argv'], policy, project))
         if (report.get('producer') != routed_artwork.STEP or report.get('write_scope') != proof or
                 digest(loaded[routed_artwork.SOURCE]) != receipt['inputs'].get(board)):
             raise ValueError('carried artwork scope differs from its receipt')

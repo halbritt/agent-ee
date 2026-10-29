@@ -1171,3 +1171,193 @@ class RealPodArtworkTest(unittest.TestCase):
                  'destination angle differs')):
             with self.subTest(case=name), self.assertRaisesRegex(ValueError, message):
                 art.write_scope(self.pod, changed, field_poses=request)
+
+
+class TextSizePureTests(unittest.TestCase):
+    """Pure source/receipt replay; no native producer or design qualification."""
+    @staticmethod
+    def uid(i): return f'10000000-0000-4000-8000-{i:012d}'
+
+    def fixture(self):
+        u = self.uid
+        board = f'''(kicad_pcb (version 20260206)
+ (setup (pad_to_mask_clearance 0))
+ (footprint "R" (layer "F.Cu") (uuid "{u(1)}") (at 10 20 90)
+  (property "Reference" "R1" (at 0 1 90) (layer "F.SilkS") (uuid "{u(2)}")
+   (effects (font (size 0.7 0.7) (thickness 0.15))))
+  (fp_text user "USB" (at 1 2 0) (layer "F.SilkS") (uuid "{u(3)}")
+   (effects (font (size 0.508 0.508) (thickness 0.075)) (justify left)))
+  (fp_line (start 0 0) (end 1 0) (stroke (width 0.12) (type solid)) (layer "F.SilkS") (uuid "{u(4)}"))
+  (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu" "F.Mask") (net "GND") (uuid "{u(5)}")))
+ (gr_text "unchanged" (at 15 15 0) (layer "F.SilkS") (uuid "{u(6)}")
+  (effects (font (size 1 1) (thickness 0.15))))
+ (segment (start 1 2) (end 3 4) (width 0.25) (layer "F.Cu") (net "GND") (uuid "{u(7)}")))'''.encode()
+        project = b'{"board":{"design_settings":{"rules":{}}}}'
+        output = board.replace(b'(size 0.7 0.7)', b'(size 0.8 0.8)').replace(b'(size 0.508 0.508)', b'(size 0.8 0.8)')
+        return board, project, output
+
+    def test_exact_field_and_anchored_graphic_growth_preserves_all_other_nodes(self):
+        before, project, after = self.fixture()
+        request = art.text_size_request(before, project, [self.uid(2), self.uid(3)])
+        proof = art.write_scope(before, after, text_sizes=request, source_project=project)
+        self.assertEqual(proof['moved_identities'], [self.uid(2), self.uid(3)])
+        self.assertNotIn('artwork_policy', proof)
+        self.assertEqual(request['texts'][1]['from']['thickness_nm'], 75000)
+        self.assertEqual(request['texts'][1]['to']['thickness_nm'], 75000)
+        with self.assertRaises(ValueError): art.write_scope(before, after)
+        with self.assertRaises(ValueError): art.write_scope(before, after, text_sizes=request)
+
+    def test_size_authority_refuses_motion_copper_strings_styles_and_unlisted_graphics(self):
+        before, project, after = self.fixture()
+        request = art.text_size_request(before, project, [self.uid(2), self.uid(3)])
+        edits = [(b'(at 0 1 90)', b'(at 1 1 90)'), (b'(at 0 1 90)', b'(at 0 1 0)'),
+                 (b'"R1"', b'"R2"'), (b'"USB"', b'"U5B"'),
+                 (b'(thickness 0.075)', b'(thickness 0.1)'), (b'(justify left)', b'(justify right)'),
+                 (b'(start 0 0)', b'(start 2 0)'), (b'(size 1 1)', b'(size 1.2 1.2)'),
+                 (b'(net "GND")', b'(net "other")'), (b'(end 3 4)', b'(end 4 4)'),
+                 (b'(at 10 20 90)', b'(at 11 20 90)'), (b'(pad_to_mask_clearance 0)', b'(pad_to_mask_clearance 0.1)')]
+        for old, new in edits:
+            with self.subTest(old=old), self.assertRaises(ValueError):
+                art.write_scope(before, after.replace(old, new, 1), text_sizes=request, source_project=project)
+
+    def test_wrong_identity_project_layer_format_shrink_and_incomplete_application_refuse(self):
+        before, project, after = self.fixture()
+        original = art.text_size_request(before, project, [self.uid(2), self.uid(3)])
+        changes = [('owner_uuid', self.uid(99)), ('layer', 'B.SilkS'), ('text', 'OTHER'),
+                   ('uuid', self.uid(98)), ('style_sha256', '0'*64),
+                   ('to', dict(width_nm=700000, height_nm=700000, thickness_nm=150000)),
+                   ('to', dict(width_nm=900000, height_nm=900000, thickness_nm=150000))]
+        for key, value in changes:
+            req = copy.deepcopy(original); req['texts'][0][key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                art.write_scope(before, after, text_sizes=req, source_project=project)
+        for source in (project+b' ', project.replace(b'{}', b'{"min_text_height":0.9}')):
+            with self.assertRaises(ValueError): art.write_scope(before, after, text_sizes=original, source_project=source)
+        for output in (before, after.replace(b'(size 0.8 0.8)', b'(size 0.7 0.7)', 1)):
+            with self.assertRaises(ValueError): art.write_scope(before, output, text_sizes=original, source_project=project)
+
+    def test_unsupported_font_hidden_reflection_and_ambiguous_identity_refuse(self):
+        board, project, _ = self.fixture()
+        variants = [board.replace(b'(font (size', b'(font (face "custom") (size', 1),
+                    board.replace(b'(thickness 0.15)', b'(thickness 0.15) bold', 1),
+                    board.replace(b'(justify left)', b'(justify mirror)'),
+                    board.replace(b'(layer "F.SilkS")', b'(layer "F.SilkS") (hide yes)', 1),
+                    board.replace(b'(size 0.7 0.7)', b'(size "0.7" 0.7)'),
+                    board.replace(self.uid(3).encode(), self.uid(2).encode())]
+        for variant in variants:
+            with self.assertRaises(ValueError): art.text_size_request(variant, project, [self.uid(2), self.uid(3)])
+
+    def test_public_step_canonical_receipt_scope_and_project_input(self):
+        board, project, _ = self.fixture()
+        req = art.text_size_request(board, project, [self.uid(2), self.uid(3)])
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = art.step(Path(tmp)/'tool', 'pcb/b.kicad_pcb', text_sizes=req)
+        self.assertEqual(spec['inputs'], ['pcb/b.kicad_pro'])
+        self.assertEqual(art.receipt_scope(spec['argv'], source_project=project), dict(text_sizes=req, source_project=project))
+        self.assertIn(art.SOURCE_PROJECT, art.carried_files(spec['argv']))
+        for argv in (spec['argv'][:-1]+['null'], spec['argv'][:-1]+[json.dumps(req)], spec['argv']+['--target','R1','Reference']):
+            with self.assertRaises(ValueError): art.receipt_scope(argv, source_project=project)
+        with self.assertRaises(ValueError): art.receipt_scope(spec['argv'])
+
+    def receipt(self, root, output=None):
+        from agent_ee.placement_adapter import LAUNCHER
+        from agent_ee.storage import digest, write_json
+        before, project, after = self.fixture()
+        output = after if output is None else output
+        req = art.text_size_request(before, project, [self.uid(2), self.uid(3)])
+        spec = art.step(root/'tool', 'b.kicad_pcb', text_sizes=req)
+        for name, data in [('inputs/b.kicad_pcb', before), ('inputs/b.kicad_pro', project),
+                           ('run/'+art.BOARD, output), ('run/'+art.SOURCE, before), ('run/'+art.SOURCE_PROJECT, project)]:
+            p = root/name; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(data)
+        proof = art.write_scope(before, after, text_sizes=req, source_project=project)
+        write_json(root/'run'/art.REPORT, dict(producer=art.STEP, write_scope=proof,
+            source_sha256=hashlib.sha256(before).hexdigest(), board_sha256=hashlib.sha256(output).hexdigest()))
+        pins = {'routed_artwork.py':'a'*64}
+        expected = {'agent_ee/routed_artwork.py':'a'*64, 'launch.py':hashlib.sha256(LAUNCHER.encode()).hexdigest(),
+                    'artwork.py':hashlib.sha256(art.LAUNCHER.encode()).hexdigest()}
+        receipt = dict(status='completed', spec=spec, tool={'source_tree':{'path':art.TOOL_AT, **art.tree_identity_from_files(expected)}},
+                       inputs={'b.kicad_pcb':hashlib.sha256(before).hexdigest(),'b.kicad_pro':hashlib.sha256(project).hexdigest()},
+                       outputs={'b.kicad_pcb':hashlib.sha256(output).hexdigest()}, changed=['b.kicad_pcb'])
+        return receipt, pins, proof
+
+    def test_qualifier_replays_geometry_even_if_report_and_output_hash_are_forged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); receipt,pins,proof=self.receipt(root)
+            self.assertEqual(art.qualify_receipt(root, receipt, 'b.kicad_pcb', pins), proof)
+            board=(root/'run'/art.BOARD).read_bytes().replace(b'(end 3 4)', b'(end 4 4)')
+            (root/'run'/art.BOARD).write_bytes(board)
+            receipt['outputs']['b.kicad_pcb']=hashlib.sha256(board).hexdigest()
+            report=read_json(root/'run'/art.REPORT); report['board_sha256']=receipt['outputs']['b.kicad_pcb']
+            (root/'run'/art.REPORT).write_text(json.dumps(report))
+            with self.assertRaises(ValueError): art.qualify_receipt(root, receipt, 'b.kicad_pcb', pins)
+
+    def test_project_receipt_drift_and_missing_input_refuse(self):
+        for mutation in ('input', 'carry', 'declaration'):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp); receipt,pins,_=self.receipt(root)
+                if mutation == 'input': (root/'inputs/b.kicad_pro').write_bytes(b'{}')
+                elif mutation == 'carry': (root/'run'/art.SOURCE_PROJECT).write_bytes(b'{}')
+                else: receipt['spec'].pop('inputs')
+                with self.assertRaises(ValueError): art.qualify_receipt(root, receipt, 'b.kicad_pcb', pins)
+
+    def test_explicit_project_minimum_and_source_carry_remain_exact(self):
+        board,_,_=self.fixture()
+        project=b'{"board":{"design_settings":{"rules":{"min_text_height":0.9}}}}'
+        req=art.text_size_request(board,project,[self.uid(2),self.uid(3)])
+        output=board.replace(b'(size 0.7 0.7)',b'(size 0.9 0.9)').replace(b'(size 0.508 0.508)',b'(size 0.9 0.9)')
+        self.assertTrue(art.write_scope(board,output,text_sizes=req,source_project=project))
+        stamp=b'(title_block (comment 9 "agent-ee.placement-lineage/1 '+b'a'*64+b'"))'
+        source=board[:-1]+stamp+b')'
+        req=art.text_size_request(source,project,[self.uid(2),self.uid(3)])
+        output=output[:-1]+stamp+b')'
+        self.assertTrue(art.write_scope(source,output,text_sizes=req,source_project=project))
+        with self.assertRaises(ValueError):
+            art.write_scope(source,output.replace(stamp,b''),text_sizes=req,source_project=project)
+
+    def test_carried_receipt_replays_project_and_format_authority(self):
+        from agent_ee import placement_defects as pd
+        from agent_ee.storage import digest, identity, write_json
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); receipt,_,proof=self.receipt(root/'original')
+            carry=root/'carry'; carry.mkdir()
+            for name in (*pd.FILES, art.SOURCE, art.SOURCE_PROJECT):
+                source=root/'original/run'/name
+                target=carry/name; target.parent.mkdir(parents=True,exist_ok=True)
+                if source.exists(): target.write_bytes(source.read_bytes())
+            report=read_json(carry/art.REPORT)
+            report.update(schema='agent-ee.placed-candidate/1', status='placed', open_defects=[],
+                          native_drc_comparison={'open_defects':[]})
+            write_json(carry/art.REPORT,report)
+            write_json(carry/pd.DRC,dict(included_severities=['error','warning','exclusion'],violations=[],ignored_checks=[]))
+            write_json(carry/pd.EXECUTION,dict(execution='ok',exit_code=0))
+            receipt.update(schema=stage_receipts.RECEIPT_SCHEMA,
+                           artifacts={name:digest(carry/name) for name in (*pd.FILES,art.SOURCE,art.SOURCE_PROJECT)})
+            receipt['identity']=identity(receipt)
+            write_json(carry/'receipt.json',receipt)
+            manifest=dict(scope={'board':'b.kicad_pcb'},files={str(p.relative_to(root)):digest(p) for p in carry.rglob('*') if p.is_file()})
+            link={'receipt':'carry/receipt.json','sha256':digest(carry/'receipt.json')}
+            self.assertEqual(pd._bundle(manifest,root,link)[0]['write_scope'],proof)
+            # Even after ordinary file/receipt hashes are refreshed, replay has
+            # no authority to reinterpret a different project minimum.
+            project=b'{"board":{"design_settings":{"rules":{"min_text_height":0.9}}}}'
+            (carry/art.SOURCE_PROJECT).write_bytes(project)
+            receipt['inputs']['b.kicad_pro']=hashlib.sha256(project).hexdigest()
+            receipt['artifacts'][art.SOURCE_PROJECT]=hashlib.sha256(project).hexdigest()
+            receipt['identity']=identity({k:v for k,v in receipt.items() if k!='identity'})
+            write_json(carry/'receipt.json',receipt)
+            manifest['files']={str(p.relative_to(root)):digest(p) for p in carry.rglob('*') if p.is_file()}
+            link['sha256']=digest(carry/'receipt.json')
+            with self.assertRaises(ValueError): pd._bundle(manifest,root,link)
+
+    def test_native_adapter_changes_dimensions_only(self):
+        from types import SimpleNamespace as NS
+        board,project,_=self.fixture(); req=art.text_size_request(board,project,[self.uid(2),self.uid(3)])
+        items=[]
+        for entry in req['texts']:
+            item=NS(m_Uuid=NS(AsString=lambda e=entry:e['uuid']),
+                    GetTextSize=lambda e=entry:NS(x=e['from']['width_nm'], y=e['from']['height_nm']))
+            item.SetTextSize=lambda value,i=item:setattr(i,'size',value)
+            items.append(item)
+        native=NS(GetDrawings=lambda:[], GetFootprints=lambda:[NS(GetFields=lambda:items[:1], GraphicalItems=lambda:items[1:])])
+        art._apply_text_sizes(NS(VECTOR2I=lambda x,y:(x,y)), native, req)
+        self.assertEqual([i.size for i in items], [(800000,800000),(800000,800000)])

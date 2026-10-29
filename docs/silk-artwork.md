@@ -629,3 +629,65 @@ writer binds the policy to its board. The receipted step then closes the carry,
 and the native fab export follows. Without a policy the same carry stays anchored
 and escalates
 (`test_unclassified_routed_artwork_stays_anchored_and_the_carry_escalates`).
+
+### Pinned silk text-size growth
+
+`routed_artwork.step(..., text_sizes=request)` and the producer's
+`--text-size JSON` select a separate **size-only** operation. This authority
+cannot be combined with targets, field poses, policy files or free groups.
+There is no relocation search. A later pose operation needs its own request
+bound to the resulting saved board. Unlisted fields and graphics stay anchored;
+a listed graphic receives dimension authority without becoming a free group.
+
+Create the request through the public pure source helper:
+
+```python
+from agent_ee.routed_artwork import text_size_request, step
+
+request = text_size_request(board_bytes, project_bytes, explicit_text_uuids)
+spec = step(tool_directory, 'project/board.kicad_pcb', text_sizes=request)
+```
+
+The helper reads source bytes and returns authority; it performs no native
+execution and changes no board. `agent-ee.artwork-text-size/1` binds the complete
+board SHA256 and sibling project SHA256. Every text entry binds its native UUID,
+owner footprint UUID (or null for board text), silk layer, exact text, current
+width/height/stroke, exact desired width/height/stroke, and a raw-token style/pose
+hash. Entries are sorted by UUID and the CLI argument is canonical JSON. An
+explicit null, duplicate/missing identity or noncanonical receipt argument
+refuses. The request never derives graphics groups or grants blanket authority.
+
+The finite supported recipe is visible square text in the default stroke font,
+with an explicit thickness, no custom face/bold/italic/cache, and no reflected
+justification. Both deficient square dimensions grow exactly to the captured
+project's `board.design_settings.rules.min_text_height`; thickness stays exact.
+Already-compliant text, shrinking, oversizing, rectangular text and unsupported
+styles refuse. Source text, visibility, justification, angle, position, owner
+and all non-size tokens remain exact. The native writer calls only `SetTextSize`
+on listed identities; saved-board replay independently checks the result.
+
+When that project setting is absent, this mode supports the pinned KiCad
+10.0.7 default of **0.8 mm**. This is an explicit native default, not an authored
+or supplier constraint. The actual original ESP project
+`9a9ab694fc8a9a456a6791060d998c01a171e30308a170e1b4f97d864b2b6395`
+omits the setting; retained native DRC on original board
+`875d0bd2526e05d367bed3c1ed819d611c6c63b14b0d9482d0de92ca45511071`
+reports that minimum for its 15 references at 0.7 mm and five USB texts at
+0.508 mm. Production refuses a different native runtime. No project/rule value
+is lowered or written. Native DRC and all other checks still grade the actual
+saved result; this operation does not guarantee that growth fits the available
+space or resolves every rule, carry, or release obligation.
+
+The ordinary step declares the sibling `.kicad_pro` as an immutable input.
+The baseline project is retained with the original board. Receipt qualification
+reads those exact input bytes and recomputes `write_scope(..., text_sizes=request,
+source_project=project_bytes)` across every board token. Carried receipt replay
+also retains and hashes that project. Copper, pads, native footprint poses,
+nets, outline and lineage/source-carry tokens are checked independently of the
+producer's report; a resealed report cannot authorize a physical change.
+Missing/changed project custody or a request not applied exactly refuses.
+
+The CPU regressions use synthetic boards and explicit native setter doubles.
+They establish source/receipt behavior only. The original ESP board is not
+repaired by those tests; independent native feasibility and release assessment
+remain required.

@@ -1,4 +1,4 @@
-"""Receipted silk repair on an already routed board: translation-only, or exact requested field poses."""
+"""Receipted routed-board silk translations, exact field poses, or pinned text-size growth."""
 import argparse
 import copy
 from decimal import Decimal, InvalidOperation
@@ -376,6 +376,168 @@ def _check_field_poses(roots, raws, before, request):
             raise ValueError('field-pose destination angle differs from the request')
 
 
+TEXT_SIZE_SCHEMA = 'agent-ee.artwork-text-size/1'
+SOURCE_PROJECT = str(Path(SOURCE).with_suffix('.kicad_pro'))
+
+
+def normalize_text_sizes(request):
+    if request is None:
+        return None
+    if (not isinstance(request, dict) or set(request) != {'schema', 'source_sha256', 'project_sha256', 'texts'}
+            or request['schema'] != TEXT_SIZE_SCHEMA or any(not isinstance(request[k], str)
+                or not re.fullmatch('[0-9a-f]{64}', request[k]) for k in ('source_sha256', 'project_sha256'))
+            or not isinstance(request['texts'], list) or not 0 < len(request['texts']) <= 256):
+        raise ValueError('text-size request malformed')
+    entries = []
+    for e in request['texts']:
+        if (not isinstance(e, dict) or set(e) != {'uuid', 'owner_uuid', 'layer', 'text', 'style_sha256', 'from', 'to'}
+                or not isinstance(e['uuid'], str) or not _UUID.fullmatch(e['uuid'])
+                or (e['owner_uuid'] is not None and (not isinstance(e['owner_uuid'], str) or not _UUID.fullmatch(e['owner_uuid'])))
+                or e['layer'] not in ('F.SilkS', 'B.SilkS') or not isinstance(e['text'], str)
+                or not isinstance(e['style_sha256'], str) or not re.fullmatch('[0-9a-f]{64}', e['style_sha256'])):
+            raise ValueError('text-size identity/style malformed')
+        for key in ('from', 'to'):
+            f = e[key]
+            if (not isinstance(f, dict) or set(f) != {'width_nm', 'height_nm', 'thickness_nm'}
+                    or any(type(v) is not int or not 0 < v <= 10**7 for v in f.values())):
+                raise ValueError('text-size format malformed')
+        entries.append(copy.deepcopy(e))
+    if len({e['uuid'] for e in entries}) != len(entries):
+        raise ValueError('text-size identity duplicated')
+    return dict(request, texts=sorted(entries, key=lambda e: e['uuid']))
+
+
+def canonical_text_sizes(request):
+    if request is None:
+        raise ValueError('text-size request is null')
+    return json.dumps(normalize_text_sizes(request), sort_keys=True, separators=(',', ':'))
+
+
+def decode_text_sizes(text):
+    request = json.loads(text)
+    if request is None:
+        raise ValueError('text-size request is null')
+    return normalize_text_sizes(request)
+
+
+def _text_format(node):
+    if node[0] not in ('property', 'fp_text', 'gr_text'):
+        raise ValueError('text-size identity is not supported text')
+    attributes = node[2:] if node[0] == 'gr_text' else node[3:]
+    if 'hide' in attributes:
+        raise ValueError('text-size hidden text unsupported')
+    effects = children(node, 'effects')
+    if len(effects) != 1 or any(not isinstance(c, list) or c[:1] not in (['font'], ['justify']) for c in effects[0][1:]):
+        raise ValueError('text-size effects/style unsupported')
+    fonts = children(effects[0], 'font')
+    if (len(fonts) != 1 or len(fonts[0]) != 3 or len(children(fonts[0], 'size')) != 1
+            or len(children(fonts[0], 'thickness')) != 1
+            or children(node, 'render_cache') or children(node, 'hide') not in ([], [['hide', 'no']])):
+        raise ValueError('text-size requires visible plain stroke-font text')
+    just = children(effects[0], 'justify')
+    values = [v for j in just for v in j[1:]]
+    if (len(just) > 1 or any(v not in ('left', 'right', 'top', 'bottom') for v in values)
+            or len(values) != len(set(values)) or {'left', 'right'} <= set(values)
+            or {'top', 'bottom'} <= set(values)):
+        raise ValueError('text-size justification/reflection unsupported')
+    size, stroke = children(fonts[0], 'size')[0], children(fonts[0], 'thickness')[0]
+    if len(size) != 3 or len(stroke) != 2:
+        raise ValueError('text-size dimensions malformed')
+    for token in (*size[1:], *stroke[1:]):
+        if not isinstance(token, str) or not _POSE_NUMBER.fullmatch(token):
+            raise ValueError('text-size dimensions must be native numeric tokens')
+    return dict(width_nm=nanometres(size[1]), height_nm=nanometres(size[2]), thickness_nm=nanometres(stroke[1]))
+
+
+def _raw_text_inventory(raw):
+    # Native request UUIDs are plain hexadecimal; retain raw nodes, normalize
+    # only the inventory lookup key (writer-quoted or historical bare UUID).
+    return {key[1:-1] if key.startswith('"') and key.endswith('"') else key: value
+            for key, value in _artwork_inventory(raw).items()}
+
+
+def _text_style(raw):
+    node = copy.deepcopy(raw)
+    size = children(children(children(node, 'effects')[0], 'font')[0], 'size')[0]
+    size[1:] = ['SIZE', 'SIZE']
+    return node
+
+
+def _text_minimum(project):
+    try:
+        settings = json.loads(project)['board']['design_settings']
+        if not isinstance(settings, dict) or not isinstance(settings.get('rules', {}), dict):
+            raise ValueError('text-size project rules malformed')
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError('text-size project rules malformed') from exc
+    # Retained native 10.0.7 DRC on the exact original project proves this
+    # omitted-setting default. Production checks that runtime before applying it.
+    value = settings.get('rules', {}).get('min_text_height', '0.8')
+    result = nanometres(str(value))
+    if not 0 < result <= 10**7:
+        raise ValueError('text-size project height minimum unsupported')
+    return result
+
+
+def _check_text_sizes(roots, raws, before, request, project):
+    if (project is None or hashlib.sha256(project).hexdigest() != request['project_sha256']
+            or hashlib.sha256(before).hexdigest() != request['source_sha256']):
+        raise ValueError('text-size source board/project pin differs')
+    minimum = _text_minimum(project)
+    inventories = [_artwork_inventory(root) for root in roots]
+    raw_inv = [_raw_text_inventory(root) for root in raws]
+    for entry in request['texts']:
+        nodes = []
+        for i, inventory in enumerate(inventories):
+            if entry['uuid'] not in inventory:
+                raise ValueError('text-size identity missing')
+            owner, node = inventory[entry['uuid']]
+            text = node[1] if node[0] == 'gr_text' else node[2] if node[0] in ('property', 'fp_text') else None
+            if (owner != entry['owner_uuid'] or children(node, 'layer') != [['layer', entry['layer']]]
+                    or text != entry['text']):
+                raise ValueError('text-size owner/layer/text differs')
+            _text_format(raw_inv[i][entry['uuid']][1])
+            nodes.append(node)
+        old, new = (_text_format(node) for node in nodes)
+        if (old != entry['from'] or new != entry['to'] or old['width_nm'] != old['height_nm']
+                or old['height_nm'] >= minimum or entry['to'] != dict(old, width_nm=minimum, height_nm=minimum)):
+            raise ValueError('text-size must grow deficient square text exactly to project minimum, preserving stroke')
+        styles = [_text_style(inv[entry['uuid']][1]) for inv in raw_inv]
+        if styles[0] != styles[1] or hashlib.sha256(json.dumps(styles[0], separators=(',', ':')).encode()).hexdigest() != entry['style_sha256']:
+            raise ValueError('text-size changed pose/style/string or source format differs')
+
+
+def text_size_request(board, project, identities):
+    """Create explicit per-identity authority from saved source bytes, without native execution."""
+    write_scope(board, board)  # Reject ambiguous native identities before requesting authority.
+    root, raw = parse_sexpr(board), parse_sexpr(board, raw=True)
+    inv, rinv = _artwork_inventory(root), _raw_text_inventory(raw)
+    minimum = _text_minimum(project)
+    entries = []
+    for uid in identities:
+        if uid not in inv:
+            raise ValueError('text-size identity missing')
+        owner, node = inv[uid]
+        old = _text_format(node)
+        _text_format(rinv[uid][1])
+        if old['width_nm'] != old['height_nm'] or old['height_nm'] >= minimum:
+            raise ValueError('text-size requires deficient square text')
+        entries.append(dict(uuid=uid, owner_uuid=owner, layer=children(node, 'layer')[0][1],
+            text=node[1] if node[0] == 'gr_text' else node[2],
+            style_sha256=hashlib.sha256(json.dumps(_text_style(rinv[uid][1]), separators=(',', ':')).encode()).hexdigest(),
+            **{'from': old, 'to': dict(old, width_nm=minimum, height_nm=minimum)}))
+    return normalize_text_sizes(dict(schema=TEXT_SIZE_SCHEMA, source_sha256=hashlib.sha256(board).hexdigest(),
+        project_sha256=hashlib.sha256(project).hexdigest(), texts=entries))
+
+
+def receipt_project(argv):
+    if argv[5:6] != ['--text-size']:
+        return None
+    from .placement_adapter import _relative
+    board = argv[4].removeprefix('/candidate/')
+    return _relative(str(Path(board).with_suffix('.kicad_pro')), 'artwork source project')
+
+
 def _target_argv(targets):
     return [v for ref, field in sorted(targets) for v in ('--target', ref, field)]
 
@@ -393,16 +555,25 @@ def receipt_policy_file(argv):
 
 def carried_files(argv):
     """Run artifacts a carried artwork receipt needs for replay."""
-    return [SOURCE, *([POLICY_COPY] if receipt_policy_file(argv) is not None else [])]
+    return [SOURCE, *([SOURCE_PROJECT] if receipt_project(argv) is not None else []), *([POLICY_COPY] if receipt_policy_file(argv) is not None else [])]
 
 
-def receipt_scope(argv, policy_file=None):
+def receipt_scope(argv, policy_file=None, source_project=None):
     """Recover a receipt's write-scope authority (targets, field poses or policy) from its argv.
 
     A writer-authored policy file is named in the argv; the caller supplies its
     bytes, already checked against the receipt's input digest for that path.
     """
     rest = argv[5:]
+    if rest[:1] == ['--text-size']:
+        if len(rest) != 2 or not isinstance(rest[1], str) or policy_file is not None:
+            raise ValueError('artwork receipt text-size arguments malformed')
+        request = decode_text_sizes(rest[1])
+        if canonical_text_sizes(request) != rest[1] or source_project is None:
+            raise ValueError('artwork receipt text-size canonical request/project missing')
+        return dict(text_sizes=request, source_project=source_project)
+    if source_project is not None:
+        raise ValueError('artwork receipt names no text-size project')
     if receipt_policy_file(argv) is not None:
         if policy_file is None:
             raise ValueError('artwork receipt policy file not supplied')
@@ -439,7 +610,7 @@ def receipt_targets(argv):
     return targets
 
 
-def write_scope(before, after, targets=None, field_poses=None, artwork_policy=None):
+def write_scope(before, after, targets=None, field_poses=None, artwork_policy=None, text_sizes=None, source_project=None):
     """Compare every saved token except allowed silk translations; unknowns refuse.
 
     Unchanged nodes must keep their exact raw spelling. Backslashes are
@@ -462,6 +633,10 @@ def write_scope(before, after, targets=None, field_poses=None, artwork_policy=No
         raise ValueError('artwork policy and field-only scopes are exclusive')
     if targets is not None and field_poses is not None:
         raise ValueError('artwork target and field-pose request are exclusive')
+    text_sizes = normalize_text_sizes(text_sizes)
+    if text_sizes is not None and any(v is not None for v in (targets, field_poses, artwork_policy)):
+        raise ValueError('text-size and relocation authorities are exclusive')
+    formatted = {e['uuid'] for e in text_sizes['texts']} if text_sizes else set()
     posed = {e['field_uuid']: e['footprint_uuid'] for e in field_poses['fields']} if field_poses else None
     roots = [parse_sexpr(b) for b in (before, after)]
     raws = [parse_sexpr(b, raw=True) for b in (before, after)]
@@ -521,6 +696,15 @@ def write_scope(before, after, targets=None, field_poses=None, artwork_policy=No
         if b[0] == 'property' and len(b) > 2 and not isinstance(b[1], str):
             raise ValueError('artwork comparison refuses non-atom field name')
         field = b[0] == 'property' and len(b) > 2 and b[1] in names
+        uid = children(b, 'uuid')
+        if text_sizes is not None and len(uid) == 1 and uid[0][1] in formatted:
+            # Independently checked exact format; every other raw token is pinned.
+            if _text_style(rb) != _text_style(ra):
+                raise ValueError('text-size exceeds dimension-only authority')
+            moves.append(uid[0][1])
+            return
+        if text_sizes is not None and scope == 'item':
+            raise ValueError('text-size edit outside listed identity')
         if silk and (field or b[0] in GRAPHICS):
             if targets is not None and (not field or (owner, b[1]) not in targets):
                 raise ValueError('silk edit outside the artwork target')
@@ -591,11 +775,17 @@ def write_scope(before, after, targets=None, field_poses=None, artwork_policy=No
             raise ValueError('artwork target requires one Reference per footprint')
     if field_poses is not None:
         _check_field_poses(roots, raws, before, field_poses)
+    if text_sizes is not None:
+        _check_text_sizes(roots, raws, before, text_sizes, source_project)
     compare(*roots, *raws)
+    if text_sizes is not None and sorted(moves) != sorted(formatted):
+        raise ValueError('text-size request not applied exactly')
     if posed is not None and sorted(moves) != sorted(posed):
         raise ValueError('field-pose request not applied exactly')
     proof = {'status': 'allowed', 'before_sha256': hashlib.sha256(before).hexdigest(),
              'after_sha256': hashlib.sha256(after).hexdigest(), 'moved_identities': sorted(moves)}
+    if text_sizes is not None:
+        proof['text_sizes'] = text_sizes
     if targets is not None:
         proof['targets'] = [list(t) for t in sorted(targets)]
     if field_poses is not None:
@@ -606,7 +796,7 @@ def write_scope(before, after, targets=None, field_poses=None, artwork_policy=No
 
 
 def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, field_poses=None,
-         artwork_policy=None, artwork_policy_file=None):
+         artwork_policy=None, artwork_policy_file=None, text_sizes=None):
     """Create an immutable source snapshot and an ordinary campaign implementation step.
 
     targets restricts the repair to named (reference, field) pairs, receipted
@@ -632,7 +822,10 @@ def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, 
         raise ValueError('artwork policy and field-only scopes are exclusive')
     if targets is not None and field_poses is not None:
         raise ValueError('artwork target and field-pose request are exclusive')
-    scope = (_target_argv(targets) if targets else
+    if text_sizes is not None and any(v is not None for v in (targets, field_poses, artwork_policy, artwork_policy_file)):
+        raise ValueError('text-size and relocation authorities are exclusive')
+    scope = (['--text-size', canonical_text_sizes(text_sizes)] if text_sizes is not None else
+             _target_argv(targets) if targets else
              ['--field-pose', canonical_field_poses(field_poses)] if field_poses is not None else
              ['--artwork-policy', canonical_artwork_policy(artwork_policy)] if artwork_policy is not None else
              ['--artwork-policy-file', artwork_policy_file] if artwork_policy_file is not None else [])
@@ -644,7 +837,8 @@ def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, 
             'mounts': [{'source': str(tool_dir), 'at': TOOL_AT}], 'source': TOOL_AT,
             'version_argv': ['/usr/bin/kicad-cli', 'version'],
             'writes': {board: BOARD}, 'artifacts': ['placement'], 'timeout_s': timeout_s,
-            **({'inputs': [artwork_policy_file]} if artwork_policy_file is not None else {})}
+            **({'inputs': [str(Path(board).with_suffix('.kicad_pro'))]} if text_sizes is not None else
+               {'inputs': [artwork_policy_file]} if artwork_policy_file is not None else {})}
 
 
 def qualify_receipt(receipt_dir, receipt, board, source_files):
@@ -674,10 +868,19 @@ def qualify_receipt(receipt_dir, receipt, board, source_files):
                 receipt['artifacts'].get(POLICY_COPY) != receipt['inputs'][policy_file] or
                 digest(root / 'run' / POLICY_COPY) != receipt['inputs'][policy_file]):
             raise ValueError('artwork policy file differs from receipt input')
+    elif receipt_project(spec['argv']) is not None:
+        project_path = receipt_project(spec['argv'])
+        if spec.get('inputs') != [project_path]:
+            raise ValueError('text-size receipt lacks declared project input')
+        project = (root / 'inputs' / project_path).read_bytes()
+        if (hashlib.sha256(project).hexdigest() != receipt['inputs'].get(project_path)
+                or digest(root / 'run' / SOURCE_PROJECT) != receipt['inputs'].get(project_path)):
+            raise ValueError('text-size receipt project differs')
     elif 'inputs' in spec:
         raise ValueError('artwork receipt declares inputs without a policy file')
     proof = write_scope((root / 'inputs' / board).read_bytes(), (root / 'run' / BOARD).read_bytes(),
-                        **receipt_scope(spec['argv'], None if policy_file is None else data))
+                        **receipt_scope(spec['argv'], None if policy_file is None else data,
+                                        project if receipt_project(spec['argv']) is not None else None))
     if digest(root / 'run' / SOURCE) != receipt['inputs'].get(board):
         raise ValueError('artwork source artifact differs from receipt input')
     report = read_json(root / 'run' / REPORT)
@@ -711,6 +914,20 @@ def _apply_field_poses(k, board, request):
         moved.append(dict(uuid=entry['field_uuid'], reference=fp.GetReference(), field=field.GetName(),
                           **{'from': entry['from'], 'to': to}))
     return moved
+
+
+def _apply_text_sizes(k, board, request):
+    items = [*board.GetDrawings(), *(item for fp in board.GetFootprints()
+             for item in (*fp.GetFields(), *fp.GraphicalItems()))]
+    for entry in request['texts']:
+        found = [item for item in items if item.m_Uuid.AsString() == entry['uuid']]
+        if len(found) != 1:
+            raise ValueError('text-size native identity missing/ambiguous')
+        item = found[0]
+        size = item.GetTextSize()
+        if [int(size.x), int(size.y)] != [entry['from']['width_nm'], entry['from']['height_nm']]:
+            raise ValueError('text-size native source dimensions differ')
+        item.SetTextSize(k.VECTOR2I(entry['to']['width_nm'], entry['to']['height_nm']))
 
 
 def _native_pose(field):
@@ -801,7 +1018,7 @@ def via_pad_assessment(board_path):
                              'Native geometry does not establish filled/capped process or assembly support.'])
 
 
-def produce(source, root, targets=None, field_poses=None, artwork_policy=None, policy_file=None):
+def produce(source, root, targets=None, field_poses=None, artwork_policy=None, policy_file=None, text_sizes=None):
     """Write a disposable candidate, retain native DRC and fail on any new non-silk finding.
 
     With targets only the named footprint fields may move; graphics stay put.
@@ -814,13 +1031,24 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
     from .placer_runner import _native_drc
     from .silk_artwork import relocate, ARTWORK_CONFLICTS, containment_witness
     if policy_file is not None:
+        if text_sizes is not None:
+            raise ValueError('text-size and relocation authorities are exclusive')
         if artwork_policy is not None:
             raise ValueError('artwork policy and policy file are exclusive')
         artwork_policy = decode_artwork_policy_file(policy_file)
     targets = normalize_targets(targets)
     field_poses = normalize_field_poses(field_poses)
     artwork_policy = normalize_artwork_policy(artwork_policy)
-    scope = dict(targets=targets, field_poses=field_poses, artwork_policy=artwork_policy)
+    text_sizes = normalize_text_sizes(text_sizes)
+    project = source.with_suffix('.kicad_pro').read_bytes() if text_sizes is not None else None
+    scope = dict(targets=targets, field_poses=field_poses, artwork_policy=artwork_policy,
+                 text_sizes=text_sizes, source_project=project)
+    if text_sizes is not None:
+        if any(v is not None for v in (targets, field_poses, artwork_policy)):
+            raise ValueError('text-size and relocation authorities are exclusive')
+        # Validate request against its exact intended destination before native work.
+        if text_size_request(source.read_bytes(), project, [e['uuid'] for e in text_sizes['texts']]) != text_sizes:
+            raise ValueError('text-size source board/project/format request differs')
     if artwork_policy is not None and (targets is not None or field_poses is not None):
         raise ValueError('artwork policy and field-only scopes are exclusive')
     # Classification applies even to unchanged groups and is source-bound.
@@ -841,6 +1069,8 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
         (root / POLICY_COPY).write_bytes(policy_file)
     payloads = {s: source.with_suffix(s).read_bytes() if source.with_suffix(s).is_file() else None
                 for s in ('.kicad_pro', '.kicad_dru')}
+    if text_sizes is not None and payloads['.kicad_pro'] != project:
+        raise ValueError('text-size source project changed before native DRC')
     for suffix, payload in payloads.items():
         if payload is not None:
             if suffix == '.kicad_dru':
@@ -852,7 +1082,12 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
     before = _native_drc(original, baseline)
     before_pin = artwork_drc_pin(original, before)
     board = k.LoadBoard(str(output))
-    if field_poses is not None:
+    if text_sizes is not None:
+        if before.get('kicad_version') != '10.0.7':
+            raise ValueError('text-size native default requires KiCad 10.0.7')
+        _apply_text_sizes(k, board, text_sizes)
+        artwork = dict(text_sizes=text_sizes, moved_fields=[])
+    elif field_poses is not None:
         artwork = dict(field_poses=field_poses, moved_fields=_apply_field_poses(k, board, field_poses))
     else:
         artwork = relocate(board, before['violations'], graphics=targets is None, targets=targets,
@@ -871,6 +1106,8 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
             output.with_suffix(suffix).unlink(missing_ok=True)
         else:
             output.with_suffix(suffix).write_bytes(payload)
+    if text_sizes is not None and source.with_suffix('.kicad_pro').read_bytes() != project:
+        raise ValueError('text-size source project changed during native work')
     proof = write_scope(source.read_bytes(), output.read_bytes(), **scope)
     after = _native_drc(output, output.parent)
     after_pin = artwork_drc_pin(output, after)
@@ -903,6 +1140,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('board', type=Path)
     parser.add_argument('--target', nargs=2, action='append', metavar=('REFERENCE', 'FIELD'))
+    parser.add_argument('--text-size', metavar='JSON', help='canonical source/project-bound silk dimension growth')
     parser.add_argument('--field-pose', metavar='JSON', help='canonical exact field-pose request')
     parser.add_argument('--artwork-policy', metavar='JSON', help='source-bound free rigid groups')
     parser.add_argument('--artwork-policy-file', metavar='PATH',
@@ -916,5 +1154,5 @@ def main():
     produce(args.board, Path('/work'), targets=args.target,
             field_poses=None if args.field_pose is None else decode_field_poses(args.field_pose),
             artwork_policy=None if args.artwork_policy is None else decode_artwork_policy(args.artwork_policy),
-            policy_file=policy_file)
+            policy_file=policy_file, text_sizes=None if args.text_size is None else decode_text_sizes(args.text_size))
     return 0
