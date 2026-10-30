@@ -1117,8 +1117,33 @@ def select_generated_addr(root, first, *, definition, launch_environment, deadli
     return response
 
 
+def _same_generated_baseline(first, successor):
+    """Compare authored criteria after verifying both builds' rating custody."""
+    from .baseline import compile_baseline, load_baseline
+    from .passive_ratings import load_provenance
+    from .rating_lineage import declared, strip
+    runs = (first, successor)
+    manifests = [read_json(run / 'candidate.json') for run in runs]
+    declarations = [declared(manifest['scope']) for manifest in manifests]
+    if all(value is None for value in declarations):
+        return load_baseline(first) == load_baseline(successor)
+    if any(value is None for value in declarations):
+        return False
+    # Receipt identities are build-specific; declaration paths and every other
+    # field still belong to the immutable comparison.
+    contracts = [{key: value for key, value in declaration.items() if key != 'receipt_sha256'}
+                 for declaration in declarations]
+    if contracts[0] != contracts[1]:
+        return False
+    authored = []
+    for run, manifest, declaration in zip(runs, manifests, declarations):
+        load_provenance(run / 'inputs', declaration)
+        authored.append(compile_baseline(strip(manifest['scope']), manifest['files'], run / 'inputs'))
+    return authored[0] == authored[1]
+
+
 def verify_generated_addr(root, *, successor=None, host=None):
-    """Replay the actual public finding, writer call, full baseline and convergence."""
+    """Replay the public finding, writer call, complete authored baseline and convergence."""
     from .review_run import verify_role_call
     from .stage_receipts import file_tree, tree_identity
     root = Path(root)
@@ -1153,9 +1178,8 @@ def verify_generated_addr(root, *, successor=None, host=None):
             raise ValueError('generated ADDR initial history changed')
         return selection
     successor = Path(successor)
-    from .baseline import load_baseline
     final = verify(successor, host=host)
-    if load_baseline(successor) != baseline or final.get('max_schema_resubmissions') != 0:
+    if not _same_generated_baseline(first, successor) or final.get('max_schema_resubmissions') != 0:
         raise ValueError('generated successor changed complete immutable baseline/review bound')
     following, diagnostic = advance([initial], final, read_json(successor / 'candidate.json'), 2)
     if diagnostic['state'] != 'criteria_satisfied':

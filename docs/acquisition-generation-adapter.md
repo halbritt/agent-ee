@@ -158,12 +158,19 @@ GND correction is admitted. Captured inputs remain byte-identical. No CAD edit,
 private evaluator feedback, intent retry or schema resubmission is authorized.
 A fixed child regenerates from the original pinned preparation source into fresh
 `production-2/prepared`, followed by the existing seven-stage completion with
-new judgments and package review. Complete immutable baselines, complete
+new judgments and package review. Complete authored baselines, complete
 original preparation recipes (except the finite tie), first-attempt custody,
 actual writer/preflight/response and final package/native candidate identity are
 replayed before the successor is exposed. Generated history uses existing
 `convergence.advance`; it fabricates no ordinary implementation-step receipts.
 The production package verifier remains the acceptance authority.
+
+Each build retains its own derived passive-rating baseline. Generated repair
+requires matching rating declarations except for the build-specific receipt hash,
+validates both captured receipt/report pairs, and compares the complete authored
+baselines compiled after removing only the rating derivation. Changed authored
+criteria or sources still refuse repair. Raw baselines and convergence state
+retain their original per-build identities.
 
 All acquisition reviews inherit the original cancellation object and cap setup,
 imaging, checks and reviewer deadlines at the original productive cutoff. The
