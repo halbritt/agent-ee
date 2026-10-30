@@ -159,7 +159,7 @@ class CapturedSourceTests(unittest.TestCase):
                 resistor.read(pool,storage.json_bytes(outer),100)
             with self.assertRaisesRegex(ValueError,'qualified role requires its exact declared source runs'):
                 resistor.apply(root/'never-created',self.captures,None,role_source=pool/'base',
-                    role_context=storage.json_bytes(doc),capacitance=100,as_of='2026-10-29T21:20:00+00:00',policy_blob={})
+                    role_context=storage.json_bytes(doc),capacitance=100,as_of='2026-10-30T17:20:00+00:00',policy_blob={})
             self.assertFalse((root/'never-created').exists())
             (pool/'request-05.body').write_bytes(b'drift')
             with self.assertRaisesRegex(ValueError,'hash mismatch'):
@@ -187,6 +187,9 @@ class ProducerSourceTests(unittest.TestCase):
         self.enterContext(scoped_guard())
         self.root=Path(self.enterContext(tempfile.TemporaryDirectory()))/'revision'
         shutil.copytree(SOURCE,self.root)
+        mapping=json.loads((self.root/'requirement-map.json').read_bytes())
+        stock_path=resistor.acquisition_alternative._assembly_check(mapping)['params']['catalog']
+        self.source_stock=json.loads((self.root/stock_path).read_bytes())
         self.captures={p:(CAPTURE/p).read_bytes() for p in resistor.EVIDENCE}
         for p,b in self.captures.items():
             target=self.root/resistor.AT/p;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(b)
@@ -201,7 +204,7 @@ class ProducerSourceTests(unittest.TestCase):
         before=parts_manifest.load_manifest(self.root,'parts.json')
         circuit=(self.root/'circuit.json').read_bytes()
         raw={p:storage.digest(self.root/p) for p in requirement_map.input_inventory(self.root) if '/responses/' in p}
-        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-29T21:20:00+00:00',self.policy_blob)
+        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-30T17:20:00+00:00',self.policy_blob)
         after=parts_manifest.load_manifest(self.root,'parts.json');parts_manifest.qualify_manifest(after,self.root)
         for a,b in zip(before['parts'],after['parts']):
             for key in ('id','role','instances','lib_id','footprint','required'):
@@ -219,11 +222,16 @@ class ProducerSourceTests(unittest.TestCase):
         self.assertEqual({r['instance']['reference'] for r in decision['affected']},{'R1','R2'})
         self.assertEqual(decision['catalog_policy']['label'],resistor.LABEL)
         stock=json.loads((self.root/result['catalog']['path']).read_bytes())
-        self.assertEqual(stock['parts']['C118155']['last_seen'],'2026-10-29T21:11:14.941957+00:00')
-        self.assertLess(stock['as_of'],'2026-10-29T21:11:14.610525+00:00')
+        captured_stock=json.loads(self.captures['catalog/catalog.json'])
+        self.assertEqual(stock['parts']['C118155']['last_seen'],
+                         captured_stock['parts']['C118155']['last_seen'])
+        self.assertEqual(stock['as_of'],min((self.source_stock['as_of'],captured_stock['as_of']),
+                                           key=datetime.fromisoformat))
+        self.assertEqual(stock['completed_at'],max((self.source_stock['completed_at'],captured_stock['completed_at']),
+                                                  key=datetime.fromisoformat))
 
     def test_selected_cpl_has_full_union_and_labeled_roster_delta(self):
-        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-29T21:20:00+00:00',self.policy_blob)
+        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-30T17:20:00+00:00',self.policy_blob)
         cpl=self.root/'cpl'
         for name,raw in resistor.supplier_files(self.captures).items():
             target=cpl/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw)
@@ -244,7 +252,7 @@ class ProducerSourceTests(unittest.TestCase):
         self.assertIn(resistor.LABEL,overlay['judgments']['judgments/acq-mech-4-assembly-applicability.json']['questions'])
 
     def test_cpl_cannot_accept_panasonic_without_admitted_selection(self):
-        resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-29T21:20:00+00:00',self.policy_blob)
+        resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-30T17:20:00+00:00',self.policy_blob)
         for name,raw in resistor.supplier_files(self.captures).items():
             target=self.root/'cpl'/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw)
         project=Path(__file__).resolve().parents[1]
@@ -313,11 +321,11 @@ class ProducerSourceTests(unittest.TestCase):
     def test_target_mode_still_requires_its_review_input(self):
         (self.root/'ENGINEERING-REVIEW.md').unlink()
         with self.assertRaises(FileNotFoundError):
-            resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-29T21:20:00+00:00',self.policy_blob)
+            resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-30T17:20:00+00:00',self.policy_blob)
 
     def test_mechanics_accepts_only_exact_body_derivative_and_all_source_custody(self):
         from agent_ee import acquisition_mechanics
-        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-29T21:20:00+00:00',self.policy_blob)
+        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-30T17:20:00+00:00',self.policy_blob)
         declaration=acquisition_mechanics.declaration(self.root)
         path=self.root/'placement-mechanics.json';storage.write_json(path,declaration)
         loaded=acquisition_mechanics.load(path)
@@ -487,8 +495,10 @@ class DefaultPreparationTests(unittest.TestCase):
             b=self.prepare('adc-null',public(),**options)
         for rel in ('parts.json','circuit.json','component-selections.json','assembly-release-ids.json'):
             self.assertEqual((self.root/'adc-absent/inputs'/rel).read_bytes(),(self.root/'adc-null/inputs'/rel).read_bytes())
-        self.assertEqual(a['alternative']['selected'],'C468683')
-        self.assertEqual(b['alternative']['selected'],'C468683')
+        # The refreshed retained catalog has stock of the unrestricted primary.
+        # Carrier restrictions have separate coverage above.
+        self.assertEqual(a['alternative']['selected'],'C37593')
+        self.assertEqual(b['alternative']['selected'],'C37593')
         sources={**self.sources,'source-supplement':SOURCE/'source-supplement','power-repair':SOURCE/'power-repair'}
         # The source helper uses this exact existing repair source, without native execution.
         old_sources=self.sources;self.sources=sources
