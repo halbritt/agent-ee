@@ -887,3 +887,25 @@ SHA-256 `61cd3283f108dd629bd6acf1cb6976cb317034dcd6a3a40736b5e49b828b2fee`.
 Section E permits ordinary genuine common source-role qualification evidence
 and differing public briefs; earlier board/campaign acceptance testimony and
 private evaluator material remain prohibited.
+
+### PH connector body correction
+
+Fresh preparation corrects the captured JST PH body model before final grouping,
+role binding and sealing. The top-entry body depth is 4.5 mm, with the pin row
+1.7 mm from one edge: local Y therefore spans -1.7 to +2.8 mm. J1, J2 and J3
+use a +0.55 mm Y center. The previous +0.25 mm center displaced the modeled body
+by 0.30 mm. The captured manufacturer sheet and footprint F.Fab body rectangles
+agree on the corrected bounds.
+
+`acquisition_connector_geometry.py` admits only exact derivatives of the six
+existing geometry models. It retains each preceding model at
+`preparation/connector-geometry/original-model.json` and records the correction
+in the preparation report. Admission requires the pinned JST text, PDF,
+manifests and both captured footprints, in addition to each preceding model's
+source custody. The original source archive remains unchanged.
+
+Both placement mechanics and the unchanged native engineering geometry checker
+consume the corrected `analysis/geometry-model.json`. Widths, depth, height,
+other packages, clearance limits and the checker are preserved. A new model
+hash requires fresh checks and independent judgments; it does not revise an
+earlier run's outcome or establish physical connector clearance.

@@ -127,6 +127,43 @@ class AcquisitionPreparationTests(unittest.TestCase):
             added_sources=self.sources if sources is None else sources, **context)
         return out, report
 
+    def test_prepared_connector_bodies_match_captured_ph_pin_row_offsets(self):
+        # R5's independent judgment found the historical +0.25 mm Y center
+        # omitted 0.30 mm of the PH body. JST's 4.5 mm depth and 1.7 mm
+        # pin-row offset agree with the captured footprint F.Fab rectangles.
+        before = requirement_map.input_inventory(BASE)
+        out, report = self.prepare(brief('100'))
+        inputs = out / 'inputs'
+        model = storage.read_json(inputs / 'analysis/geometry-model.json')
+        expected = {'J1': ('-1.95', '-1.7', '3.95', '2.8'),
+                    'J2': ('-1.95', '-1.7', '7.95', '2.8'),
+                    'J3': ('-1.95', '-1.7', '7.95', '2.8')}
+        bounds = {}
+        for ref in expected:
+            row = model['packages'][ref]
+            x, y = map(lambda v: Decimal(str(v)), row['offset_mm'])
+            w, h = map(lambda v: Decimal(str(v)), row['size_mm'][:2])
+            bounds[ref] = (x-w/2, y-h/2, x+w/2, y+h/2)
+        self.assertEqual(bounds, {ref: tuple(map(Decimal, box)) for ref, box in expected.items()})
+        self.assertEqual(requirement_map.input_inventory(BASE), before)
+        self.assertEqual((inputs / 'history/acquisition-preparation-original/analysis/geometry-model.json').read_bytes(),
+                         (BASE / 'analysis/geometry-model.json').read_bytes())
+        self.assertEqual(storage.read_json(inputs / 'engineering-calculations.json')['sources']['analysis/geometry-model.json'],
+                         storage.digest(inputs / 'analysis/geometry-model.json'))
+        self.assertEqual(report['accounting']['obligations']['judgment'], 14)
+        from agent_ee import acquisition_connector_geometry as connector, acquisition_mechanics as mechanics
+        recipe = inputs / 'placement-mechanics.json'
+        self.assertEqual(mechanics.load(recipe)['model'], model)
+        for name in (connector.ORIGINAL, *connector.SOURCES):
+            source = inputs / name
+            captured = source.read_bytes()
+            source.write_bytes(captured + b' ')
+            try:
+                with self.subTest(source=name), self.assertRaisesRegex(ValueError, 'source changed'):
+                    mechanics.load(recipe)
+            finally:
+                source.write_bytes(captured)
+
     def test_prior_board_review_is_omitted_before_source_capture_with_original_custody(self):
         from agent_ee import candidate, build_stages
         before = requirement_map.input_inventory(BASE)
@@ -151,10 +188,16 @@ class AcquisitionPreparationTests(unittest.TestCase):
             self.assertEqual(row['requirement'], original_overlay['judgments'][name]['requirement'])
             self.assertEqual(row['questions'], original_overlay['judgments'][name]['questions'])
             self.assertFalse(any('ENGINEERING-REVIEW.md' in source for source in row['sources']))
-        for name in ('spec.md', 'OPERATING.md', 'analysis/geometry-model.json', 'analysis/geometry_model.py',
+        for name in ('spec.md', 'OPERATING.md', 'analysis/geometry_model.py',
                      'analysis/power-startup/corners.lib', 'analysis/power-removal/corners.lib',
                      'circuit.json', 'layout.json', 'groups.json', 'ratings.json', 'adc-ties.json'):
             self.assertEqual((inputs / name).read_bytes(), (BASE / name).read_bytes(), name)
+        original_model = storage.read_json(BASE / 'analysis/geometry-model.json')
+        model = storage.read_json(inputs / 'analysis/geometry-model.json')
+        for ref in ('J1', 'J2', 'J3'):
+            model['packages'][ref]['offset_mm'][1] = original_model['packages'][ref]['offset_mm'][1]
+            model['packages'][ref]['basis'] = original_model['packages'][ref]['basis']
+        self.assertEqual(model, original_model)
         declaration = storage.read_json(inputs / 'requirement-map.json')
         original = storage.read_json(BASE / 'requirement-map.json')
         self.assertNotIn('ENGINEERING-REVIEW', declaration['scope']['scope'])

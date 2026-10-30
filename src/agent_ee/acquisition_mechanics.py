@@ -3,7 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 import hashlib
 
-from . import acquisition_source_supplement, acquisition_power_repair, acquisition_resistor
+from . import acquisition_source_supplement, acquisition_power_repair, acquisition_resistor, acquisition_connector_geometry
 from .catalog import strict_json
 from .mechanical_reservations import _native_owner, _current_owner, _sha
 from .storage import canonical, digest
@@ -19,14 +19,24 @@ CONNECTORS = ('J1', 'J2', 'J3')
 def declaration(root):
     root = Path(root)
     sources = {rel: digest(root / rel) for rel in SOURCES}
-    if sources['analysis/geometry-model.json'] == acquisition_source_supplement.CORRECTED_MODEL:
-        sources.update(acquisition_source_supplement.geometry_sources())
-    if sources['analysis/geometry-model.json'] in (acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470):
-        sources.update(acquisition_source_supplement.geometry_sources())
-        sources.update(acquisition_power_repair.geometry_sources('470' if sources['analysis/geometry-model.json'] == acquisition_power_repair.MODEL470 else '620'))
-    if sources['analysis/geometry-model.json'] in acquisition_resistor.MODELS:
-        sources.update(acquisition_resistor.geometry_sources(sources['analysis/geometry-model.json']))
+    sources.update(_model_sources(sources['analysis/geometry-model.json']) or {})
     return {'schema': SCHEMA, 'sources': sources}
+
+
+def _model_sources(model):
+    if model in acquisition_connector_geometry.MODELS:
+        return {**_model_sources(acquisition_connector_geometry.MODELS[model]),
+                **acquisition_connector_geometry.geometry_sources(model)}
+    if model == MODEL:
+        return {}
+    if model == acquisition_source_supplement.CORRECTED_MODEL:
+        return acquisition_source_supplement.geometry_sources()
+    if model in (acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470):
+        return {**acquisition_source_supplement.geometry_sources(),
+                **acquisition_power_repair.geometry_sources('470' if model == acquisition_power_repair.MODEL470 else '620')}
+    if model in acquisition_resistor.MODELS:
+        return acquisition_resistor.geometry_sources(model)
+    return None
 
 
 def load(path):
@@ -71,13 +81,8 @@ def _identity(binding):
 def _version(document):
     sources = document['sources']
     model = sources['analysis/geometry-model.json']
-    extra = acquisition_source_supplement.geometry_sources() if model == acquisition_source_supplement.CORRECTED_MODEL else {}
-    if model in (acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470):
-        extra = {**acquisition_source_supplement.geometry_sources(), **acquisition_power_repair.geometry_sources('470' if model == acquisition_power_repair.MODEL470 else '620')}
-    if model in acquisition_resistor.MODELS:
-        extra = acquisition_resistor.geometry_sources(model)
-    if (model not in (MODEL, acquisition_source_supplement.CORRECTED_MODEL, acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470, *acquisition_resistor.MODELS)
-            or sources['analysis/geometry_model.py'] != CHECKER
+    extra = _model_sources(model)
+    if (extra is None or sources['analysis/geometry_model.py'] != CHECKER
             or set(sources) != set(SOURCES) | set(extra)
             or any(sources.get(name) != pin for name, pin in extra.items())):
         raise ValueError('unsupported acquisition model/checker revision or source custody')

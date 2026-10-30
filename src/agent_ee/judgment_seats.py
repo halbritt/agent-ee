@@ -405,7 +405,14 @@ def produce(build_run, out, *, author, verifier, private_evaluator_pair, deadlin
             pin_inventory = input_inventory(staging)
             prompt = instructions + ('Independently verify EVERY authored record: resolve sources, recompute applicability, challenge conclusions against bound evidence. '
                 'Concur or dissent honestly. The complete brief is at /evidence/packet.json and author bytes are readonly '
-                'at /evidence/work/authored-records.\n') + json.dumps(dict(records=pin_inventory,verifier=metadata['verifier']))
+                'at /evidence/work/authored-records. '
+                'This call has a finite wall-clock budget, supplied as timeout_s below. Track elapsed time and reserve time '
+                'to return the complete verifications document before that limit. Batch mechanical hash, citation and '
+                'applicability checks where useful, then spend the remaining inspection time on engineering conclusions. '
+                'Keep a verdict for every record as you proceed. If evidence remains unresolved, report an honest dissent '
+                'with its specific gaps; never infer concurrence from running out of time. Return the final structured '
+                'document, not an interim progress message.\n') + json.dumps(dict(records=pin_inventory,verifier=metadata['verifier'],
+                    timeout_s=max(0, min(definitions[1]['timeout_s'], deadline-time.monotonic()))))
             witnesses = call('judgment-verifier', definitions[1], prompt, witness_schema,
                              lambda v: validate_witnesses(v, hashes, metadata['verifier']))
             if witnesses is not None:

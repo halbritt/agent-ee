@@ -17,7 +17,7 @@ import stat
 import tempfile
 
 from . import acquisition_resistor, acquisition_expected_intent, acquisition_power_repair, acquisition_source_supplement, acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
-from . import acquisition_local_geometry, acquisition_local_routing
+from . import acquisition_local_geometry, acquisition_local_routing, acquisition_connector_geometry
 from .storage import json_bytes, rename_noreplace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -61,7 +61,7 @@ REVISION_BASIS = {
     'analysis/power-removal/corners.lib': 'Explicit R6+1% adverse626.2ohm; unused historical model remains documentary',
     'analysis/power-startup/README.md': 'Declare seven reviewed source cases, assumptions and convergence history without inherited pass',
     'analysis/power-removal/README.md': 'Declare corrected source-only removal derivative, zero ADC minimum and retained200uA stress',
-    'analysis/geometry-model.json': 'Bind exact Murata/R6 lineage and optional manufacturer-derived R1/R2 Panasonic body maxima',
+    'analysis/geometry-model.json': 'Bind exact Murata/R6 and optional Panasonic lineage; correct PH body centers from captured source geometry',
     'engineering-calculations.json': 'Recompute RC operand; bind captured sources and rate-qualified ADC terms',
     'ENGINEERING-REVIEW.md': 'Omit inherited board testimony; retain the exact original only in the captured recipe',
 }
@@ -617,7 +617,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         overlay_sha256=spec_record.sha256(overlay_raw), producer_sha256=spec_record.sha256(Path(__file__).read_bytes()),
         helpers={module.__name__: spec_record.sha256(Path(module.__file__).read_bytes())
                  for module in (acquisition_expected_intent, acquisition_local_return, acquisition_local_geometry,
-                                acquisition_local_routing, acquisition_mechanics, acquisition_source_supplement,
+                                acquisition_local_routing, acquisition_mechanics, acquisition_connector_geometry, acquisition_source_supplement,
                                 acquisition_power_repair, build_plan, catalog, requirement_map, spec_record, storage, typed_overlay)},
         additions={key: spec_record.sha256(json_bytes(files)) for key, files in additions.items()})
     if roles is not None:
@@ -823,6 +823,10 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             (provenance / 'addr-selection.json').write_bytes(json_bytes(addr_report))
         if replay is not None:
             (provenance / 'evaluation-context.json').write_bytes(replay[1])
+        geometry_sources = requirement_map.input_inventory(revised)
+        geometry_sources.update({at + '/' + name: pin for at, files in additions.items()
+                                 for name, pin in files.items()})
+        connector_geometry = acquisition_connector_geometry.apply(revised, geometry_sources)
         if final_groups:
             from . import block_source_stage
             acquisition_block_source.apply(revised, plan)
@@ -841,6 +845,10 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             (revised/acquisition_roles.AT/'context-input.json').write_bytes(role_raw)
         _isolate_inherited_review(base, revised, overlay, before)
         changed = _archive_revision(base, revised, before, identity)
+        ledger_path = provenance / 'edit-ledger.json'
+        ledger = catalog.strict_json(ledger_path.read_bytes())
+        ledger['connector_geometry'] = connector_geometry
+        ledger_path.write_bytes(json_bytes(ledger))
         if resistor_report is not None or public is not None:
             ledger_path = provenance / 'edit-ledger.json'
             ledger = catalog.strict_json(ledger_path.read_bytes())
