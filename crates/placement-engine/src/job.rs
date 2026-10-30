@@ -519,6 +519,8 @@ const MECHANICS_ORIGINAL: &str = "0badae526e172bd688bc634e1fb2dec040fbca80dab156
 const MECHANICS_MURATA: &str = "311df5d1398780f8b65e061a512bea2384d15298ba6278d505a6e77e3159cb6c";
 const MECHANICS_R6: &str = "43be6345262e5eeb0f54b9214009d13168fa5889333b006315f489dac7c8fa8f";
 const MECHANICS_R6_470: &str = "02292f70aca8b8a07b2dbbbab42515824b1c2c6d40ba49103a2ef3d7b23b5ffa";
+const MECHANICS_PANASONIC: &str = "2bb1d93ff3f1cc0420088c02b16278394e3124230b05da950d6838432f049479";
+const MECHANICS_PANASONIC_470: &str = "fa010715d48ba3fe6e1843e17744834583b98f03a23fb61e004909a7840507b2";
 const MECHANICS_CHECKER: &str = "fb225768d6812abf6b116da31e029b940ca64ccf1427f9c0ef7b04814cf10294";
 const MECHANICS_BASE_SOURCES: [&str; 4] = ["spec.md", "requirement-map.json", "analysis/geometry-model.json", "analysis/geometry_model.py"];
 const MECHANICS_MURATA_SOURCES: &[(&str, &str)] = &[
@@ -547,6 +549,48 @@ const MECHANICS_R6_470_SOURCES: &[(&str, &str)] = &[
     ("power-repair/manufacturer/rc-series.txt", "e92249df44472848f9a18eb0606ec309a099112d773b150876c33d654b8a9439"),
 ];
 
+const MECHANICS_PANASONIC_SOURCES: &[(&str, &str)] = &[
+    ("preparation/resistor-context/datasheets/b29db0c4cad7699a57e1e17182f49e77b78470bd85f595dc22f75144e7b780c5.pdf", "78825b819853a63f57cc18214f321d2f1da9dc205a7e58af7db18ae73563e378"),
+    ("preparation/resistor-context/request-11.body", "dce85b4894ccf97307f6a6b1b34176ff3ca4ee02850f1271b866f87127521214"),
+];
+const MECHANICS_PH_SOURCES: &[(&str, &str)] = &[
+    ("manufacturer-text/jst-ph.txt", "9553878588234be82b72e0a89774ac67bbc0022c4aef14cfdbac1383b32d8df1"),
+    ("manufacturer-text/manifest.json", "ee1c4d695cdd0ba20527a50bd73516dc2e955559a9bd59829edd5d35748fe43f"),
+    ("datasheets-connectors-bulk/manifest.json", "0851bd57b2b559e831d97b583c8218ac3f02ed190c5a362d63f76ad3afe9a685"),
+    ("datasheets-connectors-bulk/bb0b7c344f87ea4a2eb01dbf02c4541bd9482608f57c1dc3ca2f5e333a0dd2a4.pdf", "447624f4f2f7d37c58c1eaa7ee314ad757fe7aff48f6186491ef6f69fbc00b96"),
+    ("Connector_JST.pretty/JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical.kicad_mod", "dd59286748b9a6fa9174237072608f811cf3169dddf00eab54a5c196fcb6f7e8"),
+    ("Connector_JST.pretty/JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical.kicad_mod", "f5488d79bbafc8c929bcfacf8e960e81dcfc126c598e03083de317607937b58e"),
+];
+
+fn mechanics_sources(model: &str) -> Result<Vec<(&'static str, &'static str)>> {
+    let preceding = match model {
+        "4155f201ba2efb2c74a44a3f8ffe30187a28eac4884b7b34a729e76d15c40e52" => Some(MECHANICS_ORIGINAL),
+        "4aaad94d06dfc4d838e0992259219c51ce1f3d364948cc2a3929e741a150d21f" => Some(MECHANICS_MURATA),
+        "2c2b46cbfa91cf19e9e56b4c3f1ff4b1161d9ca1822f5f73432bc96ad53e3646" => Some(MECHANICS_R6),
+        "38669f433c5005587b3f310af6bb51cc91fa89ba301d348799421bf83fa5cb64" => Some(MECHANICS_PANASONIC),
+        "53187855ce84e712e539eed040dc741c2ffe0c8d7d331fc9b37203f033be4d0b" => Some(MECHANICS_R6_470),
+        "c6ad86348e39e9a2be7d0f6a23b00b0a08b436847e3f691f320511a2d02f82e1" => Some(MECHANICS_PANASONIC_470),
+        _ => None,
+    };
+    if let Some(original) = preceding {
+        let mut sources = mechanics_sources(original)?;
+        sources.extend_from_slice(MECHANICS_PH_SOURCES);
+        sources.push(("preparation/connector-geometry/original-model.json", original));
+        return Ok(sources);
+    }
+    let mut sources: Vec<_> = match model {
+        MECHANICS_ORIGINAL => Vec::new(),
+        MECHANICS_MURATA => MECHANICS_MURATA_SOURCES.iter().copied().collect(),
+        MECHANICS_R6_470 | MECHANICS_PANASONIC_470 => MECHANICS_MURATA_SOURCES.iter().chain(MECHANICS_R6_470_SOURCES.iter()).copied().collect(),
+        MECHANICS_R6 | MECHANICS_PANASONIC => MECHANICS_MURATA_SOURCES.iter().chain(MECHANICS_R6_SOURCES.iter()).copied().collect(),
+        _ => bail!("unsupported mechanics model/checker"),
+    };
+    if matches!(model, MECHANICS_PANASONIC | MECHANICS_PANASONIC_470) {
+        sources.extend_from_slice(MECHANICS_PANASONIC_SOURCES);
+    }
+    Ok(sources)
+}
+
 /// The same finite model/source versions as Python acquisition_mechanics._version.
 /// Upstream capture verifies source files; this boundary rechecks their pinned
 /// declarations and authenticates the full model bytes before reading geometry.
@@ -558,13 +602,7 @@ fn acquisition_source_model(m: &Value) -> Result<Value> {
     let sources = m["sources"].as_object().context("mechanics sources must be an object")?;
     let model = sources.get("analysis/geometry-model.json").and_then(Value::as_str)
         .context("missing mechanics model hash")?;
-    let supplementary: Vec<_> = match model {
-        MECHANICS_ORIGINAL => Vec::new(),
-        MECHANICS_MURATA => MECHANICS_MURATA_SOURCES.iter().copied().collect(),
-        MECHANICS_R6_470 => MECHANICS_MURATA_SOURCES.iter().chain(MECHANICS_R6_470_SOURCES.iter()).copied().collect(),
-        MECHANICS_R6 => MECHANICS_MURATA_SOURCES.iter().chain(MECHANICS_R6_SOURCES.iter()).copied().collect(),
-        _ => bail!("unsupported mechanics model/checker"),
-    };
+    let supplementary = mechanics_sources(model)?;
     ensure!(sources.get("analysis/geometry_model.py").and_then(Value::as_str) == Some(MECHANICS_CHECKER),
             "unsupported mechanics model/checker");
     ensure!(sources.len() == MECHANICS_BASE_SOURCES.len() + supplementary.len()
@@ -3678,6 +3716,73 @@ mod tests {
                 changed = raw.clone();
                 changed["mechanics"]["sources"][key] = json!("0".repeat(64));
                 assert!(prepare(&changed).is_err(), "changed {key}");
+            }
+        }
+    }
+
+    #[test]
+    fn derived_mechanics_versions_keep_exact_source_and_geometry_guards() {
+        use sha2::{Digest, Sha256};
+        let cases: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-qualification/mechanics-derived-test-cases.json")).unwrap();
+        for case in cases["cases"].as_array().unwrap() {
+            let mut raw = source_mechanics_fixture(true, false);
+            raw["mechanics"]["model_raw"] = case["model_raw"].clone();
+            raw["mechanics"]["sources"] = case["sources"].clone();
+            if case["kind"] == "ph-corrected" {
+                raw["footprints"][0]["source_body_local_nm"] = json!([-1950000,-1700000,3950000,2800000]);
+                raw["footprints"][0]["access_local_nm"] = json!([-2450000,-2200000,4450000,3300000]);
+            }
+            let p = prepare(&raw).unwrap();
+            let poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+            assert_eq!(full_evaluate(&p, &poses).hard_count, 0);
+            for key in case["sources"].as_object().unwrap().keys() {
+                let mut changed = raw.clone();
+                changed["mechanics"]["sources"].as_object_mut().unwrap().remove(key);
+                assert!(prepare(&changed).is_err(), "missing {key}");
+                if !MECHANICS_BASE_SOURCES.contains(&key.as_str()) {
+                    changed = raw.clone();
+                    changed["mechanics"]["sources"][key] = json!("0".repeat(64));
+                    assert!(prepare(&changed).is_err(), "changed {key}");
+                }
+            }
+            let mut changed = raw.clone();
+            let altered = format!("{} ", case["model_raw"].as_str().unwrap());
+            changed["mechanics"]["model_raw"] = json!(altered);
+            assert!(prepare(&changed).is_err());
+            changed["mechanics"]["sources"]["analysis/geometry-model.json"] = json!(format!("{:x}", Sha256::digest(altered.as_bytes())));
+            assert!(prepare(&changed).is_err(), "rehashing unknown model cannot admit it");
+            changed = raw.clone();
+            changed["mechanics"]["sources"]["analysis/geometry_model.py"] = json!("0".repeat(64));
+            assert!(prepare(&changed).is_err());
+            changed = raw.clone();
+            changed["mechanics"]["sources"]["extra-input"] = json!("0".repeat(64));
+            assert!(prepare(&changed).is_err());
+            changed = raw.clone();
+            changed["footprints"][0]["source_body_local_nm"][1] = json!(-1600000);
+            assert!(prepare(&changed).is_err());
+            changed = raw.clone();
+            changed["footprints"][0]["access_local_nm"][1] = json!(-2100000);
+            assert!(prepare(&changed).is_err());
+            if case["kind"] == "ph-corrected" {
+                let expected = [[8050000,8300000,13950000,12800000],
+                    [8300000,6050000,12800000,11950000],
+                    [6050000,7200000,11950000,11700000],
+                    [7200000,8050000,11700000,13950000]];
+                for (q, bounds) in expected.iter().enumerate() {
+                    let pose = Pose {x:10_000_000, y:10_000_000, q:q as i64};
+                    let body = place_rect(&p.footprints[0].source_body.unwrap(), &pose);
+                    assert_eq!(body.as_value(), json!(bounds));
+                    assert_eq!(place_rect(&p.footprints[0].access.unwrap(), &pose).as_value(), body.grown(500000).as_value());
+                }
+                // A component in the previously omitted access strip is now
+                // rejected, even though the physical bodies remain separated.
+                let mut placed = poses;
+                placed[0].y = 3_000_000;
+                placed[1].x = 5_000_000; placed[1].y = 6_825_000;
+                let report = mechanics_report(&p, &placed);
+                assert!(report["defects"].as_array().unwrap().iter().any(|d| d["kind"] == "connector_access"));
+                let old = prepare(&source_mechanics_fixture(true, false)).unwrap();
+                assert_eq!(mechanics_report(&old, &placed)["status"], "pass");
             }
         }
     }

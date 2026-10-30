@@ -909,6 +909,10 @@ consume the corrected `analysis/geometry-model.json`. Widths, depth, height,
 other packages, clearance limits and the checker are preserved. A new model
 hash requires fresh checks and independent judgments; it does not revise an
 earlier run's outcome or establish physical connector clearance.
+The Rust placement engine independently checks the admitted model and complete
+source declaration. Rebuild it with `scripts/build_placement_engine.py` when
+adding model versions; updating only the Python producer leaves the native
+consumer unable to admit the new model.
 
 ### Refreshing separately captured resistor stock
 

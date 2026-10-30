@@ -31,6 +31,7 @@ def sources(root):
              Path('fixtures/acquisition-qualification/geometry-model-murata.json'),
              Path('fixtures/acquisition-qualification/geometry-model-r6.json'),
              Path('fixtures/acquisition-qualification/geometry-model-r6-470.json'),
+             Path('fixtures/acquisition-qualification/mechanics-derived-test-cases.json'),
              Path('fixtures/acquisition-typed/source-supplement.json'),
              Path('fixtures/acquisition-typed/power-repair.json'),
              Path('fixtures/acquisition-typed/power-repair-470.json'),

@@ -32,6 +32,26 @@ def variants():
 
 
 class ConnectorGeometryTests(unittest.TestCase):
+    def test_rust_fixture_uses_the_exact_python_model_bytes_and_source_closure(self):
+        from agent_ee import acquisition_mechanics as mechanics
+        rows = json.loads((ORIGINAL.parent/'mechanics-derived-test-cases.json').read_bytes())['cases']
+        expected = {}
+        for raw in variants():
+            if sha256(raw) in resistor.MODELS:
+                expected[sha256(raw)] = raw
+            corrected = connector.corrected_model(raw)
+            expected[sha256(corrected)] = corrected
+        self.assertEqual({row['sha256'] for row in rows}, set(expected))
+        self.assertEqual(len(rows), len(expected))
+        for row in rows:
+            with self.subTest(model=row['sha256']):
+                self.assertEqual(row['model_raw'].encode(), expected[row['sha256']])
+                self.assertEqual(row['sources'], {
+                    'spec.md': 'd'*64, 'requirement-map.json': 'e'*64,
+                    'analysis/geometry-model.json': row['sha256'],
+                    'analysis/geometry_model.py': mechanics.CHECKER,
+                    **mechanics._model_sources(row['sha256'])})
+
     def test_all_existing_families_correct_only_header_offset_and_attribution(self):
         rows = variants()
         self.assertEqual({sha256(raw) for raw in rows}, set(connector.MODELS.values()))
