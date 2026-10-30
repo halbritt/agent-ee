@@ -67,6 +67,49 @@ class BriefTests(unittest.TestCase):
         self.assertEqual(report['outcome'], 'refused')
 
 
+class FinalOverlayTests(unittest.TestCase):
+    def test_late_role_rows_bind_the_exact_sealed_map_and_overlay_drift_refuses(self):
+        # Public calibration 2026-10-29: role rows arrive after the earlier
+        # selected-CPL normalization. Exercise real role and typed producers;
+        # this authored fixture makes no retained-run qualification claim.
+        from agent_ee import acquisition_roles, typed_overlay
+        from test_acquisition_roles import authored
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            revised = root / 'revision'
+            revised.mkdir()
+            doc, captures, overlay, _, _, _, _ = authored(self, revised)
+            acquisition_roles.apply(revised, {'parts': {'manifest': 'parts.json'}},
+                                    overlay, doc, captures)
+            for key in ('acq-mech-3-return-paths', 'acq-elec-2-source-evaluation',
+                        'acq-elec-5-host-bus-contract'):
+                overlay['judgments'].pop('judgments/' + key + '.json')
+            live_order = list(overlay['block_requirements'])
+            self.assertNotEqual(live_order, sorted(live_order))
+            source_map = (revised / 'requirement-map.json').read_bytes()
+            overlay_path = root / 'overlay.json'
+            final = acquisition_prepare._write_final_overlay(overlay_path, overlay)
+            predicted = typed_overlay.derive_map(requirement_map.map_declaration(source_map), final)
+            predicted_bytes = storage.json_bytes(predicted)
+            sealed = root / 'sealed'
+            result = typed_overlay.prepare(revised, overlay_path, sealed, added_sources={})
+            self.assertEqual((sealed / 'requirement-map.json').read_bytes(), predicted_bytes)
+            self.assertEqual(result['manifest']['overlay_sha256'],
+                             spec_record.sha256(overlay_path.read_bytes()))
+            self.assertEqual(result['manifest']['derived']['requirement_map_sha256'],
+                             spec_record.sha256(predicted_bytes))
+            self.assertEqual([r['id'] for r in predicted['requirements']][-len(live_order):],
+                             sorted(live_order))
+            self.assertEqual((revised / 'requirement-map.json').read_bytes(), source_map)
+            self.assertEqual(result['manifest']['accounting']['judgment_records_present'], [])
+            drift = json.loads(overlay_path.read_bytes())
+            drift['base']['requirement_map_sha256'] = '0' * 64
+            overlay_path.write_bytes(storage.json_bytes(drift))
+            with self.assertRaisesRegex(ValueError, 'base bytes differ'):
+                typed_overlay.prepare(revised, overlay_path, root / 'refused', added_sources={})
+            self.assertFalse((root / 'refused').exists())
+
+
 @unittest.skipUnless(PLAN.is_file() and CPL.is_dir() and TEXT.is_dir(),
                      'retained acquisition plan and additive captures required')
 class AcquisitionPreparationTests(unittest.TestCase):

@@ -390,6 +390,12 @@ def _archive_revision(base, revised, before, identity):
     return changed
 
 
+def _write_final_overlay(path, overlay):
+    """Bind pre-seal derivations to the exact final overlay consumed by the seal."""
+    path.write_bytes(json_bytes(overlay))
+    return typed_overlay.load_overlay(path.read_bytes())
+
+
 def _read_context_file(path, label):
     """Read one regular context file through no-follow directory descriptors."""
     path = Path(path).absolute()
@@ -883,7 +889,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
             ledger['review_context'] = review_context
             ledger_path.write_bytes(json_bytes(ledger))
         overlay_file = scratch / 'overlay.json'
-        overlay_file.write_bytes(json_bytes(overlay))
+        overlay = _write_final_overlay(overlay_file, overlay)
         bundle.mkdir()
         # Bind the operative typed map before sealing the source bundle. The
         # overlay will write these exact bytes; do not append inputs after seal.
