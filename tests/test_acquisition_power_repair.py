@@ -60,6 +60,20 @@ class PowerRepairTests(unittest.TestCase):
 
 
 class Margin470Tests(unittest.TestCase):
+    def test_case_count_rewrite_preserves_address_and_component_counts(self):
+        # Captured recipe OPERATING.md and ENGINEERING-REVIEW.md wording.
+        address=('ADDR is grounded, so the seven-bit I2C address is **0x48** (write address byte\n'
+                 '0x90, read address byte 0x91).')
+        counts='All 17 footprints are populated: seven power, seven analog and three host.'
+        source=(address+'\n'+counts+'\ncorrected seven-case power analysis.\n'
+                'all seven require new native results.\nFour removal cases\n')
+        result=repair._narrative470(source)
+        self.assertIn(address,result)
+        self.assertIn(counts,result)
+        self.assertIn('corrected eight-case power analysis.',result)
+        self.assertIn('all eight require new native results.',result)
+        self.assertIn('Five removal cases',result)
+
     def test_selected470_current_budget_and_copper_operand_are_consistent(self):
         output, total, idle = repair.currents('470')
         self.assertEqual(output, Fraction(60101, 5170000))

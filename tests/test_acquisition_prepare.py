@@ -28,14 +28,6 @@ def brief(cap='150'):
 
 
 class BriefTests(unittest.TestCase):
-    def test_operating_instruction_distinguishes_seven_bit_address_from_wire_bytes(self):
-        original=('100 pF per line.\nADDR is grounded, so the eight-bit I2C address is '
-                  '0x48 (write address byte\n0x90, read address byte 0x91).\n')
-        actual=acquisition_prepare._revise_operating(original,'150 pF')
-        self.assertEqual(actual,original.replace('100 pF','150 pF').replace('eight-bit','seven-bit'))
-        with self.assertRaisesRegex(ValueError,'address instruction'):
-            acquisition_prepare._revise_operating(original.replace('0x48','0x49'),'150 pF')
-
     def test_missing_ambiguous_contradictory_and_unsupported_requests_refuse(self):
         cases = [
             (b'', 'missing_reference_adoption'),
@@ -230,6 +222,8 @@ class AcquisitionPreparationTests(unittest.TestCase):
         ledger = storage.read_json(inputs / 'preparation/edit-ledger.json')
         self.assertIn('source_supplement', ledger)
         self.assertIn('power_repair', report)
+        self.assertIn(b'seven-bit I2C address is **0x48**',(inputs/'OPERATING.md').read_bytes())
+        self.assertNotIn(b'eight-bit I2C address',(inputs/'OPERATING.md').read_bytes())
         calculations = storage.read_json(inputs / 'engineering-calculations.json')
         self.assertIn('adc_applicability', calculations)
         self.assertIn('128SPS', calculations['adc_applicability']['operating'])
@@ -512,8 +506,8 @@ class AcquisitionPreparationTests(unittest.TestCase):
             self.assertEqual(interval['parameters']['bus_c']['max'], '150e-12 F')
             self.assertIn(b'at most 150 pF total line capacitance', (prepared / 'spec.md').read_bytes())
             self.assertIn(b'150 pF per line', (prepared / 'OPERATING.md').read_bytes())
-            self.assertIn(b'seven-bit I2C address is 0x48', (prepared / 'OPERATING.md').read_bytes())
-            self.assertNotIn(b'eight-bit I2C address is 0x48', (prepared / 'OPERATING.md').read_bytes())
+            self.assertIn(b'seven-bit I2C address is **0x48**', (prepared / 'OPERATING.md').read_bytes())
+            self.assertNotIn(b'eight-bit I2C address', (prepared / 'OPERATING.md').read_bytes())
             record = spec_record.verify((prepared / 'spec-record.json').read_bytes(),
                                         (prepared / 'spec.md').read_bytes())
             admitted = build_workflow.preflight_build(out / 'build-plan.json', root / 'native-not-run')

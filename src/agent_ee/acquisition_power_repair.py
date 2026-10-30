@@ -504,7 +504,8 @@ def _narrative470(text):
                      ('620ohm','470ohm'), ('fresh620','fresh470'), ('Fresh620','Fresh470'),
                      ('626.2','474.7'), ('613.8','465.3'), ('Four removal cases','Five removal cases'),
                      ('plus20/25uA extrapolated sensitivities.', 'plus20/25uA extrapolated sensitivities and required200uA/CIN2u minimum1.11V fallingUVLO control.'),
-                     ('seven','eight'), ('Seven','Eight'), ('all seven','all eight'),
+                     ('seven-case power analysis','eight-case power analysis'),
+                     ('all seven require new native results','all eight require new native results'),
                      ('~11.1mA','~12.866mA'), ('9.875mA','11.625mA'), ('11.116mA','12.866mA'),
                      ('25.16mW','28.686mW'), ('4.71C','5.367C'), ('18.46mW','24.350mW'),
                      ('exact sheet','RC series family/coding evidence'), ('exact0.1W','RC series0.1W')):
