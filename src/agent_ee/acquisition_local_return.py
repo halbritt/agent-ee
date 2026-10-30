@@ -527,7 +527,7 @@ def _produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir, 
             if (connection!='filter0-signal' or not 0<rules['min_via_diameter']<=.6
                     or not 0<rules['min_through_hole_diameter']<=.3):
                 raise JobRefusal('local loops: two-layer via rules are unsupported')
-            plans=[geometry.two_layer_plan(source/FILES[0],endpoints,clock=clock,cancel_dir=cancel_dir)]
+            plans=geometry.two_layer_plans(source/FILES[0],endpoints,clock=clock,cancel_dir=cancel_dir)
         else:
             paths = _candidate_paths(source / FILES[0], endpoints, obstacle_search=obstacle_search,
                                      clock=clock, cancel_dir=cancel_dir)
@@ -632,8 +632,13 @@ def verify_seed(board, record, *, clock, cancel_dir=None):
     endpoints = _endpoints(board, seed=trial if 'layers' in trial else (trial['path_nm'],trial['segment_uuids']),
                            connection=record.get('connection', 'adc-return'))
     if trial.get('vias'):
-        plan=geometry.two_layer_plan(board,endpoints,clock=clock,cancel_dir=cancel_dir)
-        if canonical(plan)!=canonical({key:trial[key] for key in plan}):
+        plans=geometry.two_layer_plans(board,endpoints,clock=clock,cancel_dir=cancel_dir)
+        proposal=trial.get('proposal','perpendicular')
+        plan=next((p for p in plans if p['proposal']==proposal),None)
+        # Historical receipts without a name retain only the original plan.
+        if plan is not None and 'proposal' not in trial:
+            plan={key:value for key,value in plan.items() if key!='proposal'}
+        if plan is None or canonical(plan)!=canonical({key:trial.get(key) for key in plan}):
             raise JobRefusal('local loops: retained via pad-frame plan changed')
     _check_stop(clock, cancel_dir)
     if (endpoints != record['endpoints'] or _sha(board.read_bytes()) != before

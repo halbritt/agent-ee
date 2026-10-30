@@ -9,6 +9,48 @@ from agent_ee.placement_job import Clock, JobRefusal, JobStopped
 
 
 class LocalViaGeometryTests(unittest.TestCase):
+    def test_blocked_perpendicular_exit_has_a_native_frame_rail_alternative(self):
+        # Public control R6 seed4: the first capacitor via enters R2.2.
+        # The alternate follows C4.1 away from C4.2 to the IC escape rail.
+        a,b,other,centre,next_pad=(123975000,112100000),(121950000,111750000),(
+            125525000,112100000),(119800000,112250000),(121950000,111250000)
+        boxes=[(123525000,111625000,124425000,112575000),
+               (121225000,111600000,122675000,111900000)]
+        expected=[a,(123200000,112100000),(123200000,111250000),
+                  (123200000,111750000),b]
+        def rotate(point,turns):
+            x,y=point
+            for _ in range(turns):x,y=-y,x
+            return x+17000000,y+23000000
+        def box_rotate(box,turns):
+            x,y,u,v=box;points=[rotate(p,turns) for p in ((x,y),(x,v),(u,y),(u,v))]
+            return min(p[0] for p in points),min(p[1] for p in points),max(p[0] for p in points),max(p[1] for p in points)
+        for turns in range(4):
+            with self.subTest(turns=turns):
+                args=[*(rotate(p,turns) for p in (a,b,other,centre,next_pad)),
+                      *(box_rotate(box,turns) for box in boxes)]
+                paths=geometry.via_candidates(*args)
+                self.assertEqual([name for name,_ in paths],['perpendicular','ic-rail'])
+                self.assertEqual(paths[0][1],geometry.via_points(*args))
+                self.assertEqual(paths[1][1],[rotate(p,turns) for p in expected])
+
+    def test_rail_alternative_requires_a_forward_nondegenerate_intersection(self):
+        base=[(4000000,3000000),(0,1000000),(5500000,3000000),(-2150000,1500000),(0,500000),
+              (3550000,2525000,4450000,3475000),(-725000,850000,725000,1150000)]
+        cases=[(2,(2500000,3000000)), # rail is behind the capacitor escape ray
+               (2,(4000000,4500000)), # capacitor ray is parallel to the IC rail
+               (0,(1250000,3000000)), # capacitor is already on the rail
+               (0,(4000000,500000))]  # rail intersection equals the other via
+        for index,value in cases:
+            with self.subTest(index=index,value=value):
+                args=base.copy();args[index]=value
+                # Keep the capacitor pair orthogonal after moving its first pad.
+                if index==0:
+                    args[2]=(value[0]+1500000,value[1])
+                    args[5]=(value[0]-450000,value[1]-475000,value[0]+450000,value[1]+475000)
+                paths=geometry.via_candidates(*args)
+                self.assertEqual([name for name,_ in paths],['perpendicular'])
+
     def test_skipped_obstacles_do_not_exhaust_the_edge_work_budget(self):
         polygons=[]
         for i in range(100):

@@ -41,7 +41,30 @@ def via_points(a, b, cap_other, ic_centre, next_pad, cap_box, ic_box):
     return [tuple(a),va,vb,base,tuple(b)]
 
 
-def two_layer_plan(source,endpoints,*,clock,cancel_dir):
+def via_candidates(a, b, cap_other, ic_centre, next_pad, cap_box, ic_box):
+    """At most two pad-frame proposals; native DRC must check each one.
+
+    Preserve the perpendicular escape first. Alternatively, leave the
+    capacitor away from its other pad until reaching the existing IC escape
+    rail. The rail depends only on unchanged pads, so final replay does not
+    depend on copper added by later routing.
+    """
+    original=via_points(a,b,cap_other,ic_centre,next_pad,cap_box,ic_box)
+    candidates=[('perpendicular',original)]
+    axis=0 if ic_box[2]-ic_box[0]>ic_box[3]-ic_box[1] else 1
+    delta=a[axis]-cap_other[axis]
+    if not delta:return candidates
+    direction=1 if delta>0 else -1
+    distance=(original[-2][axis]-a[axis])*direction
+    if distance<=0:return candidates
+    via=list(a);via[axis]+=distance*direction
+    path=[tuple(a),tuple(via),*original[2:]]
+    if len(set(path))==len(path) and path!=original:
+        candidates.append(('ic-rail',path))
+    return candidates
+
+
+def two_layer_plans(source,endpoints,*,clock,cancel_dir):
     import pcbnew as k
     _check_stop(clock,cancel_dir)
     board=k.LoadBoard(str(source))
@@ -66,12 +89,12 @@ def two_layer_plan(source,endpoints,*,clock,cancel_dir):
     a,b=[tuple(e['position_nm']) for e in endpoints]
     if a!=position(p1) or b!=position(p4):
         raise JobRefusal('local loops: via endpoints differ from captured native pads')
-    path=via_points(a,b,position(p2),position(ic),position(p5),box(p1),box(p4))
+    paths=via_candidates(a,b,position(p2),position(ic),position(p5),box(p1),box(p4))
     thickness=int(board.GetDesignSettings().GetBoardThickness())
     if thickness<=0:raise JobRefusal('local loops: board thickness is missing')
-    return dict(path_nm=path,layers=['F.Cu','B.Cu','F.Cu','F.Cu'],
+    return [dict(proposal=name,path_nm=path,layers=['F.Cu','B.Cu','F.Cu','F.Cu'],
                 via_centres_nm=path[1:3],board_thickness_nm=thickness,
-                vertical_length_mm=2*thickness/1e6)
+                vertical_length_mm=2*thickness/1e6) for name,path in paths]
 
 
 def _cross(a,b):return a[0]*b[1]-a[1]*b[0]

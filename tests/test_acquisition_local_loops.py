@@ -114,6 +114,91 @@ class AcquisitionLocalLoopsTest(unittest.TestCase):
         return local.produce_loops(self.source,self.output,
             expected_inputs=local._identity(local._capture(self.source)),clock=self.clock,cancel_dir=self.root)
 
+    def rail_seed(self):
+        from agent_ee.symbol_library import children,parse_sexpr
+        from agent_ee.schematic_emit import format_sexpr
+        self.prepare()
+        tree=parse_sexpr(self.board)
+        cap=next(fp for fp in children(tree,'footprint') if children(fp,'reference')[0][1]=='C4')
+        for pad in children(cap,'pad'):
+            at=children(pad,'at')[0];at[1]=str(int(at[1])+3000000)
+        self.board=('\n'.join(format_sexpr(tree))+'\n').encode()
+        (self.source/local.FILES[0]).write_bytes(self.board)
+        self.clock=Clock(30)
+        return local._produce(self.source,self.output,
+            expected_inputs=local._identity(local._capture(self.source)),clock=self.clock,cancel_dir=self.root,
+            connection='filter0-signal',obstacle_search=True,max_length_mm=12.,two_layer=True)
+
+    def reject_first_escape(self,board,directory,**kwargs):
+        if directory.name=='trial-1':
+            violation=dict(type='shorting_items',description='neighboring pad',severity='error',items=[])
+            return self.drc_result(native_report([violation]),directory)
+        return self.clear_drc(board,directory,**kwargs)
+
+    def test_rejected_escape_is_retained_before_second_plan_passes_and_replays(self):
+        self.drc.side_effect=self.reject_first_escape
+        seed=self.rail_seed()
+        self.assertEqual(seed['selected_trial'],2)
+        self.assertEqual([(t['proposal'],t['status']) for t in seed['trials']],
+                         [('perpendicular','rejected'),('ic-rail','clearance_pass')])
+        self.assertTrue((self.output/'trial-1/drc.json').exists())
+        self.assertEqual((self.source/local.FILES[0]).read_bytes(),self.board)
+        self.assertTrue(all(c.kwargs['clock'] is self.clock for c in self.drc.call_args_list))
+        self.assertEqual(local.verify_seed(Path(seed['output'])/local.FILES[0],seed,
+                                          clock=Clock(10))['status'],'pass')
+        self.assertEqual(local._leg_length(seed),9.9)
+        from agent_ee.symbol_library import children,parse_sexpr
+        vias=children(parse_sexpr((Path(seed['output'])/local.FILES[0]).read_bytes()),'via')
+        self.assertEqual([(children(v,'size')[0][1],children(v,'drill')[0][1]) for v in vias],
+                         [('0.6','0.3')]*2)
+
+    def test_both_escape_rejections_retain_reports_without_adoption(self):
+        def drc(board,directory,**kwargs):
+            if directory.name.startswith('trial-'):
+                bad=dict(type='clearance',description='blocked',severity='error',items=[])
+                return self.drc_result(native_report([bad]),directory)
+            return self.clear_drc(board,directory,**kwargs)
+        self.drc.side_effect=drc
+        with self.assertRaisesRegex(JobRefusal,'all bounded proposals'):
+            self.rail_seed()
+        record=local.json.loads((self.output/'record.json').read_bytes())
+        self.assertEqual([t['status'] for t in record['trials']],['rejected','rejected'])
+        self.assertFalse((self.output/'accepted').exists())
+        self.assertEqual((self.source/local.FILES[0]).read_bytes(),self.board)
+
+    def test_cancellation_between_escape_proposals_stops_before_second_trial(self):
+        def drc(board,directory,**kwargs):
+            result=self.reject_first_escape(board,directory,**kwargs)
+            if directory.name=='trial-1':(self.root/'CANCEL').touch()
+            return result
+        self.drc.side_effect=drc
+        with self.assertRaises(JobStopped):self.rail_seed()
+        self.assertFalse((self.output/'trial-2').exists())
+        self.assertFalse((self.output/'accepted').exists())
+
+    def test_selected_escape_name_and_geometry_cannot_be_relabelled(self):
+        import copy
+        from agent_ee.storage import write_json
+        self.drc.side_effect=self.reject_first_escape
+        seed=self.rail_seed();board=Path(seed['output'])/local.FILES[0]
+        for key,value in [('proposal','unknown'),('proposal','perpendicular'),
+                          ('via_centres_nm',[[0,0],[1,1]]),('vertical_length_mm',3.2)]:
+            with self.subTest(key=key,value=value):
+                changed=copy.deepcopy(seed);changed['trials'][1][key]=value
+                write_json(self.output/'record.json',changed)
+                with self.assertRaisesRegex(JobRefusal,'pad-frame plan'):
+                    local.verify_seed(board,changed,clock=Clock(10))
+        write_json(self.output/'record.json',seed)
+
+    def test_legacy_unnamed_receipt_replays_only_the_original_escape(self):
+        from agent_ee.storage import write_json
+        record=self.run_loops();seed=record['connections'][0]
+        self.assertEqual(seed['selected_trial'],1)
+        del seed['trials'][0]['proposal']
+        write_json(Path(seed['output']).parent/'record.json',seed)
+        self.assertEqual(local.verify_seed(Path(seed['output'])/local.FILES[0],seed,
+                                          clock=Clock(10))['status'],'pass')
+
     def test_both_legs_of_each_required_loop_survive_routing(self):
         record = self.run_loops()
         self.assertEqual(record['status'],'seeded')

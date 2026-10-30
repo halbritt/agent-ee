@@ -21,6 +21,13 @@ close access to an adjacent signal pad. Filter 0 uses two 0.6 mm through-vias
 with 0.3 mm drills and a B.Cu segment. Their positions derive from the native
 capacitor pad pair, IC pad long axis, and signed U2.4-to-U2.5 pin pitch; no saved
 board coordinates are imported. Unsupported or ambiguous pad frames refuse.
+The producer tries at most two escapes, with fresh native DRC for each. First,
+the capacitor exits perpendicular to its pad pair toward the IC. If that fails,
+the second proposal follows the ray away from the capacitor's other pad to the
+IC's existing outward escape rail. A parallel ray, nonforward intersection or
+repeated vertex omits the second proposal. Both proposals keep the same IC
+escape, via sizes and layer sequence. This bounded family is not a routability
+guarantee; failure retains every attempted board and report.
 The other legs remain on F.Cu. Each return receives only the loop's remaining
 length allowance, including both vertical traversals of the actual board
 thickness. Final engineering checks still measure the delivered board.
@@ -61,6 +68,11 @@ new UUIDs. Native reload verifies every segment and via, including via type,
 span, drill, diameter, net and centre. Source, reports and copied outputs are
 checked again before adoption. Successful receipts use `status: seeded` and
 `acceptance_assessed: false`.
+Each via trial names its `perpendicular` or `ic-rail` proposal. Final replay
+requires the exact corresponding plan regenerated from unchanged pad frames,
+including layers, via centres, board thickness and vertical length. Unknown or
+relabelled proposals refuse. Historical unnamed receipts must still match the
+original perpendicular plan exactly.
 
 Front-layer proposals include direct, orthogonal and diagonal paths plus bounded
 rectangle and native convex-polygon visibility searches. Proposals are ordered
