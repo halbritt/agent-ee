@@ -240,7 +240,7 @@
   "src/kicad_route/router/py_router/schematic_updater.py": "3dc6cccbadd5e61ee99b08c11557566cb030d6cadf9916352357df6bf52582d8",
   "src/kicad_route/router/py_router/sexpr.py": "35568aef68b724b4e256cc427b9dd7f522d4297d399e3c4c918b212ea4a2d84b",
   "src/kicad_route/router/py_router/single_ended_loop.py": "11b1ab861d0d9a1ca6327a4bf97e813a507ec95e366bc59449d919f11b9d4d40",
-  "src/kicad_route/router/py_router/single_ended_routing.py": "22a82aa1bc987c360a5faabde144827079981a7668fa997adbf0f8216286dc38",
+  "src/kicad_route/router/py_router/single_ended_routing.py": "c56331a62f1b23ef08e67f0bb02f009143bac204f7b48df41c541c54a764c2d5",
   "src/kicad_route/router/py_router/stage3d/__init__.py": "161f136b3da4952b101ecd563d9bd3037acfa100d74339683eb0e197bd888970",
   "src/kicad_route/router/py_router/stage3d/blender_scene.py": "d99c8de1bbccb507d5f4088fcf9eb99df42034c1632efc76b4c78aa6bbf551a2",
   "src/kicad_route/router/py_router/stage3d/film.py": "fe6e00044a30326121b7d5cfb7fe7035f108eb9409207ee8a5b46ca5eb6cff6c",
@@ -316,6 +316,6 @@
   "src/kicad_route/stall.py": "095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188",
   "src/kicad_route/statemanifest.py": "40c60f955e643b651128963cd9720c29e6dbbf4dcd25c68c12616fb0a1972322"
  },
- "pin": "cb25f6b3eff9fe1ea6573e3be39dd18e3545d1a1",
+ "pin": "5a3bd1aa56161d5b19dde33f21057a0a47ba9406",
  "schema": "agent-ee.kicad-route-pin/1"
 }

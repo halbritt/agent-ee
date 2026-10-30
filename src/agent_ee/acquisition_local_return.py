@@ -260,6 +260,52 @@ def _candidate_paths(source, endpoints, *, obstacle_search, clock, cancel_dir):
     return sorted(paths,key=lambda p:sum(math.dist(x,y) for x,y in zip(p,p[1:])))
 
 
+def _reuse_front_edges(data, paths, *, net, clock, cancel_dir):
+    """Reuse a saved edge after at most 1 nm of new-junction adjustment.
+
+    Native obstacle contours can offer neighbouring integer vertices. Move
+    only an intermediate proposal vertex that then shares an exact existing
+    edge. All input copper and pad endpoints stay fixed; the adjusted proposal
+    still pays its full length and fresh native DRC before publication.
+    """
+    _check_stop(clock,cancel_dir)
+    segments=children(parse_sexpr(data),'segment')
+    if len(segments)>4096:
+        raise JobRefusal('local return: shared-edge inventory exceeds 4096 segments')
+    edges=set()
+    for node in segments:
+        _check_stop(clock,cancel_dir)
+        if (children(node,'net')==[['net',net]]
+                and children(node,'layer')==[['layer','F.Cu']]
+                and nanometres(children(node,'width')[0][1])==WIDTH_NM):
+            edges.add(tuple(sorted(tuple(nanometres(v) for v in children(node,key)[0][1:3])
+                                   for key in ('start','end'))))
+    normalized=[]
+    for original in paths:
+        _check_stop(clock,cancel_dir)
+        if len(original)>2048:
+            raise JobRefusal('local return: shared-edge path exceeds 2048 vertices')
+        path=[tuple(p) for p in original]
+        counts=Counter(path)
+        for index in range(1,len(path)-1):
+            _check_stop(clock,cancel_dir)
+            point=path[index];neighbours=(path[index-1],path[index+1])
+            candidates=[]
+            for dx in (-1,0,1):
+                for dy in (-1,0,1):
+                    candidate=(point[0]+dx,point[1]+dy)
+                    if candidate!=point and counts[candidate]:
+                        continue  # Do not collapse an edge or add a repeated vertex.
+                    if any(tuple(sorted((candidate,n))) in edges for n in neighbours):
+                        candidates.append((dx*dx+dy*dy,candidate))
+            if candidates:
+                chosen=min(candidates)[1]
+                counts[point]-=1;counts[chosen]+=1;path[index]=chosen
+        if path not in normalized:
+            normalized.append(path)
+    return normalized
+
+
 def _seed(data, path, *, net='GND', layers=None):
     if net not in {value[1] for value in CONNECTIONS.values()}:
         raise JobRefusal('local return: unsupported seed net')
@@ -541,6 +587,9 @@ def _produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir, 
                 path=geometry.polygon_path(source/FILES[0],endpoints,max_length_mm or 12.,
                                            clock=clock,cancel_dir=cancel_dir)
                 if path is not None and path not in paths:paths.append(path)
+            paths=_reuse_front_edges(captured[FILES[0]],paths,net=endpoints[0]['net'],
+                                    clock=clock,cancel_dir=cancel_dir)
+            if obstacle_search:
                 paths.sort(key=lambda p:sum(math.dist(a,b) for a,b in zip(p,p[1:])))
             plans=[dict(path_nm=path,layers=['F.Cu']*(len(path)-1),vertical_length_mm=0.) for path in paths]
         for index, plan in enumerate(plans):

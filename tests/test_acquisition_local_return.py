@@ -143,6 +143,71 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
             self.assertEqual(repeated,first)
             self.assertEqual(reused,identities)
 
+    def test_shared_return_normalizes_new_junction_before_grading_and_receipt(self):
+        import math
+        a=(34000000,41500000);b=(35500000,39000000)
+        existing=(34750001,40000001);proposed=(34750000,40000000)
+        captured,ids=local._seed(self.board,[existing,b])
+        (self.source/local.FILES[0]).write_bytes(captured)
+        with patch.object(local,'_candidate_paths',return_value=[[a,proposed,b]]):
+            record=self.run_seed()
+        trial=record['trials'][record['selected_trial']-1]
+        self.assertEqual([tuple(p) for p in trial['path_nm']],[a,existing,b])
+        self.assertEqual(trial['segment_uuids'][-1],ids[0])
+        self.assertAlmostEqual(trial['trace_length_mm'],
+                               (math.dist(a,existing)+math.dist(existing,b))/1e6)
+        output=Path(record['output'])/local.FILES[0]
+        self.assertEqual(len(children(parse_sexpr(output.read_bytes()),'segment')),
+                         len(children(parse_sexpr(captured),'segment'))+1)
+        self.assertEqual((self.source/local.FILES[0]).read_bytes(),captured)
+        self.assertEqual(local.verify_seed(output,record,clock=Clock(10))['status'],'pass')
+
+    def test_junction_reuse_requires_matching_edge_within_one_nanometre(self):
+        a=(34000000,41500000);b=(35500000,39000000);p=(34750000,40000000)
+        for mode in ('net','width','layer','too_far','no_shared_edge'):
+            with self.subTest(mode=mode):
+                junction=(p[0]+(2 if mode=='too_far' else 1),p[1]+1)
+                end=(b[0]+2,b[1]) if mode=='no_shared_edge' else b
+                captured,_=local._seed(self.board,[junction,end])
+                for flag,before,after in [('net',b'(net "GND")',b'(net "SCL")'),
+                    ('width',b'(width 0.25)',b'(width 0.3)'),
+                    ('layer',b'(layer "F.Cu")',b'(layer "B.Cu")')]:
+                    if mode==flag:captured=captured.replace(before,after)
+                original=[a,p,b]
+                self.assertEqual(local._reuse_front_edges(captured,[original],net='GND',
+                    clock=Clock(10),cancel_dir=None),[original])
+                self.assertEqual(original,[a,p,b])
+
+    def test_junction_reuse_preserves_terminals_and_avoids_collapsed_edges(self):
+        a=(34000000,41500000);b=(35500000,39000000)
+        captured,_=local._seed(self.board,[(a[0]+1,a[1]+1),b])
+        self.assertEqual(local._reuse_front_edges(captured,[[a,b]],net='GND',
+            clock=Clock(10),cancel_dir=None),[[a,b]])
+        captured,_=local._seed(self.board,[a,b])
+        p=(a[0]+1,a[1]+1)
+        self.assertEqual(local._reuse_front_edges(captured,[[a,p,b]],net='GND',
+            clock=Clock(10),cancel_dir=None),[[a,p,b]])
+
+    def test_exact_edge_precedes_nearby_choice_and_ties_are_deterministic(self):
+        a=(34000000,41500000);b=(35500000,39000000);p=(34750000,40000000)
+        left=(p[0]-1,p[1]);right=(p[0]+1,p[1])
+        captured,_=local._seed(self.board,[right,b,left])
+        reused=local._reuse_front_edges(captured,[[a,p,b]],net='GND',clock=Clock(10),cancel_dir=None)
+        self.assertEqual(reused,[[a,left,b]])
+        captured,_=local._seed(captured,[p,b])
+        self.assertEqual(local._reuse_front_edges(captured,[[a,p,b]],net='GND',
+            clock=Clock(10),cancel_dir=None),[[a,p,b]])
+
+    def test_junction_inventory_and_cancellation_are_bounded(self):
+        captured,_=local._seed(self.board,[(34000000,41500000),(35500000,39000000)])
+        tree=parse_sexpr(captured);segment=children(tree,'segment')[-1]
+        with patch.object(local,'parse_sexpr',return_value=['kicad_pcb']+[segment]*4097):
+            with self.assertRaisesRegex(JobRefusal,'inventory'):
+                local._reuse_front_edges(captured,[],net='GND',clock=Clock(10),cancel_dir=None)
+        (self.root/'CANCEL').touch()
+        with self.assertRaises(JobStopped):
+            local._reuse_front_edges(captured,[],net='GND',clock=Clock(10),cancel_dir=self.root)
+
     def test_length_budget_refuses_before_running_trial_drc(self):
         with self.assertRaisesRegex(JobRefusal,'length'):
             local._produce(self.source,self.output,expected_inputs=local._identity(local._capture(self.source)),

@@ -80,7 +80,14 @@ relabelled proposals refuse. Historical unnamed receipts must still match the
 original perpendicular plan exactly.
 
 Front-layer proposals include direct, orthogonal and diagonal paths plus bounded
-rectangle and native convex-polygon visibility searches. Proposals are ordered
+rectangle and native convex-polygon visibility searches. Before grading, an
+intermediate junction may move by at most one nanometre on each axis when that
+makes an adjacent edge exactly reuse existing same-net, same-width F.Cu copper.
+Exact matches take precedence; ties are deterministic. Pad endpoints, via plans
+and existing copper remain unchanged. The scan permits at most 4,096 segments
+and 2,048 vertices per path and observes the caller's cancellation and clock.
+The adjusted path is recorded and checked exactly, without a replay tolerance.
+Proposals are ordered
 by length and checked against the remaining allowance before native DRC. The
 polygon search refuses foreign front zones and nonconvex contours, fills holes
 conservatively, and limits itself to 4,096 native items, 32,768 obstacle vertices,
@@ -149,7 +156,7 @@ eligible placement under the same job deadline. Other refusals and cancellation
 stop the operation. It never routes an unseeded acquisition board.
 
 If every eligible placement exhausts its local routing search, the
-controller may invoke the existing acquisition MILP repair once. It uses an
+controller may invoke the existing acquisition MILP repair once per job attempt. It uses an
 actual retained infeasible search diagnostic, including its original violations
 and inactive poses. This also applies when the annealing shortlist contained a
 feasible placement; the receipt records `feasible_routing_exhausted` as the

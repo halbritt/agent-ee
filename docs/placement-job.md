@@ -478,8 +478,11 @@ rules, including stricter coupling limits, always remain in force.
    All hard verdicts and objective terms are integer nanometres (areas i128).
    Seeds are independent named `splitmix64/agent-ee-515-v1` streams; scattered and
    clustered starts are explicit. The engine returns a shortlist of hard-feasible
-   states. When none exists it returns a **diagnostic shortlist**: least-infeasible
-   states with their exact named violations, labelled `feasible: false`.
+   states and retains a separate **diagnostic shortlist** of least-infeasible
+   states with their exact named violations, labelled `feasible: false`. The
+   bounded acquisition repair may use that diagnostic basis after all feasible
+   placements exhaust their local copper search; it must pass exact and native
+   checks before routing.
    An `evaluate` request re-evaluates explicit pose vectors (predicted native pad
    positions, terms, violations) without searching.
    Pad copper uses KiCad's native `TransformShapeToPolygon`, `ERROR_OUTSIDE`,
