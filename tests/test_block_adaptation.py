@@ -503,7 +503,7 @@ class DeferredAdaptationTests(unittest.TestCase):
                 write_json(root/'block/block.json',source)
                 document['declaration_source']=dict(path='block/block.json',locator='requirements/members',sha256=digest(root/'block/block.json'))
                 write_json(root/'fresh-parts.json',document)
-                record=dict(id='filter',block='block',sheet='binding.kicad_sch',instance_path='/',bindings={},requirements={'members':['new-parts']})
+                record=dict(schema='agent-ee.block-instance/1',id='filter',block='block',sheet='binding.kicad_sch',instance_path='/',bindings={},requirements={'members':['new-parts']})
                 scope=dict(schema='agent-ee.scope/3',checks=[dict(id='netlist',kind='netlist'),dict(id='new-parts',kind='parts_subset',params=params)],
                     baseline=dict(requirements=[dict(id='filter-members',intent='acceptance',statement='Exact allocated parts',source=dict(path='block/block.json',locator='requirements/members'),checks=['new-parts'])]))
                 files={str(p.relative_to(root)):digest(p) for p in root.rglob('*') if p.is_file()}
@@ -511,6 +511,62 @@ class DeferredAdaptationTests(unittest.TestCase):
                 self.assertEqual('reference_set' in params,scoped)
                 document['parts'][0]['mpn']='FORGED';write_json(root/'fresh-parts.json',document);files['fresh-parts.json']=digest(root/'fresh-parts.json')
                 with self.assertRaisesRegex(ValueError,'allocation/identity'):_fresh_contract(root,source,record,scope,files,'netlist')
+
+    def test_flat_root_membership_keeps_rebound_references_and_unit_uuids(self):
+        from tests.test_parts_subset import captured_fixture
+        from tests.test_native_binding import GEN
+        from agent_ee.block_adaptation import _fresh_contract
+        from agent_ee.block_flat import _library_id
+        from agent_ee.reference_blocks import sheet_symbols
+        from agent_ee.schematic_emit import Quoted
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);parts=captured_fixture(self,root);(root/'block').mkdir()
+            tree=parse_quoted(GEN.schematic().encode())
+            for node in list(children(tree,'symbol')):
+                if next(p[2] for p in children(node,'property') if p[1]=='Reference')!='R1':
+                    tree.remove(node)
+            source_units=sheet_symbols(dump(tree),'/')['R1']['uuids']
+            (root/'block/source.kicad_sch').write_bytes(dump(tree));write_json(root/'block/parts.json',parts)
+            source=dict(files={p:digest(root/'block'/p) for p in ('parts.json','source.kicad_sch')},
+                requirements=[dict(id='members',statement='Exact allocated parts',checks=['old-parts'])],
+                boundary_ports=[],instances=[dict(sheet='source.kicad_sch',uuid_path='/',path='/')],
+                _composition=dict(sources=[dict(sheet='source.kicad_sch',uuid_path='/',
+                    references={'R1':'R1'},nets={})],ports=[]),
+                check_set=[dict(id='old-parts',kind='parts_subset',params=dict(manifest='parts.json',
+                    netlist_check='old-netlist',requirement_id='members',
+                    reference_set=[dict(sheet='/',reference='R1',uuids=source_units)]))])
+            write_json(root/'block/block.json',source)
+            fresh_uuid='44444444-4444-4444-8444-444444444444'
+            resistor,=children(tree,'symbol');children(resistor,'uuid')[0][1]=Quoted(fresh_uuid)
+            for prop in children(resistor,'property'):
+                if prop[1]=='Reference':prop[2]=Quoted('R11')
+            for inst in children(resistor,'instances'):
+                for project in children(inst,'project'):
+                    for entry in children(project,'path'):
+                        children(entry,'reference')[0][1]=Quoted('R11')
+            (root/'binding.kicad_sch').write_bytes(dump(tree))
+            parts['parts'][0]['instances']=[dict(sheet='/',reference='R11')]
+            parts['parts'][0]['lib_id']=_library_id('filter','Owned:R')
+            parts['declaration_source']=dict(path='block/block.json',locator='requirements/members',
+                sha256=digest(root/'block/block.json'))
+            write_json(root/'fresh-parts.json',parts)
+            record=dict(schema='agent-ee.flat-block-instance/1',id='filter',block='block',
+                sheet='binding.kicad_sch',instance_path='/',references={'R1':'R11'},bindings={},
+                native_bindings={},requirements={'members':['new-parts']})
+            scope=dict(schema='agent-ee.scope/3',checks=[dict(id='netlist',kind='netlist'),
+                dict(id='new-parts',kind='parts_subset',params=dict(manifest='fresh-parts.json',
+                    netlist_check='netlist',requirement_id='filter-members',
+                    reference_set=[dict(sheet='/',reference='R11',uuids=[fresh_uuid])]))],
+                baseline=dict(requirements=[dict(id='filter-members',intent='acceptance',
+                    statement='Exact allocated parts',source=dict(path='block/block.json',
+                    locator='requirements/members'),checks=['new-parts'])]))
+            files={str(p.relative_to(root)):digest(p) for p in root.rglob('*') if p.is_file()}
+            _fresh_contract(root,source,record,scope,files,'netlist')
+            for field,value in (('reference','R1'),('uuids',source_units)):
+                changed=copy.deepcopy(scope)
+                changed['checks'][1]['params']['reference_set'][0][field]=value
+                with self.subTest(field=field),self.assertRaisesRegex(ValueError,'parameters differ'):
+                    _fresh_contract(root,source,record,changed,files,'netlist')
 
     def test_differing_provided_package_is_not_a_legacy_omission(self):
         from tests.test_acquisition_alternative import authored_fixture
@@ -657,7 +713,7 @@ class SingleSourceOccurrenceTests(unittest.TestCase):
             scope = dict(schema='agent-ee.scope/3', schematic='target.kicad_sch', checks=checks,
                 baseline=dict(requirements=[dict(id='leaf-' + n, intent='acceptance', checks=[n],
                     source=dict(path='block/block.json', locator='requirements/' + n)) for n in ('interface', 'members')]))
-            record = dict(id='leaf', block='block', sheet='target.kicad_sch', instance_path=target_path,
+            record = dict(schema='agent-ee.block-instance/1', id='leaf', block='block', sheet='target.kicad_sch', instance_path=target_path,
                 bindings={'P': '/BOARD_P', 'N': '/BOARD_N'}, requirements={n: [n] for n in ('interface', 'members')})
             files = {str(p.relative_to(root)): digest(p) for p in root.rglob('*') if p.is_file()}
             _fresh_contract(root, admitted, record, scope, files, 'netlist')

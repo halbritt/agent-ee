@@ -259,7 +259,7 @@ def _fresh_contract(root, source, record, scope, files, native_id):
             if 'reference_set' in params:
                 from .parts_subset import reference_set
                 selected=reference_set(params['reference_set'])
-                if record['instance_path']=='/':
+                if record['schema']==INSTANCE_SCHEMA and record['instance_path']=='/':
                     # Root roles retain captured physical identities. The scaffold
                     # is empty; root_coverage checks their exact native union later.
                     expected['reference_set']=root_membership(source)
