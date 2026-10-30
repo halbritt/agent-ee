@@ -34,6 +34,8 @@ EVIDENCE_SCHEMA = {"type": "array", "items": {"anyOf": [
 
 def evidence_schema(run_dir, packet, role):
     """Bind producer locator choices to captured bytes, before semantic resolution."""
+    if not isinstance(role,str) or re.fullmatch(r'[a-z][a-z0-9_-]{0,63}',role) is None:
+        raise ValueError('citation schema requires an admitted review role')
     from .findings import citation_format, validate_citation_path
     from .parts_manifest import read_captured
     run = Path(run_dir)
@@ -88,7 +90,7 @@ def evidence_schema(run_dir, packet, role):
     segment = r'[A-Za-z0-9_-][A-Za-z0-9_.-]*'
     branch = json.loads(json.dumps(EVIDENCE_SCHEMA['items']['anyOf'][1]))
     branch['properties']['path']['pattern'] = (
-        '^review-work/' + re.escape(role) + '/experiments/(?:' + segment + '/)*' + segment + '$')
+        '^review-work/' + role + '/experiments/(?:' + segment + '/)*' + segment + '$')
     branches.append(branch)
     return {'type': 'array', 'items': {'anyOf': branches}, '$defs': definitions}
 
@@ -184,14 +186,18 @@ CITATION_INSTRUCTIONS = (
     "(an xml.etree.ElementTree-supported path into cited XML, e.g. /export/components/comp[@ref='R1']/value). "
     "Every supplied structured field must resolve in that exact file. Descriptive locator prose is not parsed "
     "or verified as an engineering claim. Inspect the document before choosing a structured location. "
-    "Use pointer for JSON, xpath for XML, and lines for UTF-8 text (including .kicad_sch, .kicad_pcb, "
+    "Frozen captured files: use pointer for JSON, xpath for XML, and lines for UTF-8 text (including .kicad_sch, .kicad_pcb, "
     ".kicad_sym, .txt, .log, .md and S-expressions). JSON and UTF-8 XML may also use lines. "
     "Choose the schema variant containing only the locator fields you actually use; OMIT unused fields. "
     "Never fill pointer with an empty string or xpath with '.' or './unused' as a placeholder. "
     "For example, a native schematic citation is {\"path\":\"inputs/project/board.kicad_sch\", "
     "\"locator\":\"symbol pins\", \"lines\":[10,20]} after checking those exact lines. "
     "The packet citation_files inventory lists complete coordinator evidence files, formats and allowed locator kinds; "
-    "it is navigation, not proof of a claim. For new experiments inspect the bytes using the same rules. "
+    "it is navigation, not proof of a claim. New own experiments require lines only, "
+    "including newly created JSON and XML: inspect the UTF-8 bytes and cite inclusive 1-based lines. "
+    "Omit pointer and xpath for these new files; their schema admits only lines under "
+    "review-work/<your-role>/experiments/<file>, never peer work. Previously retained experiments "
+    "explicitly enumerated by the supplied schema follow their listed byte-format locator kinds. "
     "Binary files require a captured text extraction, not a fabricated locator. ")
 REVIEW_SCHEMA = {"type": "object", "additionalProperties": False,
     "required": ["schema", "candidate_id", "run_id", "packet_sha256", "role", "coverage", "limitations", "findings"],

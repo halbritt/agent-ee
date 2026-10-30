@@ -99,9 +99,12 @@ class CitationLocatorTests(unittest.TestCase):
                 validate_citation(cite, run, require_structured=True)
                 self.assertTrue(fits({**cite, 'lines': [1, 1]}, outgoing))
             for path in [f'review-work/{role}/experiments/notes.txt',
-                         f'review-work/{role}/experiments/nested/notes.txt']:
+                         f'review-work/{role}/experiments/nested/notes.txt',
+                         f'review-work/{role}/experiments/source_topology_audit.json']:
                 self.assertTrue(fits(dict(path=path, locator='Scratch evidence', lines=[1, 1]), outgoing))
                 self.assertFalse(fits(dict(path=path, locator='Scratch evidence', pointer='/v'), outgoing))
+                self.assertFalse(fits(dict(path=path, locator='Scratch evidence', xpath='.'), outgoing))
+                self.assertFalse(fits(dict(path=path, locator='Scratch evidence', pointer='/v', lines=[1,1]), outgoing))
             for path in ['inputs/unknown.txt', 'review-work/peer/experiments/notes.txt',
                          f'review-work/{role}/experiments/../../inputs/spec.md',
                          f'review-work/{role}/experiments/./notes.txt', '/inputs/spec.md',
@@ -121,6 +124,48 @@ class CitationLocatorTests(unittest.TestCase):
             first = read_json(self.run_dir / record['attempts'][0]['path'] / 'response.json')
             self.assertEqual(first['findings'], retained['findings'])
             self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'ok'])
+
+    def test_prompt_distinguishes_captured_json_from_new_own_json_experiment(self):
+        packet=build_packet(self.run_dir,[self.erc_check,self.rc_check],self.run_id)
+        seen=[]
+        def transport(run,role,definition,prompt,schema,timeout,**kwargs):
+            self.assertIn('Frozen captured files',prompt)
+            self.assertIn('New own experiments require lines only',prompt)
+            self.assertIn('including newly created JSON and XML',prompt)
+            self.assertNotIn('For new experiments inspect the bytes using the same rules',prompt)
+            path=f'review-work/{role}/experiments/source_topology_audit.json'
+            write_json(run/path,{'status':'authored CPU evidence, not native qualification'})
+            dynamic=schema['properties']['findings']['items']['properties']['evidence']['items']['anyOf'][-1]
+            self.assertEqual(set(dynamic['required']),{'path','locator','lines'})
+            self.assertTrue(ecma_search(dynamic['properties']['path']['pattern'],path))
+            citation=dict(path=path,locator='Authored audit observation',lines=[1,3])
+            self.assertEqual(validate_citation(citation,run,require_structured=True),citation)
+            self.assertFalse(ecma_search(dynamic['properties']['path']['pattern'],'review-work/peer/experiments/source_topology_audit.json'))
+            seen.append(role)
+            review=self._review(role,findings=[self._finding(evidence=[citation])])
+            review.update(schema='agent-ee.review/2',candidate_id=packet['candidate_id'],run_id=packet['run_id'],packet_sha256=packet['packet_sha256'])
+            return {'execution':'ok'},review
+        with patch('agent_ee.reviewers.reviewer_call',side_effect=transport):
+            reviews,records=initial_reviews(self.run_dir,packet,time.monotonic()+30)
+        self.assertEqual(len(reviews),2,records)
+        self.assertEqual(set(seen),{'circuit','physical'})
+
+    def test_new_experiment_role_namespace_is_literal_and_rejects_escape_inputs(self):
+        from agent_ee.reviewers import evidence_schema
+        for role in ('source-topology','source_topology','circuit','adjudicator'):
+            schema=evidence_schema(self.run_dir,{'citation_files':[]},role)
+            branch=schema['items']['anyOf'][-1];pattern=branch['properties']['path']['pattern']
+            # JSON Schema ECMAScript Unicode patterns forbid Python's \- escape
+            # outside a character class; the admitted role alphabet is literal.
+            self.assertTrue(pattern.startswith('^review-work/'+role+'/experiments/'))
+            self.assertEqual(set(branch['required']),{'path','locator','lines'})
+            self.assertTrue(ecma_search(pattern,f'review-work/{role}/experiments/nested/audit.json'))
+            for path in ('review-work/peer/experiments/audit.json',f'review-work/{role}/experiments/../peer/audit.json',
+                         f'review-work/{role}/experiments/audit.json\n'):
+                self.assertFalse(ecma_search(pattern,path))
+        for role in ('source.topology','peer|source-topology','a/b',r'a\b','x.*','../root','with space','a\nb','',None,'a'*65):
+            with self.subTest(role=role),self.assertRaisesRegex(ValueError,'review role'):
+                evidence_schema(self.run_dir,{'citation_files':[]},role)
 
     def test_large_inventory_is_shared_once_in_complete_outgoing_schemas(self):
         from agent_ee.harnesses import strict_schema
