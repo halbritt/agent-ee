@@ -799,6 +799,91 @@ def solve(problem, search, job_dir, *, deadline_s, executable=None, on_seed=None
                    'input_sha256': sha256_bytes(encoded), 'exit_code': code}
 
 
+def _search_diagnostics(output, state):
+    """Completed infeasible seeds survive interruption before repair/promotion."""
+    retained = {int(seed): event['diagnostic'] for seed, event in state['seed_results'].items()
+                if event.get('diagnostic') is not None}
+    retained.update({c['seed']: c for c in output.get('diagnostic_shortlist', [])})
+    return sorted(retained.values(), key=lambda c: (
+        int(c['terms']['hard_count']), int(c['terms']['hard']), int(c['cost']), c['seed']))
+
+
+def _acquisition_solver(checkout, request, *, clock, cancel_dir=None, evidence=None):
+    from . import acquisition_placement
+    done = _run_child(acquisition_placement.child_argv(checkout), clock=clock, cancel_dir=cancel_dir,
+                      input_bytes=canonical(request))
+    if evidence is not None:
+        (evidence / 'solver.stdout').write_bytes(done.stdout)
+        (evidence / 'solver.stderr').write_bytes(done.stderr)
+    if done.returncode:
+        raise JobRefusal('acquisition proposal process failed: ' + done.stderr.decode(errors='replace')[-2000:])
+    return json.loads(done.stdout)
+
+
+def _repair_shortlist(problem, shortlist, diagnostics, *, checkout, runtime, clock, job_dir,
+                      attempt, report, engine_sha256, executable=None):
+    """One bounded proposal only after the retained search has no feasible incumbent."""
+    from . import acquisition_placement as repair
+    if (shortlist or problem.get('mechanics', {}).get('schema') != 'agent-ee.acquisition-mechanics/1'
+            or not diagnostics):
+        return shortlist
+    _check_stop(clock, job_dir)
+    # Preserve at least half of the remaining job for native checks and routing.
+    seconds = min(150.0, clock.remaining()/2)
+    record = dict(strategy=repair.SCHEMA, status='insufficient_budget', budget_s=seconds)
+    report['placement_repair'] = record
+    if seconds < 2:
+        return shortlist
+    bounded = Clock(seconds)
+    diagnostic = min(diagnostics, key=lambda c: (
+        int(c['terms']['hard_count']), int(c['terms']['hard']), int(c['cost']), c['seed']))
+    directory = job_dir / f'acquisition-repair-a{attempt}'
+    directory.mkdir()
+    write_json(directory / 'basis.json', diagnostic)
+    record.update(status='running', directory=str(directory), seed=diagnostic['seed'],
+                  basis_sha256=repair.basis(diagnostic), runtime=runtime)
+    try:
+        proposal = _acquisition_solver(checkout, dict(operation='propose', problem=problem,
+            diagnostic=diagnostic, runtime=runtime, max_seconds=min(120.0, seconds*.8)),
+            clock=bounded, cancel_dir=job_dir, evidence=directory)
+        write_json(directory / 'proposal.json', proposal)
+        if proposal.get('runtime') != runtime:
+            raise JobRefusal('acquisition proposal omitted its bound numerical runtime')
+        if proposal.get('status') == 'no_incumbent':
+            record['status'] = 'no_incumbent'
+            return shortlist
+        repair.validate_proposal(problem, diagnostic, proposal)
+        payload = dict(problem, evaluate=[proposal['poses']])
+        engine = Path(executable or rust_executable())
+        if digest(engine) != engine_sha256:
+            raise JobRefusal('exact repair evaluator changed after job identity capture')
+        done = _run_child([str(engine)], clock=bounded, cancel_dir=job_dir,
+                          input_bytes=canonical(payload))
+        (directory / 'evaluation.stdout').write_bytes(done.stdout)
+        (directory / 'evaluation.stderr').write_bytes(done.stderr)
+        if digest(engine) != engine_sha256:
+            raise JobRefusal('exact repair evaluator changed during regrade')
+        output = json.loads(done.stdout)
+        placement_problem.check_output(output, payload, code=done.returncode,
+                                       detail=done.stderr.decode(errors='replace')[-2000:])
+        if output.get('status') != 'evaluated' or len(output.get('evaluations', [])) != 1:
+            raise JobRefusal('acquisition proposal lacks an exact engine evaluation')
+        candidate = repair.candidate(problem, diagnostic, proposal, output['evaluations'][0])
+        record['status'] = 'exact_feasible' if candidate is not None else 'exact_rejected'
+        return [candidate] if candidate is not None else shortlist
+    except JobStopped as exc:
+        record['status'] = exc.status
+        if exc.status != 'deadline' or clock.remaining() <= 0:
+            raise
+        return shortlist
+    except (JobRefusal, OSError, ValueError, KeyError, TypeError) as exc:
+        record.update(status='failed', error=f'{type(exc).__name__}: {exc}')
+        return shortlist
+    finally:
+        record['elapsed_s'] = round(time.monotonic()-bounded.start, 3)
+        write_json(directory / 'result.json', record)
+
+
 # ---------------------------------------------------------------- native checks
 
 def drc(board, out_dir, *, refill=False, label='drc', clock=None, cancel_dir=None):
@@ -1519,12 +1604,18 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             normalized['block_contract_binding'] = record['block_contract']
         for name in ('board', 'project', *(['rules'] if rules_bytes is not None else [])):
             verified_input(config['inputs'][name], name)
+    if 'mechanics' in normalized:
+        report['preflight']['acquisition_solver'] = _acquisition_solver(
+            config['router']['checkout'], {'operation': 'identity'},
+            clock=Clock(min(30, clock.remaining())), cancel_dir=capture_cancel)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
                                        'engine': report['preflight']['engine_sha256'],
                                        'controller': digest(Path(__file__)),
                                        **({'mechanics_controller': digest(Path(__file__).with_name('acquisition_mechanics.py'))}
                                           if 'mechanics' in normalized else {}),
                                        **({'acquisition_local_return': digest(Path(__file__).with_name('acquisition_local_return.py'))}
+                                          if 'mechanics' in normalized else {}),
+                                       **({'acquisition_solver': report['preflight']['acquisition_solver']}
                                           if 'mechanics' in normalized else {}),
                                        **({'block_contract': record['block_contract']['binding_sha256']}
                                           if 'block_contract' in normalized else {}),
@@ -1564,6 +1655,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         output, engine = solve(problem, search, job_dir, deadline_s=clock.remaining(),
                                executable=executable, on_seed=on_seed, clock=clock)
         write_json(job_dir / 'engine-output.json', output)
+        write_json(job_dir / f'engine-output-a{attempt}.json', output)
     report['engine'] = {**engine, 'status': output['status'], 'counters': output['counters'],
                         'seeds': output['seeds'], 'prng': output['prng']}
     if output['status'] in ('cancelled', 'deadline'):
@@ -1576,10 +1668,18 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             shortlist.append({'seed': int(seed), 'cost': event['cost'], 'poses': event['poses'], 'resumed': True})
     shortlist.sort(key=lambda c: (int(c['cost']), c['seed']))
     shortlist = [dict(c, feasible=True) for c in shortlist[:int(config['search'].get('shortlist', 3))]]
+    diagnostics = list(output.get('diagnostic_shortlist', []))
+    if 'mechanics' in normalized:
+        diagnostics = _search_diagnostics(output, state)[:int(config['search'].get('shortlist', 3))]
+        with clock.phase('placement_repair'):
+            shortlist = _repair_shortlist(problem, shortlist, diagnostics,
+                checkout=config['router']['checkout'], runtime=report['preflight']['acquisition_solver'],
+                clock=clock, job_dir=job_dir, attempt=attempt, report=report,
+                executable=report['preflight']['engine'], engine_sha256=report['preflight']['engine_sha256'])
     if not shortlist:
         # No hard-feasible state: least-infeasible states, with their exact violations,
         # are checked natively as DIAGNOSTIC candidates and can never be promoted.
-        shortlist = list(output.get('diagnostic_shortlist', []))
+        shortlist = diagnostics
     report['engine_feasible'] = any(c.get('feasible') for c in shortlist)
     import pcbnew
     owners = _owners(pcbnew.LoadBoard(str(board_path)))

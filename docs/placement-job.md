@@ -12,8 +12,9 @@ Status: first vertical slice of the architecture adopted by chief 531
 production default: the existing `placer_runner` planning boundary, the `/1` and
 `/2` candidate-set schemas and every live caller (`placer.pack`,
 `blocks.pack_block`, `block_variants`, `block_variant_stage`, `reserved_area`,
-`pod_driver`, `placement_adapter`) are unchanged. There is no automatic Python
-fallback and no superiority or manufacturing claim.
+`pod_driver`, `placement_adapter`) are unchanged. The general placer has no
+automatic Python fallback. Acquisition jobs have the bounded proposal stage
+described below. There is no superiority or manufacturing claim.
 
 The AGENTEE-515q2 correction slice carries declared connector overhang and
 independent drill reservations. The previous prototype ignored USB1's existing
@@ -28,6 +29,29 @@ poses and still contribute to group distances. This repairs the sourced
 acquisition board's `unknown movable member J1` refusal without unlocking its
 connectors. Native materialization and final verification still check locks
 and exact saved coordinates.
+
+For a captured `agent-ee.acquisition-mechanics/1` job, if neither the current
+search nor its resumed seeds supplies a feasible candidate, the controller
+tries one mixed integer placement proposal. It moves only movable components
+connected by captured locality relationships to the retained violations. Fixed
+and unrelated footprint poses stay unchanged. Conservative body, copper, access
+and locality bounds guide the proposal; failure to find a solution is search
+failure, not proof that the design is physically infeasible.
+
+This stage uses the qualified router checkout's `.venv-krt/bin/python`, with
+NumPy 2.5.4 and SciPy 1.18.1. The implementation and observed runtime bytes enter
+the checkpoint identity. The repair uses at most half the remaining job time,
+capped at 150 seconds, with at most 120 seconds inside the numerical solver.
+Cancellation stops its process. Complete UUID coverage and unchanged inactive
+poses are checked before the original, hash-bound Rust engine regrades the
+proposal and computes its cost. A feasible regrade then enters the existing
+native save/reload, DRC, mechanics, membership, locality, edge and routing gates.
+
+`acquisition-repair-aN/` retains the diagnostic basis, proposal, exact evaluation
+and result. `engine-output-aN.json` preserves each search attempt. Infeasible
+seed poses also enter the checkpoint, so interruption before repair does not
+erase the basis needed by resume. These records do not establish release
+acceptance; the complete engineering review and release checks remain required.
 
 ## One entry point
 

@@ -2432,7 +2432,8 @@ fn evaluate_poses(p: &Prepared, rows: &Value, prepare_s: f64) -> Result<Value> {
         // The same structural checks a search state enforces.
         SearchState::new(p, poses.clone())?;
         let terms = full_evaluate(p, &poses);
-        out.push(json!({"terms": terms.value(), "feasible": terms.hard == 0 && terms.hard_count == 0,
+        out.push(json!({"cost": terms.cost(&p.weights).to_string(),
+                        "terms": terms.value(), "feasible": terms.hard == 0 && terms.hard_count == 0,
                         "violations": violations(p, &poses), "poses": pose_rows(p, &poses),
                         "mechanics": mechanics_report(p, &poses),
                         "links": link_rows(p, &poses), "link_weight": p.weights.link,
@@ -2519,7 +2520,10 @@ pub fn run(input: &Value) -> Result<Value> {
             "refinement": refinement,
             "links": best.as_ref().map(|b| link_rows(&p, &b.poses))}));
         let _ = crate::progress::emit(json!({"event": "seed", "seed": seed, "status": seed_status, "feasible": best.is_some(),
-            "poses": best.as_ref().map(|b| pose_rows(&p, &b.poses)), "cost": best.as_ref().map(|b| b.cost.to_string())}));
+            "poses": best.as_ref().map(|b| pose_rows(&p, &b.poses)), "cost": best.as_ref().map(|b| b.cost.to_string()),
+            "diagnostic": if best.is_none() { least.2.as_ref().map(|d| json!({
+                "seed": d.seed, "step": d.step, "cost": d.cost.to_string(), "terms": d.terms.value(),
+                "poses": pose_rows(&p, &d.poses), "violations": least.1, "feasible": false})) } else { None }}));
         found.extend(best);
         if let Some(d) = least.2 {
             infeasible.push((d, least.1));
@@ -2815,6 +2819,23 @@ mod tests {
         assert_eq!(proximity_terms(&p, 0, &poses), rect_gap(&a, &b) as i128);
         assert_eq!(rect_gap(&a, &b), 8_900_000 - 300_000 - (2_400_000 + 300_000));
         assert_eq!(rect_gap(&Rect { x0: 0, y0: 0, x1: 100, y1: 100 }, &Rect { x0: 75, y0: 0, x1: 175, y1: 100 }), -25);
+    }
+
+    #[test]
+    fn evaluated_cost_matches_search_cost_for_the_same_poses() {
+        let raw = input(vec![]);
+        let out = run(&raw).unwrap();
+        let candidate = out["shortlist"].as_array().unwrap().first()
+            .or_else(|| out["diagnostic_shortlist"].as_array().unwrap().first()).unwrap();
+        let mut poses = serde_json::Map::new();
+        for pose in candidate["poses"].as_array().unwrap() {
+            poses.insert(pose["uuid"].as_str().unwrap().to_owned(),
+                json!([pose["x_nm"], pose["y_nm"], pose["quarter_turns"]]));
+        }
+        let mut replay = raw;
+        replay["evaluate"] = json!([poses]);
+        let evaluated = run(&replay).unwrap();
+        assert_eq!(evaluated["evaluations"][0]["cost"], candidate["cost"]);
     }
 
     fn legacy(mut raw: Value) -> Value {
