@@ -254,6 +254,17 @@ def evidence_mounts(run_dir, label):
         if label == 'implementation':
             from .violation_waivers import writer_mounts
             mounts += writer_mounts(run)
+    control = run / 'review-validation' / label
+    if control.is_dir():
+        mounts += [(control, '/review-validation'),
+                   (run / 'inputs', '/evidence/inputs'),
+                   (run / 'candidate.json', '/evidence/candidate.json')]
+        experiments = run / 'review-work' / label / 'experiments'
+        for parent in (run / 'review-work', experiments.parent, experiments):
+            if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
+                raise ValueError('review experiment mount requires an unaliased directory')
+        experiments.mkdir(parents=True, exist_ok=True)
+        mounts.append((experiments, f'/evidence/review-work/{label}/experiments'))
     if label == 'adjudicator':
         mounts += [(p, '/experiments/' + p.parent.name) for p in (run / 'review-work').glob('*/experiments')]
     return mounts

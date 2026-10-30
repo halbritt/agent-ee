@@ -301,7 +301,7 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
 
     validated_findings = []
     seen_ids = set()
-    for item in raw_findings:
+    for finding_index, item in enumerate(raw_findings):
         if not isinstance(item, dict):
             raise ValueError("finding entry must be a JSON object")
         keys = set(item.keys())
@@ -329,7 +329,12 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
         raw_ev = item.get("evidence")
         if not isinstance(raw_ev, list):
             raise ValueError(f"finding {fid}: evidence must be a list")
-        evidence = [validate_citation(c, run_dir, require_structured=value["schema"] == REVIEW_VERSION) for c in raw_ev]
+        evidence = []
+        for citation_index, citation in enumerate(raw_ev):
+            try:
+                evidence.append(validate_citation(citation, run_dir, require_structured=value["schema"] == REVIEW_VERSION))
+            except ValueError as error:
+                raise type(error)(f"findings[{finding_index}].evidence[{citation_index}]: {error}") from error
 
         normalized = {
             "id": fid,

@@ -103,6 +103,20 @@ repeats that check against its original schema and response. Existing but
 uncaptured files and peer experiments cannot enter through the simpler provider
 schema; the adjudicator retains only its explicitly captured peer evidence.
 
+Initial `investigate` reviewers can save a complete draft to `/work/draft.json`
+and run `python3 -m agent_ee.review_draft /work/draft.json` before submission.
+The command uses the exact coordinator-owned schema and expected role/candidate
+identity at read-only `/review-validation`, plus a coherent captured run view at
+`/evidence`. Only that reviewer's experiment directory is included in this view.
+It runs the existing path, locator and fresh-review validators and reports errors
+without editing the draft. A successful check names the exact draft hash; it
+does not accept the engineering review. This work consumes the original call
+deadline and adds no schema resubmission. Final admission and archived replay
+continue to validate the submitted response independently.
+Draft files must be regular files of at most 8 MiB; symlinks and aliased
+experiment-directory roots are refused. A retained packet is byte-bound when
+supplied; callers using an in-memory packet retain its expected identity binding.
+
 The existing Bubblewrap mounts protect `/candidate` and separate initial
 reviewers. `/evidence/work` and `/evidence/checks` expose completed native results
 read-only, and `/evidence/packet.json` is the complete review packet. Each

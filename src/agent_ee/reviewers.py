@@ -156,10 +156,10 @@ def validate_evidence_paths(value, schema):
             policies.append((set(branch['required']),compile_path(branch['properties']['path'])))
         if not isinstance(value, dict) or not isinstance(value.get(collection), list):
             raise ValueError('missing citation-bearing record collection')
-        for row in value[collection]:
+        for row_index, row in enumerate(value[collection]):
             if not isinstance(row, dict) or not isinstance(row.get('evidence'), list):
                 raise ValueError('missing evidence citation list')
-            for citation in row['evidence']:
+            for citation_index, citation in enumerate(row['evidence']):
                 if not isinstance(citation, dict):
                     raise ValueError('malformed evidence citation')
                 admitted = [fields for fields,match in policies if match(citation.get('path'))]
@@ -167,7 +167,8 @@ def validate_evidence_paths(value, schema):
                     from .findings import CitationValidationError
                     used = ', '.join(sorted(set(citation)-{'path','locator'})) or 'none'
                     allowed = ', '.join(sorted(set().union(*admitted)-{'path','locator'})) or 'none (path not captured or not own experiment)'
-                    raise CitationValidationError(f"citation {citation.get('path')!r}: locator kind(s) used {used}; "
+                    raise CitationValidationError(f"{collection}[{row_index}].evidence[{citation_index}]: "
+                        f"citation {citation.get('path')!r}: locator kind(s) used {used}; "
                         f'frozen producer policy requires locator kind(s) {allowed}')
 
 
@@ -619,9 +620,20 @@ def workspace_instructions(role):
         "No other reviewer's initial judgment is supplied to an initial reviewer. ")
 
 
+def validate_fresh_review(value, packet, run_dir, role):
+    """The same fresh-review contract for draft feedback and final admission."""
+    from .findings import validate_review
+    if not isinstance(value, dict) or value.get("schema") != REVIEW_VERSION:
+        raise ValueError(f"fresh review requires {REVIEW_VERSION}")
+    review = validate_review(value, packet["candidate_id"], packet["run_id"],
+                             packet["packet_sha256"], Path(run_dir))
+    if review["role"] != role:
+        raise ValueError("reviewer returned a different role")
+    return review
+
+
 def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=None):
     """Run the profile's initial reviewers; ``roles`` restricts a targeted run, leaving others not_run."""
-    from .findings import validate_review
 
     scope = read_json(Path(run_dir) / "candidate.json")["scope"]
     from .profiles import validate_profile
@@ -694,6 +706,10 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=Non
             if timeout is None:
                 write_json(Path(run_dir) / "review-executions" / f"{role}.json", record)
                 return None, record
+            if definition['tool_mode'] == 'investigate':
+                from .review_draft import INSTRUCTIONS, prepare
+                prepare(run_dir, role, packet, schema)
+                prompt = INSTRUCTIONS + prompt
             prompt = (f"CALL BUDGET: at most {timeout:.1f} seconds of wall time, including final reporting. "
                 "Record a monotonic start time and track elapsed time. Reserve time to finish your complete structured "
                 "review; stop starting new experiments early enough to report before the limit. Keep concise findings "
@@ -713,13 +729,7 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=Non
             try:
                 from .review_run import structured_call
                 def validate(value):
-                    if not isinstance(value, dict) or value.get("schema") != REVIEW_VERSION:
-                        raise ValueError(f"fresh review requires {REVIEW_VERSION}")
-                    review = validate_review(value, packet["candidate_id"], packet["run_id"],
-                                             packet["packet_sha256"], Path(run_dir))
-                    if review["role"] != role:
-                        raise ValueError("reviewer returned a different role")
-                    return review
+                    return validate_fresh_review(value, packet, run_dir, role)
                 def call(supplied):
                     execution, value = reviewer_call(run_dir, role, definition, supplied, schema,
                         min(timeout, max(.001, deadline - time.monotonic())),

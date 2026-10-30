@@ -1073,7 +1073,7 @@ class FindingsTests(unittest.TestCase):
             self.assertNotEqual(schema["properties"]["findings"]["items"]["properties"]["evidence"], EVIDENCE_SCHEMA)
             citation = {"path": "checks/rc_transient.json", "locator": "response"}
             if counts[role] == 2:
-                self.assertIn("requires pointer, lines or xpath", prompt)
+                self.assertIn("frozen producer policy requires locator kind(s) lines, pointer", prompt)
                 citation["pointer"] = "/details/v_1ms"
             review = {**self._review(role=role, findings=[self._finding(evidence=[citation])]),
                       "schema": "agent-ee.review/2"}
@@ -1092,7 +1092,7 @@ class FindingsTests(unittest.TestCase):
             self.assertNotEqual(schema["properties"]["decisions"]["items"]["properties"]["evidence"], EVIDENCE_SCHEMA)
             citation = {"path": "checks/rc_transient.json", "locator": "response"}
             if counts[role] == 2:
-                self.assertIn("requires pointer, lines or xpath", prompt)
+                self.assertIn("frozen producer policy requires locator kind(s) lines, pointer", prompt)
                 citation["pointer"] = "/details/v_1ms"
             return {"execution": "ok"}, {"schema": "agent-ee.decisions/2", "candidate_id": self.candidate_id,
                 "run_id": self.run_id, "decisions": [{"finding_id": f["id"], "disposition": "accepted",
