@@ -311,6 +311,7 @@ class JudgeTests(unittest.TestCase):
                           if getattr(getattr(test, test._testMethodName),
                                      '_agent_ee_native_board_render', False))
         self.assertEqual(marked, {
+            'test_candidate_visuals.CandidateVisualTests.test_enclosed_imaging_timeout_reaps_render_and_svg_children',
             'test_candidate_visuals.CandidateVisualTests.test_native_four_layer_images_and_packet_hashes',
             'test_candidate_visuals.CandidateVisualTests.test_imaging_preserves_twenty_second_drc_budget',
             'test_candidate_visuals.CandidateVisualTests.test_native_placement_default_retains_images_beside_result',
