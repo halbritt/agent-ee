@@ -29,7 +29,7 @@ def _original_basis(out, scope, plan):
     rules = str(Path(scope['board']).with_suffix('.kicad_dru'))
     if (original / rules).exists():
         names['rules'] = rules
-    locality = block_source_stage.locality_path(scope)
+    locality = block_source_stage.locality_path(scope, original)
     if locality:
         names['locality'] = locality
     source_bound = 'block_source' in plan['placement']

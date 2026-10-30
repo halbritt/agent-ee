@@ -257,7 +257,7 @@ def execute(attempt, plan, previous, *, diagnostic=False):
                 path = candidate / placement[name]
                 config['inputs'][name] = dict(path=str(path), sha256=digest(path))
         from .block_source_stage import locality_path
-        locality = locality_path(scope)
+        locality = locality_path(scope, candidate)
         if locality:
             path = candidate / locality
             config['inputs']['locality'] = dict(path=str(path), sha256=digest(path))

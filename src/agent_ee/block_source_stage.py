@@ -16,11 +16,20 @@ TIMEOUT = 60
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 
 
-def locality_path(scope):
-    """The same authored locality selection used by the normal build consumer."""
+def locality_path(scope, candidate=None):
+    """Select one captured document preserving every declared locality constraint."""
     paths = {c['params']['locality'] for c in scope['checks'] if c['kind'] == 'placement'
              and c['params'].get('criterion') == 'electrical-locality/1'}
     if len(paths) > 1:
+        if candidate is not None:
+            from .electrical_locality import validate
+            documents = {path: validate(strict_json(_read(candidate, path))) for path in sorted(paths)}
+            for path, complete in documents.items():
+                if all(all(row in complete['obligations'] for row in other['obligations'])
+                       and all(complete.get('source_records', {}).get(key) == value
+                               for key, value in other.get('source_records', {}).items())
+                       for other in documents.values()):
+                    return path
         raise ValueError('placement build requires one shared electrical locality document')
     return next(iter(paths), None)
 
@@ -55,7 +64,7 @@ def paths(candidate, scope, plan):
     return dict(board=board, project=str(Path(board).with_suffix('.kicad_pro')),
         rules=str(Path(board).with_suffix('.kicad_dru')) if (Path(candidate) / board).with_suffix('.kicad_dru').exists() else None,
         source=plan['placement']['block_source'], intent=plan['placement']['intent'],
-        groups=plan['placement']['groups'], locality=locality_path(scope))
+        groups=plan['placement']['groups'], locality=locality_path(scope, candidate))
 
 
 def _inputs(root, names):

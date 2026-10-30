@@ -129,6 +129,40 @@ class BlockSourceTests(unittest.TestCase):
         scope['checks'].append({'kind':'placement','params':{'criterion':'electrical-locality/1','locality':'other.json'}})
         with self.assertRaisesRegex(ValueError,'one shared'):stage.locality_path(scope)
 
+    def test_role_locality_subset_selects_existing_complete_document(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            subset=source_fixture()[0]['relationships']
+            complete=deepcopy(subset)
+            extra=deepcopy(complete['obligations'][0]);extra['id']='other-relationship'
+            complete['obligations'].append(extra)
+            complete['source_records']['additional.txt']='Additional captured engineering intent'
+            write_json(root/'a-subset.json',subset);write_json(root/'z-complete.json',complete)
+            scope={'board':'board.kicad_pcb','checks':[
+                dict(kind='placement',params=dict(criterion='electrical-locality/1',locality=path))
+                for path in ('a-subset.json','z-complete.json')]}
+            before={p.name:p.read_bytes() for p in root.iterdir()}
+            plan=declaration();plan['placement']['block_source']='source.json'
+            self.assertEqual(stage.paths(root,scope,plan)['locality'],'z-complete.json')
+            self.assertEqual(stage.locality_path(scope,root),'z-complete.json')
+            self.assertEqual({p.name:p.read_bytes() for p in root.iterdir()},before)
+
+    def test_multiple_locality_documents_cannot_drop_or_reinterpret_a_constraint(self):
+        for change in ('limit','citation','source-record','additional-obligation'):
+            with self.subTest(change=change),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);first=source_fixture()[0]['relationships'];second=deepcopy(first)
+                if change=='limit':second['obligations'][0]['supply']['max_distance_nm']+=1
+                elif change=='citation':second['obligations'][0]['supply']['citation']='Different captured intent'
+                elif change=='source-record':second['source_records']['limits.txt']='Conflicting captured source'
+                else:
+                    extra=deepcopy(first['obligations'][0]);extra['id']='first-only';first['obligations'].append(extra)
+                    extra=deepcopy(second['obligations'][0]);extra['id']='second-only';second['obligations'].append(extra)
+                write_json(root/'first.json',first);write_json(root/'second.json',second)
+                scope={'checks':[dict(kind='placement',params=dict(
+                    criterion='electrical-locality/1',locality=path)) for path in ('first.json','second.json')]}
+                with self.assertRaisesRegex(ValueError,'one shared'):
+                    stage.locality_path(scope,root)
+
 
 class ProducerTests(unittest.TestCase):
     def setUp(self):
@@ -231,6 +265,9 @@ class ProducerTests(unittest.TestCase):
                             '--source','source.json','--intent','intent.json','--groups','groups.json'])
 
     def test_completed_producer_chain_revalidates_and_rejects_foreign_source_policy_or_proof(self):
+        write_json(self.candidate/'roles/locality.json',self.source['relationships'])
+        self.scope['checks'].append(dict(kind='placement',params=dict(
+            criterion='electrical-locality/1',locality='roles/locality.json')))
         root=self.root/'retained';root.mkdir()
         shutil.copytree(self.candidate,root/'source')
         source_files=stage.file_tree(root/'source')[0]
