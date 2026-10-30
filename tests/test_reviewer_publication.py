@@ -59,7 +59,7 @@ class ReviewerPublicationTests(unittest.TestCase):
                 profile = {'schema': 'agent-ee.profile/1', 'name': 'publication',
                            'reviewers': [dict(definition, role=role) for role in ('circuit', 'physical')],
                            'adjudicator': definition}
-                write_json(run / 'candidate.json', {'scope': {'review_profile': profile}})
+                write_json(run / 'candidate.json', {'scope': {'review_profile': profile}, 'files': {}})
                 packet = dict(candidate_id='candidate', run_id='run', packet_sha256='packet')
                 observed = []
                 replace = Path.replace
