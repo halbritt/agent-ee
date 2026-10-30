@@ -174,3 +174,103 @@ class PlaneBindingTests(unittest.TestCase):
         (self.root/'composition.json').unlink()
         with self.assertRaisesRegex(ValueError, 'unbound captured plane obligation'):
             final_planes.bound_plans(self.root, self.files(), {})
+
+
+class ReferencePlaneBindingTests(unittest.TestCase):
+    """Captured block inputs are source evidence, with a separate current plan."""
+
+    def setUp(self):
+        PlaneBindingTests.setUp(self)
+        from tests.test_reference_blocks import block
+        from agent_ee.reference_blocks import block_contract, validate_block
+        self.board = 'current.kicad_pcb'
+        # This suite tests binding only; native saved-zone checks have their own fixtures.
+        (self.root/self.board).write_text('owned current-board identity')
+        self.source = self.root/'reference/source'
+        self.source.mkdir(parents=True)
+        record = block(self.source)
+        write_json(self.source/'captured-plan.data', self.plan)
+        record['source']['paths']['captured-plan.data'] = 'captured-plan.data'
+        write_json(self.source/'block-contract.json', block_contract(record))
+        record['files'].update({name: digest(self.source/name)
+                               for name in ('captured-plan.data', 'block-contract.json')})
+        write_json(self.source/'block.json', record)
+        self.assertEqual(validate_block(self.source)['status'], 'unverified')
+
+    files = PlaneBindingTests.files
+
+    def test_validated_reference_payload_does_not_add_current_board_obligations(self):
+        self.assertEqual(final_planes.bound_plans(self.root, self.files(), self.params,
+                                                  board=self.board), [self.path])
+
+    def test_reference_payload_never_replaces_explicit_current_board_plan(self):
+        for board, params in ((None, self.params), (self.board, {}),
+                              ('reference/source/sheet.kicad_sch', self.params)):
+            with self.subTest(board=board, params=params), self.assertRaises(ValueError):
+                final_planes.bound_plans(self.root, self.files(), params, board=board)
+
+    def test_reference_payload_requires_complete_current_captured_custody(self):
+        original = (self.source/'captured-plan.data').read_bytes()
+        manifest = (self.source/'block.json').read_bytes()
+        for mode in ('changed-payload', 'extra-payload', 'stale-manifest', 'renamed-manifest'):
+            with self.subTest(mode=mode):
+                files = self.files()
+                if mode == 'changed-payload':
+                    (self.source/'captured-plan.data').write_bytes(original+b'\n')
+                    files = self.files()
+                elif mode == 'extra-payload':
+                    (self.source/'another-plan.data').write_bytes(original)
+                    files = self.files()
+                elif mode == 'stale-manifest':
+                    (self.source/'block.json').write_bytes(manifest+b'\n')
+                else:
+                    (self.source/'block.json').rename(self.source/'renamed-block.json')
+                    files = self.files()
+                with self.assertRaises(ValueError):
+                    final_planes.bound_plans(self.root, files, self.params, board=self.board)
+                (self.source/'captured-plan.data').write_bytes(original)
+                (self.source/'block.json').write_bytes(manifest)
+                (self.source/'another-plan.data').unlink(missing_ok=True)
+                (self.source/'renamed-block.json').unlink(missing_ok=True)
+
+    def test_a_reference_directory_name_does_not_hide_an_unbound_plan(self):
+        (self.root/'reference/uncaptured-plan.data').write_bytes(
+            (self.source/'captured-plan.data').read_bytes())
+        with self.assertRaisesRegex(ValueError, 'unbound captured plane obligation'):
+            final_planes.bound_plans(self.root, self.files(), self.params, board=self.board)
+
+    def test_reference_capture_cannot_hide_other_obligation_kinds(self):
+        from agent_ee.reference_blocks import block_contract
+        (self.root/'producer.json').unlink()
+        (self.root/'composition.json').unlink()
+        params = {'plane_plans': [{'path': self.path, 'sha256': digest(self.root/self.path)}]}
+        cases = [('unlisted-plan', self.plan, False),
+                 ('producer', self.producer, True),
+                 ('composition', {'schema': 'pod-capture.scope-composition/4',
+                                  'planes': [{'path': 'absent.data', 'sha256': 'a'*64}]}, True)]
+        for name, payload, source_listed in cases:
+            with self.subTest(name=name):
+                write_json(self.source/'extra.data', payload)
+                record = read_json(self.source/'block.json')
+                if source_listed:
+                    record['source']['paths']['extra.data'] = 'extra.data'
+                write_json(self.source/'block-contract.json', block_contract(record))
+                record['files'].update({p: digest(self.source/p)
+                                       for p in ('extra.data', 'block-contract.json')})
+                write_json(self.source/'block.json', record)
+                with self.assertRaisesRegex(ValueError, 'unbound captured plane obligation'):
+                    final_planes.bound_plans(self.root, self.files(), params, board=self.board)
+
+    def test_missing_candidate_pin_and_selected_source_plan_cannot_be_exempted(self):
+        files = self.files()
+        del files['reference/source/captured-plan.data']
+        with self.assertRaisesRegex(ValueError, 'payload differs'):
+            final_planes.bound_plans(self.root, files, self.params, board=self.board)
+        params = copy.deepcopy(self.params)
+        params['plane_plans'] = [{'path': 'reference/source/captured-plan.data',
+                                 'sha256': digest(self.source/'captured-plan.data')}]
+        write_json(self.source/'another-plan.data', self.plan)
+        # Selecting a source payload as an active plan prevents treating its enclosing
+        # block as historical, even if other files carry an apparently valid block seal.
+        with self.assertRaisesRegex(ValueError, 'unbound captured plane obligation'):
+            final_planes.bound_plans(self.root, self.files(), params, board=self.board)

@@ -96,7 +96,7 @@ def evidence_schema(run_dir, packet, role):
 
 
 def literal_path_set(paths):
-    """A finite literal trie with the non-multiline ECMAScript end anchor."""
+    """An exact finite path language with the non-multiline ECMAScript end anchor."""
     def escaped(char):
         if char in r'\.^$|?*+()[]{}':
             return '\\' + char
@@ -114,14 +114,30 @@ def literal_path_set(paths):
             ((char, child) for char, child in node.items() if char is not None)))
         return prefix + (choices[0] if len(choices) == 1 else '(?:' + '|'.join(choices) + ')')
 
-    trie = {}
+    def expression(values):
+        trie = {}
+        for value in values:
+            node = trie
+            for char in value:
+                node = node.setdefault(char, {})
+            node[None] = {}
+        return render(trie)
+
+    paths = sorted(set(paths))
+    directories = {}
     for path in paths:
-        node = trie
-        for char in path:
-            node = node.setdefault(char, {})
-        node[None] = {}
+        parent, separator, name = path.rpartition('/')
+        directories.setdefault(parent + separator, set()).add(name)
+    groups = {}
+    for parent, names in directories.items():
+        groups.setdefault(tuple(sorted(names)), []).append(parent)
+    # Factor only identical COMPLETE filename sets: every resulting directory/name
+    # combination was present. Distinct locator formats are partitioned by the caller.
+    alternatives = [expression(parents) + expression(names) for names, parents in sorted(groups.items())]
+    factored = alternatives[0] if len(alternatives) == 1 else '(?:' + '|'.join(alternatives) + ')'
+    pattern = min((expression(paths), factored), key=lambda value: len(json.dumps(value).encode('utf-8')))
     # ECMAScript $, without the m flag, requires the actual end of input.
-    return {'anyOf': [dict(type='string', pattern='^' + render(trie) + '$',
+    return {'anyOf': [dict(type='string', pattern='^' + pattern + '$',
                           minLength=min(map(len, paths)), maxLength=max(map(len, paths)))]}
 
 

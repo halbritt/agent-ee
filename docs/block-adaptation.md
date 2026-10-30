@@ -181,6 +181,19 @@ component/net changes as information. Multi-source requests without an explicit
 plan remain unsupported. Neither mode supplies source qualification or electrical
 suitability from provenance alone.
 
+For root selected-reference compositions, a `Device:R` or `Device:C` whose only
+native difference is `AGENT_EE_Ratings` may carry refreshed catalog evidence.
+The checker resolves both native fields through their captured producer receipts
+and reports. The original receipt comes from the validated source block's
+`build-generated/parts-ratings` capture; the current receipt must be declared by
+the current assembly checks. Both catalog responses must match captured hashes.
+Only catalog-response digests may differ in the full derived records: part
+identity, rating value and units, source paths and attributes, limitations, and
+all other component properties remain exact. Datasheet changes are not catalog
+refreshes. The report retains these before/after changes as `rating_refreshes`;
+other component and pin-net changes remain defects. This records derivation
+custody and does not replace fresh assembly or source qualification.
+
 ## Flat intent composition (AGENTEE-176)
 
 `block_adaptation.compose_flat(root, intent, blocks, bindings,

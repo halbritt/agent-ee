@@ -290,3 +290,81 @@ def compare(selected, actual, occurrence, bindings, *, reference_set=None):
         if name != expected_name:
             net_changes.append({'terminal': list(terminal), 'severity': 'defect', 'before': expected_name, 'after': name})
     return component_changes, net_changes
+
+
+def catalog_rating_refreshes(inputs, files, source_dir, selected, changes, declaration):
+    """Separate receipted catalog-byte refreshes from actual component changes.
+
+    Both native fields must resolve to captured producer records. Only catalog
+    response hashes may differ; all other record and component fields stay exact.
+    This proves derivation custody, not part qualification or board acceptance.
+    """
+    from .passive_ratings import PROPERTY, load_provenance, resolve_record, validate_binding
+    from .stage_receipts import _relative
+    inputs = Path(inputs)
+    eligible = []
+    for change in changes:
+        before, after = change['before'], change['after']
+        if not before or not after or before.get('lib_id') not in ('Device:R', 'Device:C'):
+            continue
+        if any(PROPERTY not in comp['properties'] for comp in (before, after)):
+            continue
+        def without_binding(comp):
+            return {**comp, 'properties':{k:v for k,v in comp['properties'].items() if k!=PROPERTY}}
+        if without_binding(before) == without_binding(after):
+            eligible.append(change)
+    if not eligible or declaration is None:
+        return changes, []
+
+    def pinned(path, sha):
+        path = _relative(path, 'rating refresh evidence')
+        if (not sha or files.get(path) != sha or (inputs/path).is_symlink()
+                or not (inputs/path).is_file() or digest(inputs/path) != sha):
+            raise ValueError('rating refresh evidence is absent or stale: '+path)
+
+    def records(decl):
+        pinned(decl['receipt'], decl['receipt_sha256'])
+        pinned(decl['report'], files.get(decl['report']))
+        return load_provenance(inputs, decl)
+
+    source_dir = _relative(source_dir, 'rating refresh source block')
+    receipt = source_dir+'/build-generated/parts-ratings/receipt.json'
+    original_decl = dict(receipt=receipt, receipt_sha256=files.get(receipt),
+                         report=source_dir+'/build-generated/parts-ratings/report.json')
+    original, current = records(original_decl), records(declaration)
+    references = {item['delivered']:item['reference'] for item in selected}
+
+    def catalog_identity(record, prefix):
+        result = copy.deepcopy(record)
+        for rating in result['ratings'].values():
+            for source in rating['sources']:
+                if source['kind'] == 'catalog':
+                    local = _relative(source['path'], 'rating catalog response')
+                    pinned(prefix+local, source['sha256'])
+                    source['sha256'] = None
+        return result
+
+    remaining, refreshed = [], []
+    for change in changes:
+        if change not in eligible:
+            remaining.append(change)
+            continue
+        ref = change['reference']
+        source_ref = references[ref]
+        kind = change['before']['lib_id'].removeprefix('Device:')
+        for side, native_ref, derived in (('before', source_ref, original), ('after', ref, current)):
+            props = change[side]['properties']
+            problems = validate_binding(props, kind)
+            if not problems:
+                problems = resolve_record(props, native_ref, derived)
+            if problems:
+                raise ValueError('rating refresh native binding: '+'; '.join(problems))
+        old, new = original[source_ref], current[ref]
+        if (old['record_sha256'] == new['record_sha256'] or
+                catalog_identity(old['record'], source_dir+'/') != catalog_identity(new['record'], '')):
+            remaining.append(change)
+            continue
+        refreshed.append(dict(reference=ref, source_reference=source_ref,
+            before_record_sha256=old['record_sha256'], after_record_sha256=new['record_sha256'],
+            before_provenance=original_decl, after_provenance=declaration, native_change=change))
+    return remaining, refreshed

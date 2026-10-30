@@ -143,6 +143,14 @@ otherwise unbound plans refuse. This does not manufacture legacy campaign
 producer/composition evidence: those reports, when captured, still require
 their existing complete `plane_obligations` bindings.
 
+An explicitly planned current board may also capture source plane plans inside
+reference blocks. A source plan is separate only when a standard `block.json`
+validates the complete payload, every payload hash matches the captured inventory,
+and `source.paths` lists the plan. A block containing the current board or any
+selected plan gets no such exemption. This distinction applies only to plane-plan
+documents: embedded producer reports and compositions still need their bindings.
+Payload validation establishes custody, not source qualification.
+
 ## Native custody and failure behavior
 
 The existing networkless executor launches `pcbnew` in child processes. The

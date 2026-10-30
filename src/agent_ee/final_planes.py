@@ -161,6 +161,40 @@ def producing_receipts(ctx):
             for name, output in receipt['spec']['writes'].items() if output == 'out/planes.json'}
 
 
+def _reference_source_files(inputs, files, board, plans):
+    """Identify declared source files of blocks separate from an explicitly planned board.
+
+    Validation establishes payload custody, not source qualification or adoption.
+    A block containing the current board or a selected plan remains an active subject.
+    """
+    if board is None or not plans:
+        return set()
+    from .reference_blocks import validate_block
+    from .stage_receipts import _relative
+    current = Path(_relative(board, 'current plane board'))
+    if board not in files or digest(inputs/board) != files[board]:
+        raise ValueError('current plane board is absent or stale')
+    sources = set()
+    for path in files:
+        manifest = Path(path)
+        if manifest.name != 'block.json':
+            continue
+        root = manifest.parent
+        if current.is_relative_to(root) or any(Path(p).is_relative_to(root) for p in plans):
+            continue
+        record = read_json(inputs/path)
+        if not isinstance(record, dict) or record.get('schema') != 'agent-ee.block/1':
+            continue
+        if digest(inputs/path) != files[path]:
+            raise ValueError('stale captured reference block: ' + path)
+        validate_block(inputs/root)
+        payload = {(root/name).as_posix(): pin for name, pin in record['files'].items()}
+        if any(files.get(name) != pin for name, pin in payload.items()):
+            raise ValueError('reference block payload differs from captured inputs: ' + path)
+        sources.update((root/name).as_posix() for name in record['source']['paths'])
+    return sources
+
+
 def bound_plans(inputs, files, params, *, producer_receipts=None, board=None):
     """Resolve explicit scope bindings against captured producer and composition facts.
 
@@ -223,6 +257,7 @@ def bound_plans(inputs, files, params, *, producer_receipts=None, board=None):
         if not isinstance(links, list) or not links or any(link not in declared_links for link in links):
             raise ValueError('composition has an undeclared plane obligation: ' + path)
 
+    reference_sources = _reference_source_files(inputs, files, board, plans)
     # Content, not basename, identifies otherwise undeclared plane obligations.
     # Only JSON objects are read; native KiCad files and binary evidence are skipped.
     for path in files:
@@ -239,7 +274,7 @@ def bound_plans(inputs, files, params, *, producer_receipts=None, board=None):
         if not isinstance(record, dict):
             continue
         schema = record.get('schema')
-        if ((schema == SCHEMA and path not in plans) or
+        if ((schema == SCHEMA and path not in plans and path not in reference_sources) or
                 (schema == RESULT and path not in producers) or
                 (str(schema).startswith('pod-capture.scope-composition/') and
                  record.get('planes') and path not in compositions)):
@@ -256,7 +291,7 @@ def check_captured(ctx, drc):
                    for d in ctx.params.get('plane_obligations', [])) else None)
         params, bindings = complete_bindings(ctx.inputs, ctx.manifest['files'], ctx.params,
                                             anchors, board=ctx.scope['board'])
-        paths = bound_plans(ctx.inputs, ctx.manifest['files'], params)
+        paths = bound_plans(ctx.inputs, ctx.manifest['files'], params, board=ctx.scope['board'])
         if bindings:
             ctx.result['details']['plane_bindings'] = bindings
     except (ValueError, OSError, TypeError) as exc:

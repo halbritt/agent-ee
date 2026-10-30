@@ -609,6 +609,7 @@ def check_block_provenance(ctx):
         if children(occurrence['tree'], 'sheet'):
             raise ValueError('nested adapted blocks are not supported')
         composition = block.get('_composition')
+        rating_refreshes = []
         if composition is None:
             source = _export(ctx, 'source', '/candidate/' + str(PurePosixPath(record['block']) / block['sheet']))
             component_changes, net_changes = semantic_diff(source, actual, occurrence, record['bindings'], block)
@@ -621,6 +622,13 @@ def check_block_provenance(ctx):
                 root_coverage(ctx.inputs, ctx.scope, actual)
             component_changes, net_changes = compare(selected, actual, occurrence, record['bindings'],
                 reference_set=root_membership(block) if record['instance_path']=='/' else None)
+            if record['instance_path'] == '/' and component_changes:
+                from .block_composition import catalog_rating_refreshes
+                declarations = [c.get('params', {}).get('rating_provenance') for c in ctx.scope['checks']
+                                if c['kind'] == 'assembly_readiness']
+                declaration = declarations[0] if declarations and all(d==declarations[0] for d in declarations) else None
+                component_changes, rating_refreshes = catalog_rating_refreshes(ctx.inputs, ctx.manifest['files'],
+                    record['block'], selected, component_changes, declaration)
         ports = hierarchy_ports((ctx.inputs / record['sheet']).read_bytes())
         if record['instance_path'] == '/':
             if ports:
@@ -683,6 +691,8 @@ def check_block_provenance(ctx):
         if composition:
             report['composition'] = {'plan': record['composition'], 'sources': composition['sources'],
                 'ports': composition['ports'], 'source_commit': block['source']['commit']}
+        if rating_refreshes:
+            report['rating_refreshes'] = rating_refreshes
         report = json.loads(json.dumps(report))
         write_json(ctx.work / 'provenance.json', report)
         ctx.evidence('provenance.json')

@@ -258,6 +258,83 @@ class CitationLocatorTests(unittest.TestCase):
                         '/inputs/a.txt', 'inputs/unknown.txt', 'inputs/./a.txt', 'inputs/a.txt\x00'):
             self.assertFalse(accepts(unknown), unknown)
 
+    def test_repeated_source_directories_fit_every_complete_producer_schema(self):
+        import hashlib
+        import json
+        from agent_ee.harnesses import strict_schema
+        from agent_ee.reviewers import REVIEW_SCHEMA, WITNESS_SCHEMA, DECISIONS_SCHEMA, bind_evidence_schema
+        from agent_ee.rf_review import ASSESSMENT_KEY, assessment_schema
+        # Owned names model repeated complete source captures, not a private task inventory.
+        names = [hashlib.sha256(str(i).encode()).hexdigest()+'.data' for i in range(700)]
+        kinds = [('lines', 'pointer')]*350 + [('lines',)]*200 + [('lines', 'xpath')]*150
+        inventory = [dict(path=f'inputs/retained/source-{d}/complete-capture/'+name,
+                          locator_kinds=list(formats))
+                     for d in range(8) for name, formats in zip(names, kinds)]
+        packet = dict(citation_files=inventory)
+        for role in ('circuit', 'physical', 'rf', 'adjudicator'):
+            with self.subTest(role=role):
+                schema = copy.deepcopy(DECISIONS_SCHEMA if role=='adjudicator' else REVIEW_SCHEMA)
+                collection = 'decisions' if role=='adjudicator' else 'findings'
+                for key in ('candidate_id', 'run_id'):
+                    schema['properties'][key] = dict(type='string', enum=['a'*64])
+                if role=='adjudicator':
+                    schema['properties'][collection]['items']['properties']['finding_id']['enum'] = [
+                        'check/owned-'+str(i) for i in range(5)]
+                else:
+                    schema['properties']['role'] = dict(type='string', enum=[role])
+                    schema['properties']['packet_sha256'] = dict(type='string', enum=['b'*64])
+                    schema['properties'][collection]['items']['properties']['witnesses'] = WITNESS_SCHEMA
+                    schema['properties'][collection]['items']['required'].append('witnesses')
+                if role=='rf':
+                    schema['properties'][ASSESSMENT_KEY] = assessment_schema('c'*64)
+                    schema['required'].append(ASSESSMENT_KEY)
+                bind_evidence_schema(schema, collection, self.run_dir, packet, role)
+                for wire in (schema, strict_schema(schema)):
+                    self.assertLess(len(json.dumps(wire, separators=(',', ':')).encode()), 120*1024)
+
+    def test_directory_factoring_preserves_exact_combinations_and_formats(self):
+        from agent_ee.reviewers import REVIEW_SCHEMA, bind_evidence_schema, literal_path_set
+        names = ['a[0].txt', 'b(1)+$.txt', 'µ space.txt', 'line\u2028separator.txt']
+        paths = [f'inputs/d{i}/'+name for i in range(12) for name in names]
+        paths += ['baseline.json', 'inputs/partial/'+names[0]]
+        shape = literal_path_set(paths)
+        self.assertEqual(shape, literal_path_set(list(reversed(paths))+paths[:2]))
+        def accepts(path):
+            return any(p['minLength'] <= len(path) <= p['maxLength']
+                       and ecma_search(p['pattern'], path) for p in shape['anyOf'])
+        for prefix in ['']+[f'inputs/d{i}/' for i in range(13)]+['inputs/partial/']:
+            for name in names+['baseline.json', 'unknown.txt']:
+                path = prefix+name
+                self.assertEqual(bool(accepts(path)), path in paths, path)
+        for path in paths:
+            for suffix in ('\n', '\r\n', '\u2028', '\u2029', '/../../escape', '.unknown'):
+                self.assertFalse(accepts(path+suffix), path+repr(suffix))
+        inventory = [dict(path=path, locator_kinds=['lines']) for path in paths]
+        special = 'inputs/d0/'+names[0]
+        inventory[0]['locator_kinds'] = ['lines', 'pointer']
+        # Force finite-regex transport, retaining the differing format at the same filename.
+        inventory += [dict(path=f'inputs/more/{i}.txt', locator_kinds=['lines']) for i in range(1100)]
+        schema = copy.deepcopy(REVIEW_SCHEMA)
+        bind_evidence_schema(schema, 'findings', self.run_dir, dict(citation_files=inventory), 'circuit')
+        branches = schema['properties']['findings']['items']['properties']['evidence']['items']['anyOf']
+        pointer = next(b for b in branches if set(b['required'])=={'path','locator','pointer'})
+        shapes = [schema['$defs'][r['$ref'].removeprefix('#/$defs/')]
+                  for r in pointer['properties']['path']['anyOf']]
+        for row in inventory:
+            allowed = any(ecma_search(p['pattern'], row['path'])
+                          for item in shapes for p in item['anyOf'])
+            self.assertEqual(bool(allowed), row['path']==special, row['path'])
+
+    def test_incompressible_citation_inventory_keeps_transport_refusal(self):
+        import hashlib
+        from agent_ee.reviewers import REVIEW_SCHEMA, bind_evidence_schema
+        inventory = [dict(path='inputs/'+hashlib.sha256(str(i).encode()).hexdigest()+'/'+
+                               hashlib.sha256(('name'+str(i)).encode()).hexdigest()+'.txt',
+                          locator_kinds=['lines']) for i in range(2500)]
+        with self.assertRaisesRegex(ValueError, '120 KiB transport limit'):
+            bind_evidence_schema(copy.deepcopy(REVIEW_SCHEMA), 'findings', self.run_dir,
+                                 dict(citation_files=inventory), 'circuit')
+
     def test_byte_formats_and_kind_diagnostics(self):
         exp = self.run_dir / 'review-work/circuit/experiments'
         exp.mkdir(parents=True)

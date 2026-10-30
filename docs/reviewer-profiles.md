@@ -89,6 +89,12 @@ does not establish that a locator resolves: the existing semantic validator chec
 every supplied locator, range, containment and link. Formatting retry uses the
 same schema and preserves finding IDs; no citation is automatically repaired.
 
+Repeated captured directories with identical complete filename sets share a
+factored literal path expression. This preserves exactly the same finite path
+set and locator-format partitions. The complete producer schema must still fit
+the 120 KiB transport limit, including RF and adjudicator fields; an inventory
+that cannot fit is refused without dropping paths or increasing that limit.
+
 The existing Bubblewrap mounts protect `/candidate` and separate initial
 reviewers. `/evidence/work` and `/evidence/checks` expose completed native results
 read-only, and `/evidence/packet.json` is the complete review packet. Each
