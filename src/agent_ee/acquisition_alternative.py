@@ -82,12 +82,14 @@ def _stock(root, context, parts, policy):
     return catalog, info
 
 
-def _choose(catalog, adc, policy):
+def _choose(catalog, adc, policy, required_lcsc=None):
     threshold = max(len(adc['instances']) * policy['boards'], policy['stock_floor'])
     decisions = []
     for lcsc in (PRIMARY, ALTERNATIVE):
         row = catalog['parts'][lcsc]
         reasons = []
+        if required_lcsc is not None and lcsc != required_lcsc:
+            reasons.append('outside_selected_source_allocation')
         if (row['mpn'] != ORDERABLES[lcsc] or row['mfr'] != 'Texas Instruments' or
                 row['package'] not in ('VSSOP-10', 'VSSOP-10-0.5mm')):
             reasons.append('incompatible_identity_package')
@@ -133,13 +135,16 @@ def _refresh_parts(root, document, context, chosen, decision_blob):
     return parts_manifest.prepare_manifest(document, root)
 
 
-def revise(root, context):
+def revise(root, context, *, required_lcsc=None):
     """Select and regenerate source bindings before typed_overlay.prepare.
 
     The caller owns staging/publication/cleanup. Failure leaves only that caller's
     disposable revision; no original source or previously sealed run is changed.
     The complete input inventory must match the caller's immutable context.
+    required_lcsc only restricts selection; it grants no source qualification.
     """
+    if required_lcsc is not None and (type(required_lcsc) is not str or required_lcsc not in ORDERABLES):
+        raise ValueError('required ADC carrier must be a supported literal LCSC id')
     root = Path(root)
     before = requirement_map.input_inventory(root)
     if before != context.inventory:
@@ -165,7 +170,7 @@ def revise(root, context):
             policy['max_extended_parts'] is not None):
         raise ValueError('extended assembly policies are outside this acquisition family')
     catalog, info = _stock(root, context, document['parts'], policy)
-    chosen, decisions, threshold = _choose(catalog, adc, policy)
+    chosen, decisions, threshold = _choose(catalog, adc, policy, required_lcsc)
     quantities = {}
     for part in document['parts']:
         lcsc = chosen if part['lcsc'] == PRIMARY else part['lcsc']
@@ -183,6 +188,9 @@ def revise(root, context):
         parts=[dict(id=p['id'], instances=p['instances'], lcsc=chosen if p is adc else p['lcsc'])
                for p in document['parts']],
         qualification='source preparation only; supplier/physical and electrical/native review pending')
+    if required_lcsc is not None:
+        decision.update(required_lcsc=required_lcsc,
+            reason='retain the selected source allocation only when its captured carrier identity and stock are eligible')
     target = root / PREFIX
     target.mkdir(parents=True)
     (target / 'decision.json').write_bytes(json_bytes(decision))

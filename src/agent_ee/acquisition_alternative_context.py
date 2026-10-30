@@ -83,7 +83,7 @@ def _union(context, captures):
         raise ValueError('context closure contains missing or unrelated files')
 
 
-def apply(revised, context, captures, as_of):
+def apply(revised, context, captures, as_of, *, required_lcsc=None):
     """Copy exact admitted sources before selection and the existing typed seal."""
     destination = Path(revised) / AT
     if destination.exists():
@@ -97,7 +97,7 @@ def apply(revised, context, captures, as_of):
     selected = acquisition_alternative.CapturedContext(
         requirement_map.input_inventory(revised), rebase('catalog'), rebase('carrier_page'),
         rebase('ordering_text'), as_of)
-    report = acquisition_alternative.revise(revised, selected)
+    report = acquisition_alternative.revise(revised, selected, required_lcsc=required_lcsc)
     # This report is an input, not a native receipt or a post-seal amendment.
     (Path(revised) / 'preparation/alternative-report.json').write_bytes(json_bytes(report))
     return report

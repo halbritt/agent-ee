@@ -101,6 +101,20 @@ def cohort(doc, captures, capacitance):
         policy='legacy-v4-100-only' if envelope=='100' else POLICY['id'])
 
 
+def adc_carrier(doc, captures):
+    """Read the selected U2 allocation from already-admitted captured role bytes.
+
+    This accessor does not qualify a source; read() remains the admission gate.
+    """
+    prefix = doc['roles']['acq-ads1115-two-channel']['block'] + '/'
+    block = strict_json(captures[prefix + 'block.json'])
+    manifest = strict_json(captures[prefix + block['parts_manifest']])
+    selected = [part for part in manifest['parts'] if part['id'] == 'U2']
+    if len(selected) != 1:
+        raise ValueError('selected analog source must allocate exactly one U2')
+    return selected[0]['lcsc']
+
+
 def read(root, raw, capacitance):
     """Replay actual source qualification; pinned report text cannot grant credit."""
     root=Path(root).absolute()

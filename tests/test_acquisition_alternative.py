@@ -206,6 +206,49 @@ class PortableCaptureTests(unittest.TestCase):
         self.synthetic_row('C37593', stockCount=10)
         self.assertEqual(alternative.revise(self.root, self.context)['selected'], 'C37593')
 
+    def test_restocked_primary_does_not_replace_the_required_source_carrier(self):
+        self.synthetic_row('C37593', stockCount=100)
+        result = alternative.revise(self.root, self.context, required_lcsc='C468683')
+        self.assertEqual(result['selected'], 'C468683')
+        parts = parts_manifest.load_manifest(self.root, 'parts.json')['parts']
+        adc = next(p for p in parts if p['id'] == 'U2')
+        self.assertEqual((adc['lcsc'], adc['mpn'], adc['stock']), ('C468683', 'ADS1115IDGST', 70))
+        decision = json.loads((self.root / result['decision']['path']).read_bytes())
+        self.assertEqual(decision['required_lcsc'], 'C468683')
+        primary = next(p for p in decision['candidates'] if p['lcsc'] == 'C37593')
+        self.assertEqual(primary['stock'], 100)
+        self.assertIn('outside_selected_source_allocation', primary['reasons'])
+        alternative.audit_selection(self.root, result)
+
+    def test_unavailable_required_carrier_cannot_fall_back_to_stocked_primary(self):
+        self.synthetic_row('C37593', stockCount=100)
+        self.synthetic_row('C468683', stockCount=0)
+        before = requirement_map.input_inventory(self.root)
+        with self.assertRaisesRegex(ValueError, 'no eligible.*low_stock'):
+            alternative.revise(self.root, self.context, required_lcsc='C468683')
+        self.assertEqual(requirement_map.input_inventory(self.root), before)
+
+    def test_required_carrier_still_needs_fresh_compatible_stock(self):
+        self.synthetic_row('C37593', stockCount=100)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            alternative.revise(self.root, replace(self.context, as_of='2026-10-30T08:00:00+00:00'),
+                               required_lcsc='C468683')
+        self.synthetic_row('C468683', componentModelEn='ADS1015IDGST')
+        with self.assertRaisesRegex(ValueError, 'no eligible.*incompatible_identity_package'):
+            alternative.revise(self.root, self.context, required_lcsc='C468683')
+        self.assertFalse((self.root / alternative.PREFIX).exists())
+
+    def test_required_primary_is_supported_without_assuming_an_alternate_cohort(self):
+        self.synthetic_row('C37593', stockCount=100)
+        self.assertEqual(alternative.revise(self.root, self.context, required_lcsc='C37593')['selected'], 'C37593')
+
+    def test_unknown_required_carrier_refuses_before_revision(self):
+        before = requirement_map.input_inventory(self.root)
+        for invalid in ('C404027', '', True, ['C468683']):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'required ADC carrier'):
+                alternative.revise(self.root, self.context, required_lcsc=invalid)
+        self.assertEqual(requirement_map.input_inventory(self.root), before)
+
     def test_synthetic_stocked_incompatible_alternative_is_not_selected(self):
         self.synthetic_row('C468683', componentModelEn='ADS1015IDGST')
         with self.assertRaisesRegex(ValueError, 'no eligible.*incompatible_identity_package'):
@@ -311,6 +354,13 @@ class CapturedContextTests(unittest.TestCase):
         self.assertEqual(report['selected'],'C468683')
         for name,raw in before.items():
             self.assertEqual((self.root/self.context_module.AT/name).read_bytes(),raw)
+
+    def test_context_selection_cannot_replace_an_unavailable_required_carrier(self):
+        context,captures=self.context_module.read(self.root,storage.json_bytes(self.context))
+        with self.assertRaisesRegex(ValueError, 'no eligible.*low_stock'):
+            self.context_module.apply(self.root,context,captures,'2026-10-18T01:00:00+00:00',
+                                      required_lcsc='C37593')
+        self.assertFalse((self.root / alternative.PREFIX).exists())
 
     def test_unrelated_context_file_and_reset_clock_are_refused(self):
         original=copy.deepcopy(self.context)

@@ -25,8 +25,9 @@ floor and freshness settings are retained. Stock must meet
 stock rule; full selected-board quantities are also checked. A successful
 observation for each selected board ID and both family IDs is required;
 missing/failed/not-found evidence refuses rather than proving availability.
-The primary is retained whenever eligible. Otherwise the sole supported TI
-carrier alternative is selected deterministically. No candidate refuses.
+Without a qualified role restriction, the primary is retained whenever eligible.
+Otherwise the sole supported TI carrier alternative is selected deterministically.
+Preparation refuses if neither candidate is eligible.
 Captured identity/package mismatches exclude a candidate even when stocked.
 Optional operating-temperature, hand-fit and Extended-count policies are
 outside this bounded adapter and explicitly refuse if enabled.
@@ -73,6 +74,15 @@ the CLI uses the corresponding hyphenated flags. All three are required together
 `acquisition_alternative_context` validates/copies the finite reviewed closure
 and verifies the exact conservative two-parent catalog union. It performs no
 fetch or catalog discovery and copies no old generated alternative receipts.
+
+When preparation also uses qualified roles, it reads U2's required carrier from
+the selected role's already-admitted captured parts manifest. This applies to
+both direct role contexts and the selected resistor cohort. Stock selection is
+restricted to that carrier; unavailable or incompatible stock still refuses.
+The preparation recipe and selection decision retain `required_lcsc` and the
+decision records why another stocked carrier was excluded. This internal
+restriction grants no qualification and leaves full allocation reconciliation
+and subsequent checks mandatory.
 
 Original `_admit` and `_load_overlay` remain unchanged. After `_write_revision`,
 context bytes and all referenced raw/source/parent provenance are copied under

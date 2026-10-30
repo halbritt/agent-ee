@@ -679,6 +679,10 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         recipe['roles'] = roles
         recipe['resistor_context'] = resistor
         recipe['helpers'][acquisition_resistor.__name__] = storage.digest(acquisition_resistor.__file__)
+    if roles is not None and alternative is not None:
+        # Both direct roles and the selected resistor cohort have been admitted.
+        # Stock changes cannot silently choose a carrier outside that source.
+        alternative['required_lcsc'] = acquisition_roles.adc_carrier(role_doc, role_captures)
     if addr_tie is not None:
         recipe['addr_tie'] = addr_tie
     if final_groups:
@@ -739,7 +743,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                 parts_path.write_bytes(json_bytes(authored))
             (revised / alternative['path']).write_bytes(context_raw)
             alternative_report = acquisition_alternative_context.apply(
-                revised, context_doc, context_captures, alternative['evaluation_as_of'])
+                revised, context_doc, context_captures, alternative['evaluation_as_of'],
+                required_lcsc=alternative.get('required_lcsc'))
             selected_cpl = scratch / 'selected-cpl'
             acquisition_selected_cpl.materialize(sources['cpl'], selected_cpl, context_doc,
                 context_captures, recipe['selected_cpl_inventory'], power_repair_captures=repair_captures,

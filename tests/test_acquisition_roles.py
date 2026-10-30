@@ -413,6 +413,20 @@ class CohortTests(unittest.TestCase):
 
 
 class ProducerBoundaryTests(unittest.TestCase):
+    def test_adc_carrier_comes_from_the_selected_captured_manifest(self):
+        # Authored accessor input, not evidence that these source roles qualify.
+        doc = dict(roles={'acq-ads1115-two-channel': dict(block='selected-analog')})
+        for lcsc in ('C37593', 'C468683'):
+            with self.subTest(lcsc=lcsc):
+                captures = {'selected-analog/block.json': storage.json_bytes(dict(parts_manifest='parts.json')),
+                    'selected-analog/parts.json': storage.json_bytes(dict(parts=[dict(id='U2',lcsc=lcsc)])),
+                    'inactive-analog/parts.json': storage.json_bytes(dict(parts=[dict(id='U2',lcsc='C404027')]))}
+                self.assertEqual(roles.adc_carrier(doc,captures),lcsc)
+                for members in ([], [dict(id='R1',lcsc=lcsc)], [dict(id='U2',lcsc=lcsc)]*2):
+                    captures['selected-analog/parts.json'] = storage.json_bytes(dict(parts=members))
+                    with self.assertRaisesRegex(ValueError, 'exactly one U2'):
+                        roles.adc_carrier(doc,captures)
+
     def test_public_parser_decimal_reaches_role_admission_and_preserves_json_strictness(self):
         from decimal import Decimal
         from agent_ee.acquisition_prepare import ADOPTION, parse_brief

@@ -380,6 +380,90 @@ class DefaultPreparationTests(unittest.TestCase):
             args.update(public_context=path,public_context_sha256=storage.digest(path))
         return acquisition_prepare.prepare(self.brief,self.plan,self.root/name,added_sources=self.sources,**args)
 
+    def test_preparation_keeps_selection_within_the_admitted_role_carrier(self):
+        from datetime import timedelta
+        from agent_ee import acquisition_alternative_context, acquisition_roles, jlc_stock_capture
+        # Retained identity inputs with explicitly authored restocked observations.
+        # Qualification readers are the test seam; no native/source acceptance or
+        # prepared bundle is produced. The real selector emits the observed parts.
+        original_context = SOURCE/'preparation/alternative-context.json'
+        context, captured = acquisition_alternative_context.read(
+            SOURCE/'preparation/alternative-context', original_context.read_bytes())
+        alternative = self.root/'restocked'; alternative.mkdir()
+        for name, raw in captured.items():
+            target=alternative/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw)
+        parents=[]
+        for ref in context['parents']:
+            path=alternative/ref['path'];parent=json.loads(path.read_bytes())
+            for request in parent['requests']:
+                if request['lcsc'] not in ('C37593','C468683'):continue
+                response=alternative/Path(context['catalog']['path']).parent/request['response']['path']
+                raw=json.loads(response.read_bytes())
+                row=next(r for r in raw['data']['componentPageInfo']['list'] if r['componentCode']==request['lcsc'])
+                row['stockCount']=100000;response.write_bytes(storage.json_bytes(raw))
+                request['response'].update(sha256=storage.digest(response),size_bytes=response.stat().st_size)
+                _,parsed=jlc_stock_capture.parse_search_response(response.read_bytes(),request['lcsc'])
+                parent['parts'][request['lcsc']]={**parsed,'last_seen':request['fetched_at']}
+            path.write_bytes(storage.json_bytes(parent));ref['sha256']=storage.digest(path);parents.append(parent)
+        union={**parents[0], 'requests':parents[0]['requests']+parents[1]['requests'],
+               'parts':{**parents[0]['parts'],**parents[1]['parts']},
+               'completed_at':max(p['completed_at'] for p in parents)}
+        (alternative/context['catalog']['path']).write_bytes(storage.json_bytes(union))
+        derivation=json.loads((alternative/context['derivation']['path']).read_bytes())
+        for row,ref in zip(derivation['parents'],context['parents']):row['sha256']=ref['sha256']
+        (alternative/context['derivation']['path']).write_bytes(storage.json_bytes(derivation))
+        for key in ('catalog','derivation'):context[key]['sha256']=storage.digest(alternative/context[key]['path'])
+        context['files']={name:storage.digest(alternative/name) for name in captured}
+        context_path=alternative/'context.json';context_path.write_bytes(storage.json_bytes(context))
+        acquisition_alternative_context.read(alternative,context_path.read_bytes())
+        anchor=datetime.fromisoformat(union['completed_at'])+timedelta(hours=1)
+        pool=self.root/'role-pool';pool.mkdir();cohorts={};entries={}
+        for choice,lcsc in ((resistor.PRIMARY,'C468683'),(resistor.ALTERNATIVE,'C37593')):
+            root=pool/choice;root.mkdir()
+            captures={'analog/block.json':storage.json_bytes(dict(parts_manifest='parts.json')),
+                      'analog/parts.json':storage.json_bytes(dict(parts=[dict(id='U2',lcsc=lcsc)]))}
+            doc=dict(roles={'acq-ads1115-two-channel':dict(block='analog')},application={},
+                     files={name:sha256(raw).hexdigest() for name,raw in captures.items()})
+            path=root/'context.json';path.write_bytes(storage.json_bytes(doc))
+            cohorts[choice]=(doc,captures,{})
+            entries[choice]=dict(root=choice,context=dict(path=choice+'/context.json',sha256=storage.digest(path)))
+        evidence={name:(CAPTURE/name).read_bytes() for name in resistor.EVIDENCE}
+        self.assertEqual({name:sha256(raw).hexdigest() for name,raw in evidence.items()},resistor.EVIDENCE)
+        pool_doc=dict(files=copy.deepcopy(resistor.EVIDENCE),role_contexts=entries)
+        pool_context=pool/'context.json';pool_context.write_bytes(storage.json_bytes(pool_doc))
+        resistor_args=dict(resistor_source=pool,resistor_context=pool_context,
+                           resistor_context_sha256=storage.digest(pool_context))
+        def direct(choice):
+            path=pool/choice/'context.json'
+            return dict(role_source=path.parent,role_context=path,role_context_sha256=storage.digest(path))
+        cases=[('unrestricted',{},None,'C37593'),
+               ('direct-alternate',direct(resistor.PRIMARY),None,'C468683'),
+               ('direct-primary',direct(resistor.ALTERNATIVE),None,'C37593'),
+               ('pool-default',resistor_args,None,'C468683'),
+               ('pool-selected',resistor_args,public([dict(lcsc=resistor.PRIMARY,mpn=resistor.MPNS[resistor.PRIMARY])]),'C37593')]
+        real_apply=acquisition_alternative_context.apply
+        class SelectionObserved(Exception):pass
+        before=requirement_map.input_inventory(self.base)
+        for name,args,policy,expected in cases:
+            observed={}
+            def select(revised,*positional,**keywords):
+                result=real_apply(revised,*positional,**keywords)
+                observed['selected']=result['selected']
+                observed['part']=next(p['lcsc'] for p in parts_manifest.load_manifest(revised,'parts.json')['parts'] if p['id']=='U2')
+                raise SelectionObserved()
+            with self.subTest(path=name),patch('agent_ee.acquisition_roles.read',
+                    side_effect=lambda root,*unused:cohorts[Path(root).name]), \
+                    patch('agent_ee.acquisition_resistor.read',return_value=(pool_doc,evidence,cohorts)), \
+                    patch('agent_ee.acquisition_alternative_context.apply',side_effect=select), \
+                    patch('agent_ee.acquisition_prepare.datetime') as clock:
+                clock.now.return_value=anchor
+                with self.assertRaises(SelectionObserved):
+                    self.prepare(name,policy,alternative_source=alternative,alternative_context=context_path,
+                                 alternative_context_sha256=storage.digest(context_path),**args)
+                self.assertEqual(observed,dict(selected=expected,part=expected))
+                self.assertFalse((self.root/name).exists())
+        self.assertEqual(requirement_map.input_inventory(self.base),before)
+
     def test_absent_null_policy_keep_identical_selected_parts_and_raw_stock(self):
         before=requirement_map.input_inventory(self.base)
         a=self.prepare('absent');b=self.prepare('null',public())
