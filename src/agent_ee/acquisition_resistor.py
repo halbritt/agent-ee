@@ -24,9 +24,9 @@ LABEL = 'evaluation scenario; not an observed supplier stockout'
 ANALOG = 'acq-ads1115-two-channel'
 PDF = 'datasheets/b29db0c4cad7699a57e1e17182f49e77b78470bd85f595dc22f75144e7b780c5.pdf'
 EVIDENCE = {
-    'catalog/catalog.json': '3df4ccecf88b85dcbafc5219df4af7f0e1d7994fc5ee50d5db01ef81b555eae5',
-    'catalog/responses/C118155.json': 'f8102ae3bcb9b306daa088b13acc88d7023af9dc86dbd4f21e001e42a9a8afb1',
-    'named/C118155.json': '93bc923fc12f7c13d3f08b9300c8285c6d446610257ac5323abfb92668c1b6e0',
+    'catalog/catalog.json': '596cb0725a34f5becdd3418f24c07d680e0fab9a610b0290cf84aa4ff975ade1',
+    'catalog/responses/C118155.json': '27dfec90fb0fda962031721d557c4ceafd41eff25f4f22bbe4e9ae2b0c3d48a4',
+    'named/C118155.json': '2ceb64b18367910dd7527bf95d0f8fadb85651aba054c3076116447cece70346',
     'datasheets/manifest.json': 'd312593a5aadd9dbb8efa2f86226c4be60590abc0cf8553be25076e66ddf1a7d',
     PDF: '78825b819853a63f57cc18214f321d2f1da9dc205a7e58af7db18ae73563e378',
     'supplier/C118155.raweasy.json': '9267b75fffdc5634caa2eb723f0a89c2d622eae920b581283957011deece27f3',

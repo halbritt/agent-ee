@@ -605,7 +605,10 @@ def workspace_instructions(role):
         "When supplied, /evidence/baseline.json is immutable ground truth, including targets and reference architectures. "
         f"Allowed citation paths are {CITATION_PATH_RULE}. Cite the baseline as baseline.json, never /evidence/baseline.json. "
         "Read the complete baseline source files, not only packet excerpts. For a defect in a baseline-bound run, "
-        "include witnesses [{requirement_id, check_id}] naming a failed declared check and cite checks/<check_id>.json. "
+        "include witnesses [{requirement_id, check_id}] naming a freshly executed declared check with execution=ok "
+        "and outcome=defect, and cite checks/<check_id>.json. A check with failed execution or unknown outcome "
+        "establishes an evidence gap, not a witnessed criterion defect: report it as a concern with empty witnesses. "
+        "This distinction does not clear the failed check or permit release with required evidence missing. "
         "An unsupported hypothesis stays a concern until the coordinator reproduces it as a declared check. "
         "Fresh native check outputs are at /evidence/work and /evidence/checks (cite work/<check>/<file> or checks/<file>). "
         "Use installed tools (python3, kicad-cli, ngspice, document tools) and network source retrieval when useful. "
@@ -691,6 +694,11 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=Non
             if timeout is None:
                 write_json(Path(run_dir) / "review-executions" / f"{role}.json", record)
                 return None, record
+            prompt = (f"CALL BUDGET: at most {timeout:.1f} seconds of wall time, including final reporting. "
+                "Record a monotonic start time and track elapsed time. Reserve time to finish your complete structured "
+                "review; stop starting new experiments early enough to report before the limit. Keep concise findings "
+                "as you proceed. Preserve unresolved evidence, failed experiments and coverage omissions honestly; "
+                "running out of time does not justify a passing claim. Return the required JSON before the limit.\n" + prompt)
             def admit():
                 with launch_lock:
                     return not cancellation.cancelled.is_set() and not stopped.intersection({'*', definition['harness']})

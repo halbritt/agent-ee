@@ -909,3 +909,20 @@ consume the corrected `analysis/geometry-model.json`. Widths, depth, height,
 other packages, clearance limits and the checker are preserved. A new model
 hash requires fresh checks and independent judgments; it does not revise an
 earlier run's outcome or establish physical connector clearance.
+
+### Refreshing separately captured resistor stock
+
+The base ADC catalog refresh does not refresh R6 or the optional Panasonic
+R1/R2 alternative. Their separate catalogs contribute their original timestamps
+to the final conservative union. All selected captures must remain within the
+declared stock-age limit through final review.
+
+The finite October 30, 2026 refresh preserves the exact selected identities
+C114669 / RC0603FR-07470RL and C118155 / ERJ3EKF1001V. It changes only the two
+catalog/response pins for R6 and the catalog, response and regenerated named
+part-record pins for Panasonic. Manufacturer and supplier documents, activation,
+SPICE models, component values, geometry sources and age limits remain intact.
+Use the corresponding new captured input directories and rebuild qualification
+and context records under the new source policy. Historical captures and failed
+runs retain their original bytes and outcomes. A fresh capture establishes a
+dated stock observation; supplier and physical qualification remain separate.
