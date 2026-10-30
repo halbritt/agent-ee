@@ -385,7 +385,7 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
                 with self.assertRaises(JobRefusal): self.run_seed()
                 self.assertFalse((self.output / 'accepted').exists())
                 record = json.loads((self.output / 'record.json').read_text())
-                self.assertEqual(len(record['trials']), 5)
+                self.assertEqual(len(record['trials']), 1)
 
     def test_missing_or_duplicate_baseline_records_do_not_match_full_trial(self):
         warnings = self.library_warnings()
@@ -398,7 +398,7 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
                 with self.assertRaises(JobRefusal): self.run_seed()
                 self.assertFalse((self.output / 'accepted').exists())
                 record = json.loads((self.output / 'record.json').read_text())
-                self.assertEqual(len(record['trials']), 5)
+                self.assertEqual(len(record['trials']), 1)
                 self.assertTrue(any(record['trials'][0]['warning_difference'].values()))
 
     def test_baseline_board_or_report_drift_during_trial_refuses(self):

@@ -142,11 +142,53 @@ class ControllerTests(unittest.TestCase):
         self.engine_sha256 = job.digest(self.engine)
         self.report = {}
 
-    def run_repair(self, *, shortlist=None, clock=None):
+    def run_repair(self, *, shortlist=None, clock=None, **kwargs):
         return job._repair_shortlist(self.problem, shortlist or [], [self.diagnostic],
             checkout=self.directory, runtime=self.runtime, clock=clock or job.Clock(10),
             job_dir=self.directory, attempt=1, report=self.report, executable=self.engine,
-            engine_sha256=self.engine_sha256)
+            engine_sha256=self.engine_sha256, **kwargs)
+
+    def test_exhausted_feasible_routes_can_use_one_genuine_diagnostic_proposal(self):
+        incumbent=[dict(feasible=True,seed=4,cost='10')]
+        self.report['routing_trials']=[dict(status='local_search_exhausted')]
+        with patch.object(job, '_acquisition_solver', return_value=dict(
+                status='no_incumbent', runtime=self.runtime)) as numerical:
+            self.assertEqual(self.run_repair(shortlist=incumbent,routing_exhausted=True), [])
+            self.assertEqual(numerical.call_count,1)
+            self.assertEqual(numerical.call_args.args[1]['diagnostic'],self.diagnostic)
+            self.assertEqual(self.run_repair(shortlist=incumbent,routing_exhausted=True), [])
+            self.assertEqual(numerical.call_count,1)
+        self.assertEqual(self.report['placement_repair']['trigger'],'feasible_routing_exhausted')
+        self.assertEqual(incumbent,[dict(feasible=True,seed=4,cost='10')])
+        retained=json.loads((self.directory/'acquisition-repair-a1/basis.json').read_text())
+        self.assertEqual(retained,self.diagnostic)
+
+    def test_routing_repair_cannot_replace_success_interruption_or_guard_failure(self):
+        incumbent=[dict(feasible=True,seed=4,cost='10')]
+        with patch.object(job, '_acquisition_solver', side_effect=AssertionError('must not run')):
+            for status in ('running','completed','cancelled','deadline','refused','integrity_failed',
+                           'verification_failed'):
+                with self.subTest(status=status):
+                    self.report['routing_trials']=[dict(status='local_search_exhausted'),dict(status=status)]
+                    self.assertEqual(self.run_repair(shortlist=incumbent,routing_exhausted=True), [])
+            self.report['routing_trials']=[]
+            self.assertEqual(self.run_repair(shortlist=incumbent,routing_exhausted=True), [])
+            self.report['routing_trials']=[dict(status='local_search_exhausted')]
+            self.report['placement_repair']=dict(status='no_incumbent')
+            self.assertEqual(self.run_repair(shortlist=incumbent,routing_exhausted=True), [])
+        self.assertEqual(list(self.directory.iterdir()), [self.engine])
+
+    def test_coarse_route_failure_cannot_hide_adapter_or_plane_guards(self):
+        incumbent=[dict(feasible=True,seed=4,cost='10')]
+        with patch.object(job, '_acquisition_solver', side_effect=AssertionError('must not run')):
+            for status in ('stale_candidate','refused_result','plane_failed','failed'):
+                with self.subTest(status=status):
+                    routed=dict(status=status)
+                    coarse=job._completion_status(routed,incumbent[0],{})
+                    self.assertEqual(coarse,'route_failed')
+                    self.report['routing_trials']=[dict(status=coarse,route=routed)]
+                    self.assertEqual(self.run_repair(shortlist=incumbent,routing_exhausted=True), [])
+        self.assertNotIn('placement_repair',self.report)
 
     def test_feasible_or_unqualified_job_never_invokes_solver(self):
         with patch.object(job, '_acquisition_solver', side_effect=AssertionError('must not run')):

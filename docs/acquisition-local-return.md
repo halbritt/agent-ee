@@ -17,8 +17,13 @@ The producer connects both legs of four loops with 0.25 mm tracks:
 | Filter 1 | C5.1–U2.5 | C5.2–U2.3 | 12 mm |
 
 Signal and supply legs precede shared ground returns so a ground crossbar cannot
-close access to an adjacent signal pad. Filter 0 uses two 0.6 mm through-vias
-with 0.3 mm drills and a B.Cu segment. Their positions derive from the native
+close access to an adjacent signal pad. Filter 0 first tries the same bounded
+F.Cu search as the other legs. If those proposals exhaust their length or native
+clearance checks, it tries two 0.6 mm through-vias with 0.3 mm drills and a B.Cu
+segment. The failed front-family receipt remains bound into the loop receipt.
+Cancellation, malformed native results and custody failures propagate without
+trying another family. Via rules are required only when trying vias.
+Their positions derive from the native
 capacitor pad pair, IC pad long axis, and signed U2.4-to-U2.5 pin pitch; no saved
 board coordinates are imported. Unsupported or ambiguous pad frames refuse.
 The producer tries at most two escapes, with fresh native DRC for each. First,
@@ -138,7 +143,21 @@ placement. Preparation and checkpoint identities include the local-return,
 geometry and local-routing helper hashes. Evidence is retained under
 `local-routing-SUFFIX`. The producer consumes the candidate's existing equal
 share of remaining job time; only the unspent share reaches global routing.
-Refusal aborts without an unseeded fallback.
+Exhausted local proposals produce a typed `LocalSearchExhausted` refusal. The
+controller retains that candidate's failure receipt and proceeds to the next
+eligible placement under the same job deadline. Other refusals and cancellation
+stop the operation. It never routes an unseeded acquisition board.
+
+If every eligible placement exhausts its local routing search, the
+controller may invoke the existing acquisition MILP repair once. It uses an
+actual retained infeasible search diagnostic, including its original violations
+and inactive poses. This also applies when the annealing shortlist contained a
+feasible placement; the receipt records `feasible_routing_exhausted` as the
+trigger. A repair already attempted for an empty feasible shortlist is not
+repeated. The repair keeps its existing 120-second solver and 150-second phase
+caps, with at most half the remaining job time. Exact regrading, native placement
+checks, local copper, global routing and final validation all run again. Failed
+global routing, integrity or final-validation checks do not trigger this repair.
 
 Global routing uses `preserve_existing` (`--protect existing`). Placement's
 `final_checks` retains its original placement, rule and footprint comparisons.

@@ -41,6 +41,10 @@ CONNECTIONS = {
 LOOP_LIMITS = {'adc':10., 'output':10., 'filter0':12., 'filter1':12.}
 
 
+class LocalSearchExhausted(JobRefusal):
+    """The bounded copper search or its remaining length allowance is exhausted."""
+
+
 def _sha(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -488,8 +492,10 @@ def _produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir, 
             raise JobRefusal('local return: source/input drift')
 
     try:
-        if max_length_mm is not None and (not math.isfinite(max_length_mm) or max_length_mm<=0):
-            raise JobRefusal('local loops: remaining loop length is exhausted')
+        if max_length_mm is not None and not math.isfinite(max_length_mm):
+            raise JobRefusal('local loops: remaining loop length is not finite')
+        if max_length_mm is not None and max_length_mm<=0:
+            raise LocalSearchExhausted('local loops: remaining loop length is exhausted')
         _no_suppression(captured)
         project = json.loads(captured['board.kicad_pro'])
         rules = project['board']['design_settings']['rules']
@@ -563,12 +569,16 @@ def _produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir, 
             trial['execution'] = execution
             trial['report_sha256'] = _raw_report(trial_dir, report, execution)
             legal = _legal(report)
+            if report['schematic_parity']:
+                trial['status']='guard_refused'
+                raise JobRefusal('local return: native schematic parity changed')
             current_warnings = _warnings(report)
             if current_warnings != warnings:
-                legal = False
+                trial['status']='guard_refused'
                 trial['warning_difference'] = dict(
                     missing=[json.loads(v) for v in (warnings - current_warnings).elements()],
                     added=[json.loads(v) for v in (current_warnings - warnings).elements()])
+                raise JobRefusal('local return: native library warning records changed')
             trial['coverage'] = {k: report[k] for k in
                 ('$schema', 'kicad_version', 'included_severities', 'ignored_checks')}
             trial['unconnected_count'] = len(report['unconnected_items'])
@@ -605,9 +615,11 @@ def _produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir, 
                 raise JobRefusal('local return: selected report drift before adoption')
             pending.rename(destination / 'accepted')
             return record
-        raise JobRefusal('local return: all bounded proposals failed length or native clearance; see record.json')
+        raise LocalSearchExhausted('local return: all bounded proposals failed length or native clearance; see record.json')
     except (JobRefusal, JobStopped, OSError, ValueError, KeyError, TypeError) as exc:
         record.update(status='stopped' if isinstance(exc, JobStopped) else 'refused', reason=str(exc))
+        if isinstance(exc, LocalSearchExhausted):
+            record['failure_kind']='search_exhausted'
         write_json(destination / 'record.json', record)
         raise
 
@@ -679,9 +691,19 @@ def produce_loops(candidate_dir, destination, *, expected_inputs, clock, cancel_
             record['active_connection'] = connection
             write_json(destination/'record.json', record)
             loop=connection.split('-')[0]
-            seed = _produce(current, destination/connection, expected_inputs=pins, clock=clock,
-                            cancel_dir=cancel_dir, connection=connection, obstacle_search=True,
-                            max_length_mm=LOOP_LIMITS[loop]-lengths[loop],two_layer=connection=='filter0-signal')
+            arguments=dict(expected_inputs=pins, clock=clock, cancel_dir=cancel_dir,
+                           connection=connection, obstacle_search=True,
+                           max_length_mm=LOOP_LIMITS[loop]-lengths[loop])
+            try:
+                seed = _produce(current, destination/connection, **arguments)
+            except LocalSearchExhausted:
+                if connection!='filter0-signal':
+                    raise
+                receipt=destination/connection/'record.json'
+                record['rejected_families']=[dict(family='front', record=str(receipt),
+                                                  record_sha256=_sha(receipt.read_bytes()))]
+                write_json(destination/'record.json', record)
+                seed = _produce(current, destination/(connection+'-two-layer'), two_layer=True, **arguments)
             record['connections'].append(seed)
             lengths[loop]+=_leg_length(seed)
             record['loop_lengths_mm']=dict(lengths)
@@ -691,6 +713,7 @@ def produce_loops(candidate_dir, destination, *, expected_inputs, clock, cancel_
         # segment must survive in the final board before publishing the bundle.
         for seed in record['connections']:
             verify_seed(current/FILES[0], seed, clock=clock, cancel_dir=cancel_dir)
+        _verify_rejected_families(record)
         custody()
         del record['active_connection']
         record.update(status='seeded', output=str(current), output_inputs=pins)
@@ -710,6 +733,7 @@ def _verify_loops(board, record, *, clock, cancel_dir=None):
             or canonical(json.loads(raw))!=canonical(record)
             or [s.get('connection') for s in record['connections']]!=list(CONNECTIONS)):
         raise JobRefusal('local loops: retained operation record changed')
+    _verify_rejected_families(record)
     pins = record['inputs']
     results = []
     lengths={name:0. for name in LOOP_LIMITS}
@@ -729,6 +753,26 @@ def _verify_loops(board, record, *, clock, cancel_dir=None):
         raise JobRefusal('local loops: output/record identity changed')
     return dict(status='pass', board_sha256=results[0]['board_sha256'], record_sha256=_sha(raw),
                 seed_board_sha256=pins[FILES[0]], connections=results, acceptance_assessed=False)
+
+
+def _verify_rejected_families(record):
+    rejected=record.get('rejected_families', [])
+    if not rejected:
+        return
+    if len(rejected)!=1 or rejected[0]['family']!='front':
+        raise JobRefusal('local loops: rejected family inventory changed')
+    entry=rejected[0]
+    receipt=Path(entry['record'])
+    raw=receipt.read_bytes()
+    failed=json.loads(raw)
+    if (receipt.is_symlink() or _sha(raw)!=entry['record_sha256']
+            or failed.get('status')!='refused' or failed.get('failure_kind')!='search_exhausted'
+            or failed.get('connection')!='filter0-signal' or 'output' in failed
+            or failed.get('inputs')!=record['inputs']
+            or failed.get('helper_sha256')!=record['helper_sha256']
+            or failed.get('geometry_helper_sha256')!=record['geometry_helper_sha256']
+            or failed.get('max_length_mm')!=LOOP_LIMITS['filter0']):
+        raise JobRefusal('local loops: rejected family record changed')
 
 
 def _leg_length(seed):

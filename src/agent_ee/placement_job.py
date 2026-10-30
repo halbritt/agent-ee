@@ -821,19 +821,29 @@ def _acquisition_solver(checkout, request, *, clock, cancel_dir=None, evidence=N
 
 
 def _repair_shortlist(problem, shortlist, diagnostics, *, checkout, runtime, clock, job_dir,
-                      attempt, report, engine_sha256, executable=None):
-    """One bounded proposal only after the retained search has no feasible incumbent."""
+                      attempt, report, engine_sha256, executable=None, routing_exhausted=False):
+    """One retained-diagnostic proposal after placement or routing search exhausts."""
     from . import acquisition_placement as repair
-    if (shortlist or problem.get('mechanics', {}).get('schema') != 'agent-ee.acquisition-mechanics/1'
+    unchanged=[] if routing_exhausted else shortlist
+    if routing_exhausted:
+        trials=report.get('routing_trials', [])
+        if (not shortlist or not any(c.get('feasible') for c in shortlist)
+                or 'placement_repair' in report or not trials
+                or any(t.get('status')!='local_search_exhausted' for t in trials)):
+            return unchanged
+    elif shortlist:
+        return unchanged
+    if (problem.get('mechanics', {}).get('schema') != 'agent-ee.acquisition-mechanics/1'
             or not diagnostics):
-        return shortlist
+        return unchanged
     _check_stop(clock, job_dir)
     # Preserve at least half of the remaining job for native checks and routing.
     seconds = min(150.0, clock.remaining()/2)
-    record = dict(strategy=repair.SCHEMA, status='insufficient_budget', budget_s=seconds)
+    record = dict(strategy=repair.SCHEMA, status='insufficient_budget', budget_s=seconds,
+                  trigger='feasible_routing_exhausted' if routing_exhausted else 'no_feasible_incumbent')
     report['placement_repair'] = record
     if seconds < 2:
-        return shortlist
+        return unchanged
     bounded = Clock(seconds)
     diagnostic = min(diagnostics, key=lambda c: (
         int(c['terms']['hard_count']), int(c['terms']['hard']), int(c['cost']), c['seed']))
@@ -851,7 +861,7 @@ def _repair_shortlist(problem, shortlist, diagnostics, *, checkout, runtime, clo
             raise JobRefusal('acquisition proposal omitted its bound numerical runtime')
         if proposal.get('status') == 'no_incumbent':
             record['status'] = 'no_incumbent'
-            return shortlist
+            return unchanged
         repair.validate_proposal(problem, diagnostic, proposal)
         payload = dict(problem, evaluate=[proposal['poses']])
         engine = Path(executable or rust_executable())
@@ -870,15 +880,15 @@ def _repair_shortlist(problem, shortlist, diagnostics, *, checkout, runtime, clo
             raise JobRefusal('acquisition proposal lacks an exact engine evaluation')
         candidate = repair.candidate(problem, diagnostic, proposal, output['evaluations'][0])
         record['status'] = 'exact_feasible' if candidate is not None else 'exact_rejected'
-        return [candidate] if candidate is not None else shortlist
+        return [candidate] if candidate is not None else unchanged
     except JobStopped as exc:
         record['status'] = exc.status
         if exc.status != 'deadline' or clock.remaining() <= 0:
             raise
-        return shortlist
+        return unchanged
     except (JobRefusal, OSError, ValueError, KeyError, TypeError) as exc:
         record.update(status='failed', error=f'{type(exc).__name__}: {exc}')
-        return shortlist
+        return unchanged
     finally:
         record['elapsed_s'] = round(time.monotonic()-bounded.start, 3)
         write_json(directory / 'result.json', record)
@@ -1690,8 +1700,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         base_report, base_exec = drc(board_path, job_dir / f'input-drc-a{attempt}', label='native-drc',
                                      clock=clock, cancel_dir=job_dir)
         base_keys = {_key(v) for v in base_report['violations'] if v.get('severity') == 'error'}
-        trials = []
-        for index, cand in enumerate(shortlist):
+        def judge_candidate(cand, index):
             _check_stop(clock, job_dir)
             entry = {'index': index, 'seed': cand['seed'], 'engine_cost': cand['cost'], 'status': 'failed',
                      'engine_feasible': bool(cand.get('feasible')), 'engine_violations': cand.get('violations', [])}
@@ -1719,7 +1728,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 entry['error'] = f'{type(exc).__name__}: {exc}'
             entry['promoted'] = promote(job_dir, entry)
             entry['diagnostic_retained'] = retain_diagnostic(job_dir, entry)
-            trials.append(entry)
+            return entry
+        trials = [judge_candidate(cand, index) for index, cand in enumerate(shortlist)]
         report['shortlist'] = trials
         report['input_drc'] = {**base_exec, 'errors': len(base_keys)}
     incumbent = read_json(job_dir / 'incumbent.json') if (job_dir / 'incumbent.json').exists() else None
@@ -1748,9 +1758,41 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 queue.append(entry)
                 seen.add(entry['board_sha256'])
     report['routing_trials'] = []
-    for number, selected in enumerate(queue):
+    def routing_candidates():
+        yield from enumerate(queue)
+        if incumbent is None or 'mechanics' not in normalized:
+            return
+        with clock.phase('placement_repair'):
+            alternatives = _repair_shortlist(problem, shortlist, diagnostics,
+                checkout=config['router']['checkout'], runtime=report['preflight']['acquisition_solver'],
+                clock=clock, job_dir=job_dir, attempt=attempt, report=report,
+                executable=report['preflight']['engine'], engine_sha256=report['preflight']['engine_sha256'],
+                routing_exhausted=True)
+        for cand in alternatives:
+            with clock.phase('judge'):
+                entry=judge_candidate(cand, len(trials))
+                trials.append(entry)
+            if _placement_eligible(entry) and entry['board_sha256'] not in seen:
+                entry['routing_repair']=True
+                queue.append(entry)
+                seen.add(entry['board_sha256'])
+                yield len(queue)-1, entry
+
+    def retain_routing_trial(trial, suffix):
+        receipt = job_dir / f'routing-trial-{suffix}.json'
+        write_json(receipt, trial)
+        state.setdefault('routing_trials', []).append({'path': str(receipt), 'sha256': digest(receipt)})
+        checkpoint(job_dir, state)
+        report['route_selection'] = {k: trial[k] for k in ('seed', 'board_sha256', 'directory', 'status')}
+        # Keep failed candidates visible even if a later proposal is interrupted.
+        write_json(job_dir / f'job-report-a{attempt}.json', report)
+        write_json(job_dir / 'job-report.json', report)
+        return receipt
+
+    for number, selected in routing_candidates():
         if number:
-            report['routed_candidate'] = 'shortlist_alternative'
+            report['routed_candidate'] = ('acquisition_repair' if selected.get('routing_repair')
+                                           else 'shortlist_alternative')
         suffix = f'a{attempt}' + (f'-r{number + 1}' if number else '')
         # Equal shares of the remaining job time prevent one failed routing
         # search from taking the entire portfolio budget. This is scheduling
@@ -1773,13 +1815,24 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                         or selected['mechanics'].get('board_sha256') != selected['board_sha256']):
                     raise JobRefusal('acquisition local routing requires an eligible placement')
                 from . import acquisition_local_routing
+                from .acquisition_local_return import LocalSearchExhausted
                 seed_clock = Clock(min(budget, clock.remaining()))
-                local_seed = acquisition_local_routing.produce(route_input, job_dir / f'local-routing-{suffix}',
-                    expected_inputs={'board.kicad_pcb': selected['board_sha256'],
-                                     'board.kicad_pro': sha256_bytes(project_bytes),
-                                     'board.kicad_dru': sha256_bytes(rules_bytes) if rules_bytes is not None else None},
-                    mechanics_binding=normalized['mechanics_binding'], planes=plane_bytes,
-                    clock=seed_clock, cancel_dir=job_dir)
+                local_directory=job_dir / f'local-routing-{suffix}'
+                try:
+                    local_seed = acquisition_local_routing.produce(route_input, local_directory,
+                        expected_inputs={'board.kicad_pcb': selected['board_sha256'],
+                                         'board.kicad_pro': sha256_bytes(project_bytes),
+                                         'board.kicad_dru': sha256_bytes(rules_bytes) if rules_bytes is not None else None},
+                        mechanics_binding=normalized['mechanics_binding'], planes=plane_bytes,
+                        clock=seed_clock, cancel_dir=job_dir)
+                except LocalSearchExhausted as exc:
+                    _check_stop(clock, job_dir)
+                    status='local_search_exhausted'
+                    trial.update(status=status, error=str(exc), local_routing={
+                        'record':str(local_directory/'record.json'),
+                        'record_sha256':digest(local_directory/'record.json')})
+                    retain_routing_trial(trial, suffix)
+                    continue
                 route_input = local_seed['output']
                 trial['local_routing'] = acquisition_local_routing.verify(
                     Path(route_input) / 'board.kicad_pcb', local_seed, clock=seed_clock, cancel_dir=job_dir)
@@ -1813,11 +1866,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         _check_stop(clock, job_dir)
         status = _completion_status(routed, selected if incumbent is not None else None, report['final'])
         trial.update(status=status, route=report['route'], final=report['final'])
-        receipt = job_dir / f'routing-trial-{suffix}.json'
-        write_json(receipt, trial)
-        state.setdefault('routing_trials', []).append({'path': str(receipt), 'sha256': digest(receipt)})
-        checkpoint(job_dir, state)
-        report['route_selection'] = {k: trial[k] for k in ('seed', 'board_sha256', 'directory', 'status')}
+        receipt = retain_routing_trial(trial, suffix)
         if status == 'completed':
             tmp = job_dir / '.routed-incumbent.json.tmp'
             write_json(tmp, {'placement': selected, 'trial': str(receipt), 'trial_sha256': digest(receipt)})
@@ -1827,7 +1876,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     report['phases'] = clock.phases
     report['elapsed_s'] = round(time.monotonic() - clock.start, 3)
     report['status'] = status
-    report['validity'] = ('integrity-valid placement; physical checks ' + report['final'].get('physical_checks', 'unavailable')
+    report['validity'] = ('integrity-valid placement; physical checks ' + report.get('final', {}).get('physical_checks', 'unavailable')
                           if incumbent is not None else
                           'NO valid incumbent: exploratory route of the best diagnostic candidate (engine violations: '
                           + ', '.join(sorted({v['kind'] for v in selected.get('engine_violations', [])})) + ')')

@@ -114,6 +114,94 @@ class AcquisitionLocalLoopsTest(unittest.TestCase):
         return local.produce_loops(self.source,self.output,
             expected_inputs=local._identity(local._capture(self.source)),clock=self.clock,cancel_dir=self.root)
 
+    def test_clear_front_connection_does_not_require_via_rules(self):
+        self.prepare()
+        project=local.json.loads((self.source/local.FILES[1]).read_bytes())
+        project['board']['design_settings']['rules']['min_via_diameter']=.8
+        (self.source/local.FILES[1]).write_text(local.json.dumps(project))
+        record=local.produce_loops(self.source,self.output,
+            expected_inputs=local._identity(local._capture(self.source)),clock=Clock(30),cancel_dir=self.root)
+        signal=record['connections'][0]
+        trial=signal['trials'][signal['selected_trial']-1]
+        self.assertEqual(trial['vias'],[])
+        self.assertEqual(trial['vertical_length_mm'],0)
+        self.assertEqual(len(record['connections']),8)
+        self.assertEqual(local.verify_seed(Path(record['output'])/local.FILES[0],record,
+                                          clock=Clock(10))['status'],'pass')
+
+    def run_loops_with_vias(self):
+        def drc(board,directory,**kwargs):
+            if directory.parent.name=='filter0-signal' and directory.name.startswith('trial-'):
+                bad=dict(type='clearance',description='front path blocked',severity='error',items=[])
+                return self.drc_result(native_report([bad]),directory)
+            return self.clear_drc(board,directory,**kwargs)
+        self.drc.side_effect=drc
+        return self.run_loops()
+
+    def test_front_exhaustion_retained_and_bound_before_via_fallback(self):
+        record=self.run_loops_with_vias()
+        retained=record['rejected_families'][0]
+        receipt=Path(retained['record'])
+        failed=local.json.loads(receipt.read_bytes())
+        self.assertEqual(failed['failure_kind'],'search_exhausted')
+        self.assertTrue(failed['trials'])
+        self.assertTrue(all(t['status']=='rejected' for t in failed['trials']))
+        self.assertFalse((receipt.parent/'accepted').exists())
+        signal=record['connections'][0]
+        self.assertEqual(signal['inputs'],failed['inputs'])
+        self.assertEqual(len(signal['trials'][signal['selected_trial']-1]['vias']),2)
+        self.assertTrue(all(c.kwargs['clock'] is self.clock for c in self.drc.call_args_list))
+        final=Path(record['output'])/local.FILES[0]
+        self.assertEqual(local.verify_seed(final,record,clock=Clock(10))['status'],'pass')
+        receipt.write_text('{}')
+        with self.assertRaisesRegex(JobRefusal,'rejected family record changed'):
+            local.verify_seed(final,record,clock=Clock(10))
+
+    def test_front_native_execution_failure_does_not_try_vias(self):
+        def drc(board,directory,**kwargs):
+            if directory.parent.name=='filter0-signal' and directory.name.startswith('trial-'):
+                raise JobRefusal('native DRC did not complete')
+            return self.clear_drc(board,directory,**kwargs)
+        self.drc.side_effect=drc
+        with self.assertRaisesRegex(JobRefusal,'native DRC did not complete'):
+            self.run_loops()
+        self.assertFalse((self.output/'filter0-signal-two-layer').exists())
+
+    def test_front_library_warning_drift_does_not_try_vias(self):
+        def drc(board,directory,**kwargs):
+            warnings=fixture.AcquisitionLocalReturnTest.library_warnings(self)
+            if directory.parent.name=='filter0-signal' and directory.name.startswith('trial-'):
+                warnings=warnings[:-1]
+            return self.drc_result(native_report(warnings),directory)
+        self.drc.side_effect=drc
+        with self.assertRaisesRegex(JobRefusal,'library warning'):
+            self.run_loops()
+        self.assertFalse((self.output/'filter0-signal-two-layer').exists())
+        failed=local.json.loads((self.output/'filter0-signal/record.json').read_bytes())
+        self.assertNotIn('failure_kind',failed)
+        self.assertTrue(failed['trials'][0]['warning_difference']['missing'])
+
+    def test_front_parity_failure_does_not_try_vias(self):
+        def drc(board,directory,**kwargs):
+            report=native_report()
+            if directory.parent.name=='filter0-signal' and directory.name.startswith('trial-'):
+                report['schematic_parity']=[dict(type='net_conflict',description='changed net',
+                    severity='error',items=[dict(uuid='changed-pad')])]
+            return self.drc_result(report,directory)
+        self.drc.side_effect=drc
+        with self.assertRaisesRegex(JobRefusal,'parity'):
+            self.run_loops()
+        self.assertFalse((self.output/'filter0-signal-two-layer').exists())
+
+    def test_front_cancellation_does_not_try_vias(self):
+        def drc(board,directory,**kwargs):
+            if directory.parent.name=='filter0-signal' and directory.name.startswith('trial-'):
+                (self.root/'CANCEL').touch()
+            return self.clear_drc(board,directory,**kwargs)
+        self.drc.side_effect=drc
+        with self.assertRaises(JobStopped):self.run_loops()
+        self.assertFalse((self.output/'filter0-signal-two-layer').exists())
+
     def rail_seed(self):
         from agent_ee.symbol_library import children,parse_sexpr
         from agent_ee.schematic_emit import format_sexpr
@@ -192,7 +280,7 @@ class AcquisitionLocalLoopsTest(unittest.TestCase):
 
     def test_legacy_unnamed_receipt_replays_only_the_original_escape(self):
         from agent_ee.storage import write_json
-        record=self.run_loops();seed=record['connections'][0]
+        record=self.run_loops_with_vias();seed=record['connections'][0]
         self.assertEqual(seed['selected_trial'],1)
         del seed['trials'][0]['proposal']
         write_json(Path(seed['output']).parent/'record.json',seed)
@@ -247,7 +335,7 @@ class AcquisitionLocalLoopsTest(unittest.TestCase):
     def test_via_identity_and_drill_survive_in_a_separate_routed_copy(self):
         from agent_ee.symbol_library import children,parse_sexpr
         from agent_ee.schematic_emit import format_sexpr
-        record=self.run_loops();source=Path(record['output'])/local.FILES[0]
+        record=self.run_loops_with_vias();source=Path(record['output'])/local.FILES[0]
         original=source.read_bytes();routed=self.root/'routed-vias.kicad_pcb'
         for mode in ('missing','drill','position'):
             with self.subTest(mode=mode):
@@ -261,7 +349,7 @@ class AcquisitionLocalLoopsTest(unittest.TestCase):
                 self.assertEqual(source.read_bytes(),original)
 
     def test_via_depth_consumes_the_return_legs_remaining_loop_budget(self):
-        record=self.run_loops()
+        record=self.run_loops_with_vias()
         first=record['connections'][0];trial=first['trials'][first['selected_trial']-1]
         self.assertEqual(trial['vertical_length_mm'],2.4)
         self.assertAlmostEqual(trial['total_length_mm'],trial['trace_length_mm']+2.4)
