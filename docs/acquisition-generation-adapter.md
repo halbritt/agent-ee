@@ -55,16 +55,25 @@ identity is serialized to the child. Raw child execution and separate
 supply a package. Missing records, parent failure, cleanup failure, late finish,
 cancellation and retention failure cannot count as success.
 
-`complete_prepared` builds through actual artwork, then invokes the fixed module:
+`complete_prepared` builds through actual artwork and runs the ordinary
+`review_build(profile=None)` checks before invoking the fixed module. Both use
+the original deadline and cancellation handle:
 
 ```python
 judgment_seats.produce(build_run, out, author=author, verifier=verifier,
     private_evaluator_pair=private_evaluator_pair, deadline=deadline,
-    cancellation=cancellation, launch_environment=launch_environment, host=host)
+    cancellation=cancellation, launch_environment=launch_environment, host=host,
+    native_checks=native_checks)
 ```
 
 The producer captures exact artwork/source bytes, specification spans, board
-and scope hashes, applicability, and completed public stage evidence. Two
+and scope hashes, applicability, and completed public stage evidence. It also
+captures the complete requirements text, declared scope and limitations, and
+the verified current checks at `/evidence/work/native-checks/review`. Those
+checks must bind the exact selected artwork, candidate files and scope. Their
+raw outputs remain available even when checks fail; they confer no acceptance.
+The copied evidence tree is sealed and rechecked during seat calls and replay.
+Two
 serial batch calls use existing `reviewer_call`/`structured_call`/preflight,
 with no schema retries. They author fresh `engineering-judgment/1` testimony
 and independent `judgment-verification/1` witnesses. Actual call records,
@@ -94,6 +103,10 @@ complete records from its read-only evidence mount. This transport change grants
 no extra time or retries and does not change engineering acceptance criteria.
 Captured text is decoded without newline conversion in both seat validation and
 package qualification, so CRLF captures retain their original hashes and quotes.
+The packet explicitly lists files that cannot be cited as strict UTF-8 text;
+they remain available as hash-bound native inputs. Both seats receive the
+distinction between a scoped defect and an explicitly deferred physical or
+supplier obligation. Genuine unresolved defects still prevent admission.
 
 The producer returns `execution`, `outcome`, `judgment_directory`,
 `judgment_inventory`, `producer_receipt`, `producer_receipt_sha256`.

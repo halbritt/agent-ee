@@ -95,6 +95,82 @@ def evidence_schema(run_dir, packet, role):
     return {'type': 'array', 'items': {'anyOf': branches}, '$defs': definitions}
 
 
+def citation_transport_schema(schema):
+    """Keep finite path membership in the archived/local contract, not the provider grammar.
+
+    Large finite regexes fail on the real subscription route even with a tiny
+    prompt. Only their provider copy loses the pattern; local admission and
+    replay evaluate the complete original schema before semantic resolution.
+    """
+    wire = json.loads(json.dumps(schema))
+    for name, definition in wire.get('$defs', {}).items():
+        if name.startswith('citation_paths_'):
+            for shape in definition.get('anyOf', []):
+                if set(shape) != {'type', 'pattern', 'minLength', 'maxLength'} or shape['type'] != 'string':
+                    raise ValueError('unsupported finite citation transport definition')
+                del shape['pattern']
+    return wire
+
+
+def validate_evidence_paths(value, schema):
+    """Admit the exact frozen path/locator language before reading cited files.
+
+    This is deliberately a matcher for our generated citation schema, not a
+    general JSON Schema implementation. Unknown forms fail closed. Other
+    record fields and the actual locator resolution retain their own validators.
+    """
+    if '$defs' not in schema:
+        return
+    collections = [name for name in ('findings', 'decisions') if name in schema.get('properties', {})]
+    if not collections:
+        return
+    def compile_path(shape, seen=frozenset()):
+        if set(shape) == {'$ref'}:
+            ref = shape['$ref']
+            if (not isinstance(ref, str) or not ref.startswith('#/$defs/citation_paths_')
+                    or ref[8:] not in schema['$defs'] or ref in seen):
+                raise ValueError('unknown citation path schema reference')
+            return compile_path(schema['$defs'][ref[8:]], seen|{ref})
+        if set(shape) == {'anyOf'} and isinstance(shape['anyOf'], list) and shape['anyOf']:
+            choices = [compile_path(branch, seen) for branch in shape['anyOf']]
+            return lambda path: any(match(path) for match in choices)
+        if (shape.get('type') != 'string' or set(shape)-{'type','enum','pattern','minLength','maxLength','description'}
+                or not ('enum' in shape or 'pattern' in shape)):
+            raise ValueError('unsupported exact citation path schema')
+        if (any(type(shape[key]) is not int or shape[key] < 0 for key in ('minLength','maxLength') if key in shape)
+                or ('enum' in shape and (not isinstance(shape['enum'], list) or not shape['enum']
+                                        or any(not isinstance(path,str) for path in shape['enum'])))):
+            raise ValueError('invalid exact citation path constraints')
+        pattern = re.compile(shape['pattern']) if 'pattern' in shape else None
+        members = set(shape['enum']) if 'enum' in shape else None
+        return lambda path: (isinstance(path,str) and len(path) >= shape.get('minLength',0)
+            and len(path) <= shape.get('maxLength',len(path)) and (members is None or path in members)
+            and (pattern is None or pattern.fullmatch(path) is not None))
+    for collection in collections:
+        branches = schema['properties'][collection]['items']['properties']['evidence']['items']['anyOf']
+        policies=[]
+        for branch in branches:
+            if (set(branch) != {'type','properties','required','additionalProperties'} or branch['type'] != 'object'
+                    or branch['additionalProperties'] is not False or set(branch['required']) != set(branch['properties'])):
+                raise ValueError('unsupported exact citation field schema')
+            policies.append((set(branch['required']),compile_path(branch['properties']['path'])))
+        if not isinstance(value, dict) or not isinstance(value.get(collection), list):
+            raise ValueError('missing citation-bearing record collection')
+        for row in value[collection]:
+            if not isinstance(row, dict) or not isinstance(row.get('evidence'), list):
+                raise ValueError('missing evidence citation list')
+            for citation in row['evidence']:
+                if not isinstance(citation, dict):
+                    raise ValueError('malformed evidence citation')
+                admitted = [fields for fields,match in policies if match(citation.get('path'))]
+                if set(citation) not in admitted:
+                    from .findings import CitationValidationError
+                    used = ', '.join(sorted(set(citation)-{'path','locator'})) or 'none'
+                    allowed = ', '.join(sorted(set().union(*admitted)-{'path','locator'})) or 'none (path not captured or not own experiment)'
+                    raise CitationValidationError(f"citation {citation.get('path')!r}: locator kind(s) used {used}; "
+                        f'frozen producer policy requires locator kind(s) {allowed}')
+
+
 def literal_path_set(paths):
     """An exact finite path language with the non-multiline ECMAScript end anchor."""
     def escaped(char):
@@ -442,7 +518,7 @@ def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancel
         timeout = min(timeout, launch_context['deadline'] - time.monotonic())
         if timeout <= 0 or (cancellation and cancellation.cancelled.is_set()):
             return {'execution': 'not_run', 'preflight': link, 'error': 'launch cancelled or deadline exhausted'}, None
-        record, value = dispatch(run_dir, label, definition, prompt, schema, timeout,
+        record, value = dispatch(run_dir, label, definition, prompt, citation_transport_schema(schema), timeout,
                                  cancellation=cancellation, executable=executable)
         record['preflight'] = link
         return record, value

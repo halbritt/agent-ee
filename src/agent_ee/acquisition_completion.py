@@ -598,9 +598,14 @@ def complete_prepared(prepared, build_run, out, *, author, verifier, private_eva
         if [r['stage'] for r in report['completed']] != list(retained_run.STAGES[:-1]):
             raise ValueError('judgments require actual completed artwork')
         checkpoint(deadline, cancellation)
+        native_checks = out.with_name(out.name + '-native-checks')
+        build_workflow.review_build(build_run, native_checks,
+            max_seconds=max(1, min(86400, int(deadline-time.monotonic()))))
+        checkpoint(deadline, cancellation)
         result = producer.produce(build_run, out, author=author, verifier=verifier,
             private_evaluator_pair=private_evaluator_pair, deadline=deadline,
-            cancellation=cancellation, launch_environment=launch_environment, host=host)
+            cancellation=cancellation, launch_environment=launch_environment, host=host,
+            native_checks=native_checks)
         checkpoint(deadline, cancellation)
         if result['execution'] != 'ok' or result['outcome'] != 'criteria_satisfied':
             raise ValueError('judgment author/verifier did not complete successfully')

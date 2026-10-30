@@ -93,6 +93,8 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
                 record.update(execution='malformed', refusal_kind='structured_output', error='missing structured output')
             else:
                 try:
+                    from .reviewers import validate_evidence_paths
+                    validate_evidence_paths(value, schema)
                     accepted = validate(copy.deepcopy(value))
                 except (ValueError, KeyError, TypeError) as exc:
                     record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
@@ -205,6 +207,9 @@ def verify_role_call(run, record, expected, role, boundary, *, limit=None):
                  (raw['execution'] != 'malformed' or raw.get('refusal_kind') != 'structured_output'))):
             raise ValueError('structured resubmission record changed')
         call_id = verify_receipt(archive, raw, expected, role, boundary)
+        if raw['execution'] == 'ok':
+            from .reviewers import validate_evidence_paths
+            validate_evidence_paths(read_json(archive/'response.json'), read_json(archive/'schema.json'))
         if call_id in invocations:
             raise ValueError('duplicate preflight invocation identity')
         invocations.add(call_id)

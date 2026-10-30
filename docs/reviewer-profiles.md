@@ -80,7 +80,7 @@ locator choices. Reviewers use line ranges for native KiCad S-expressions and
 other text, JSON pointers for JSON, and XPath for XML. They must omit unused
 locator fields. [Citation errors](result-reference.md#structured-citations)
 identify the file and supplied/required kinds for bounded output resubmission.
-Outgoing citation schemas bind each captured path to locator kinds classified
+The archived citation schema binds each captured path to locator kinds classified
 from its actual bytes, including JSON/XML documents with unconventional suffixes.
 New experiments use line citations in the caller's own canonical experiment path;
 extract binary evidence to UTF-8 text first. The adjudicator may additionally cite
@@ -94,6 +94,14 @@ factored literal path expression. This preserves exactly the same finite path
 set and locator-format partitions. The complete producer schema must still fit
 the 120 KiB transport limit, including RF and adjudicator fields; an inventory
 that cannot fit is refused without dropping paths or increasing that limit.
+The provider copy omits only the finite path patterns, retaining path lengths,
+types, locator branches and the short own-experiment pattern. Large finite
+patterns failed the subscription transport even with a tiny prompt. Local
+admission checks exact raw path membership and locator field sets against the
+complete archived schema before semantic resolution. Successful attempt replay
+repeats that check against its original schema and response. Existing but
+uncaptured files and peer experiments cannot enter through the simpler provider
+schema; the adjudicator retains only its explicitly captured peer evidence.
 
 The existing Bubblewrap mounts protect `/candidate` and separate initial
 reviewers. `/evidence/work` and `/evidence/checks` expose completed native results

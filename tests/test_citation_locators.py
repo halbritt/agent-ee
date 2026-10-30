@@ -32,6 +32,92 @@ class CitationLocatorTests(unittest.TestCase):
     _review = fixture.FindingsTests._review
     _finding = fixture.FindingsTests._finding
 
+    def test_compact_provider_paths_keep_exact_local_membership_and_locator_rules(self):
+        from agent_ee.reviewers import (REVIEW_SCHEMA, bind_evidence_schema,
+            citation_transport_schema, validate_evidence_paths)
+        inventory=[dict(path=f'inputs/s{i}.txt',locator_kinds=['lines']) for i in range(1100)]
+        inventory.append(dict(path='inputs/document.json',locator_kinds=['lines','pointer']))
+        schema=copy.deepcopy(REVIEW_SCHEMA)
+        bind_evidence_schema(schema,'findings',self.run_dir,dict(citation_files=inventory),'circuit')
+        original=copy.deepcopy(schema);wire=citation_transport_schema(schema)
+        self.assertEqual(schema,original)
+        self.assertEqual({k:v for k,v in wire.items() if k!='$defs'},
+                         {k:v for k,v in schema.items() if k!='$defs'})
+        for definition in wire['$defs'].values():
+            self.assertTrue(all('pattern' not in shape for shape in definition['anyOf']))
+        def admit(path,**fields):
+            return validate_evidence_paths(dict(findings=[dict(evidence=[dict(path=path,locator='actual source',**fields)])]),schema)
+        for row in inventory:
+            admit(row['path'],lines=[1,1])
+        admit('inputs/document.json',pointer='/value')
+        admit('review-work/circuit/experiments/new.json',lines=[1,1])
+        for path,fields in [
+            ('inputs/unknown.txt',dict(lines=[1,1])),
+            ('inputs/s0.txt',dict(pointer='/value')),
+            ('review-work/physical/experiments/existing.json',dict(lines=[1,1])),
+            ('review-work/circuit/experiments/new.json',dict(pointer='/value')),
+            ('review-work/circuit/experiments/../foreign.txt',dict(lines=[1,1])),
+            ('inputs/s0.txt\n',dict(lines=[1,1])),
+            ('inputs/document.json',dict(xpath='.'))]:
+            with self.subTest(path=path,fields=fields),self.assertRaises(ValueError):admit(path,**fields)
+
+    def test_structured_call_enforces_frozen_policy_before_semantic_acceptance(self):
+        from agent_ee.reviewers import REVIEW_SCHEMA,bind_evidence_schema
+        from agent_ee.review_run import structured_call
+        schema=copy.deepcopy(REVIEW_SCHEMA)
+        bind_evidence_schema(schema,'findings',self.run_dir,
+            dict(citation_files=[dict(path='inputs/known.txt',locator_kinds=['lines'])]),'circuit')
+        for index,path in enumerate(('review-work/physical/experiments/peer.txt','work/late-check/result.txt')):
+            peer=self.run_dir/path
+            peer.parent.mkdir(parents=True);peer.write_text('Existing uncaptured observation\n')
+            citation=dict(path=path,locator='existing but not captured',lines=[1,1])
+            # Semantic resolution alone accepts the file; producer policy must not.
+            validate_citation(citation,self.run_dir,require_structured=True)
+            value=dict(findings=[dict(evidence=[citation])])
+            with patch('agent_ee.findings.validate_review') as semantic:
+                record,accepted=structured_call(self.run_dir,'control-'+str(index),'CPU_MOCK_ONLY',schema,
+                    lambda _:({'execution':'ok'},value),semantic,limit=0)
+            self.assertEqual(record['execution'],'malformed');self.assertIsNone(accepted)
+            semantic.assert_not_called()
+
+    def test_adjudicator_membership_is_frozen_and_unknown_schema_forms_refuse(self):
+        from agent_ee.reviewers import DECISIONS_SCHEMA,bind_evidence_schema,validate_evidence_paths
+        path='review-work/circuit/experiments/observed.json';target=self.run_dir/path
+        target.parent.mkdir(parents=True);target.write_text('{"value":1}\n')
+        schema=copy.deepcopy(DECISIONS_SCHEMA)
+        bind_evidence_schema(schema,'decisions',self.run_dir,dict(citation_files=[]),'adjudicator')
+        value=dict(decisions=[dict(evidence=[dict(path=path,locator='captured peer',pointer='/value')])])
+        validate_evidence_paths(value,schema)
+        target.with_name('late.json').write_text('{"value":2}\n')
+        late=copy.deepcopy(value);late['decisions'][0]['evidence'][0]['path']=path.replace('observed','late')
+        with self.assertRaises(ValueError):validate_evidence_paths(late,schema)
+        for shape in ({'$ref':'#/$defs/unknown'}, {'type':'string'}, {'anyOf':[]},
+                      {'$ref':'#/$defs/citation_paths_0_0'}):
+            bad=copy.deepcopy(schema);bad['$defs']['citation_paths_0_0']=shape
+            with self.subTest(shape=shape),self.assertRaises(ValueError):
+                validate_evidence_paths(value,bad)
+
+    def test_successful_replay_uses_each_archived_exact_citation_schema(self):
+        from agent_ee.reviewers import REVIEW_SCHEMA,bind_evidence_schema
+        from agent_ee.review_run import structured_call,verify_role_call,tree_hashes
+        schema=copy.deepcopy(REVIEW_SCHEMA)
+        bind_evidence_schema(schema,'findings',self.run_dir,
+            dict(citation_files=[dict(path='inputs/known.txt',locator_kinds=['lines'])]),'circuit')
+        value=dict(findings=[dict(evidence=[dict(path='inputs/known.txt',locator='known',lines=[1,1])])])
+        record,_=structured_call(self.run_dir,'circuit','CPU_MOCK_ONLY',schema,
+            lambda _:({'execution':'ok'},value),lambda item:item,limit=0)
+        with patch('agent_ee.preflight.verify_receipt',return_value='CPU_MOCK_ONLY'), \
+                patch('agent_ee.reviewers.evidence_schema',side_effect=AssertionError('must not regenerate policy')):
+            verify_role_call(self.run_dir,record,{},'circuit','initial',limit=0)
+            archive=self.run_dir/record['attempts'][0]['path']
+            value['findings'][0]['evidence'][0]['path']='inputs/foreign.txt'
+            write_json(archive/'response.json',value)
+            # Make the CPU fixture's byte receipts internally consistent: rejection
+            # must come from archived membership, not merely the generic hash guard.
+            record['attempts'][0]['artifact_hashes']=tree_hashes(archive)
+            with self.assertRaisesRegex(ValueError,'frozen producer policy'):
+                verify_role_call(self.run_dir,record,{},'circuit','initial',limit=0)
+
     def test_outgoing_codex_schema_binds_locator_kinds_to_actual_bytes(self):
         from agent_ee.harnesses import strict_schema
         from agent_ee.reviewers import EVIDENCE_SCHEMA
@@ -415,7 +501,7 @@ class CitationLocatorTests(unittest.TestCase):
                 self.assertIn('OUTPUT VALIDATION ERROR', prompt)
                 self.assertIn('inputs/project/rc.kicad_sch', prompt)
                 self.assertIn('kind(s) used pointer, xpath', prompt)
-                self.assertIn('UTF-8 text requires locator kind(s) lines', prompt)
+                self.assertIn('frozen producer policy requires locator kind(s) lines', prompt)
                 self.assertIn('every affected citation', prompt)
                 citation = {'path': 'inputs/project/rc.kicad_sch', 'locator': 'R1 native symbol', **correction}
             value = {**self._review(role=role, findings=[self._finding(evidence=[citation])]),

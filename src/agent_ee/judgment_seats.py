@@ -19,7 +19,7 @@ from .profiles import validate_definition
 from .requirement_map import input_inventory
 from .storage import digest, identity, read_json, write_json
 
-SCHEMA = 'agent-ee.judgment-seat-production/2'
+SCHEMA = 'agent-ee.judgment-seat-production/3'
 DELIVERY_SCHEMA = 'agent-ee.judgment-delivery/1'
 AUTHOR_PATH = 'engineering-seat/judgments.json'
 MAX_AUTHOR_BYTES = 4 * 1024 * 1024
@@ -70,7 +70,7 @@ def seat_policy(author, verifier, private_evaluator_pair):
     return seats
 
 
-def brief(build_run, out, deadline, cancellation):
+def brief(build_run, out, deadline, cancellation, *, native_checks=None, host=None):
     checkpoint(deadline, cancellation)
     root, out = Path(build_run).resolve(), Path(out).absolute()
     selected = retained_run.review_source(root)
@@ -85,7 +85,7 @@ def brief(build_run, out, deadline, cancellation):
     prefix = plan['judgments'] + '/'
     if any(name.startswith(prefix) or '/' + prefix in name for name in files):
         raise ValueError('old judgment claims must not enter the public candidate')
-    entries, names = [], set()
+    entries, names, requirement_sources = [], set(), {}
     for row in retained_run.requirements(root, report, True)['requirements']:
         if row['mode'] != 'judgment':
             continue
@@ -99,12 +99,16 @@ def brief(build_run, out, deadline, cancellation):
         source = candidate / locator.get('path', plan['requirements']['spec'])
         if not source.is_file() or not source.resolve().is_relative_to(candidate):
             raise ValueError('missing/escaping exact judgment requirement source')
-        raw = source.read_bytes()[span['byte_start']:span['byte_end']]
-        import hashlib
+        source_name = source.relative_to(candidate).as_posix()
+        source_bytes = source.read_bytes()
+        if hashlib.sha256(source_bytes).hexdigest() != files[source_name]:
+            raise ValueError('judgment requirement context changed')
+        requirement_sources[source_name] = dict(sha256=files[source_name], text=source_bytes.decode('utf-8'))
+        raw = source_bytes[span['byte_start']:span['byte_end']]
         if hashlib.sha256(raw).hexdigest() != span['text_sha256']:
             raise ValueError('judgment requirement source span changed')
         entries.append(dict(id=row['id'], requirement=row.get('parent_id', row['id']), span=span,
-                            record=name, source=source.relative_to(candidate).as_posix(), text=raw.decode('utf-8')))
+                            record=name, source=source_name, context_locator=copy.deepcopy(locator), text=raw.decode('utf-8')))
     if not entries:
         raise ValueError('no captured engineering judgment spans')
     out.mkdir(parents=True, exist_ok=False)
@@ -127,6 +131,20 @@ def brief(build_run, out, deadline, cancellation):
             raise ValueError('public native stage evidence changed during capture')
         evidence[row['stage']] = dict(path=relative, tree=row['tree'])
     scope = selected.scope
+    if native_checks is not None:
+        from .locking import reader_lock
+        native_checks = Path(native_checks).absolute()
+        with reader_lock(native_checks/'review'):
+            verify_native_checks(native_checks, selected.selection, files, scope, host=host)
+            before = tree_identity(native_checks)
+            relative = 'work/native-checks'
+            shutil.copytree(native_checks, capsule/relative, symlinks=True)
+            for path in (capsule/relative).rglob('*'):
+                if path.is_symlink() and not path.resolve().is_relative_to(capsule/relative):
+                    raise ValueError('native check evidence link escapes captured review')
+            if tree_identity(capsule/relative) != before or tree_identity(native_checks) != before:
+                raise ValueError('native check evidence changed during capture')
+            evidence['native-checks'] = dict(path=relative, tree=before)
     manifest = dict(schema='agent-ee.candidate/1', scope=scope, files=files,
                     candidate_id=identity(dict(scope=scope, files=files)))
     write_json(capsule / 'candidate.json', manifest)
@@ -135,7 +153,9 @@ def brief(build_run, out, deadline, cancellation):
         write_json(capsule / 'baseline.json', baseline)
     binding = dict(board_sha256=files[scope['board']], scope_sha256=selected.selection['scope_sha256'])
     facts = qualification.applicability_facts(candidate, plan)
+    texts = source_text(capsule, files, deadline, cancellation)
     data = dict(selection=selected.selection, binding=binding, applicability=facts, files=files, requirements=entries, evidence=evidence,
+                requirement_sources=requirement_sources, review_scope=review_scope(scope), citation_policy=citation_policy(files, texts),
                 sources='Read actual readonly /candidate files, including complete manufacturer text and provenance. No prior judgments or private evaluator is supplied.')
     write_json(capsule / 'packet.json', data)
     checkpoint(deadline, cancellation)
@@ -150,6 +170,39 @@ def source_text(capsule, files, deadline=None, cancellation=None):
             result[path] = (capsule / 'inputs' / path).read_bytes().decode('utf-8')
         except UnicodeError:
             pass
+    return result
+
+
+def citation_policy(files, texts):
+    """Advertise the exact text boundary enforced by judgment admission."""
+    return dict(encoding='UTF-8', normalization='none', excluded_files=sorted(set(files)-set(texts)))
+
+
+def review_scope(scope):
+    return dict(statement=scope.get('scope', ''), limitations=copy.deepcopy(scope.get('limitations', [])),
+                qualification_claim=qualification.CLAIM, dimensions=list(qualification.DIMENSIONS),
+                separate_obligations=['supplier', 'physical'])
+
+
+def verify_native_checks(root, selection, files, scope, *, host=None, current_source=True):
+    """Verify ordinary checks of this exact artwork, never a prior board's review."""
+    from .run_record import verify
+    root = Path(root)
+    summary = read_json(root/'report.json')
+    if (summary.get('schema') != 'agent-ee.build-review/1' or summary.get('accepted') is not False
+            or 'review_profile' in summary or summary.get('source') != selection
+            or read_json(root/'source.json') != selection):
+        raise ValueError('judgment native checks are not bound to selected artwork')
+    result = verify(root/'review', current_source=current_source, host=host)
+    manifest = read_json(root/'review/candidate.json')
+    if (manifest['files'] != {**files, 'build-review/source.json': digest(root/'source.json')}
+            or {k:v for k,v in manifest['scope'].items() if k != 'inputs'} !=
+               {k:v for k,v in scope.items() if k != 'inputs'}
+            or result['candidate_id'] != summary['candidate_id']
+            or result['reviews'] or result['review_executions'] or result['adjudicated']):
+        raise ValueError('judgment native checks contain foreign inputs, scope or testimony')
+    # Failures and incomplete observations remain visible to both seats. Ordinary
+    # package acceptance still requires its own fresh checks and full review.
     return result
 
 
@@ -258,12 +311,14 @@ def validate_witnesses(value, hashes, metadata):
 
 
 def produce(build_run, out, *, author, verifier, private_evaluator_pair, deadline, cancellation,
-            launch_environment, host=None):
+            launch_environment, host=None, native_checks=None):
     from .preflight import capture_expectation
     from .review_run import structured_call, verify_role_call
     from .reviewers import reviewer_call
     definitions = seat_policy(author, verifier, private_evaluator_pair)
-    capsule, manifest, data = brief(build_run, out, deadline, cancellation)
+    if native_checks is None:
+        raise ValueError('judgment seats require current native check evidence')
+    capsule, manifest, data = brief(build_run, out, deadline, cancellation, native_checks=native_checks, host=host)
     out = Path(out).absolute()
     texts = source_text(capsule, data['files'], deadline, cancellation)
     expected = capture_expectation(launch_environment, manifest, definitions, inputs=capsule / 'inputs')
@@ -312,8 +367,16 @@ def produce(build_run, out, *, author, verifier, private_evaluator_pair, deadlin
         'Do not synthesize testimony from check pass/fail, reuse prior judgments, modify inputs, read credentials, or invent acceptance. '
         'Return evidence-supported analysis and honest unresolved defects. Sources use candidate-relative path/SHA256/exact quote/locator. '
         'Every inputs[].path and sources[].citation.path must be an exact relative key in packet.files, with its captured SHA256. '
+        'Citations additionally require strict UTF-8 source text: packet.citation_policy.excluded_files cannot be cited as text. '
+        'Those native/binary files remain available as hash-bound inputs. Decode citable bytes as UTF-8 without newline conversion or replacement characters. '
         'The supplied packet is at /evidence/packet.json; /candidate contains the exact native artwork and source records. '
+        'Read packet.review_scope and packet.requirement_sources for the declared scope and complete requirement context around each selected span. '
+        'Evaluate the claims actually made. Preserve assumptions, applicability limits and deferred work in conclusions and assumptions. '
+        'An explicitly excluded guarantee or deferred supplier/physical validation is not by itself an unresolved file-release defect. '
+        'Report actual violations and unresolved engineering gaps within the declared scope honestly; do not clear them because checks pass. '
         'Actual completed stage receipts, native stdout/stderr and calculation outputs are readonly at /evidence/work/build-stages. '
+        'Fresh ordinary native checks of this exact artwork are readonly at /evidence/work/native-checks/review; '
+        'inspect result.json and the raw work outputs, including startup, power-removal and geometry observations. '
         'Use those observations to challenge conclusions and cite the bound candidate files. '
         'Stage-evidence paths are not candidate file keys. Pass/fail statuses alone are not engineering testimony.\n')
     try:
@@ -399,6 +462,11 @@ def verify(out, result):
     from .stage_receipts import tree_identity
     if any(tree_identity(capsule/v['path']) != v['tree'] for v in data['evidence'].values()):
         raise ValueError('judgment native evidence changed')
+    native = data['evidence'].get('native-checks')
+    if native is None or native['path'] != 'work/native-checks':
+        raise ValueError('judgment native check evidence missing')
+    verify_native_checks(capsule/native['path'], data['selection'], data['files'],
+                         read_json(capsule/'candidate.json')['scope'], current_source=False)
     seat_policy(*receipt['definitions'], receipt['private_evaluator_pair'])
     if len(receipt['calls']) != 2:
         raise ValueError('judgment producer requires both actual seat calls')
@@ -420,6 +488,12 @@ def verify(out, result):
             raise ValueError('judgment testimony model differs from actual seat')
         values.append(read_json(capsule/'review-attempts'/role/'0/response.json'))
     texts = source_text(capsule, data['files'])
+    if (data.get('citation_policy') != citation_policy(data['files'], texts)
+            or data.get('review_scope') != review_scope(read_json(capsule/'candidate.json')['scope'])):
+        raise ValueError('judgment source policy or declared scope differs from captured inputs')
+    sources = {entry['source'] for entry in data['requirements']}
+    if data.get('requirement_sources') != {name: dict(sha256=data['files'][name], text=texts[name]) for name in sources}:
+        raise ValueError('judgment complete requirement context differs from captured source')
     authors = author_delivery(values[0],capsule/'review-attempts/judgment-author/0/review-work/judgment-author',
                               data,texts,receipt['metadata']['author'])
     expected_files = {}

@@ -379,19 +379,28 @@ class ParentCompletionTests(unittest.TestCase):
             return dict(completed=[dict(stage=k) for k in completion.retained_run.STAGES[:-1]])
         def produce(run,target,**kw):
             self.assertEqual(kw['deadline'],self.deadline);self.assertIs(kw['cancellation'],self.cancel)
+            self.assertEqual(events[-1], 'native-checks')
+            self.assertEqual(kw['native_checks'],out.with_name(out.name+'-native-checks'))
             records=target/'judgments';records.mkdir(parents=True)
             write_json(records/'record.json',dict(classification='CPU_MOCK_ONLY'))
             write_json(target/'producer-receipt.json',dict(classification='CPU_MOCK_ONLY'))
             return dict(execution='ok',outcome='criteria_satisfied',judgment_directory=str(records),
                 judgment_inventory=input_inventory(records),producer_receipt=str(target/'producer-receipt.json'),
                 producer_receipt_sha256=digest(target/'producer-receipt.json'))
+        def checks(run,target,**kw):
+            self.assertIs(native_run._cancel.get(),self.cancel)
+            self.assertEqual(native_run._deadline.get(),self.deadline)
+            self.assertLessEqual(kw['max_seconds'],self.deadline-time.monotonic()+1)
+            self.assertIsNone(kw.get('profile'))
+            events.append('native-checks')
         with patch('agent_ee.build_workflow.run',side_effect=workflow), \
+                patch('agent_ee.build_workflow.review_build',side_effect=checks), \
                 patch.object(judgment_seats,'produce',side_effect=produce), \
                 patch.object(judgment_seats,'verify',side_effect=lambda *a:events.append('verified')), \
                 patch.object(completion,'package_binding',return_value=self.binding) as binding:
             actual=completion.complete_prepared(prepared,build,out,**self.data,deadline=self.deadline,cancellation=self.cancel)
         self.assertEqual(actual,self.binding)
-        self.assertEqual(events,[dict(through='artwork'),'verified',dict(resume=True)])
+        self.assertEqual(events,[dict(through='artwork'),'native-checks','verified',dict(resume=True)])
         binding.assert_called_once_with(build,self.deadline,self.cancel)
         self.assertIsNone(native_run._cancel.get())
         self.assertIsNone(native_run._deadline.get())

@@ -56,7 +56,7 @@ REVISION_BASIS = {
     'electrical-locality.json': 'Rebind citations/spec; optional root706 engineering final-group additions preserve original eight legs',
     'placement.json': 'Rebind embedded locality and optional root706 final-group additions; preserve geometry and policy',
     'analysis/electrical-intervals.json': 'Update only bus capacitance and operative source bindings',
-    'OPERATING.md': 'Bind selected capacitance, ADC applicability and optional captured Panasonic R1/R2 source attribution',
+    'OPERATING.md': 'Bind selected capacitance, correct the seven-bit I2C address description, bind ADC applicability and optional captured Panasonic R1/R2 source attribution',
     'analysis/power-startup/corners.lib': 'Explicit R6+1% adverse626.2ohm; all other original corner values retained',
     'analysis/power-removal/corners.lib': 'Explicit R6+1% adverse626.2ohm; unused historical model remains documentary',
     'analysis/power-startup/README.md': 'Declare seven reviewed source cases, assumptions and convergence history without inherited pass',
@@ -194,6 +194,15 @@ def _revise_overlay(overlay, position, capacitance):
     return revised
 
 
+def _revise_operating(operating, quantity):
+    if operating.count('100 pF per line') != 1:
+        raise ValueError('captured operating capacitance instruction differs from this recipe')
+    old = 'ADDR is grounded, so the eight-bit I2C address is 0x48'
+    if operating.count(old) != 1:
+        raise ValueError('captured operating address instruction differs from this recipe')
+    return operating.replace('100 pF per line', quantity+' per line').replace(old, old.replace('eight-bit', 'seven-bit'))
+
+
 def _write_revision(base, revised, selected, overlay):
     capacitance = _capacitance_text(selected['value'])
     old_spec = (base / 'spec.md').read_bytes()
@@ -213,9 +222,7 @@ def _write_revision(base, revised, selected, overlay):
             document['parameters']['bus_c'].update(min=capacitance + 'e-12 F', max=capacitance + 'e-12 F')
         (revised / name).write_bytes(json_bytes(document))
     operating = (base / 'OPERATING.md').read_text()
-    if operating.count('100 pF per line') != 1:
-        raise ValueError('captured operating capacitance instruction differs from this recipe')
-    (revised / 'OPERATING.md').write_text(operating.replace('100 pF per line', selected['quantity'] + ' per line'))
+    (revised / 'OPERATING.md').write_text(_revise_operating(operating, selected['quantity']))
     # 28 admitted coefficient digits plus the two four-digit factors need at most 36.
     with localcontext() as context:
         context.prec = 40

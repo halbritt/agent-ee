@@ -48,12 +48,33 @@ class JudgmentSeatsTests(unittest.TestCase):
         self.verifier=dict(harness='claude',model='owned-verifier',effort='high',timeout_s=20)
         self.cancel=native_run.Cancellation();self.deadline=time.monotonic()+40
         self.calls=[];self.mode='pass';self.citation_path='spec.md'
+        self.enterContext(patch('agent_ee.run_record.verify',side_effect=lambda run,**kw:read_json(Path(run)/'result.json')))
+
+    def native_checks(self):
+        # Only the native execution/replay boundary is substituted. The actual
+        # selection, input/scope binding and copied evidence custody run below.
+        from agent_ee.requirement_map import input_inventory
+        selected=retained_run.review_source(self.root)
+        target=self.out.with_name(self.out.name+'-native-checks')
+        target.mkdir()
+        write_json(target/'source.json',selected.selection)
+        write_json(target/'report.json',dict(schema='agent-ee.build-review/1',accepted=False,
+            source=selected.selection,candidate_id='CPU_MOCK_ONLY'))
+        write_json(target/'review/candidate.json',dict(files={**input_inventory(self.candidate),
+            'build-review/source.json':digest(target/'source.json')},scope=selected.scope))
+        write_json(target/'review/result.json',dict(candidate_id='CPU_MOCK_ONLY',reviews=[],review_executions=[],adjudicated=False))
+        (target/'review/work').mkdir()
+        (target/'review/work/native-stdout.log').write_text('CPU_MOCK_ONLY current startup/removal outputs')
+        (target/'review/.lock').touch()
+        return target
 
     def dispatch(self, run, label, definition, prompt, schema, timeout, *, cancellation, executable):
         self.assertIs(cancellation,self.cancel)
         self.assertLessEqual(timeout,self.deadline-time.monotonic()+.1)
         self.assertNotIn('PRIVATE_EVALUATOR_SECRET',prompt)
         self.assertEqual((Path(run)/'work/build-stages/artwork/native-stdout.log').read_text(),'CPU_MOCK_ONLY retained native observation')
+        self.assertEqual((Path(run)/'work/native-checks/review/work/native-stdout.log').read_text(),
+                         'CPU_MOCK_ONLY current startup/removal outputs')
         data=read_json(Path(run)/'packet.json');self.calls.append(label)
         if label=='judgment-author':
             contract=schema if 'judgments' in schema['properties'] else read_json(Path(run)/'work/judgment-contract.json')
@@ -105,11 +126,11 @@ class JudgmentSeatsTests(unittest.TestCase):
 
     def produce(self):
         # Real preflight and receipt replay, only sandbox probe/native provider boundaries substituted.
-        probe=native_run.Recorded()
+        probe=native_run.Recorded();checks=self.native_checks()
         with native_run.using(probe,deadline=self.deadline,cancel=self.cancel), patch('agent_ee.reviewers.dispatch',side_effect=self.dispatch):
             result=seats.produce(self.root,self.out,author=self.author,verifier=self.verifier,
                 private_evaluator_pair=('agy','private-evaluator'),deadline=self.deadline,cancellation=self.cancel,
-                launch_environment=self.environment,host=self.host)
+                launch_environment=self.environment,host=self.host,native_checks=checks)
         self.assertTrue(all(c.intent.tool=='probe' and c.intent.argv==('/usr/bin/true',) for c in probe.calls))
         return result
 
@@ -150,6 +171,36 @@ class JudgmentSeatsTests(unittest.TestCase):
         result=self.produce()
         self.assertEqual(result['outcome'],'criteria_satisfied')
         seats.verify(self.out,result)
+
+    def test_brief_identifies_nontext_citations_without_hiding_native_inputs(self):
+        # The actual author cited valid ASCII comments in non-UTF8 SPICE files.
+        # Those files remain available, but cannot satisfy exact UTF8 citations.
+        opaque = b'* Manufacturer model\r\n* current in \xb5A\r\n'
+        text = b'Captured source\r\nExact quote\r\n'
+        (self.candidate/'model.lib').write_bytes(opaque)
+        (self.candidate/'manufacturer.txt').write_bytes(text)
+        for row in self.control.report['completed']:
+            row['tree']=tree_identity(self.root/row['directory'])
+        self.control.save()
+        capsule, manifest, data = seats.brief(self.root,self.out,self.deadline,self.cancel)
+        self.assertEqual((capsule/'inputs/model.lib').read_bytes(),opaque)
+        self.assertEqual(manifest['files']['model.lib'],hashlib.sha256(opaque).hexdigest())
+        self.assertEqual(data['citation_policy']['encoding'],'UTF-8')
+        self.assertEqual(data['citation_policy']['normalization'],'none')
+        self.assertIn('model.lib',data['citation_policy']['excluded_files'])
+        self.assertNotIn('manufacturer.txt',data['citation_policy']['excluded_files'])
+        self.assertEqual(seats.source_text(capsule,data['files'])['manufacturer.txt'],text.decode('utf-8'))
+
+    def test_brief_supplies_declared_scope_and_complete_requirement_source(self):
+        capsule, manifest, data = seats.brief(self.root,self.out,self.deadline,self.cancel)
+        self.assertEqual(data['review_scope']['statement'],manifest['scope']['scope'])
+        self.assertEqual(data['review_scope']['qualification_claim'],qualification.CLAIM)
+        self.assertEqual(data['review_scope']['separate_obligations'],['supplier','physical'])
+        source=data['requirement_sources']['spec.md']
+        self.assertEqual(source['sha256'],data['files']['spec.md'])
+        self.assertEqual(source['text'].encode('utf-8'),(capsule/'inputs/spec.md').read_bytes())
+        row=data['requirements'][0]
+        self.assertEqual(source['text'].encode('utf-8')[row['span']['byte_start']:row['span']['byte_end']],row['text'].encode('utf-8'))
 
     def test_completed_scratch_without_success_or_final_response_is_never_recovered(self):
         for mode in ('timeout','no-final','auth'):
@@ -228,6 +279,31 @@ class JudgmentSeatsTests(unittest.TestCase):
         with self.assertRaises(native_run.DeadlineExhausted):self.produce()
         self.assertEqual(self.calls,[]);self.assertFalse(self.out.exists())
 
+    def test_current_native_checks_refuse_foreign_selection_scope_and_files_before_seats(self):
+        for part in ('selection','scope','files','prior-testimony'):
+            with self.subTest(part=part):
+                self.out=self.root/part
+                checks=self.native_checks()
+                if part=='selection':
+                    write_json(checks/'source.json',{'foreign':'CPU_MOCK_ONLY'})
+                elif part in ('scope','files'):
+                    path=checks/'review/candidate.json';data=read_json(path)
+                    data[part]['foreign']='CPU_MOCK_ONLY';write_json(path,data)
+                else:
+                    path=checks/'review/result.json';data=read_json(path)
+                    data['reviews']=[{'prior':'CPU_MOCK_ONLY'}];write_json(path,data)
+                with self.assertRaises(ValueError):
+                    seats.produce(self.root,self.out,author=self.author,verifier=self.verifier,
+                        private_evaluator_pair=('agy','private'),deadline=self.deadline,cancellation=self.cancel,
+                        launch_environment=self.environment,host=self.host,native_checks=checks)
+                self.assertEqual(self.calls,[])
+
+    def test_copied_native_observation_mutation_refuses_replay(self):
+        result=self.produce()
+        (self.out/'calls/work/native-checks/review/work/native-stdout.log').write_text('foreign observation')
+        with self.assertRaisesRegex(ValueError,'native evidence changed'):
+            seats.verify(self.out,result)
+
     def test_source_mutation_refuses_and_preserves_attempt(self):
         self.mode='mutate'
         result=self.produce()
@@ -248,6 +324,6 @@ class JudgmentSeatsTests(unittest.TestCase):
                 patch('agent_ee.reviewers.dispatch',side_effect=late), self.assertRaises(native_run.DeadlineExhausted):
             seats.produce(self.root,self.out,author=self.author,verifier=self.verifier,
                 private_evaluator_pair=('agy','private'),deadline=self.deadline,cancellation=self.cancel,
-                launch_environment=self.environment,host=self.host)
+                launch_environment=self.environment,host=self.host,native_checks=self.out.with_name(self.out.name+'-native-checks'))
         self.assertFalse((self.out/'judgments').exists())
         self.assertTrue((self.out/'producer-receipt.json').is_file())
