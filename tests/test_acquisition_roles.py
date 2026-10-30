@@ -115,6 +115,36 @@ def authored(test, root):
 
 
 class ConsumerTests(unittest.TestCase):
+    def test_role_checks_precede_fabrication_completion_and_bound_followers(self):
+        from agent_ee.baseline import generation_marker, GENERATION_SCHEMA
+        from agent_ee.run_record import validate_scope
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);doc,captures,overlay,declaration,record,spec,_=authored(self,root)
+            declaration['scope']['generation']=dict(schema=GENERATION_SCHEMA,done_check='package')
+            storage.write_json(root/'requirement-map.json',declaration)
+            tail=[dict(id='package',kind='fab_package',params={},stage='verification'),
+                  dict(id='dfm',kind='jlc_dfm',params=dict(fab_check='package'),stage='verification'),
+                  dict(id='roundtrip',kind='fab_roundtrip',params=dict(package_check='package'),stage='verification')]
+            overlay['check_additions']['declare'].extend(tail)
+            overlay['mappings']['POD-AC-3']['spans'][0]['checks'].extend(c['id'] for c in tail)
+            roles.apply(root,dict(parts={'manifest':'parts.json'}),overlay,doc,captures)
+            derived=typed_overlay.derive_map(storage.read_json(root/'requirement-map.json'),overlay)
+            obligations=requirement_map.load_obligations(storage.json_bytes(typed_overlay.derive_obligations(record,spec,overlay)),record,spec)
+            scope,receipts=requirement_map.account_requirements(derived,record,spec,
+                files=requirement_map.input_inventory(root),inputs=root,obligations=obligations)
+            validate_scope(scope)
+            self.assertEqual(generation_marker(scope),declaration['scope']['generation'])
+            ids=[c['id'] for c in scope['checks']]
+            self.assertEqual(ids[-3:],['package','dfm','roundtrip'])
+            for rid,cids in overlay['block_requirements'].items():
+                self.assertEqual(next(r for r in receipts if r['id']==rid)['bound_ids'],cids)
+                self.assertTrue(all(ids.index(cid)<ids.index('package') for cid in cids))
+            self.assertEqual(scope['checks'][-3:],tail)
+            wrong=copy.deepcopy(scope)
+            wrong['checks'][-1]['params']['package_check']='unrelated'
+            with self.assertRaisesRegex(ValueError,'done check last'):
+                generation_marker(wrong)
+
     def test_three_authored_roles_transport_all_rows_and_refuse_missing_or_tampered_mapping(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)/'base';root.mkdir();doc,captures,overlay,declaration,record,spec,graph=authored(self,root)

@@ -492,7 +492,17 @@ def account_requirements(declaration, record, spec_raw, *, files=None, inputs=No
             add_checks(entry, checks)
     if scope.get('block_instances') and scope.get('stages'):
         order=scope['stages']['order']
-        checks.sort(key=lambda c:order.index(c['stage']))
+        # Derived block rows follow authored rows in the map, but their checks
+        # must run before the generation package is sealed. Keep stage order
+        # and the existing order within both the checks and the package tail.
+        from .fab_package import BOUND_FOLLOWERS
+        done=(scope.get('generation') or {}).get('done_check')
+        def check_order(check):
+            follower=BOUND_FOLLOWERS.get(check['kind'])
+            terminal=done is not None and (check['id']==done or
+                (follower is not None and check.get('params',{}).get(follower)==done))
+            return order.index(check['stage']), terminal
+        checks.sort(key=check_order)
     limitations = scope.setdefault('limitations', [])
     if not isinstance(limitations, list) or any(not isinstance(s, str) or not s.strip() for s in limitations):
         raise ValueError('scope limitations must be a list of nonempty strings')
