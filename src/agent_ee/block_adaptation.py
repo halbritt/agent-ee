@@ -259,15 +259,20 @@ def _fresh_contract(root, source, record, scope, files, native_id):
             if 'reference_set' in params:
                 from .parts_subset import reference_set
                 selected=reference_set(params['reference_set'])
-                authored=sheet_symbols(_local(root,record['sheet']).read_bytes(),record['instance_path'])
-                expected['reference_set']=[]
-                for row in selected:
-                    reference=names.get(row['reference'],row['reference'])
-                    if reference not in authored:
-                        raise ValueError('adapted membership reference absent from authored current sheet')
-                    expected['reference_set'].append(dict(sheet=record['instance_path'],reference=reference,
-                        uuids=sorted(authored[reference]['uuids'])))
-                expected['reference_set'].sort(key=lambda r:(r['sheet'],r['reference']))
+                if record['instance_path']=='/':
+                    # Root roles retain captured physical identities. The scaffold
+                    # is empty; root_coverage checks their exact native union later.
+                    expected['reference_set']=root_membership(source)
+                else:
+                    authored=sheet_symbols(_local(root,record['sheet']).read_bytes(),record['instance_path'])
+                    expected['reference_set']=[]
+                    for row in selected:
+                        reference=names.get(row['reference'],row['reference'])
+                        if reference not in authored:
+                            raise ValueError('adapted membership reference absent from authored current sheet')
+                        expected['reference_set'].append(dict(sheet=record['instance_path'],reference=reference,
+                            uuids=sorted(authored[reference]['uuids'])))
+                    expected['reference_set'].sort(key=lambda r:(r['sheet'],r['reference']))
             observed['manifest']=expected['manifest']
         if original['kind'] == 'active_spice':
             expected['contract'] = params['contract']  # A version token, never an asset path.

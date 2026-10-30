@@ -115,6 +115,34 @@ def authored(test, root):
 
 
 class ConsumerTests(unittest.TestCase):
+    def test_root_membership_admission_survives_empty_scaffold_without_accepting_it(self):
+        from agent_ee.schematic_emit import parse_quoted, format_sexpr
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);doc,captures,overlay,declaration,record,spec,graph=authored(self,root)
+            report=roles.apply(root,dict(parts={'manifest':'parts.json'}),overlay,doc,captures)
+            derived=typed_overlay.derive_map(storage.read_json(root/'requirement-map.json'),overlay)
+            obligations=requirement_map.load_obligations(
+                storage.json_bytes(typed_overlay.derive_obligations(record,spec,overlay)),record,spec)
+            sheet=root/declaration['scope']['schematic']
+            tree=parse_quoted(sheet.read_bytes())
+            tree[:]=[node for node in tree if not isinstance(node,list) or node[0]!='symbol']
+            sheet.write_text('\n'.join(format_sexpr(tree))+'\n')
+            files=requirement_map.input_inventory(root)
+            scope,_=requirement_map.account_requirements(derived,record,spec,
+                files=files,inputs=root,obligations=obligations)
+            for instance in report['instances']:
+                cid=storage.read_json(root/instance)['id']+'-provenance'
+                block_adaptation.capability(dict(instance=instance,netlist_check='netlist'),scope,files,root,cid)
+            block_adaptation.root_coverage(root,scope,graph)
+            with self.assertRaisesRegex(ValueError,'complete native'):
+                block_adaptation.root_coverage(root,scope,dict(graph,components={}))
+            wrong=copy.deepcopy(scope)
+            check=next(c for c in wrong['checks'] if c['id'].startswith('analog-') and c['kind']=='parts_subset')
+            check['params']['reference_set'][0]['uuids']=['77777777-7777-4777-8777-777777777777']
+            analog=next(p for p in report['instances'] if p.endswith('/analog.json'))
+            with self.assertRaisesRegex(ValueError,'parameters differ'):
+                block_adaptation.capability(dict(instance=analog,netlist_check='netlist'),wrong,files,root,'analog-provenance')
+
     def test_role_checks_precede_fabrication_completion_and_bound_followers(self):
         from agent_ee.baseline import generation_marker, GENERATION_SCHEMA
         from agent_ee.run_record import validate_scope
