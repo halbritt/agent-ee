@@ -1,6 +1,7 @@
 """Guarded owned artwork/seat controls. All provider and native facts are CPU mocks."""
 import copy
 import hashlib
+import os
 from pathlib import Path
 import tempfile
 import time
@@ -46,7 +47,7 @@ class JudgmentSeatsTests(unittest.TestCase):
         self.author=dict(harness='codex',model='owned-author',effort='high',timeout_s=20)
         self.verifier=dict(harness='claude',model='owned-verifier',effort='high',timeout_s=20)
         self.cancel=native_run.Cancellation();self.deadline=time.monotonic()+40
-        self.calls=[];self.mode='pass'
+        self.calls=[];self.mode='pass';self.citation_path='spec.md'
 
     def dispatch(self, run, label, definition, prompt, schema, timeout, *, cancellation, executable):
         self.assertIs(cancellation,self.cancel)
@@ -55,18 +56,38 @@ class JudgmentSeatsTests(unittest.TestCase):
         self.assertEqual((Path(run)/'work/build-stages/artwork/native-stdout.log').read_text(),'CPU_MOCK_ONLY retained native observation')
         data=read_json(Path(run)/'packet.json');self.calls.append(label)
         if label=='judgment-author':
-            props=schema['properties']['judgments']['items']['properties']['author']['properties']
+            contract=schema if 'judgments' in schema['properties'] else read_json(Path(run)/'work/judgment-contract.json')
+            props=contract['properties']['judgments']['items']['properties']['author']['properties']
             metadata={k:v['enum'][0] for k,v in props.items()}
             req=data['requirements'][0]
             doc=dict(schema='agent-ee.engineering-judgment/1',requirement=req['requirement'],span=req['span'],
                 conclusion='CPU_MOCK_ONLY authored reasoning about the captured control.',assumptions=['Owned fixture only'],
-                sources=[dict(kind='engineering',citation=dict(path='spec.md',sha256=data['files']['spec.md'],quote=(Path(run)/'inputs/spec.md').read_text(),locator='whole owned fixture'))],
+                sources=[dict(kind='engineering',citation=dict(path=self.citation_path,sha256=data['files'][self.citation_path],
+                    quote=(Path(run)/'inputs'/self.citation_path).read_bytes().decode('utf-8'),locator='whole owned fixture'))],
                 inputs=[dict(path='spec.md',sha256=data['files']['spec.md'])],applicability=data['applicability'],candidate=data['binding'],author=metadata,
                 unresolved_defects=['owned unresolved problem'] if self.mode in ('negative','negative-bad-witness') else [])
             if self.mode=='stale':doc['candidate']['board_sha256']='0'*64
+            if self.mode=='missing-facts':doc['applicability']={}
+            if self.mode=='extra-citation':doc['sources'][0]['citation']['unbound_claim']='not a source field'
             if self.mode=='duplicate':value={'judgments':[doc,doc]}
             else:value={'judgments':[doc]}
             if self.mode=='mutate':(Path(run)/'inputs/spec.md').write_text('changed')
+            if self.mode=='file' or 'judgments' not in schema['properties']:
+                target=Path(run)/'review-work/judgment-author/engineering-seat/judgments.json'
+                write_json(target,value)
+                value=dict(schema='agent-ee.judgment-delivery/1',path='engineering-seat/judgments.json',sha256=digest(target))
+                if self.mode=='wrong-hash':value['sha256']='0'*64
+                if self.mode=='missing-file':target.unlink()
+                if self.mode in ('symlink','hardlink'):
+                    other=target.with_name('other.json');target.rename(other)
+                    if self.mode=='symlink':target.symlink_to(other)
+                    else:os.link(other,target)
+                if self.mode=='fifo':target.unlink();os.mkfifo(target)
+                if self.mode=='duplicate-json-key':
+                    target.write_text('{"judgments":[],"judgments":[]}')
+                    value['sha256']=digest(target)
+                if self.mode=='oversize':
+                    with target.open('r+b') as stream:stream.truncate(4*1024*1024+1)
         else:
             props=schema['properties']['verifications']['items']['properties']['verifier']['properties']
             metadata={k:v['enum'][0] for k,v in props.items()}
@@ -78,6 +99,8 @@ class JudgmentSeatsTests(unittest.TestCase):
         if self.mode=='late':self.deadline=time.monotonic()-1
         if self.mode=='wrong-model':return dict(execution='ok',backend=definition['harness'],model_requested='wrong-model',billing_route='subscription'),value
         if self.mode=='auth':return {'execution':'failed','error':'CPU_MOCK_ONLY subscription authentication failure'},None
+        if self.mode=='timeout':return {'execution':'timeout','error':'CPU_MOCK_ONLY expired provider'},None
+        if self.mode=='no-final':value=None
         return dict(execution='ok',backend=definition['harness'],model_requested=definition['model'],billing_route='subscription',harness_session='CPU_MOCK_ONLY-'+label),value
 
     def produce(self):
@@ -103,6 +126,78 @@ class JudgmentSeatsTests(unittest.TestCase):
         self.assertFalse((self.out/'calls/inputs/PRIVATE_EVALUATOR_SECRET').exists())
         target=self.out/'judgments/decisions/span1.json';target.write_text('{}')
         with self.assertRaises(ValueError):seats.verify(self.out,result)
+
+    def test_file_delivery_requires_success_and_replays_the_archived_author_bytes(self):
+        self.mode='file'
+        result=self.produce()
+        self.assertEqual((result['execution'],result['outcome']),('ok','criteria_satisfied'))
+        response=self.out/'calls/review-attempts/judgment-author/0/response.json'
+        self.assertLess(len(response.read_bytes()),250)
+        self.assertEqual(read_json(response)['path'],'engineering-seat/judgments.json')
+        live=self.out/'calls/review-work/judgment-author/engineering-seat/judgments.json'
+        live.write_text('{}')
+        seats.verify(self.out,result)
+        archive=self.out/'calls/review-attempts/judgment-author/0/review-work/judgment-author/engineering-seat/judgments.json'
+        archive.write_text('{}')
+        with self.assertRaises(ValueError):seats.verify(self.out,result)
+
+    def test_captured_crlf_source_keeps_its_exact_hash_and_quote(self):
+        self.citation_path='manufacturer.txt'
+        (self.candidate/self.citation_path).write_bytes(b'Captured manufacturer text\r\nExact second line\r\n')
+        for row in self.control.report['completed']:
+            row['tree']=tree_identity(self.root/row['directory'])
+        self.control.save()
+        result=self.produce()
+        self.assertEqual(result['outcome'],'criteria_satisfied')
+        seats.verify(self.out,result)
+
+    def test_completed_scratch_without_success_or_final_response_is_never_recovered(self):
+        for mode in ('timeout','no-final','auth'):
+            self.mode=mode;self.out=self.root/mode;self.calls=[]
+            result=self.produce()
+            self.assertNotEqual(result['execution'],'ok')
+            self.assertEqual(self.calls,['judgment-author'])
+            self.assertTrue((self.out/'calls/review-work/judgment-author/engineering-seat/judgments.json').is_file())
+            self.assertFalse((self.out/'judgments').exists())
+
+    def test_oversized_sparse_delivery_is_rejected_before_reading_the_payload(self):
+        self.mode='oversize'
+        result=self.produce()
+        self.assertNotEqual(result['execution'],'ok')
+        record=read_json(self.out/'calls/review-executions/judgment-author.json')
+        self.assertIn('exceeds byte limit',record['error'])
+        self.assertEqual(self.calls,['judgment-author'])
+
+    def test_file_delivery_refuses_invalid_file_custody_and_record_shapes(self):
+        for mode in ('wrong-hash','missing-file','symlink','hardlink','fifo',
+                     'duplicate-json-key','missing-facts','extra-citation'):
+            self.mode=mode;self.out=self.root/mode;self.calls=[]
+            result=self.produce()
+            self.assertNotEqual(result['execution'],'ok',mode)
+            self.assertEqual(self.calls,['judgment-author'],mode)
+            self.assertFalse((self.out/'judgments').exists(),mode)
+
+    def test_mutation_between_author_validation_and_archival_refuses_before_witness(self):
+        import shutil
+        copytree=shutil.copytree
+        def altered(source,destination,*args,**kwargs):
+            source=Path(source)
+            if source.name=='judgment-author' and source.parent.name=='review-work':
+                (source/'engineering-seat/judgments.json').write_text('{}')
+            return copytree(source,destination,*args,**kwargs)
+        with patch('agent_ee.review_run.shutil.copytree',side_effect=altered):
+            result=self.produce()
+        self.assertNotEqual(result['execution'],'ok')
+        self.assertEqual(self.calls,['judgment-author'])
+        self.assertFalse((self.out/'judgments').exists())
+
+    def test_prompts_reference_complete_readonly_evidence_without_inline_inventory(self):
+        self.produce()
+        for role in ('judgment-author','judgment-verifier'):
+            prompt=(self.out/'calls/review-attempts'/role/'0/prompt.txt').read_text()
+            self.assertIn('/evidence/packet.json',prompt)
+            self.assertNotIn('"files":',prompt)
+            self.assertNotIn('"brief":',prompt)
 
     def test_honest_negative_and_dissent_never_become_success(self):
         for mode in ('negative','dissent','negative-bad-witness'):

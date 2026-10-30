@@ -74,6 +74,27 @@ when author testimony records unresolved defects. A negative or dissent remains
 negative. The source material and check observations support actual reasoning;
 check statuses never generate testimony.
 
+The complete brief remains at `/evidence/packet.json`; prompts reference it
+instead of repeating the captured file inventory. The author writes the full
+`{"judgments":[...]}` document to `/work/engineering-seat/judgments.json`, using
+the read-only contract at `/evidence/work/judgment-contract.json`. Its final
+structured response is an `agent-ee.judgment-delivery/1` manifest with that
+fixed relative path and the file's SHA-256. A successful terminal response is
+required. A completed scratch file after timeout, cancellation or a missing
+response is never recovered as testimony.
+
+The producer requires an unaliased regular file no larger than 4 MiB. It rejects
+oversized files before reading their payload and retains the existing deadline
+and cancellation checks. It verifies the digest and strict JSON, and validates
+every required span, source, applicability fact and candidate
+binding. It rereads the archived role file after call-custody verification and
+publishes only those validated records for the independent witness. Replay uses
+the archived bytes; mutable scratch is not a source. The witness reads the
+complete records from its read-only evidence mount. This transport change grants
+no extra time or retries and does not change engineering acceptance criteria.
+Captured text is decoded without newline conversion in both seat validation and
+package qualification, so CRLF captures retain their original hashes and quotes.
+
 The producer returns `execution`, `outcome`, `judgment_directory`,
 `judgment_inventory`, `producer_receipt`, `producer_receipt_sha256`.
 `judgment_seats.verify` replays both call/output bindings without another launch.

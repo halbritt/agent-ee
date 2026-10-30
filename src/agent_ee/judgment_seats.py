@@ -1,20 +1,28 @@
 """Fresh authored engineering testimony and an independent subscription witness."""
 import copy
+from contextlib import ExitStack
 from datetime import datetime, timezone
+import hashlib
 import json
+import os
 from pathlib import Path
+import re
 import shutil
+import stat
 import time
 
 from . import qualification, retained_run
 from .acquisition_completion import checkpoint
 from .baseline import compile_baseline
-from .catalog import exact_fields
+from .catalog import exact_fields, strict_json
 from .profiles import validate_definition
 from .requirement_map import input_inventory
 from .storage import digest, identity, read_json, write_json
 
-SCHEMA = 'agent-ee.judgment-seat-production/1'
+SCHEMA = 'agent-ee.judgment-seat-production/2'
+DELIVERY_SCHEMA = 'agent-ee.judgment-delivery/1'
+AUTHOR_PATH = 'engineering-seat/judgments.json'
+MAX_AUTHOR_BYTES = 4 * 1024 * 1024
 TEXT = {'type': 'string', 'minLength': 1}
 TEXTS = {'type': 'array', 'items': TEXT}
 
@@ -24,7 +32,7 @@ def fixed(value):
 
 
 def obj(properties):
-    return dict(type='object', properties=properties, required=list(properties), additionalProperties=False)
+    return dict(type='object', properties=properties, required=sorted(properties), additionalProperties=False)
 
 
 def schemas(metadata, binding, facts):
@@ -139,13 +147,13 @@ def source_text(capsule, files, deadline=None, cancellation=None):
     for path in files:
         if deadline is not None: checkpoint(deadline, cancellation)
         try:
-            result[path] = (capsule / 'inputs' / path).read_text(encoding='utf-8')
+            result[path] = (capsule / 'inputs' / path).read_bytes().decode('utf-8')
         except UnicodeError:
             pass
     return result
 
 
-def validate_authors(value, data, texts, metadata):
+def validate_authors(value, data, texts, metadata, *, deadline=None, cancellation=None):
     exact_fields(value, ('judgments',))
     rows = value['judgments']
     if not isinstance(rows, list) or len(rows) != len(data['requirements']):
@@ -153,6 +161,7 @@ def validate_authors(value, data, texts, metadata):
     expected = {(r['requirement'], identity(r['span'])): r for r in data['requirements']}
     found = {}
     for document in rows:
+        if deadline is not None:checkpoint(deadline,cancellation)
         if not isinstance(document, dict):
             raise ValueError('judgment must be an object')
         key = (document.get('requirement'), identity(document.get('span')))
@@ -171,6 +180,59 @@ def validate_authors(value, data, texts, metadata):
             raise ValueError(result.get('reason', 'invalid judgment'))
         found[key] = document
     return [found[(r['requirement'], identity(r['span']))] for r in data['requirements']]
+
+
+def author_delivery(value, workspace, data, texts, metadata, *, deadline=None, cancellation=None):
+    """Resolve a successful author's fixed file; scratch alone is never testimony."""
+    if deadline is not None:checkpoint(deadline,cancellation)
+    exact_fields(value, ('schema','path','sha256'))
+    if (value['schema'] != DELIVERY_SCHEMA or value['path'] != AUTHOR_PATH
+            or not isinstance(value['sha256'],str) or not re.fullmatch('[0-9a-f]{64}',value['sha256'])):
+        raise ValueError('invalid judgment delivery manifest')
+    workspace = Path(workspace).absolute()
+    if workspace.resolve() != workspace:
+        raise ValueError('aliased judgment workspace')
+    try:
+        with ExitStack() as stack:
+            root = os.open(workspace,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+            stack.callback(os.close,root)
+            directory = os.open('engineering-seat',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=root)
+            stack.callback(os.close,directory)
+            fd = os.open('judgments.json',os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=directory)
+            stream = stack.enter_context(os.fdopen(fd,'rb'))
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                raise ValueError('judgment delivery must be one regular unaliased file')
+            if before.st_size > MAX_AUTHOR_BYTES:
+                raise ValueError('judgment delivery exceeds byte limit')
+            raw = stream.read(MAX_AUTHOR_BYTES+1)
+            if len(raw) > MAX_AUTHOR_BYTES:
+                raise ValueError('judgment delivery exceeds byte limit')
+            after = os.stat('judgments.json',dir_fd=directory,follow_symlinks=False)
+            fields = ('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns','st_nlink','st_mode')
+            if len(raw)!=before.st_size or any(getattr(before,k)!=getattr(after,k) for k in fields):
+                raise ValueError('judgment delivery changed while reading')
+    except OSError as exc:
+        raise ValueError('judgment delivery is missing or not safely readable: '+str(exc)) from exc
+    if hashlib.sha256(raw).hexdigest() != value['sha256']:
+        raise ValueError('judgment delivery hash mismatch')
+    if deadline is not None:checkpoint(deadline,cancellation)
+    document = strict_json(raw)
+    rows = validate_authors(document,data,texts,metadata,deadline=deadline,cancellation=cancellation)
+    # Preserve constraints previously enforced by the inline output schema in
+    # addition to the semantic/source validator above.
+    facts = {k:v for k,v in data['applicability'].items() if v is not None}
+    for row in rows:
+        if set(row['applicability']) != set(facts):
+            raise ValueError('judgment omitted/added applicability facts')
+        for key, actual in facts.items():
+            expected_types = (int,float) if type(actual) in (int,float) else (type(actual),)
+            if type(row['applicability'][key]) not in expected_types:
+                raise ValueError('judgment applicability type differs from its contract')
+        for source in row['sources']:
+            exact_fields(source['citation'],('path','sha256','quote','locator'))
+    if deadline is not None:checkpoint(deadline,cancellation)
+    return rows
 
 
 def validate_witnesses(value, hashes, metadata):
@@ -210,9 +272,14 @@ def produce(build_run, out, *, author, verifier, private_evaluator_pair, deadlin
     metadata = {name: dict(agent=launch_environment['run_id'] + ':' + name, model=d['model'], date_utc=stamp)
                 for name, d in zip(('author', 'verifier'), definitions)}
     author_schema, witness_schema = schemas(metadata, data['binding'], data['applicability'])
+    contract_path = capsule/'work/judgment-contract.json'
+    write_json(contract_path,author_schema)
+    delivery_schema = obj(dict(schema=fixed(DELIVERY_SCHEMA),path=fixed(AUTHOR_PATH),
+                               sha256=dict(type='string',pattern='^[0-9a-f]{64}$')))
     receipt = dict(schema=SCHEMA, execution='not_run', outcome='incomplete', brief_sha256=digest(capsule/'packet.json'),
         expectation=expected, definitions=definitions, private_evaluator_pair=list(private_evaluator_pair),
-        metadata=metadata, calls=[], judgment_inventory={}, binding=data['binding'], fallback=None)
+        metadata=metadata, calls=[], judgment_inventory={}, binding=data['binding'], fallback=None,
+        author_contract_sha256=digest(contract_path))
     directory = out / 'judgments'
     def invariant():
         checkpoint(deadline, cancellation)
@@ -222,6 +289,7 @@ def produce(build_run, out, *, author, verifier, private_evaluator_pair, deadlin
                 or digest(retained_run.scope(Path(build_run)).path) != data['binding']['scope_sha256']
                 or input_inventory(Path(build_run) / selected['candidate']) != data['files']
                 or input_inventory(capsule/'inputs') != data['files'] or digest(capsule/'packet.json') != receipt['brief_sha256']
+                or digest(contract_path) != receipt['author_contract_sha256']
                 or any(tree_identity(capsule/v['path']) != v['tree'] for v in data['evidence'].values())):
             raise ValueError('judgment artwork/brief changed during call')
     def call(role, definition, prompt, schema, validate):
@@ -243,13 +311,29 @@ def produce(build_run, out, *, author, verifier, private_evaluator_pair, deadlin
     instructions = ('You are an engineering judgment seat. Inspect the actual readonly candidate and complete captured sources. '
         'Do not synthesize testimony from check pass/fail, reuse prior judgments, modify inputs, read credentials, or invent acceptance. '
         'Return evidence-supported analysis and honest unresolved defects. Sources use candidate-relative path/SHA256/exact quote/locator. '
+        'Every inputs[].path and sources[].citation.path must be an exact relative key in packet.files, with its captured SHA256. '
         'The supplied packet is at /evidence/packet.json; /candidate contains the exact native artwork and source records. '
         'Actual completed stage receipts, native stdout/stderr and calculation outputs are readonly at /evidence/work/build-stages. '
-        'Use them to challenge conclusions; pass/fail statuses alone are not engineering testimony.\n')
+        'Use those observations to challenge conclusions and cite the bound candidate files. '
+        'Stage-evidence paths are not candidate file keys. Pass/fail statuses alone are not engineering testimony.\n')
     try:
-        rows = call('judgment-author', definitions[0], instructions + 'Author EVERY required span.\n' + json.dumps(dict(brief=data, author=metadata['author'])),
-                    author_schema, lambda v: validate_authors(v, data, texts, metadata['author']))
+        rows = call('judgment-author', definitions[0], instructions +
+            ('Author EVERY required span in /evidence/packet.json. Write the complete {"judgments":[...]} document '
+             'to /work/'+AUTHOR_PATH+'. Its full record contract is readonly at /evidence/work/judgment-contract.json. '
+             'Use all required fields and exact supplied metadata. Return only the versioned delivery manifest '
+             'with that relative path and SHA256 of the completed file, not the document inline. '
+             'The complete file must fit within 4 MiB; retain every required span and its supporting evidence. '
+             'Reserve time within this call for completing the file and the final manifest.\n') +
+             json.dumps(dict(author=metadata['author'],timeout_s=definitions[0]['timeout_s'])),
+            delivery_schema, lambda v: author_delivery(v,capsule/'review-work/judgment-author',data,texts,metadata['author'],
+                                                      deadline=deadline,cancellation=cancellation))
         if rows is not None:
+            archive = capsule/'review-attempts/judgment-author/0'
+            archived = author_delivery(read_json(archive/'response.json'),archive/'review-work/judgment-author',
+                                       data,texts,metadata['author'],deadline=deadline,cancellation=cancellation)
+            if archived != rows:
+                raise ValueError('judgment delivery changed before archival')
+            rows = archived
             staging = capsule/'work'/'authored-records'; staging.mkdir(parents=True)
             hashes = {}
             for entry, document in zip(data['requirements'], rows):
@@ -257,7 +341,8 @@ def produce(build_run, out, *, author, verifier, private_evaluator_pair, deadlin
                 hashes[digest(path)] = document
             pin_inventory = input_inventory(staging)
             prompt = instructions + ('Independently verify EVERY authored record: resolve sources, recompute applicability, challenge conclusions against bound evidence. '
-                'Concur or dissent honestly. Author bytes are readonly at /evidence/work/authored-records.\n') + json.dumps(dict(brief=data, records=hashes, verifier=metadata['verifier']))
+                'Concur or dissent honestly. The complete brief is at /evidence/packet.json and author bytes are readonly '
+                'at /evidence/work/authored-records.\n') + json.dumps(dict(records=pin_inventory,verifier=metadata['verifier']))
             witnesses = call('judgment-verifier', definitions[1], prompt, witness_schema,
                              lambda v: validate_witnesses(v, hashes, metadata['verifier']))
             if witnesses is not None:
@@ -307,6 +392,10 @@ def verify(out, result):
             or receipt['outcome'] != result['outcome'] or receipt['judgment_inventory'] != result['judgment_inventory']
             or input_inventory(capsule/'inputs') != data['files']):
         raise ValueError('judgment producer public binding changed')
+    contract = capsule/'work/judgment-contract.json'
+    if (digest(contract) != receipt['author_contract_sha256']
+            or read_json(contract) != schemas(receipt['metadata'],data['binding'],data['applicability'])[0]):
+        raise ValueError('judgment author contract changed')
     from .stage_receipts import tree_identity
     if any(tree_identity(capsule/v['path']) != v['tree'] for v in data['evidence'].values()):
         raise ValueError('judgment native evidence changed')
@@ -331,7 +420,8 @@ def verify(out, result):
             raise ValueError('judgment testimony model differs from actual seat')
         values.append(read_json(capsule/'review-attempts'/role/'0/response.json'))
     texts = source_text(capsule, data['files'])
-    authors = validate_authors(values[0], data, texts, receipt['metadata']['author'])
+    authors = author_delivery(values[0],capsule/'review-attempts/judgment-author/0/review-work/judgment-author',
+                              data,texts,receipt['metadata']['author'])
     expected_files = {}
     hashes = {}
     for entry, author in zip(data['requirements'], authors):

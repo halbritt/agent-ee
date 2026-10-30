@@ -4328,13 +4328,16 @@
     },
     {
       "paths": [
-        "tests/test_acquisition_local_return.py"
+        "tests/test_acquisition_local_return.py",
+        "tests/test_acquisition_local_loops.py",
+        "tests/test_acquisition_local_geometry.py",
+        "tests/test_acquisition_local_routing.py"
       ],
       "kind": "owned-source",
       "origins": [
         "AE"
       ],
-      "reviewed": "Original custody/geometry regression code. Inline two-footprint, pad, segment and zone board text is synthetic, with fresh test UUIDs and coordinates. DRC_METADATA explicitly retains selected tool-version/schema/ignored-check labels from the hash-named report; actual findings, source-board poses and CAD/library bytes are not transplanted. The report-shaped cases and pcbnew objects are test doubles, not native qualification."
+      "reviewed": "Original custody/geometry regression code. Inline two-footprint, pad, segment and zone board text is synthetic, with fresh test UUIDs and coordinates. DRC_METADATA explicitly retains selected tool-version/schema/ignored-check labels from the hash-named report; actual findings, source-board poses and CAD/library bytes are not transplanted. The report-shaped cases and pcbnew objects are test doubles, not native qualification. The loop and reservation tests author their own pad frames, vias and rule areas. Native rule-area roundtrip controls use this synthetic board; no production board, vendor CAD or manufacturer content is embedded."
     },
     {
       "paths": [

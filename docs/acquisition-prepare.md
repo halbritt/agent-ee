@@ -228,8 +228,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m agent_ee.acquisition_prepare
 Omitting the context preserves the original part choice and preparation path.
 Supplying a source/hash without a context, missing either companion option,
 a context hash mismatch or an aliased/changed context refuses without publishing.
-The original recipe admission, capacitance range, mechanics, local-return helper
-pin, review-profile/timeout context and typed accounting stay in force. No
+The original recipe admission, capacitance range, mechanics, local-routing helper
+pins, review-profile/timeout context and typed accounting stay in force. No
 actual native/build operation is part of preparation.
 
 The finite `agent-ee.acquisition-alternative-context/1` document contains exactly

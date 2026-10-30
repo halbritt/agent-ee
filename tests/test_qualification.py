@@ -200,6 +200,12 @@ class QualificationTests(unittest.TestCase):
         self.assertEqual(qualification.assess(self.root)['dimensions']['operational']['status'], 'pending')
 
     def test_recorded_judgment_requires_bound_concurrence_and_remains_separate_from_review(self):
+        self.assert_source_judgment()
+
+    def test_recorded_judgment_preserves_crlf_capture_bytes_for_hash_and_quote(self):
+        self.assert_source_judgment(b'Original manufacturer capture\r\nSecond line\r\n')
+
+    def assert_source_judgment(self, captured_source=None):
         self.complete_control(typed=True)
         scaffold = self.report['completed'][2]
         receipt_path = self.root / scaffold['directory'] / 'requirements.json'
@@ -213,13 +219,21 @@ class QualificationTests(unittest.TestCase):
         first['tree'] = tree_identity(self.root / first['directory'])
         package = self.report['completed'][-1]
         stage = self.root / package['directory']
-        spec = (self.root / package['candidate'] / 'spec.md').read_text()
+        candidate=self.root/package['candidate']
+        source_name='spec.md'
+        if captured_source is not None:
+            source_name='manufacturer.txt'
+            (candidate/source_name).write_bytes(captured_source)
+            captured=read_json(stage/'applicability-inventory.json')
+            captured['inputs']=build._inventory(candidate)
+            write_json(stage/'applicability-inventory.json',captured)
+        spec = (candidate/source_name).read_bytes().decode('utf-8')
         pin = hashlib.sha256(spec.encode()).hexdigest()
         document = dict(schema='agent-ee.engineering-judgment/1', requirement='R1',
             span=dict(byte_start=0, byte_end=10, text_sha256=entry['obligation_text_sha256']),
             conclusion='This is a source-bound synthetic admission control.', assumptions=[],
-            sources=[dict(kind='engineering', citation=dict(path='spec.md', sha256=pin, quote=spec, locator='control'))],
-            inputs=[dict(path='spec.md', sha256=pin)], applicability=dict(board_thickness_mm=1.2), candidate=None,
+            sources=[dict(kind='engineering', citation=dict(path=source_name, sha256=pin, quote=spec, locator='control'))],
+            inputs=[dict(path=source_name, sha256=pin)], applicability=dict(board_thickness_mm=1.2), candidate=None,
             author=dict(agent='author', model='synthetic', date_utc='2026-10-25T00:00:00Z'), unresolved_defects=[])
         path = stage / 'judgments/decision.json'
         write_json(path, document)

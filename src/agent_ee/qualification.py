@@ -441,7 +441,7 @@ def _judgments(root, stage, entries, binding, plan):
             name = citation.get('path') if isinstance(citation, dict) else None
             if name in captured['inputs']:
                 try:
-                    source_text[name] = _retained_path(candidate, name).read_text(encoding='utf-8')
+                    source_text[name] = _retained_path(candidate, name).read_bytes().decode('utf-8')
                 except UnicodeError:
                     continue
         admitted = admit_judgment(document, requirement=rid, span=span, files=captured['inputs'],

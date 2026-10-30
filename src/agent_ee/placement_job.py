@@ -1613,7 +1613,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                        'controller': digest(Path(__file__)),
                                        **({'mechanics_controller': digest(Path(__file__).with_name('acquisition_mechanics.py'))}
                                           if 'mechanics' in normalized else {}),
-                                       **({'acquisition_local_return': digest(Path(__file__).with_name('acquisition_local_return.py'))}
+                                       **({name: digest(Path(__file__).with_name(name+'.py')) for name in
+                                           ('acquisition_local_return','acquisition_local_geometry','acquisition_local_routing')}
                                           if 'mechanics' in normalized else {}),
                                        **({'acquisition_solver': report['preflight']['acquisition_solver']}
                                           if 'mechanics' in normalized else {}),
@@ -1770,16 +1771,17 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                         or selected.get('mechanics', {}).get('status') != 'pass'
                         or selected['mechanics'].get('binding_sha256') != normalized['mechanics_binding']['binding_sha256']
                         or selected['mechanics'].get('board_sha256') != selected['board_sha256']):
-                    raise JobRefusal('acquisition local return requires an eligible placement')
-                from . import acquisition_local_return
+                    raise JobRefusal('acquisition local routing requires an eligible placement')
+                from . import acquisition_local_routing
                 seed_clock = Clock(min(budget, clock.remaining()))
-                local_seed = acquisition_local_return.produce(route_input, job_dir / f'local-return-{suffix}',
+                local_seed = acquisition_local_routing.produce(route_input, job_dir / f'local-routing-{suffix}',
                     expected_inputs={'board.kicad_pcb': selected['board_sha256'],
                                      'board.kicad_pro': sha256_bytes(project_bytes),
                                      'board.kicad_dru': sha256_bytes(rules_bytes) if rules_bytes is not None else None},
+                    mechanics_binding=normalized['mechanics_binding'], planes=plane_bytes,
                     clock=seed_clock, cancel_dir=job_dir)
                 route_input = local_seed['output']
-                trial['local_return'] = acquisition_local_return.verify_seed(
+                trial['local_routing'] = acquisition_local_routing.verify(
                     Path(route_input) / 'board.kicad_pcb', local_seed, clock=seed_clock, cancel_dir=job_dir)
                 budget = min(seed_clock.remaining(), clock.remaining())
                 _check_stop(seed_clock, job_dir)
@@ -1801,14 +1803,13 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                            owned_zone_uuids=plane_ids, planes=plane_bytes,
                                            pair_impedance=impedance, router_checkout=config['router']['checkout'],
                                            length_match=length_match, ac_match=ac_match,
+                                           local_routing=local_seed,
                                            input_board=board_path, input_board_sha256=sha256_bytes(board_bytes))
             if local_seed is not None and report['final'].get('board'):
-                seed_check = acquisition_local_return.verify_seed(
-                    report['final']['board'], local_seed, clock=clock, cancel_dir=job_dir)
+                seed_check = report['final']['local_routing']
                 if (routed.get('copper_policy') != 'preserve_existing'
                         or seed_check['board_sha256'] != report['final'].get('board_sha256')):
-                    raise JobRefusal('acquisition route did not preserve the checked local return')
-                report['final']['local_return'] = seed_check
+                    raise JobRefusal('acquisition route did not preserve the checked local routing')
         _check_stop(clock, job_dir)
         status = _completion_status(routed, selected if incumbent is not None else None, report['final'])
         trial.update(status=status, route=report['route'], final=report['final'])
@@ -1960,9 +1961,25 @@ def verify_group_views(final):
     return problems
 
 
+def _verify_local_routing(board,incumbent,normalized,planes,record,*,clock,cancel_dir):
+    """Grant reservation ownership only from the original placement's native proof."""
+    from . import acquisition_local_return as copper, acquisition_local_routing as local
+    expected=copper._identity(copper._capture(Path(incumbent['directory'])))
+    binding=normalized.get('mechanics_binding',{}).get('binding_sha256')
+    if (record.get('inputs')!=expected or expected['board.kicad_pcb']!=incumbent['board_sha256']
+            or digest(Path(incumbent['board']))!=incumbent['board_sha256']
+            or not binding or record.get('mechanics_binding_sha256')!=binding
+            or not isinstance(planes,bytes) or record.get('planes_raw')!=planes.decode('utf-8')):
+        raise JobRefusal('local routing: final proof differs from captured placement/mechanics/planes')
+    result=local.verify(board,record,clock=clock,cancel_dir=cancel_dir)
+    if result.get('status')!='pass' or result.get('board_sha256')!=digest(Path(board)):
+        raise JobRefusal('local routing: native ownership proof is not bound to the final board')
+    return result
+
+
 def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, refinement=None, clock=None, cancel_dir=None,
                  owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None,
-                 input_board=None, input_board_sha256=None):
+                 input_board=None, input_board_sha256=None, local_routing=None):
     groups, intent, rails = (_bundle(normalized)[k] for k in ('groups', 'intent', 'rails'))
     import pcbnew
     clock = clock or Clock(300)
@@ -2008,6 +2025,11 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     # Compare complete saved native nodes, not a lossy API projection. This
     # includes all padstack geometry/layers, fields, graphics, rules and drawings.
     # Zone ownership is supplied by the controller, never by router output.
+    local_check=None
+    if local_routing is not None:
+        local_check=_verify_local_routing(board,incumbent,normalized,planes,local_routing,
+                                         clock=clock,cancel_dir=cancel_dir)
+        owned_zone_uuids=(*owned_zone_uuids,*local_check['owned_zone_uuids'])
     placed_nodes = _non_footprint_nodes(Path(incumbent['board']).read_bytes(), include_footprints=True,
                                          routing_owned=True, owned_zones=owned_zone_uuids)
     final_nodes = _non_footprint_nodes(board.read_bytes(), include_footprints=True, routing_owned=True,
@@ -2091,6 +2113,11 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     group_views = _group_views(board, groups, final_dir.parent / (final_dir.name + '-group-views'),
                                input_board=input_board, input_board_sha256=input_board_sha256,
                                clock=clock, cancel_dir=cancel_dir)
+    if local_routing is not None:
+        # Native refill/save and the other final consumers ran after the first
+        # proof. Recheck the board that will actually be handed downstream.
+        local_check=_verify_local_routing(board,incumbent,normalized,planes,local_routing,
+                                         clock=clock,cancel_dir=cancel_dir)
     final_board_sha256 = digest(board)
     if block_result['status'] != 'not_declared' and block_result['board_sha256'] != final_board_sha256:
         problems.append('final board changed after block contract check')
@@ -2104,6 +2131,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
               or length_result is not None and length_result.get('status') != 'PASS'
               or ac_result is not None and ac_result.get('status') != 'PASS')
     return {'status': 'checked', 'board': str(board), 'board_sha256': final_board_sha256,
+            **({'local_routing':local_check} if local_check is not None else {}),
             **({'planes': plane_result, 'plane_fill': plane_fill} if planes is not None else {}),
             **({'impedance': impedance_result} if impedance_result is not None else {}),
             **({'length_matching': length_result} if length_result is not None else {}),

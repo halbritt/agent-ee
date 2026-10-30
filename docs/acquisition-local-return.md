@@ -1,26 +1,34 @@
-# Acquisition ADC pre-route return seed
+# Acquisition local routing
 
-`agent_ee.acquisition_local_return.produce` is a narrow placement-lifecycle
-operation for the captured acquisition recipe. It connects fresh native C3 pad
-2 to fresh native U2 pad 3 on F.Cu using 0.25 mm tracks. It changes no original
-board bytes, component poses, pad geometry, library identifiers, existing
-copper, project, or custom rules. It requires the pinned KiCad 10 saved-board
-version 20260206 and the captured project's 0.2 mm minimum clearance. The caller
-retains the existing exact acquisition recipe admission; this helper is not a
-recipe registry. Missing/ambiguous endpoints, non-GND endpoints, non-front-only
-pads, and unsupported source formats are refused. It does not move components
-or bridge planes.
+`agent_ee.acquisition_local_routing.produce` prepares local copper and ground-strip
+reservations inside an eligible acquisition placement. It preserves the original
+board nodes, component poses, pads, library identifiers, copper, project and
+custom rules. The captured acquisition mechanics recipe and plane plan determine
+applicability. The helper requires KiCad 10 saved-board version 20260206, native
+DRC version 10.0.7, and the captured 0.2 mm minimum clearance.
 
-The operation is source preparation for a later global route. It does not
-establish final engineering or manufacturing acceptance. The unchanged final
-engineering model must find actual trace paths for **both** fresh supply and
-return legs and measure their sum at most 10 mm. Missing paths remain failures.
-No old supply measurement or old return allowance enters this operation.
+The producer connects both legs of four loops with 0.25 mm tracks:
+
+| Loop | Signal or supply leg | Ground return | Combined limit |
+| --- | --- | --- | --- |
+| ADC | C3.1–U2.8 | C3.2–U2.3 | 10 mm |
+| Regulator output | C2.1–U1.5 | C2.2–U1.2 | 10 mm |
+| Filter 0 | C4.1–U2.4 | C4.2–U2.3 | 12 mm |
+| Filter 1 | C5.1–U2.5 | C5.2–U2.3 | 12 mm |
+
+Signal and supply legs precede shared ground returns so a ground crossbar cannot
+close access to an adjacent signal pad. Filter 0 uses two 0.6 mm through-vias
+with 0.3 mm drills and a B.Cu segment. Their positions derive from the native
+capacitor pad pair, IC pad long axis, and signed U2.4-to-U2.5 pin pitch; no saved
+board coordinates are imported. Unsupported or ambiguous pad frames refuse.
+The other legs remain on F.Cu. Each return receives only the loop's remaining
+length allowance, including both vertical traversals of the actual board
+thickness. Final engineering checks still measure the delivered board.
 
 ## Interface and custody
 
 ```python
-from agent_ee.acquisition_local_return import produce
+from agent_ee.acquisition_local_routing import produce
 
 seed = produce(
     accepted_placement_directory, new_evidence_directory,
@@ -29,144 +37,105 @@ seed = produce(
         'board.kicad_pro': captured_project_sha256,
         'board.kicad_dru': captured_rules_sha256_or_None,
     },
+    mechanics_binding=captured_mechanics_binding,
+    planes=captured_plane_plan_bytes,
     clock=existing_placement_clock,
     cancel_dir=existing_placement_job_directory,
 )
-route_input = seed['output']  # complete board/project/optional rules directory
+route_input = seed['output']
 ```
 
-The caller supplies hashes from the accepted placement and captured input
-custody; it must not bless changed bytes by recapturing them after a discrepancy.
-The operation binds these hashes and its own helper source hash in `record.json`,
-checks them again around native work and before adoption, and reloads the saved
-native seed to prove exact new UUIDs, net codes, front layer, endpoints and width.
-The complete original S-expression tree remains intact; only new root segments
-are appended, with new UUIDs. Source and destination aliases, existing output,
-and an output inside the source directory are refused.
+The caller supplies hashes from accepted placement custody. It cannot recapture
+changed bytes to approve a discrepancy. Source aliases, existing destinations,
+and destinations inside the source refuse. Missing, ambiguous, wrong-net or
+non-front-only endpoints refuse. `JobRefusal` retains attempted boards and raw
+reports; callers must use a fresh evidence directory for a later authorized run.
+`JobStopped` propagates the caller's deadline or cancellation.
 
-Up to five unique paths are tried in fixed order: direct, two orthogonal, and
-two 45-degree-plus-axis paths, derived solely from current integer-nanometre pad
-centres. Each trial retains the proposed board and raw native DRC report/log.
-Native rule-loading proof is reused when custom rules exist. The existing
-placement DRC runner owns subprocess cancellation and deadline handling. Every
-native conductive/unknown finding, exclusion or parity finding refuses the
-proposal. The library-warning exception requires a fresh exact baseline
-match as described below. Warning-only `silk_overlap` and `silk_over_copper`
-findings are retained separately for the required later artwork stage; this
-pre-route operation cannot establish artwork acceptance. Unconnected pre-route nets are retained and counted;
-they are not clearance failures. Malformed or unavailable DRC never establishes
-a pass. Exhausting the finite proposals refuses without an `accepted` directory.
-The operation has no separate clock, retry budget, or resumable repair identity.
-All trials consume the caller's admitted placement budget.
+`acquisition_local_return.produce_loops` owns the eight-leg custody chain.
+Each leg binds its input and output hashes, helper hashes, native endpoint
+identities, trial geometry, reports and execution receipts. Original native
+nodes remain intact. An exact existing segment with the same net, layer, width
+and undirected endpoints is reused with its original UUID; other segments get
+new UUIDs. Native reload verifies every segment and via, including via type,
+span, drill, diameter, net and centre. Source, reports and copied outputs are
+checked again before adoption. Successful receipts use `status: seeded` and
+`acceptance_assessed: false`.
 
-The coverage gate requires `$schema=https://schemas.kicad.org/drc.v1.json`,
-KiCad `10.0.7`, millimetre units, and exactly the included severities `error`,
-`warning`, `exclusion`. Missing/malformed ignored-check metadata is a refusal,
-even with an empty violation list. Ignored entries need unique keys and nonempty
-descriptions. Every ignored key outside the existing `dc_rail.NONCONDUCTIVE_IGNORES`
-set is refused, including clearance, track width, copper edge, short and keepout
-checks. Sharing that finite category set does **not** borrow the DC model's
-ideal contacts or establish a full DRC/placement/parity pass.
+Front-layer proposals include direct, orthogonal and diagonal paths plus bounded
+rectangle and native convex-polygon visibility searches. Proposals are ordered
+by length and checked against the remaining allowance before native DRC. The
+polygon search refuses foreign front zones and nonconvex contours, fills holes
+conservatively, and limits itself to 4,096 native items, 32,768 obstacle vertices,
+2,048 search vertices and 25 million actual containment/crossing edge tests.
+Rectangle search permits at most 1,024 boxes and 512 nodes. Search, native checks
+and adoption share the caller's clock and CANCEL directory. These searches
+propose paths; native DRC decides clearance legality.
 
-Applicability here comes from the operation's proven write scope and separate
-placement/final gates, not from an example report having those defaults:
+The legacy `acquisition_local_return.produce` entry point retains its original
+single C3.2–U2.3 front-layer operation and five endpoint-derived proposals.
+Placement uses the complete local-routing producer above.
 
-- `missing_courtyard`: no footprint or courtyard changes; the caller must already
-  have accepted placement/body/access checks. The trace operation cannot claim
-  that an absent courtyard was evaluated or that body placement is accepted.
-- `footprint_filters_mismatch` and `footprint_type_mismatch`: library identities,
-  footprint metadata and all pads stay byte-identical. These symbol/package
-  metadata predicates do not evaluate the added trace's clearance or width.
-  Final schematic parity remains a separate obligation.
-- `track_not_centered_on_via`: no vias are created/moved. New endpoints are actual
-  pad centres or the finite path's exact corners. Via-centering preference does
-  not suppress native conductive clearance/width/open checks; final trace length
-  uses actual saved geometry, without a zero-cost via/plane shortcut.
-- `tuning_profile_track_geometries`: this producer adds only plain segments,
-  with no tuning profile or tuning operation. Existing geometry is unchanged.
+## Native checks
 
-The captured project must have absent or empty `rule_severities` and
-`drc_exclusions`. Nonempty overrides are refused even when they would make a
-check stricter. Malformed/null values are refused. Captured custom rules may
-not carry any `(severity ...)` override. The existing native rule-loading
-witness still applies. This finite no-suppression prerequisite preserves the
-authored project and rules exactly; it never clears exclusions or rewrites
-severities. Report exclusions are refused in every finding category, including
-pre-route opens. An arbitrary warning type cannot be treated as a clean result.
+Each leg obtains a fresh native DRC baseline on a byte-identical private copy
+of its current input, then checks every proposed board. Custom rules retain the
+native rule-loading witness. The required report schema is
+`https://schemas.kicad.org/drc.v1.json`, in millimetres, with all three severities:
+error, warning and exclusion. Missing or malformed ignored-check metadata,
+unknown ignored checks, errors, exclusions, conductive warnings and parity
+findings refuse. Pre-route opens are retained and counted; final routing must
+close them.
 
-Before generating paths, the operation obtains **one fresh native DRC baseline**
-on a private byte-identical copy of the same accepted-placement board, project
-and rules, using the same DRC runner, environment, outer clock and CANCEL. There
-is no baseline argument, caller qualification, historical baseline reuse, new
-clock, or extra retry. This adds one baseline to the existing at-most-five path
-checks; the existing custom-rule loading witness is separate and unchanged.
+The project must have absent or empty `rule_severities` and `drc_exclusions`.
+Custom rules cannot override severity. The producer never rewrites these settings.
+Only `dc_rail.NONCONDUCTIVE_IGNORES` categories may be ignored, with these limits:
 
-The baseline must satisfy the same full coverage/no-suppression gate. Apart from
-the two deferred artwork warning types, permitted baseline records are `lib_footprint_issues` at WARNING
-severity, with the exact diagnostic form `The current configuration does not
-include the footprint library 'NAME'`. Each item must resolve to the fresh
-original native footprint UUID, reference, exact position and library nickname.
-Other library diagnostic forms, unbound items, conductive or unknown warnings,
-errors and exclusions refuse. This exception records immutable missing-library
-metadata; it does not declare the affected library configuration repaired.
+- Missing courtyards remain a separate placement/body/access obligation.
+- Footprint filter/type metadata stays unchanged; schematic parity remains required.
+- Via-centering preferences do not suppress clearance or connectivity checks.
+  Native seed verification requires the two generated vias and adjoining segment
+  endpoints at their exact declared centres. Vertical length is counted.
+- Plain segments and through-vias do not introduce tuning profiles.
 
-Each trial must preserve the **identical complete-record multiset** of those
-warnings, comparing full JSON records including diagnostics, severity, item
-UUID/reference/position and any extra record fields. Record order may change;
-internal record content and multiplicities may not. A new, changed, missing or
-duplicated record rejects the proposal. Counts alone and a type-only waiver
-cannot pass. No conductive/unknown warning is carried, even from the baseline.
+Apart from deferred artwork warnings, a baseline may contain only warning-level
+`lib_footprint_issues` with the exact missing-library diagnostic. Every item must
+bind the original footprint UUID, reference, position and library nickname.
+Each trial must retain the identical complete-record multiset: changed, missing,
+new or duplicated library records refuse. This does not repair the library setup.
+Warning-only `silk_overlap` and `silk_over_copper` records are retained for the
+required artwork stage. Their differences remain visible in the receipts.
 
-`baseline/` retains the original copied inputs and raw native report/log;
-`record.json` binds exact input board and report hashes plus execution receipt.
-Every trial similarly binds its exact board/report hashes and records full
-added/missing warning records on mismatch. Baseline inputs/report are checked
-again around trials and before adoption. Raw reports must be ordinary unaliased
-files. Selected trial and copied reports are rehashed before publication; a
-changed report cannot survive behind a stale receipt hash. The original source remains immutable.
-Native raw findings and byte preservation establish custody; the operation still
-does not claim final routing, library health, parity or engineering acceptance.
+Raw reports must be ordinary unaliased files. Their exact hashes, baseline
+copies, selected trials and adopted copies are checked around native work and
+before publication. A stale receipt cannot excuse changed report bytes.
 
-A complete checked copy is published under `accepted/` only after custody and
-native checks. Failure evidence remains under the new evidence directory. Never
-reuse a failed destination. A `seeded` record is a production-operation receipt,
-not a stage receipt, qualification, judgment, or release decision.
+## Ground strips and final validation
 
-## Placement integration
+After the eight legs, the top-level producer derives B.Cu track/via reservations
+from the captured geometry model's orthogonal ground strips. Each rectangular
+strip includes the checker's 0.1 mm half-width plus the declared ground-plane
+clearance. Duplicate rectangles are coalesced; at most 32 areas are emitted.
+UUIDs bind the model hash and rectangle. The areas permit pads, footprints and
+copper pours. Native DRC must still pass, and native reload verifies every area
+name, UUID, layer, polygon and keepout flag. The receipt binds the exact model,
+plane bytes, generated board and native report.
 
-The existing `mechanics` declaration admits only the captured acquisition model
-and checker. That declaration enables this operation automatically; there is no
-second caller-qualified boolean. Preparation and the placement checkpoint bind
-the helper source hash. Jobs without the declaration retain their existing path.
+The mechanics declaration enables this producer automatically after eligible
+placement. Preparation and checkpoint identities include the local-return,
+geometry and local-routing helper hashes. Evidence is retained under
+`local-routing-SUFFIX`. The producer consumes the candidate's existing equal
+share of remaining job time; only the unspent share reaches global routing.
+Refusal aborts without an unseeded fallback.
 
-Inside `_execute_job`, an eligible placement with a passing, matching mechanics
-result enters `produce` before global routing. Its fresh `local-return-SUFFIX`
-directory retains the operation. The baseline and proposals consume the existing
-candidate's equal share of the remaining job deadline, with the same CANCEL
-directory. Only the unspent share goes to global routing. Refusal aborts that
-job without an unseeded fallback or exploratory-placement seed.
+Global routing uses `preserve_existing` (`--protect existing`). Placement's
+`final_checks` retains its original placement, rule and footprint comparisons.
+Generated reservation UUIDs enter the protected-node comparison's ownership list
+only after native verification bound to the original placement, mechanics and
+plane bytes. Final refill and the other consumers are followed by another
+verification of the delivered board. All local segments, vias, areas, receipts
+and retained reports must survive. Native DRC, final planes, locality, block
+relationships, mechanics and annotated views retain their separate checks.
 
-The original placement stays immutable. Global routing consumes the accepted
-seed directory, detects existing copper, and selects `preserve_existing`
-(`--protect existing`), disabling owned-copper feedback retries. Existing final
-checks retain their original placement/rule/geometry basis. `verify_seed` then
-reloads the final board and requires every exact seed UUID, segment endpoint,
-width, layer and net plus the original native endpoint identities to survive.
-It also verifies the retained seed/report/operation receipt. The routing trial
-and final result retain original, seed and final board identities separately.
-
-Only warning-severity overlap of silk with silk or copper is deferred to the
-existing required artwork stage. Both types already occur on actual acquisition
-placements before artwork; added tracks may create additional cosmetic overlap.
-All such records are retained, including differences. No text/footprint is
-modified by the seed operation. An error, exclusion, unknown warning or any
-conductive finding still refuses, and final artwork/package gates remain intact.
-
-The native production proof requires a later root admission on a new,
-source-bound development identity with a finite budget covering one fresh baseline and up to five
-pre-route path checks and the existing global route. Existing prep 3/3 and saved-board
-repair 2/2 are exhausted and remain unchanged. No real target preparation,
-KiCad, routing, render, provider call, or acceptance run is performed by this
-source patch. Pure tests exercise custody, candidate derivation, endpoint
-resolution, preservation, collision refusal and stop propagation using explicit
-native-loader/DRC test doubles. They do not prove native geometry legality.
+A seeded board or eligible placement is not engineering acceptance. Fresh
+judgments, full engineering review and the package release gate remain required.

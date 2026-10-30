@@ -135,6 +135,33 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
         args.update(kwargs)
         return local.produce(self.source, self.output, **args)
 
+    def test_shared_return_reuses_exact_existing_copper_in_both_directions(self):
+        path = [(34000000,41500000),(35500000,39000000)]
+        first, identities = local._seed(self.board,path)
+        for points in (path,list(reversed(path))):
+            repeated, reused = local._seed(first,points)
+            self.assertEqual(repeated,first)
+            self.assertEqual(reused,identities)
+
+    def test_length_budget_refuses_before_running_trial_drc(self):
+        with self.assertRaisesRegex(JobRefusal,'length'):
+            local._produce(self.source,self.output,expected_inputs=local._identity(local._capture(self.source)),
+                clock=Clock(10),cancel_dir=None,connection='adc-return',obstacle_search=False,max_length_mm=.1)
+        self.assertEqual(self.drc.call_count,1)  # Fresh baseline only.
+        self.assertFalse((self.output/'accepted').exists())
+
+    def test_shared_return_does_not_reuse_different_net_width_or_layer(self):
+        path = [(34000000,41500000),(35500000,39000000)]
+        first, identities = local._seed(self.board,path)
+        for before,after in ((b'(net "GND")',b'(net "SCL")'),
+                             (b'(width 0.25)',b'(width 0.3)'),
+                             (b'(layer "F.Cu")',b'(layer "B.Cu")')):
+            with self.subTest(before=before):
+                changed=first.replace(before,after)
+                repeated,reused=local._seed(changed,path)
+                self.assertNotEqual(repeated,changed)
+                self.assertNotEqual(reused,identities)
+
     def test_fresh_endpoints_add_only_trace_preserve_source_and_poses(self):
         record = self.run_seed()
         result = Path(record['output']) / local.FILES[0]

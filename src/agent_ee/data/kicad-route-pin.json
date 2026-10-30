@@ -124,7 +124,7 @@
   "src/kicad_route/router/py_router/check_pads.py": "6627b37eca7a7afb234b4ae2fc047e65d452a6da0ea647c05696af6b052cd59c",
   "src/kicad_route/router/py_router/check_weird.py": "c5540de9647f7294da3d386e4d3f67cb3127bb9b0d07c43edfb0e83e547fcea3",
   "src/kicad_route/router/py_router/chip_boundary.py": "76d3867bca3340a2f44d466df7169e6a13d159d603d386256102c784649294b9",
-  "src/kicad_route/router/py_router/cleanup_pipeline.py": "7c9c10a8c90f365c32360f1ce080ef32231d46cb9ac18d99f33f3ad04da4d1f4",
+  "src/kicad_route/router/py_router/cleanup_pipeline.py": "33aec0f2dcda5a480063a01306d56ce6d5cc83a42b90ea0590e5910f01f17d29",
   "src/kicad_route/router/py_router/clearance_ledger.py": "caa7c20b4347bf79c89aae6e21a33c973ab15fd6f6e4aa4879bccecf4f4e4c1b",
   "src/kicad_route/router/py_router/cli_banner.py": "dfbce4fba8eb386ff0de8148b139c9fce4b8b9a2a904fb3c905af05b5734111f",
   "src/kicad_route/router/py_router/cli_nets.py": "773d1250d9316628f9d719fe695f76816d7c00ed416232c766cf6672de6d535e",
@@ -190,7 +190,7 @@
   "src/kicad_route/router/py_router/pack_river.py": "34d54fb0f9ae956ab0507fa818cf604fdc8816a0b54508f23db9c742e7c31dc0",
   "src/kicad_route/router/py_router/paste_apertures.py": "0c7a864b934ae7ec812f0fb091d16385f442b8472fa34885b85f20219e7e6031",
   "src/kicad_route/router/py_router/pcb_io_utils.py": "a128f2dc42e869dc46ac240d739e6523eb31a75ffec85798c396784ab7606892",
-  "src/kicad_route/router/py_router/pcb_modification.py": "2f536eab83f50a51a54d2099982befb498cde47ae165b922d5ae3dbbd230df8a",
+  "src/kicad_route/router/py_router/pcb_modification.py": "0344bfa0cc9c9cc55997cf0de1ca0bfe9224872cd1426d4bb21aa49e049662bd",
   "src/kicad_route/router/py_router/phase3_routing.py": "a98915bd729750687ff251a07118e04e510bd4366fa3ac8700cf10455c4ed8f3",
   "src/kicad_route/router/py_router/place_motion.py": "9fa0574956f290e947a1c842f0d6ffe38a7e8ff42b881ecf7b94780e78d00f09",
   "src/kicad_route/router/py_router/plane_blocker_detection.py": "c439b516ff466034902153e29a52969d16002891506ada7d6b61d5f7ca1931d1",
@@ -316,6 +316,6 @@
   "src/kicad_route/stall.py": "095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188",
   "src/kicad_route/statemanifest.py": "40c60f955e643b651128963cd9720c29e6dbbf4dcd25c68c12616fb0a1972322"
  },
- "pin": "c4af095ed07593b63d7886c139fcb7e5c2e774f4",
+ "pin": "cb25f6b3eff9fe1ea6573e3be39dd18e3545d1a1",
  "schema": "agent-ee.kicad-route-pin/1"
 }
