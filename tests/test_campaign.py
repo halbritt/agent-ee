@@ -1066,7 +1066,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(record['resubmissions_used'], 1)
         self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'ok'])
         first, second = [run / a['path'] for a in record['attempts']]
-        self.assertIn('citation path must name', read_json(first / 'execution.json')['error'])
+        self.assertIn('path not captured or not own experiment', read_json(first / 'execution.json')['error'])
         self.assertTrue((second / 'prompt.txt').read_text().startswith((first / 'prompt.txt').read_text()))
         self.assertEqual(read_json(first / 'response.json')['decisions'][0]['evidence'][0]['path'], 'outside.json')
         verify_campaign(self.root / 'campaign', host=self.host)
