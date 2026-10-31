@@ -161,6 +161,11 @@ and two four-digit factors need at most 36 digits. Ambient Decimal precision
 therefore cannot silently round the captured operand or RC transcription.
 Control 100 and variant 150 are known development cases, not unseen evaluation.
 
+The derived operating instructions identify 0.20 mm as the declared minimum
+package-envelope gap and refer to the generated board's `engineering-geometry`
+result for its achieved gap. They do not carry forward the reference board's
+measured-gap claim. The original instructions remain in the preparation history.
+
 Only the operating supplement's old 100 pF bound is superseded by the selected
 variant. Its power-up and conversion sequencing instructions stay in force, and
 the supplement itself is preserved byte-for-byte. Historical review text is

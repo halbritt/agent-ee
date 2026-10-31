@@ -188,7 +188,12 @@ class AcquisitionPreparationTests(unittest.TestCase):
             self.assertEqual(row['requirement'], original_overlay['judgments'][name]['requirement'])
             self.assertEqual(row['questions'], original_overlay['judgments'][name]['questions'])
             self.assertFalse(any('ENGINEERING-REVIEW.md' in source for source in row['sources']))
-        for name in ('spec.md', 'OPERATING.md', 'analysis/geometry_model.py',
+        operating = (inputs / 'OPERATING.md').read_text()
+        self.assertNotIn('tightest reviewed\npackage-envelope gap', operating)
+        self.assertIn('declared minimum\npackage-envelope gap is 0.20 mm', operating)
+        self.assertEqual((inputs / 'history/acquisition-preparation-original/OPERATING.md').read_bytes(),
+                         (BASE / 'OPERATING.md').read_bytes())
+        for name in ('spec.md', 'analysis/geometry_model.py',
                      'analysis/power-startup/corners.lib', 'analysis/power-removal/corners.lib',
                      'circuit.json', 'layout.json', 'groups.json', 'ratings.json', 'adc-ties.json'):
             self.assertEqual((inputs / name).read_bytes(), (BASE / name).read_bytes(), name)

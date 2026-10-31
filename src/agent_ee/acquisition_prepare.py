@@ -56,7 +56,7 @@ REVISION_BASIS = {
     'electrical-locality.json': 'Rebind citations/spec; optional root706 engineering final-group additions preserve original eight legs',
     'placement.json': 'Rebind embedded locality and optional root706 final-group additions; preserve geometry and policy',
     'analysis/electrical-intervals.json': 'Update only bus capacitance and operative source bindings',
-    'OPERATING.md': 'Bind selected capacitance, ADC applicability and optional captured Panasonic R1/R2 source attribution',
+    'OPERATING.md': 'Bind selected capacitance, ADC applicability and optional captured Panasonic R1/R2 source attribution; distinguish the declared body-gap limit from generated-board measurements',
     'analysis/power-startup/corners.lib': 'Explicit R6+1% adverse626.2ohm; all other original corner values retained',
     'analysis/power-removal/corners.lib': 'Explicit R6+1% adverse626.2ohm; unused historical model remains documentary',
     'analysis/power-startup/README.md': 'Declare seven reviewed source cases, assumptions and convergence history without inherited pass',
@@ -215,6 +215,12 @@ def _write_revision(base, revised, selected, overlay):
     operating = (base / 'OPERATING.md').read_text()
     if operating.count('100 pF per line') != 1:
         raise ValueError('captured operating capacitance instruction differs from this recipe')
+    prior_gap = 'the tightest reviewed\npackage-envelope gap is 0.20 mm.'
+    if operating.count(prior_gap) != 1:
+        raise ValueError('captured operating package-gap statement differs from this recipe')
+    operating = operating.replace(prior_gap,
+        'the declared minimum\npackage-envelope gap is 0.20 mm. Refer to the generated board\'s\n'
+        'engineering-geometry result for its achieved gap.')
     (revised / 'OPERATING.md').write_text(operating.replace('100 pF per line', selected['quantity'] + ' per line'))
     # 28 admitted coefficient digits plus the two four-digit factors need at most 36.
     with localcontext() as context:
