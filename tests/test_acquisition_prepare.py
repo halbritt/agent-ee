@@ -1231,12 +1231,25 @@ class AddrPreparationTests(unittest.TestCase):
             self.prepare('late-expected-drift')
         self.assertFalse((self.root/'late-expected-drift').exists());self.expected.write_bytes(raw)
 
+    @unittest.skipUnless(all(os.environ.get(n) for n in
+                         ('AGENT_EE_ADDR_620_CONTEXT', 'AGENT_EE_ADDR_620_SOURCE')),
+                         'historical 620 ohm context/source required')
     def test_fresh_thermal_source_phase_binds_admitted_text_before_overlay_copy(self):
         from agent_ee import acquisition_power_repair as repair
+        from datetime import datetime
         self.assertFalse((BASE/'manufacturer-text').exists())
         output620=self.root/'fresh620'
         sources={**self.options['added_sources'],'power-repair':Path(os.environ['AGENT_EE_ADDR_POWER620'])}
-        acquisition_prepare.prepare(self.brief,PLAN,output620,**{**self.options,'added_sources':sources})
+        context620=Path(os.environ['AGENT_EE_ADDR_620_CONTEXT'])
+        # This retained capture completed at 2026-10-29T14:33:59.764689Z.
+        # Its original paired ADC context is fresh at this historical clock;
+        # today's refreshed context cannot share that capture's 24-hour window.
+        with patch.object(acquisition_prepare, 'datetime', wraps=datetime) as clock:
+            clock.now.return_value=datetime.fromisoformat('2026-10-29T14:34:00+00:00')
+            acquisition_prepare.prepare(self.brief,PLAN,output620,**{**self.options,
+                'added_sources':sources, 'alternative_context':context620,
+                'alternative_context_sha256':storage.digest(context620),
+                'alternative_source':Path(os.environ['AGENT_EE_ADDR_620_SOURCE'])})
         for out in (self.seed,output620):
             with self.subTest(out=out.name):
                 inputs=out/'inputs'
