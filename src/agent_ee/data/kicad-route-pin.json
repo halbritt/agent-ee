@@ -138,7 +138,7 @@
   "src/kicad_route/router/py_router/diff_pair_custody.py": "f07e2cec713bfeda971b68fbbdba2a6630244f5e1e54bf01df3529257835b173",
   "src/kicad_route/router/py_router/diff_pair_loop.py": "636f07595a727b3e81ec882762094ea90b6bc86b80c5ebad4b017abac3494a4f",
   "src/kicad_route/router/py_router/diff_pair_multipoint.py": "a3c46016755d178225969c3ad3f1dbe0652f91d8e4f4d9fb54b0fc56df63105f",
-  "src/kicad_route/router/py_router/diff_pair_routing.py": "dcf417290395ecae670bb25164d286f5de2c6641634c035a29879937c14b082a",
+  "src/kicad_route/router/py_router/diff_pair_routing.py": "5bc927a23d0615d89644dd85f154750ed1a4c7f95f007824d4b68ef883bb1923",
   "src/kicad_route/router/py_router/diff_xnet.py": "204665ebc1494103a7e6960aa43bfd0eada9d17c70d31dc6cda8be63e5909f24",
   "src/kicad_route/router/py_router/dup_trap.py": "f3a3cc3b91d7318b46a091d14586ce31469c3101ddcd61b325bbda90e63fa1ee",
   "src/kicad_route/router/py_router/effective_config_evidence.py": "fe9254c32d895f936e97f03f34f9a6edbb16fcad086179f62325cf0eeeb1722e",
@@ -316,6 +316,6 @@
   "src/kicad_route/stall.py": "095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188",
   "src/kicad_route/statemanifest.py": "40c60f955e643b651128963cd9720c29e6dbbf4dcd25c68c12616fb0a1972322"
  },
- "pin": "5a3bd1aa56161d5b19dde33f21057a0a47ba9406",
+ "pin": "499717a5a9bf04a65e8ddf84beef37d1a8fd4077",
  "schema": "agent-ee.kicad-route-pin/1"
 }
