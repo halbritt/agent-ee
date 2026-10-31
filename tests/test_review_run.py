@@ -159,6 +159,57 @@ class NativeRefusalClassificationTests(unittest.TestCase):
     def stream(self, *events):
         return '\n'.join(json.dumps(e) for e in events)
 
+    def test_agy_stream_idle_error_remains_failed_but_is_identified_for_recovery(self):
+        # Public control R8 returned this ERROR after emitting a complete-looking answer.
+        start = {'event': 'init', 'init': {'model': 'pinned'}, 'conversation_id': 'test'}
+        end = {'event': 'result', 'result': {'status': 'ERROR', 'conversation_id': 'test',
+            'error': 'API error (attempt 1): request failed: stream idle timeout (5m0s): context deadline exceeded',
+            'structured_output': {'verifications': [{'result': 'concur'}]}}}
+        with self.assertRaises(RuntimeError) as error:
+            parse_stream('agy', self.stream(start, end), 'pinned')
+        self.assertEqual(getattr(error.exception, 'failure_kind', None), 'stream_idle_timeout')
+
+    def test_agy_unfinished_turn_never_admits_its_structured_output(self):
+        start = {'event': 'init', 'init': {'model': 'pinned'}, 'conversation_id': 'test'}
+        for reason in ('print_timeout', 'interrupted', 'error'):
+            with self.subTest(reason=reason):
+                end = {'event': 'result', 'result': {'status': 'SUCCESS', 'conversation_id': 'test',
+                    'finished_reason': reason, 'structured_output': {'verifications': []}}}
+                with self.assertRaises(RuntimeError):
+                    parse_stream('agy', self.stream(start, end), 'pinned')
+
+    def test_native_agy_exposes_only_confirmed_stream_idle_failures_for_recovery(self):
+        from agent_ee import native_run
+        from agent_ee.harnesses import native_call
+        idle='API error (attempt 1): request failed: stream idle timeout (5m0s): context deadline exceeded'
+        cases=[('idle',{},None,'stream_idle_timeout'),
+               ('reported-error',{'finished_reason':'error'},None,'stream_idle_timeout'),
+               ('auth',{'error':'401 Unauthorized: subscription authentication failed'},None,None),
+               ('quota',{'error':'429 RESOURCE_EXHAUSTED: quota exhausted'},None,None),
+               ('interrupted',{'finished_reason':'interrupted'},None,None),
+               ('print-timeout',{'finished_reason':'print_timeout'},None,None),
+               ('foreign-session',{'conversation_id':'foreign'},None,None),
+               ('process-timeout',{},'timeout',None)]
+        for name,change,execution,kind in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);run=root/'run';(run/'inputs').mkdir(parents=True)
+                auth=root/'subscription';token=auth/'.gemini/antigravity-cli/antigravity-oauth-token'
+                token.parent.mkdir(parents=True);token.write_text('CPU_MOCK_ONLY credential')
+                terminal=dict(status='ERROR',conversation_id='test',error=idle,
+                              structured_output={'unadmitted':'complete-looking answer'})
+                terminal.update(change)
+                stream=self.stream({'event':'init','conversation_id':'test','init':{'model':'pinned'}},
+                                   {'event':'result','result':terminal}).encode()
+                adapter=native_run.Recorded(lambda call:native_run.Outcome(stdout=stream,execution=execution))
+                with patch.object(Path,'home',return_value=auth),native_run.using(adapter):
+                    record,value=native_call(run,'judgment-verifier',
+                        dict(harness='agy',model='pinned',effort='high'),'prompt',{},10,executable='/usr/bin/true')
+                self.assertIsNone(value)
+                self.assertNotEqual(record['execution'],'ok')
+                self.assertEqual(record.get('failure_kind'),kind)
+                self.assertEqual((run/'review-work/judgment-verifier/stdout.log').read_bytes(),stream)
+                self.assertFalse((run/'review-work/judgment-verifier/home').exists())
+
     def test_only_payload_decode_failure_after_complete_codex_turn_is_output_refusal(self):
         start = {'type': 'thread.started', 'thread_id': 'scripted'}
         answer = {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': '{invalid'}}

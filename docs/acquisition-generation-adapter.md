@@ -83,6 +83,20 @@ when author testimony records unresolved defects. A negative or dissent remains
 negative. The source material and check observations support actual reasoning;
 check statuses never generate testimony.
 
+The AGY judgment verifier may make one fresh call after a confirmed stream-idle
+transport failure. New `judgment-seat-production/4` receipts declare this policy;
+version 3 receipts retain their original single-attempt replay. Both attempts
+share the original verifier deadline and case
+deadline, including preflight and evidence retention. The failed call is archived
+before its scratch workspace is cleared; the retry gets the same read-only
+inputs, schema, model and base prompt, with a fresh preflight. Its failed answer
+and experiments are not supplied to the retry. Transport attempts have separate
+counters; schema resubmissions remain zero. Replay verifies the retained failure
+stream and both launch receipts before reading the final successful response.
+Authentication or quota failures, cancellation, process timeouts, unknown errors,
+malformed output and engineering dissent do not trigger this recovery. Authors,
+implementation writers and other reviewer roles keep their existing policies.
+
 The complete brief remains at `/evidence/packet.json`; prompts reference it
 instead of repeating the captured file inventory. The author writes the full
 `{"judgments":[...]}` document to `/work/engineering-seat/judgments.json`, using
@@ -99,8 +113,8 @@ every required span, source, applicability fact and candidate
 binding. It rereads the archived role file after call-custody verification and
 publishes only those validated records for the independent witness. Replay uses
 the archived bytes; mutable scratch is not a source. The witness reads the
-complete records from its read-only evidence mount. This transport change grants
-no extra time or retries and does not change engineering acceptance criteria.
+complete records from its read-only evidence mount. File delivery grants no extra
+time or schema retries and does not change engineering acceptance criteria.
 Captured text is decoded without newline conversion in both seat validation and
 package qualification, so CRLF captures retain their original hashes and quotes.
 The packet explicitly lists files that cannot be cited as strict UTF-8 text;

@@ -1,6 +1,7 @@
 """Guarded owned artwork/seat controls. All provider and native facts are CPU mocks."""
 import copy
 import hashlib
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -147,6 +148,204 @@ class JudgmentSeatsTests(unittest.TestCase):
         self.assertFalse((self.out/'calls/inputs/PRIVATE_EVALUATOR_SECRET').exists())
         target=self.out/'judgments/decisions/span1.json';target.write_text('{}')
         with self.assertRaises(ValueError):seats.verify(self.out,result)
+
+    def test_stream_idle_verifier_recovery_keeps_failed_evidence_and_original_deadline(self):
+        self.verifier.update(harness='agy',model='gemini-4-argon-high')
+        self.host['runtime_files']['agy']=self.host['runtime_files']['claude']
+        now=[time.monotonic()];self.deadline=now[0]+40
+        timeouts=[];original=self.dispatch
+        def dispatch(run,label,definition,prompt,schema,timeout,**kwargs):
+            if label=='judgment-verifier':
+                timeouts.append(timeout)
+                if len(timeouts)==1:
+                    now[0]+=4
+                    return self.stream_idle_response(run,label,definition)
+                self.assertNotIn('FAILED_REVIEW_NOT_REUSABLE',prompt)
+                self.assertFalse((Path(run)/'review-work'/label/'experiments/partial').exists())
+            return original(run,label,definition,prompt,schema,timeout,**kwargs)
+        self.dispatch=dispatch
+        with patch('time.monotonic',side_effect=lambda:now[0]):result=self.produce()
+        self.assertEqual((result['execution'],result['outcome']),('ok','criteria_satisfied'))
+        record=read_json(self.out/'calls/review-executions/judgment-verifier.json')
+        self.assertEqual([a['execution'] for a in record['attempts']],['failed','ok'])
+        self.assertEqual((record['max_schema_resubmissions'],record['resubmissions_used']),(0,0))
+        self.assertEqual((record['max_transport_retries'],record['transport_retries_used']),(1,1))
+        self.assertLessEqual(timeouts[1],timeouts[0]-4)
+        failed=self.out/'calls'/record['attempts'][0]['path']
+        self.assertIsNone(read_json(failed/'response.json'))
+        self.assertIn('stream idle timeout',(failed/'review-work/judgment-verifier/stdout.log').read_text())
+        seats.verify(self.out,result)
+
+    def stream_idle_response(self,run,label,definition):
+        work=Path(run)/'review-work'/label;work.mkdir(parents=True,exist_ok=True)
+        error='API error (attempt 1): request failed: stream idle timeout (5m0s): context deadline exceeded'
+        events=[dict(event='init',init=dict(model=definition['model']),conversation_id='failed-verifier'),
+            dict(event='result',result=dict(status='ERROR',conversation_id='failed-verifier',error=error,
+                structured_output={'unadmitted':'FAILED_REVIEW_NOT_REUSABLE'}))]
+        (work/'stdout.log').write_text('\n'.join(json.dumps(e) for e in events)+'\n')
+        (work/'experiments').mkdir();(work/'experiments/partial').write_text('FAILED_REVIEW_NOT_REUSABLE')
+        return dict(execution='failed',backend='agy',model_requested=definition['model'],
+                    failure_kind='stream_idle_timeout',error=error),None
+
+    def verify_transport_custody(self):
+        from agent_ee.review_run import verify_role_call
+        capsule=self.out/'calls';record=read_json(capsule/'review-executions/judgment-verifier.json')
+        verify_role_call(capsule,record,read_json(capsule/'launch-expectation.json'),
+                         'judgment-verifier','initial',limit=0,transport_limit=1)
+        return record
+
+    def test_second_stream_idle_failure_is_terminal_and_both_attempts_remain_verifiable(self):
+        self.verifier.update(harness='agy',model='gemini-4-argon-high')
+        self.host['runtime_files']['agy']=self.host['runtime_files']['claude']
+        original=self.dispatch
+        def dispatch(run,label,definition,*args,**kwargs):
+            if label=='judgment-verifier':return self.stream_idle_response(run,label,definition)
+            return original(run,label,definition,*args,**kwargs)
+        self.dispatch=dispatch
+        result=self.produce()
+        self.assertEqual((result['execution'],result['outcome']),('failed','incomplete'))
+        record=self.verify_transport_custody()
+        self.assertEqual([a['execution'] for a in record['attempts']],['failed','failed'])
+        self.assertEqual((record['transport_retries_used'],record['resubmissions_used']),(1,0))
+        self.assertFalse((self.out/'judgments').exists())
+
+    def test_runtime_drift_before_retry_retains_the_refused_preflight(self):
+        self.verifier.update(harness='agy',model='gemini-4-argon-high')
+        self.host['runtime_files']['agy']=self.host['runtime_files']['claude']
+        original=self.dispatch
+        def dispatch(run,label,definition,*args,**kwargs):
+            if label=='judgment-verifier':
+                record=self.stream_idle_response(run,label,definition)
+                self.host['runtime_files']={**self.host['runtime_files'],'agy':{'path':'changed','sha256':'0'*64}}
+                return record
+            return original(run,label,definition,*args,**kwargs)
+        self.dispatch=dispatch
+        result=self.produce()
+        self.assertEqual((result['execution'],result['outcome']),('not_run','incomplete'))
+        record=self.verify_transport_custody()
+        self.assertEqual([a['execution'] for a in record['attempts']],['failed','not_run'])
+        self.assertIn('runtime_drift',record['error'])
+        self.assertFalse((self.out/'judgments').exists())
+
+    def test_cancellation_or_role_expiry_retains_the_settled_failed_verifier(self):
+        self.verifier.update(harness='agy',model='gemini-4-argon-high')
+        self.host['runtime_files']['agy']=self.host['runtime_files']['claude']
+        original=self.dispatch
+        for stop in ('cancel','role-deadline'):
+            with self.subTest(stop=stop):
+                self.out=self.root/stop;self.cancel=native_run.Cancellation()
+                now=[time.monotonic()];self.deadline=now[0]+40
+                def dispatch(run,label,definition,*args,**kwargs):
+                    if label=='judgment-verifier':
+                        record=self.stream_idle_response(run,label,definition)
+                        if stop=='cancel':self.cancel.cancelled.set()
+                        else:now[0]+=21
+                        return record
+                    return original(run,label,definition,*args,**kwargs)
+                self.dispatch=dispatch
+                with patch('time.monotonic',side_effect=lambda:now[0]),self.assertRaises(native_run.DeadlineExhausted):
+                    self.produce()
+                record=self.verify_transport_custody()
+                self.assertEqual([a['execution'] for a in record['attempts']],['failed'])
+                self.assertIn('stop_reason',record)
+                self.assertEqual(record['transport_retries_used'],0)
+                self.assertFalse((self.out/'judgments').exists())
+
+    def test_cancellation_after_scratch_cleanup_replays_the_archived_failed_attempt(self):
+        import shutil
+        self.verifier.update(harness='agy',model='gemini-4-argon-high')
+        self.host['runtime_files']['agy']=self.host['runtime_files']['claude']
+        original=self.dispatch;remove=shutil.rmtree
+        def dispatch(run,label,definition,*args,**kwargs):
+            if label=='judgment-verifier':return self.stream_idle_response(run,label,definition)
+            return original(run,label,definition,*args,**kwargs)
+        def cleanup_then_cancel(path,*args,**kwargs):
+            result=remove(path,*args,**kwargs)
+            if Path(path)==self.out/'calls/review-work/judgment-verifier':self.cancel.cancelled.set()
+            return result
+        self.dispatch=dispatch
+        with patch('agent_ee.review_run.shutil.rmtree',side_effect=cleanup_then_cancel), \
+                self.assertRaises(native_run.DeadlineExhausted):self.produce()
+        record=self.verify_transport_custody()
+        self.assertEqual([a['execution'] for a in record['attempts']],['failed'])
+        self.assertIn('transport_retry_blocked',record)
+        self.assertFalse((self.out/'calls/review-work/judgment-verifier').exists())
+        self.assertTrue((self.out/'calls'/record['attempts'][0]['path']/'review-work/judgment-verifier/preflight/receipt.json').is_file())
+
+    def test_claimed_transport_failure_without_matching_trace_does_not_retry(self):
+        self.verifier.update(harness='agy',model='gemini-4-argon-high')
+        self.host['runtime_files']['agy']=self.host['runtime_files']['claude']
+        original=self.dispatch
+        def dispatch(run,label,definition,*args,**kwargs):
+            if label=='judgment-verifier':
+                record=self.stream_idle_response(run,label,definition)
+                stream=Path(run)/'review-work'/label/'stdout.log'
+                rows=[json.loads(line) for line in stream.read_text().splitlines()]
+                rows[-1]['result']['error']='401 Unauthorized: subscription authentication failed'
+                stream.write_text('\n'.join(json.dumps(row) for row in rows)+'\n')
+                return record
+            return original(run,label,definition,*args,**kwargs)
+        self.dispatch=dispatch
+        result=self.produce();record=self.verify_transport_custody()
+        self.assertEqual((result['execution'],result['outcome']),('failed','incomplete'))
+        self.assertEqual([a['execution'] for a in record['attempts']],['failed'])
+        self.assertEqual(record['transport_retries_used'],0)
+        self.assertFalse((self.out/'judgments').exists())
+
+    def test_legacy_receipt_replays_one_attempt_without_acquiring_transport_permission(self):
+        self.verifier.update(harness='agy',model='gemini-4-argon-high')
+        self.host['runtime_files']['agy']=self.host['runtime_files']['claude']
+        result=self.produce();execution=self.out/'calls/review-executions/judgment-verifier.json'
+        record=read_json(execution);record.pop('max_transport_retries');record.pop('transport_retries_used')
+        receipt_path=self.out/'producer-receipt.json';receipt=read_json(receipt_path)
+        # Owned CPU fixture shaped like the existing version-3 single-attempt receipts.
+        receipt['schema']='agent-ee.judgment-seat-production/3'
+        for invented_permission in (False,True):
+            with self.subTest(invented_permission=invented_permission):
+                if invented_permission:record.update(max_transport_retries=1,transport_retries_used=0)
+                write_json(execution,record);receipt['calls'][1]['sha256']=digest(execution)
+                write_json(receipt_path,receipt);result['producer_receipt_sha256']=digest(receipt_path)
+                if invented_permission:
+                    with self.assertRaisesRegex(ValueError,'transport retry declaration changed'):seats.verify(self.out,result)
+                else:seats.verify(self.out,result)
+
+    def test_receipt_replay_cannot_extend_the_verifier_role_deadline(self):
+        self.verifier.update(harness='agy',model='gemini-4-argon-high')
+        self.host['runtime_files']['agy']=self.host['runtime_files']['claude']
+        now=[time.monotonic()];self.deadline=now[0]+40
+        original=Path.read_text;delayed=[]
+        receipt=self.out/'calls/review-attempts/judgment-verifier/0/execution.json'
+        def delayed_read(path,*args,**kwargs):
+            data=original(path,*args,**kwargs)
+            if path==receipt and not delayed:
+                delayed.append(path);now[0]+=21
+            return data
+        with patch('time.monotonic',side_effect=lambda:now[0]),patch.object(Path,'read_text',delayed_read), \
+                self.assertRaises(native_run.DeadlineExhausted):self.produce()
+        self.assertTrue(receipt.is_file())
+        self.assertEqual(read_json(receipt)['execution'],'ok')
+        self.assertFalse((self.out/'judgments').exists())
+        self.assertEqual(read_json(self.out/'producer-receipt.json')['outcome'],'incomplete')
+
+    def test_transport_counter_types_cannot_change_the_replayed_policy(self):
+        self.verifier.update(harness='agy',model='gemini-4-argon-high')
+        self.host['runtime_files']['agy']=self.host['runtime_files']['claude']
+        result=self.produce();execution=self.out/'calls/review-executions/judgment-verifier.json'
+        original=read_json(execution);receipt_path=self.out/'producer-receipt.json';base=read_json(receipt_path)
+        cases=[('boolean-limit',{'max_transport_retries':True},seats.SCHEMA),
+               ('float-limit',{'max_transport_retries':1.0},seats.SCHEMA),
+               ('boolean-used',{'transport_retries_used':False},seats.SCHEMA),
+               ('float-used',{'transport_retries_used':0.0},seats.SCHEMA),
+               ('legacy-counter',{'transport_retries_used':0},seats.LEGACY_SCHEMA)]
+        for name,change,version in cases:
+            with self.subTest(name=name):
+                record=copy.deepcopy(original);receipt=copy.deepcopy(base)
+                if version==seats.LEGACY_SCHEMA:
+                    record.pop('max_transport_retries');record.pop('transport_retries_used')
+                record.update(change);write_json(execution,record)
+                receipt['schema']=version;receipt['calls'][1]['sha256']=digest(execution)
+                write_json(receipt_path,receipt);result['producer_receipt_sha256']=digest(receipt_path)
+                with self.assertRaisesRegex(ValueError,'transport retry'):seats.verify(self.out,result)
 
     def test_file_delivery_requires_success_and_replays_the_archived_author_bytes(self):
         self.mode='file'

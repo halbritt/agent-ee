@@ -34,6 +34,12 @@ def executable_for(harness):
     return shutil.which(harness)
 
 
+class StreamIdleTimeout(RuntimeError):
+    """A matching AGY session reported an idle response stream."""
+
+    failure_kind = 'stream_idle_timeout'
+
+
 def parse_stream(harness, text, model, tools=True):
     events = [json.loads(line) for line in text.splitlines() if line.strip()]
     if any(not isinstance(e, dict) for e in events):
@@ -64,10 +70,20 @@ def parse_stream(harness, text, model, tools=True):
             'model_observed': None, 'identity_limitation': 'Codex JSONL does not attest the server model; requested model recorded.'}
     start = unique('event', 'init')
     end = unique('event', 'result')['result']
-    if end.get('status') != 'SUCCESS':
-        raise RuntimeError('Agy terminal status was not SUCCESS; no fallback attempted')
     if start['init']['model'] != model or not start.get('conversation_id') or start['conversation_id'] != end.get('conversation_id'):
         raise ValueError('Agy model/session mismatch')
+    reason = end.get('finished_reason')
+    if reason is not None and reason != 'error':
+        raise RuntimeError('Agy turn did not finish: ' + str(reason))
+    if end.get('status') != 'SUCCESS':
+        error = end.get('error')
+        if end.get('status') == 'ERROR' and isinstance(error, str) and re.fullmatch(
+                r'API error \(attempt [1-9][0-9]*\): request failed: stream idle timeout '
+                r'\((?:[0-9]+(?:\.[0-9]+)?[hms])+\): context deadline exceeded', error):
+            raise StreamIdleTimeout(error)
+        raise RuntimeError('Agy terminal status was not SUCCESS; no fallback attempted')
+    if end.get('finished_reason') is not None:
+        raise RuntimeError('Agy turn did not finish: ' + str(end['finished_reason']))
     for e in events:
         if not tools and e.get('event') == 'step_update' and e['step_update'].get('step_type') not in ('user_input', 'agent_response'):
             raise ValueError('unexpected harness tool activity')
@@ -234,6 +250,8 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
             return record, value
         except OutputFormatRefusal as exc:
             record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
+        except StreamIdleTimeout as exc:
+            record.update(execution='failed', failure_kind=exc.failure_kind, error=str(exc))
         except RuntimeError as exc:
             record.update(execution='failed', error=str(exc))
         except (ValueError, KeyError, TypeError) as exc:

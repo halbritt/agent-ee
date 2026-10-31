@@ -45,30 +45,66 @@ def with_resubmission_notice(prompt, limit):
     return prompt
 
 
-def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invariant=None, execution_path=None):
-    """Reissue only malformed output, never execution failures or changed inputs.
+def transport_retry_limit(role, limit, value):
+    if (type(value) is not int or value not in (0, 1)
+            or (value and (role != 'judgment-verifier' or limit != 0))):
+        raise ValueError('one transport retry is reserved for the zero-resubmission judgment verifier')
+    return value
+
+
+def retained_stream_idle(record, work):
+    """Confirm the retry classification from the failed provider's retained stream."""
+    from .harnesses import StreamIdleTimeout, parse_stream
+    if (record.get('execution') != 'failed' or record.get('backend') != 'agy'
+            or record.get('failure_kind') != StreamIdleTimeout.failure_kind):
+        return False
+    stream = work / 'stdout.log'
+    if stream.is_symlink() or not stream.is_file():
+        return False
+    try:
+        parse_stream('agy', stream.read_text(encoding='utf-8'), record['model_requested'])
+    except StreamIdleTimeout as exc:
+        return str(exc) == record.get('error')
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+        return False
+    return False
+
+
+def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invariant=None,
+                    execution_path=None, transport_limit=0):
+    """Retain each output resubmission or explicitly enabled verifier transport recovery.
 
     ``call`` launches the same pinned definition with a fresh preflight each time.
+    The caller owns one absolute deadline shared by all transport attempts.
     ``validate`` is the role's existing validator, not a repair or a fallback.
     """
     run = Path(run)
     limit = resubmission_limit(limit)
+    transport_limit = transport_retry_limit(role, limit, transport_limit)
     prompt = with_resubmission_notice(prompt, limit)
     original_inputs = input_identity(run)
     work = run / 'review-work' / role
+    from .native_run import DeadlineExhausted
     attempts = []
     retry_design = None
     finding_ids = None
     target = execution_path or (run / 'review-executions' / (role + '.json')
         if role not in ('adjudicator', 'implementation') else run / (role + '-execution.json'))
-    for number in range(limit + 1):
+    for number in range(limit + transport_limit + 1):
+        if number and transport_limit and invariant is not None:
+            try:
+                invariant()
+            except DeadlineExhausted:
+                final['transport_retry_blocked'] = 'deadline exhausted or cancelled before transport retry'
+                write_json(target, final)
+                raise
         if number and (input_identity(run) != original_inputs or
                        (retry_design is not None and tree_identity(work / 'design') != retry_design)):
             final['resubmission_blocked'] = 'inputs changed before resubmission'
             write_json(target, final)
             return final, None
         supplied_prompt = prompt
-        if number:
+        if number and not transport_limit:
             # A retry starts a fresh harness session. Give this role its own
             # retained answer so it can correct formatting without re-reviewing.
             prior_response = read_json(run / attempts[-1]['path'] / 'response.json')
@@ -79,8 +115,18 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
                                       'correct only the reported output-format errors.\n')
             supplied_prompt += '\nOUTPUT VALIDATION ERROR:\n' + attempts[-1]['error']
         interrupted = False
+        deadline_exhausted = None
         try:
             record, value = call(supplied_prompt)
+        except DeadlineExhausted as exc:
+            if not transport_limit:
+                raise
+            record = {'execution': 'not_run', 'error': str(exc)}
+            receipt = work / 'preflight/receipt.json'
+            if receipt.is_file():
+                record['preflight'] = {'path': receipt.relative_to(run).as_posix(), 'sha256': digest(receipt)}
+            value = None
+            deadline_exhausted = exc
         except KeyboardInterrupt:
             path = work / 'launch-execution.json'
             record = read_json(path) if path.is_file() else {'execution': 'interrupted'}
@@ -106,6 +152,12 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
         if invariant is not None:
             try:
                 invariant()
+            except DeadlineExhausted as exc:
+                record['stop_reason'] = str(exc)
+                if record['execution'] == 'ok':
+                    record.update(execution='refused', error=str(exc))
+                accepted = None
+                deadline_exhausted = exc
             except ValueError as exc:
                 record.update(execution='refused', error=str(exc))
                 accepted = None
@@ -135,8 +187,10 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
         if 'error' in record:
             attempt['error'] = record['error']
         attempts.append(attempt)
-        final = {**record, 'max_schema_resubmissions': limit, 'resubmissions_used': number,
+        final = {**record, 'max_schema_resubmissions': limit, 'resubmissions_used': 0 if transport_limit else number,
                  'attempts': copy.deepcopy(attempts), 'input_identity': original_inputs}
+        if transport_limit:
+            final.update(max_transport_retries=transport_limit, transport_retries_used=number)
         if target.parent == run / 'review-executions':
             # Recovery can read this publication before the caller returns.
             final['role'] = role
@@ -144,17 +198,23 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
         write_json(target, final)
         if interrupted:
             raise KeyboardInterrupt
-        if (record['execution'] != 'malformed' or record.get('refusal_kind') != 'structured_output'
-                or number == limit):
+        if deadline_exhausted is not None:
+            raise deadline_exhausted
+        if transport_limit:
+            retry = number < transport_limit and retained_stream_idle(record, archive / 'review-work' / role)
+        else:
+            retry = (record['execution'] == 'malformed' and record.get('refusal_kind') == 'structured_output'
+                     and number < limit)
+        if not retry:
             return final, accepted
         # Keep the role's own experiments and writer output; never expose a peer's
         # judgment. Original bytes remain in the separately retained workspace.
         saved = archive / 'review-work' / role
-        if (work / 'design').is_dir():
+        if not transport_limit and (work / 'design').is_dir():
             retry_design = tree_identity(work / 'design')
         if work.exists():
             shutil.rmtree(work)
-        for name in ('experiments', 'design'):
+        for name in (() if transport_limit else ('experiments', 'design')):
             if (saved / name).exists():
                 shutil.copytree(saved / name, work / name, symlinks=True)
 
@@ -179,20 +239,38 @@ def tree_identity(root):
     return identity(tree_hashes(root))
 
 
-def verify_role_call(run, record, expected, role, boundary, *, limit=None):
+def verify_role_call(run, record, expected, role, boundary, *, limit=None, transport_limit=0):
     """Verify each distinct launch receipt, including refused prior outputs."""
     from .preflight import verify_receipt
-    invocation = verify_receipt(run, record, expected, role, boundary)
+    transport_limit = transport_retry_limit(role, limit, transport_limit)
+    if ((transport_limit and (type(record.get('max_transport_retries')) is not int
+                             or record['max_transport_retries'] != transport_limit))
+            or (not transport_limit and any(key in record for key in
+                                           ('max_transport_retries', 'transport_retries_used')))):
+        raise ValueError('transport retry declaration changed')
+    final_root = Path(run)
+    if transport_limit:
+        attempts = record.get('attempts')
+        if not isinstance(attempts, list) or not 1 <= len(attempts) <= transport_limit + 1:
+            raise ValueError('invalid transport attempt count')
+        # The archived last settled attempt survives cleanup or a blocked retry.
+        final_root = final_root / 'review-attempts' / role / str(len(attempts) - 1)
+    invocation = verify_receipt(final_root, record, expected, role, boundary)
     if limit is not None and (record.get('max_schema_resubmissions') != limit or 'attempts' not in record):
         raise ValueError('structured resubmission declaration changed')
     if 'attempts' not in record:
         return {invocation}
     limit = resubmission_limit(record.get('max_schema_resubmissions'))
     attempts = record['attempts']
-    if (not isinstance(attempts, list) or not 1 <= len(attempts) <= limit + 1 or
-            record.get('resubmissions_used') != len(attempts) - 1):
+    if (not isinstance(attempts, list) or not 1 <= len(attempts) <= limit + transport_limit + 1 or
+            record.get('resubmissions_used') != (0 if transport_limit else len(attempts) - 1)):
         raise ValueError('invalid structured resubmission count')
+    if transport_limit and (type(record.get('transport_retries_used')) is not int
+                            or record['transport_retries_used'] != len(attempts) - 1
+                            or record.get('input_identity') != input_identity(Path(run))):
+        raise ValueError('transport retry count or immutable inputs changed')
     invocations = set()
+    final_definition = read_json(final_root / record['preflight']['path'])['definition'] if transport_limit else None
     for number, attempt in enumerate(attempts):
         path = f'review-attempts/{role}/{number}'
         if attempt.get('path') != path:
@@ -202,11 +280,22 @@ def verify_role_call(run, record, expected, role, boundary, *, limit=None):
         if (digest(archive / 'execution.json') != attempt['execution_sha256'] or
                 tree_hashes(archive) != attempt['artifact_hashes'] or
                 raw['execution'] != attempt['execution'] or
-                raw.get('error') != attempt.get('error') or
-                (number < len(attempts) - 1 and
-                 (raw['execution'] != 'malformed' or raw.get('refusal_kind') != 'structured_output'))):
+                raw.get('error') != attempt.get('error')):
             raise ValueError('structured resubmission record changed')
+        if number < len(attempts) - 1:
+            if transport_limit:
+                if not retained_stream_idle(raw, archive / 'review-work' / role):
+                    raise ValueError('transport retry predecessor was not a matching stream-idle failure')
+            elif raw['execution'] != 'malformed' or raw.get('refusal_kind') != 'structured_output':
+                raise ValueError('structured resubmission record changed')
         call_id = verify_receipt(archive, raw, expected, role, boundary)
+        if transport_limit:
+            definition = read_json(archive / raw['preflight']['path'])['definition']
+            if definition != final_definition:
+                raise ValueError('transport retry changed the selected definition')
+            if number < len(attempts) - 1 and (raw.get('backend') != definition['harness']
+                                               or raw.get('model_requested') != definition['model']):
+                raise ValueError('transport retry predecessor differs from its preflight definition')
         if raw['execution'] == 'ok':
             from .reviewers import validate_evidence_paths
             validate_evidence_paths(read_json(archive/'response.json'), read_json(archive/'schema.json'))
@@ -215,7 +304,8 @@ def verify_role_call(run, record, expected, role, boundary, *, limit=None):
         invocations.add(call_id)
     projected = {k: v for k, v in record.items() if k not in
                  ('attempts', 'max_schema_resubmissions', 'resubmissions_used', 'input_identity',
-                  'resubmission_blocked', 'role')}
+                  'resubmission_blocked', 'role', 'max_transport_retries', 'transport_retries_used',
+                  'transport_retry_blocked')}
     if projected != {k: v for k, v in raw.items() if k != 'role'} or invocation != call_id:
         raise ValueError('structured resubmission final projection changed')
     return invocations

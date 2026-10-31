@@ -19,7 +19,8 @@ from .profiles import validate_definition
 from .requirement_map import input_inventory
 from .storage import digest, identity, read_json, write_json
 
-SCHEMA = 'agent-ee.judgment-seat-production/3'
+SCHEMA = 'agent-ee.judgment-seat-production/4'
+LEGACY_SCHEMA = 'agent-ee.judgment-seat-production/3'
 DELIVERY_SCHEMA = 'agent-ee.judgment-delivery/1'
 AUTHOR_PATH = 'engineering-seat/judgments.json'
 MAX_AUTHOR_BYTES = 4 * 1024 * 1024
@@ -348,17 +349,25 @@ def produce(build_run, out, *, author, verifier, private_evaluator_pair, deadlin
                 or any(tree_identity(capsule/v['path']) != v['tree'] for v in data['evidence'].values())):
             raise ValueError('judgment artwork/brief changed during call')
     def call(role, definition, prompt, schema, validate):
-        invariant()
-        context = dict(expected=expected, boundary='initial', deadline=deadline, **({'host': host} if host is not None else {}))
+        role_deadline = min(deadline, time.monotonic() + definition['timeout_s'])
+        transport_limit = int(role == 'judgment-verifier' and definition['harness'] == 'agy')
+        def call_invariant():
+            checkpoint(role_deadline, cancellation)
+            invariant()
+        call_invariant()
+        context = dict(expected=expected, boundary='initial', deadline=role_deadline, **({'host': host} if host is not None else {}))
         record, value = structured_call(capsule, role, prompt, schema,
             lambda supplied: reviewer_call(capsule, role, definition, supplied, schema,
-                min(definition['timeout_s'], max(0, deadline-time.monotonic())),
-                cancellation=cancellation, launch_context=context), validate, limit=0, invariant=invariant)
-        verify_role_call(capsule, record, expected, role, 'initial', limit=0)
+                max(0, role_deadline-time.monotonic()),
+                cancellation=cancellation, launch_context=context), validate, limit=0, invariant=call_invariant,
+            transport_limit=transport_limit)
+        call_invariant()
+        verify_role_call(capsule, record, expected, role, 'initial', limit=0, transport_limit=transport_limit)
         receipt['calls'].append(dict(role=role, path=f'calls/review-executions/{role}.json',
                                     sha256=digest(capsule/'review-executions'/f'{role}.json')))
         if record['execution'] == 'ok':
             check_call_identity(capsule, record, definition)
+            call_invariant()
         if record['execution'] != 'ok' or value is None:
             receipt['execution'] = record['execution']
             return None
@@ -457,7 +466,7 @@ def verify(out, result):
     if path.is_symlink() or digest(path) != result['producer_receipt_sha256']:
         raise ValueError('judgment producer receipt changed')
     receipt = read_json(path); data = read_json(capsule/'packet.json')
-    if (receipt['schema'] != SCHEMA or receipt['brief_sha256'] != digest(capsule/'packet.json')
+    if (receipt['schema'] not in (SCHEMA, LEGACY_SCHEMA) or receipt['brief_sha256'] != digest(capsule/'packet.json')
             or receipt['binding'] != data['binding'] or receipt['execution'] != result['execution']
             or receipt['outcome'] != result['outcome'] or receipt['judgment_inventory'] != result['judgment_inventory']
             or input_inventory(capsule/'inputs') != data['files']):
@@ -485,7 +494,10 @@ def verify(out, result):
         if row['role'] != role or row['path'] != rel or digest(out/rel) != row['sha256']:
             raise ValueError('judgment call execution changed')
         record = read_json(out/rel)
-        found = verify_role_call(capsule, record, receipt['expectation'], role, 'initial', limit=0)
+        transport_limit = int(receipt['schema'] == SCHEMA and role == 'judgment-verifier'
+                              and receipt['definitions'][index]['harness'] == 'agy')
+        found = verify_role_call(capsule, record, receipt['expectation'], role, 'initial', limit=0,
+                                 transport_limit=transport_limit)
         if invocations & found: raise ValueError('judgment seats reused a launch')
         invocations |= found
         if record['execution'] != 'ok': raise ValueError('judgment call did not execute successfully')
@@ -493,7 +505,7 @@ def verify(out, result):
         name = ('author', 'verifier')[index]
         if receipt['metadata'][name]['model'] != receipt['definitions'][index]['model']:
             raise ValueError('judgment testimony model differs from actual seat')
-        values.append(read_json(capsule/'review-attempts'/role/'0/response.json'))
+        values.append(read_json(capsule/record['attempts'][-1]['path']/'response.json'))
     texts = source_text(capsule, data['files'])
     if (data.get('citation_policy') != citation_policy(data['files'], texts)
             or data.get('review_scope') != review_scope(read_json(capsule/'candidate.json')['scope'])):
