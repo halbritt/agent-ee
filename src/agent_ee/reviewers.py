@@ -112,6 +112,29 @@ def citation_transport_schema(schema):
     return wire
 
 
+def review_transport_schema(schema):
+    """Express optional purpose tags without introducing a nullable finding field.
+
+    Only the provider copy uses a union. Draft validation, archived schemas and
+    replay keep the original contract; returned findings are never rewritten.
+    """
+    wire = citation_transport_schema(schema)
+    if wire.get('properties', {}).get('schema', {}).get('enum') == [REVIEW_VERSION]:
+        purpose = wire['properties']['findings']['items']
+        ordinary = json.loads(json.dumps(purpose))
+        del ordinary['properties']['dimension']
+        purpose['properties']['assessment']['enum'] = ['concern']
+        purpose['properties']['severity']['enum'] = ['minor', 'info']
+        for branch in (ordinary, purpose):
+            # strict_schema does not descend into anyOf. Each member must
+            # already be strict, including any required baseline witnesses.
+            branch['required'] = list(branch['properties'])
+            branch['additionalProperties'] = False
+        wire['properties']['findings']['items'] = {'anyOf': [ordinary, purpose]}
+        _check_schema_limits(wire)
+    return wire
+
+
 def validate_evidence_paths(value, schema):
     """Admit the exact frozen path/locator language before reading cited files.
 
@@ -218,42 +241,27 @@ def literal_path_set(paths):
                           minLength=min(map(len, paths)), maxLength=max(map(len, paths)))]}
 
 
-def bind_evidence_schema(schema, collection, run_dir, packet, role):
-    evidence = evidence_schema(run_dir, packet, role)
-    schema['$defs'] = evidence.pop('$defs')
-    schema['properties'][collection]['items']['properties']['evidence'] = evidence
-    # Count the complete producer schema, including identity/finding enums.
-    def enums(node):
-        if isinstance(node, dict):
-            if 'enum' in node:
-                yield node['enum']
-            for value in node.values():
-                yield from enums(value)
-        elif isinstance(node, list):
-            for value in node:
-                yield from enums(value)
-    values = list(enums(schema))
+def _schema_enums(node):
+    if isinstance(node, dict):
+        if 'enum' in node:
+            yield node['enum']
+        for value in node.values():
+            yield from _schema_enums(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _schema_enums(value)
+
+
+def _schema_wire_size(value):
+    return len(json.dumps(value, separators=(',', ':')).encode('utf-8'))
+
+
+def _check_schema_limits(schema):
+    """Check the whole schema, including any transport-only expansion."""
     from .harnesses import strict_schema
-    def wire_size(value):
-        return len(json.dumps(value, separators=(',', ':')).encode('utf-8'))
-    if (sum(len(group) for group in values) > 1000
-            or max(wire_size(schema), wire_size(strict_schema(schema))) >= 120 * 1024):
-        # const objects also exceed the host's single-argv limit for real packets.
-        # A factored finite regex retains every literal with less wire overhead.
-        groups, redirects = {}, {}
-        for name, definition in schema['$defs'].items():
-            # Names encode the membership group followed by its enum-chunk index.
-            group = name.rsplit('_', 1)[0]
-            groups.setdefault(group, []).extend(definition['enum'])
-            redirects['#/$defs/' + name] = '#/$defs/' + group
-        schema['$defs'] = {group: literal_path_set(paths) for group, paths in groups.items()}
-        for branch in evidence['items']['anyOf']:
-            path = branch['properties']['path']
-            if 'anyOf' in path:
-                path['anyOf'] = [{'$ref': ref} for ref in dict.fromkeys(redirects[r['$ref']] for r in path['anyOf'])]
-        values = list(enums(schema))
-        if sum(len(group) for group in values) > 1000:
-            raise ValueError('complete citation producer schema exceeds 1000 non-path enum values')
+    values = list(_schema_enums(schema))
+    if sum(len(group) for group in values) > 1000:
+        raise ValueError('complete citation producer schema exceeds 1000 enum values')
     if any(len(group) > 250 and sum(len(v) for v in group if isinstance(v, str)) > 15000 for group in values):
         raise ValueError('complete citation producer schema exceeds per-enum string limit')
     def strings(node):
@@ -270,8 +278,35 @@ def bind_evidence_schema(schema, collection, run_dir, packet, role):
                 yield from strings(child)
     if sum(map(len, strings(schema))) > 120000:
         raise ValueError('complete citation producer schema exceeds 120000 string characters')
-    if max(wire_size(schema), wire_size(strict_schema(schema))) >= 120 * 1024:
+    if max(_schema_wire_size(schema), _schema_wire_size(strict_schema(schema))) >= 120 * 1024:
         raise ValueError('complete citation producer schema exceeds 120 KiB transport limit')
+
+
+def bind_evidence_schema(schema, collection, run_dir, packet, role):
+    evidence = evidence_schema(run_dir, packet, role)
+    schema['$defs'] = evidence.pop('$defs')
+    schema['properties'][collection]['items']['properties']['evidence'] = evidence
+    # Count the complete producer schema, including identity/finding enums.
+    values = list(_schema_enums(schema))
+    from .harnesses import strict_schema
+    if (sum(len(group) for group in values) > 1000
+            or max(_schema_wire_size(schema), _schema_wire_size(strict_schema(schema))) >= 120 * 1024):
+        # const objects also exceed the host's single-argv limit for real packets.
+        # A factored finite regex retains every literal with less wire overhead.
+        groups, redirects = {}, {}
+        for name, definition in schema['$defs'].items():
+            # Names encode the membership group followed by its enum-chunk index.
+            group = name.rsplit('_', 1)[0]
+            groups.setdefault(group, []).extend(definition['enum'])
+            redirects['#/$defs/' + name] = '#/$defs/' + group
+        schema['$defs'] = {group: literal_path_set(paths) for group, paths in groups.items()}
+        for branch in evidence['items']['anyOf']:
+            path = branch['properties']['path']
+            if 'anyOf' in path:
+                path['anyOf'] = [{'$ref': ref} for ref in dict.fromkeys(redirects[r['$ref']] for r in path['anyOf'])]
+        if sum(len(group) for group in _schema_enums(schema)) > 1000:
+            raise ValueError('complete citation producer schema exceeds 1000 non-path enum values')
+    _check_schema_limits(schema)
 CITATION_INSTRUCTIONS = (
     "Every evidence citation MUST include path, a nonempty descriptive locator, and at least one structured field: "
     "pointer (RFC 6901 JSON pointer, e.g. /details/violations; escape ~ as ~0 and / as ~1 in keys), "
@@ -519,7 +554,7 @@ def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancel
         timeout = min(timeout, launch_context['deadline'] - time.monotonic())
         if timeout <= 0 or (cancellation and cancellation.cancelled.is_set()):
             return {'execution': 'not_run', 'preflight': link, 'error': 'launch cancelled or deadline exhausted'}, None
-        record, value = dispatch(run_dir, label, definition, prompt, citation_transport_schema(schema), timeout,
+        record, value = dispatch(run_dir, label, definition, prompt, review_transport_schema(schema), timeout,
                                  cancellation=cancellation, executable=executable)
         record['preflight'] = link
         return record, value
