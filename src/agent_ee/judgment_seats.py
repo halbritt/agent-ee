@@ -395,6 +395,16 @@ def produce(build_run, out, *, author, verifier, private_evaluator_pair, deadlin
              'Use all required fields and exact supplied metadata. Return only the versioned delivery manifest '
              'with that relative path and SHA256 of the completed file, not the document inline. '
              'The complete file must fit within 4 MiB; retain every required span and its supporting evidence. '
+             'Before delivery, read back the quotations in the completed records and check that each passage '
+             'supports the specific claim made. Exact hashes and matching text establish source identity; '
+             'also check substantive support. Section titles may repeat in a table of contents or index: '
+             'inspect the actual body instead of assuming that the first or last heading match selects it. '
+             'For numerical or table claims, include the applicable body rows, column headings, units, '
+             'conditions and relevant footnotes. Trace material manufacturer facts, including package '
+             'dimensions and assembly-process claims, to captured primary passages in that record\'s sources '
+             'and include the consulted files in its inputs. Cite models and calculations as derived evidence. '
+             'Check coverage of the claims actually made for each required span within this call\'s deadline. '
+             'If support cannot be established, state the limitation and honest unresolved defect. '
              'Reserve time within this call for completing the file and the final manifest.\n') +
              json.dumps(dict(author=metadata['author'],timeout_s=definitions[0]['timeout_s'])),
             delivery_schema, lambda v: author_delivery(v,capsule/'review-work/judgment-author',data,texts,metadata['author'],

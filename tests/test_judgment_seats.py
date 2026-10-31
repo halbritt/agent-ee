@@ -459,6 +459,71 @@ class JudgmentSeatsTests(unittest.TestCase):
                 self.assertEqual(result['outcome'],'criteria_failed');seats.verify(self.out,result)
             else:self.assertEqual(result['execution'],'malformed')
 
+    def test_literal_citation_validity_does_not_override_source_support_dissent(self):
+        # R12's generated first-heading helper selected real TOC bytes; another
+        # record cited a derived model while omitting primary support. These
+        # explicit provider fixtures protect dissent custody, not model quality.
+        heading='5.3 Recommended Operating Conditions'
+        next_heading='5.4 Thermal Information'
+        body=heading+'\nParameter: junction temperature; maximum 125 °C at 3.3 V.\n'
+        source=(heading+'........3\n'+next_heading+'........4\n\n'+body+next_heading+'\n')
+        (self.candidate/'manufacturer.txt').write_bytes(source.encode('utf-8'))
+        write_json(self.candidate/'derived.json',dict(maximum_junction_temperature_c=125))
+        for row in self.control.report['completed']:
+            row['tree']=tree_identity(self.root/row['directory'])
+        self.control.save()
+        self.verifier.update(harness='agy',model='gemini-4-argon-high')
+        self.host['runtime_files']['agy']=self.host['runtime_files']['claude']
+        original=self.dispatch
+        for case in ('contents-only','derived-only','body'):
+            with self.subTest(case=case):
+                self.out=self.root/('citation-'+case);self.calls=[]
+                expected='concur' if case=='body' else 'dissent'
+                defect={
+                    'contents-only':'The cited TOC entry does not state the claimed temperature bound or its conditions.',
+                    'derived-only':'The derived model does not supply the omitted available primary manufacturer support.',
+                    'body':None,
+                }[case]
+                def dispatch(run,label,definition,prompt,schema,timeout,**kwargs):
+                    execution,value=original(run,label,definition,prompt,schema,timeout,**kwargs)
+                    packet=read_json(Path(run)/'packet.json')
+                    self.assertIn('manufacturer.txt',packet['files'])
+                    if label=='judgment-author':
+                        target=Path(run)/'review-work/judgment-author/engineering-seat/judgments.json'
+                        document=read_json(target);record=document['judgments'][0]
+                        name='derived.json' if case=='derived-only' else 'manufacturer.txt'
+                        text=(Path(run)/'inputs'/name).read_bytes().decode('utf-8')
+                        if case=='contents-only':
+                            start=text.index(heading)
+                            quote=text[start:text.index(next_heading,start+len(heading))]
+                            self.assertNotIn('125',quote)
+                        else:quote=body if case=='body' else text
+                        start=len(text[:text.index(quote)].encode('utf-8'))
+                        record['conclusion']='CPU_MOCK_ONLY manufacturer limit is 125 °C at 3.3 V.'
+                        record['inputs']=[dict(path=p,sha256=packet['files'][p]) for p in ('spec.md',name)]
+                        record['sources']=[dict(kind='engineering' if case=='derived-only' else 'datasheet',
+                            citation=dict(path=name,sha256=packet['files'][name],quote=quote,
+                                locator=f'UTF-8 bytes [{start},{start+len(quote.encode("utf-8"))})'))]
+                        write_json(target,document);value['sha256']=digest(target)
+                    else:
+                        value['verifications'][0].update(result=expected,defects=[] if defect is None else [defect])
+                    return execution,value
+                self.dispatch=dispatch
+                result=self.produce()
+                self.assertEqual((result['execution'],result['outcome']),
+                    ('ok','criteria_satisfied' if case=='body' else 'criteria_failed'))
+                self.assertEqual(self.calls,['judgment-author','judgment-verifier'])
+                receipt=seats.verify(self.out,result)
+                self.assertEqual(receipt['outcome'],result['outcome'])
+                record=read_json(self.out/'judgments/decisions/span1.json')
+                archive=self.out/'calls/review-attempts/judgment-author/0/review-work/judgment-author/engineering-seat/judgments.json'
+                self.assertEqual(read_json(archive),{'judgments':[record]})
+                witness=read_json(self.out/'judgments/verification'/f'{identity(record["span"])}.json')
+                self.assertEqual((witness['result'],witness['defects']),(expected,[] if defect is None else [defect]))
+                verifier=read_json(self.out/'calls/review-executions/judgment-verifier.json')
+                self.assertEqual((verifier['transport_retries_used'],verifier['resubmissions_used']),(0,0))
+                self.assertEqual(len(verifier['attempts']),1)
+
     def test_missing_duplicate_wrong_bindings_and_auth_stop_without_retry(self):
         for mode in ('stale','duplicate','wrong-witness','auth','wrong-model'):
             self.mode=mode;self.out=self.root/mode;self.calls=[]
