@@ -1,7 +1,7 @@
 """Source-only selector controls; never native or manufacturer qualification."""
 import copy
 from hashlib import sha256
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -191,6 +191,9 @@ class ProducerSourceTests(unittest.TestCase):
         stock_path=resistor.acquisition_alternative._assembly_check(mapping)['params']['catalog']
         self.source_stock=json.loads((self.root/stock_path).read_bytes())
         self.captures={p:(CAPTURE/p).read_bytes() for p in resistor.EVIDENCE}
+        self.as_of=max(self.source_stock['completed_at'],
+                       json.loads(self.captures['catalog/catalog.json'])['completed_at'],
+                       key=datetime.fromisoformat)
         for p,b in self.captures.items():
             target=self.root/resistor.AT/p;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(b)
         self.value=resistor.policy(public([dict(lcsc='C22548',mpn='RC0603FR-071KL')]),[catalog()])
@@ -204,7 +207,7 @@ class ProducerSourceTests(unittest.TestCase):
         before=parts_manifest.load_manifest(self.root,'parts.json')
         circuit=(self.root/'circuit.json').read_bytes()
         raw={p:storage.digest(self.root/p) for p in requirement_map.input_inventory(self.root) if '/responses/' in p}
-        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-30T17:20:00+00:00',self.policy_blob)
+        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,self.as_of,self.policy_blob)
         after=parts_manifest.load_manifest(self.root,'parts.json');parts_manifest.qualify_manifest(after,self.root)
         for a,b in zip(before['parts'],after['parts']):
             for key in ('id','role','instances','lib_id','footprint','required'):
@@ -231,7 +234,7 @@ class ProducerSourceTests(unittest.TestCase):
                                                   key=datetime.fromisoformat))
 
     def test_selected_cpl_has_full_union_and_labeled_roster_delta(self):
-        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-30T17:20:00+00:00',self.policy_blob)
+        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,self.as_of,self.policy_blob)
         cpl=self.root/'cpl'
         for name,raw in resistor.supplier_files(self.captures).items():
             target=cpl/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw)
@@ -252,7 +255,7 @@ class ProducerSourceTests(unittest.TestCase):
         self.assertIn(resistor.LABEL,overlay['judgments']['judgments/acq-mech-4-assembly-applicability.json']['questions'])
 
     def test_cpl_cannot_accept_panasonic_without_admitted_selection(self):
-        resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-30T17:20:00+00:00',self.policy_blob)
+        resistor._revise(self.root,self.captures,self.value,self.unit_record,self.as_of,self.policy_blob)
         for name,raw in resistor.supplier_files(self.captures).items():
             target=self.root/'cpl'/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw)
         project=Path(__file__).resolve().parents[1]
@@ -321,11 +324,11 @@ class ProducerSourceTests(unittest.TestCase):
     def test_target_mode_still_requires_its_review_input(self):
         (self.root/'ENGINEERING-REVIEW.md').unlink()
         with self.assertRaises(FileNotFoundError):
-            resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-30T17:20:00+00:00',self.policy_blob)
+            resistor._revise(self.root,self.captures,self.value,self.unit_record,self.as_of,self.policy_blob)
 
     def test_mechanics_accepts_only_exact_body_derivative_and_all_source_custody(self):
         from agent_ee import acquisition_mechanics
-        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-10-30T17:20:00+00:00',self.policy_blob)
+        result=resistor._revise(self.root,self.captures,self.value,self.unit_record,self.as_of,self.policy_blob)
         declaration=acquisition_mechanics.declaration(self.root)
         path=self.root/'placement-mechanics.json';storage.write_json(path,declaration)
         loaded=acquisition_mechanics.load(path)
@@ -349,7 +352,8 @@ class ProducerSourceTests(unittest.TestCase):
 
     def test_stale_capture_and_wrong_original_allocation_refuse(self):
         with self.assertRaisesRegex(ValueError,'stale'):
-            resistor._revise(self.root,self.captures,self.value,self.unit_record,'2026-11-10T00:00:00+00:00',self.policy_blob)
+            later=(datetime.fromisoformat(self.as_of)+timedelta(hours=25)).isoformat()
+            resistor._revise(self.root,self.captures,self.value,self.unit_record,later,self.policy_blob)
         self.assertEqual({p['lcsc'] for p in parts_manifest.load_manifest(self.root,'parts.json')['parts'] if p['id'] in ('R1','R2')},{'C22548'})
 
 @unittest.skipUnless(SOURCE.is_dir(), 'explicit retained acquisition sources required')
@@ -389,7 +393,6 @@ class DefaultPreparationTests(unittest.TestCase):
         return acquisition_prepare.prepare(self.brief,self.plan,self.root/name,added_sources=self.sources,**args)
 
     def test_preparation_keeps_selection_within_the_admitted_role_carrier(self):
-        from datetime import timedelta
         from agent_ee import acquisition_alternative_context, acquisition_roles, jlc_stock_capture
         # Retained identity inputs with explicitly authored restocked observations.
         # Qualification readers are the test seam; no native/source acceptance or
@@ -488,7 +491,11 @@ class DefaultPreparationTests(unittest.TestCase):
         context=SOURCE/'preparation/alternative-context.json'
         options=dict(alternative_context=context,alternative_context_sha256=storage.digest(context),
                      alternative_source=SOURCE/'preparation/alternative-context')
-        anchor=datetime.now(timezone.utc)
+        adc=json.loads((SOURCE/'preparation/alternative-context'/
+                        json.loads(context.read_bytes())['catalog']['path']).read_bytes())
+        power=json.loads((SOURCE/'power-repair/catalog/catalog.json').read_bytes())
+        # Compare the retained preparations once both actual captures completed.
+        anchor=max(datetime.fromisoformat(c['completed_at']) for c in (adc,power))
         with patch('agent_ee.acquisition_prepare.datetime') as clock:
             clock.now.return_value=anchor
             a=self.prepare('adc-absent',**options)
