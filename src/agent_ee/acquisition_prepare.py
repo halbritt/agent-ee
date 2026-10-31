@@ -56,7 +56,7 @@ REVISION_BASIS = {
     'electrical-locality.json': 'Rebind citations/spec; optional root706 engineering final-group additions preserve original eight legs',
     'placement.json': 'Rebind embedded locality and optional root706 final-group additions; preserve geometry and policy',
     'analysis/electrical-intervals.json': 'Update only bus capacitance and operative source bindings',
-    'OPERATING.md': 'Bind selected capacitance, ADC applicability and optional captured Panasonic R1/R2 source attribution; distinguish the declared body-gap limit from generated-board measurements',
+    'OPERATING.md': 'Bind selected capacitance, ADC applicability and optional captured Panasonic R1/R2 source attribution; distinguish the declared body-gap limit from generated-board measurements; bind zero J2 external load when a source role context is selected',
     'analysis/power-startup/corners.lib': 'Explicit R6+1% adverse626.2ohm; all other original corner values retained',
     'analysis/power-removal/corners.lib': 'Explicit R6+1% adverse626.2ohm; unused historical model remains documentary',
     'analysis/power-startup/README.md': 'Declare seven reviewed source cases, assumptions and convergence history without inherited pass',
@@ -246,6 +246,32 @@ def _write_revision(base, revised, selected, overlay):
         spec_record_sha256=spec_record.sha256((revised / 'spec-record.json').read_bytes()),
         requirement_map_sha256=spec_record.sha256((revised / 'requirement-map.json').read_bytes()))
     return overlay, old_record, record
+
+
+def _write_role_operating(root):
+    """Carry the admitted role context's zero-load boundary into instructions."""
+    path = root / 'OPERATING.md'
+    operating = path.read_text()
+    replacements = (
+        ('| J2 HOST | 4 | Board 3.3 V output; at most 1 mA load; never drive this pin |',
+         '| J2 HOST | 4 | Board 3.3 V output; zero external load; never drive this pin |'),
+        ('The external load on J2 pin 4 must not exceed 1 mA under any normal operating\n'
+         'state and must never source current into the board. During initial bench\n'
+         'qualification, use no external rail load until the unloaded rail has been checked.',
+         'The external load on J2 pin 4 must be zero (0 A) throughout operation and\n'
+         'physical follow-up. External connections must never source current into the board.\n'
+         'The retained 1 mA calculation reserve does not permit an external load. A nonzero\n'
+         'load requires a separately captured and evaluated application context.'),
+        ('current. Then check startup/shutdown, the maximum declared external load, both\n'
+         'I2C lines held low, ADC register configuration/address and known analog inputs.',
+         'current. Then check startup/shutdown with J2 pin 4 unloaded, both I2C lines\n'
+         'held low, ADC register configuration/address and known analog inputs.'),
+    )
+    for old, new in replacements:
+        if operating.count(old) != 1:
+            raise ValueError('captured operating J2 instruction differs from this recipe')
+        operating = operating.replace(old, new)
+    path.write_text(operating)
 
 
 def _admit(plan_path, out, added_sources):
@@ -848,6 +874,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         role_report=None
         if roles is not None:
             role_report=acquisition_roles.apply(revised,plan,overlay,role_doc,role_captures)
+            _write_role_operating(revised)
             (revised/acquisition_roles.AT/'context-input.json').write_bytes(role_raw)
         _isolate_inherited_review(base, revised, overlay, before)
         changed = _archive_revision(base, revised, before, identity)

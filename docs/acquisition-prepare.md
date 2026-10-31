@@ -166,6 +166,14 @@ package-envelope gap and refer to the generated board's `engineering-geometry`
 result for its achieved gap. They do not carry forward the reference board's
 measured-gap claim. The original instructions remain in the preparation history.
 
+When a source role context is selected, the connector table, operating conditions
+and physical follow-up instructions require zero external load on J2 pin 4. This
+matches the admitted application boundary; the retained 1 mA calculation reserve
+does not permit a load. The preparer preserves the original instructions and
+records the revision before sealing. Preparation without role context retains
+the original load wording. Nonzero loading requires a separately captured and
+evaluated application context.
+
 Only the operating supplement's old 100 pF bound is superseded by the selected
 variant. Its power-up and conversion sequencing instructions stay in force, and
 the supplement itself is preserved byte-for-byte. Historical review text is

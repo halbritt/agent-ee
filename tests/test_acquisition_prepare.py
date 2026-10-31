@@ -148,6 +148,7 @@ class AcquisitionPreparationTests(unittest.TestCase):
         self.assertEqual(requirement_map.input_inventory(BASE), before)
         self.assertEqual((inputs / 'history/acquisition-preparation-original/analysis/geometry-model.json').read_bytes(),
                          (BASE / 'analysis/geometry-model.json').read_bytes())
+
         self.assertEqual(storage.read_json(inputs / 'engineering-calculations.json')['sources']['analysis/geometry-model.json'],
                          storage.digest(inputs / 'analysis/geometry-model.json'))
         self.assertEqual(report['accounting']['obligations']['judgment'], 14)
@@ -163,6 +164,38 @@ class AcquisitionPreparationTests(unittest.TestCase):
                     mechanics.load(recipe)
             finally:
                 source.write_bytes(captured)
+
+    def test_selected_role_operating_text_keeps_j2_unloaded_through_follow_up(self):
+        original = (BASE / 'OPERATING.md').read_bytes()
+        path = self.root / 'OPERATING.md'
+        path.write_bytes(original)
+        acquisition_prepare._write_role_operating(self.root)
+        text = path.read_text()
+        self.assertIn('zero external load; never drive this pin', text)
+        self.assertIn('external load on J2 pin 4 must be zero (0 A)', text)
+        self.assertIn('1 mA calculation reserve does not permit an external load', text)
+        self.assertIn('startup/shutdown with J2 pin 4 unloaded', text)
+        for obsolete in ('at most 1 mA load', 'must not exceed 1 mA',
+                         'until the unloaded rail has been checked',
+                         'the maximum declared external load'):
+            self.assertNotIn(obsolete, text)
+        self.assertIn('must never source current into the board', text)
+        self.assertIn('Do not claim those tests were performed from software-file', text)
+        self.assertEqual((BASE / 'OPERATING.md').read_bytes(), original)
+
+    def test_changed_or_duplicate_j2_instructions_refuse_without_partial_write(self):
+        original = (BASE / 'OPERATING.md').read_text()
+        for fragment in ('at most 1 mA load', 'must not exceed 1 mA',
+                         'the maximum declared external load'):
+            for mode in ('changed', 'duplicate'):
+                with self.subTest(fragment=fragment, mode=mode):
+                    raw = (original.replace(fragment, 'different load instruction')
+                           if mode == 'changed' else original + original)
+                    path = self.root / 'OPERATING.md'
+                    path.write_text(raw)
+                    with self.assertRaisesRegex(ValueError, 'operating J2'):
+                        acquisition_prepare._write_role_operating(self.root)
+                    self.assertEqual(path.read_text(), raw)
 
     def test_prior_board_review_is_omitted_before_source_capture_with_original_custody(self):
         from agent_ee import candidate, build_stages
@@ -191,6 +224,8 @@ class AcquisitionPreparationTests(unittest.TestCase):
         operating = (inputs / 'OPERATING.md').read_text()
         self.assertNotIn('tightest reviewed\npackage-envelope gap', operating)
         self.assertIn('declared minimum\npackage-envelope gap is 0.20 mm', operating)
+        self.assertIn('at most 1 mA load', operating)  # No selected role context.
+        self.assertIn('the maximum declared external load', operating)
         self.assertEqual((inputs / 'history/acquisition-preparation-original/OPERATING.md').read_bytes(),
                          (BASE / 'OPERATING.md').read_bytes())
         for name in ('spec.md', 'analysis/geometry_model.py',
