@@ -22,8 +22,9 @@ U1 endpoint refuses. This transforms constraints, not final placement evidence.
 The [source manifest](../fixtures/acquisition-reverse-blocking/sources.json)
 records the original circuit and exact supplier objects. The generated footprint
 rotates the supplier geometry into a top-left pin-1 orientation and preserves
-its exposed pad, four via annuli and four drills. Native coordinates are rounded
-to KiCad's nanometre grid. Manufacturer package facts are attributed to
+its exposed pad, four via annuli and four drills. The generator writes coordinates
+on KiCad's nanometre grid, rounding to the nearest nanometre with ties away from
+zero. The production library reader rejects fractional nanometres. Manufacturer package facts are attributed to
 [RD-8-4](https://www.analog.com/media/en/package-pcb-resources/package/pkg_pdf/soic_edrd/rd-8-4.pdf).
 Unavailable raw manufacturer captures are explicitly marked unavailable.
 The manifest retains identities, URLs and hashes; raw vendor CAD and documents
@@ -83,6 +84,52 @@ KiCad Gerber output for aperture coverage, separation, drill clearance and
 area ratio. Its retained original-draft reproduction has one full-pad opening
 that covers every thermal-via hole. `AGENT_EE_STENCIL_ARTIFACTS` retains the
 native board, Gerbers, drill output and measurements for one test run.
+
+## Production part bindings
+
+The [parts source producer](../src/agent_ee/acquisition_power_parts.py)
+exposes `inputs(base, selected, context_bytes)`. It returns files and a provenance
+report for the existing `parts_stage.compile_parts` consumer. `base` supplies the
+exact retained public-control purchasing inputs, identified by `BASE` hashes.
+The original topology still comes from the committed base circuit. The output
+retains ADS1115IDGST/C468683 for U2, instead of restoring the original circuit's
+IDGSR display value. R5 and R6 reuse the captured 1 kΩ and 2.2 kΩ selections
+already used by R1 and R3, with separate physical allocations.
+
+`selected` supplies an `agent-ee.acquisition-power-parts-sources/1` context:
+`reference` names this new reference; `parts` and `supplier` each map U1 and D1
+to path/SHA-256 records; `files` is their complete dependency closure. Every path
+uses the `power-reference/` namespace. Named records must replay against their
+actual captured stock responses and datasheet acquisition records. Extra or
+missing dependencies, changed bytes, different purchasing identities and other
+datasheet revisions refuse. The producer does not acquire or refresh sources.
+
+The selected regulator PDF is the supplier's **Rev. I, October 2019**, SHA-256
+`958844711dc322d705b9a22c04d50633fb86d62184e638b591d251cd3160ddef`.
+Its SOIC pin table and automatic reverse-blocking description support the
+generated connectivity. It is distinct from the web-read Rev. L data sheet;
+this capture does not establish custody of Rev. L or replace model applicability
+review. D1 uses the retained DS30051 Rev. 18-2 PDF through the existing historical
+import format, preserving its acquisition history.
+
+The producer rebuilds the part decisions, symbol/footprint assignments, CAD
+member hashes and passive-rating inputs. It explicitly declares pad 9's four
+thermal vias as part of U1's SMD assembly. It carries forward all 18 locality
+relationships with the new regulator pad numbers. Old power-role checks,
+simulation decks and review judgments are not part of the output. Retained
+source documents and catalog observations are evidence, not refreshed stock or
+approval of the new circuit.
+
+The [production regression](../tests/test_acquisition_power_parts.py) uses the
+normal parts compiler, schematic emitter and forward annotator. It checks 17
+bound native components, zero ERC violations, and all five pad-9 copper objects
+on GND. The resulting PCB is an **unplaced, unrouted development board**.
+Set `AGENT_EE_ACQUISITION_INPUTS` to the pinned retained public-control source,
+`AGENT_EE_POWER_PART_SOURCES` to the selected capture directory containing
+`context.json`, and optionally `AGENT_EE_POWER_PART_ARTIFACTS` to a new directory
+to retain outputs, including failed native attempts. Apply normal native workload
+admission. The old unchanged-reference preparer remains separate; this producer
+does not yet emit a complete typed build plan or new qualified power role.
 
 Release still requires complete source-bound preparation, the selected model
 and its application evidence, current part/assembly qualification, generated

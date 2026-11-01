@@ -58,6 +58,14 @@ SELECTIONS = {
 }
 
 
+def _native_mm(nanometres):
+    """Write the nearest native nanometre, rounding ties away from zero."""
+    value = Fraction(nanometres)
+    magnitude = abs(value) + Fraction(1, 2)
+    rounded = magnitude.numerator // magnitude.denominator
+    return easyeda_footprint.text(Fraction(rounded if value >= 0 else -rounded, 1000000))
+
+
 def symbol_bytes():
     """Generate the exact fixed-output symbol from the attributed pin table."""
     rows = ['(kicad_symbol_lib (version 20251024) (generator "agent-ee")',
@@ -140,7 +148,7 @@ def footprint_bytes(supplier):
         raise ValueError('supplier regulator identity differs')
     # Primary EasyEDA format: canvas unit10mil; VIA field3 diameter, field5 hole radius.
     # https://docs.easyeda.com/en/DocumentFormat/3-EasyEDA-PCB-File-Format/
-    mm = lambda n: easyeda_footprint.text(Fraction(n) * Fraction('0.254'))
+    mm = lambda n: _native_mm(Fraction(n) * 254000)
     rotate = lambda x, y: (mm(-(Fraction(y) - origin[1])), mm(Fraction(x) - origin[0]))
     rows = [f'(footprint "{FOOTPRINT}" (version 20241229) (generator "agent-ee")',
         '(layer "F.Cu") (attr smd)',
@@ -202,7 +210,7 @@ def diode_footprint_bytes(supplier):
     if (parsed['identity']['manufacturer_part'] != SELECTIONS['D1']['mpn'] or pattern['holes']
             or sorted(p['number'] for p in pattern['pads']) != ['1', '2']):
         raise ValueError('selected supplier diode identity or inventory changed')
-    mm = lambda n: easyeda_footprint.text(Fraction(n) / 1000000)
+    mm = _native_mm
     rows = [f'(footprint "{DIODE_FOOTPRINT}" (version 20241229) (generator "agent-ee")',
         '(layer "F.Cu") (attr smd)',
         '(fp_text reference "REF**" (at 0 -1.6) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))',
