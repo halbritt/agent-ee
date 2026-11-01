@@ -516,9 +516,13 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
     pin1 = {'supplier_provenance': supplier['provenance'], 'supplier_sha256': supplier['sha256'],
             'package': package['identity']['package']}
     record['pin1'] = pin1
-    if sorted(p[0] for p in board_pads) != sorted(p[0] for p in supplier_pads):
-        return mode('pad_set_mismatch', 'board and supplier pad numbers differ: '
-                    f'{sorted(p[0] for p in board_pads)} vs {sorted(p[0] for p in supplier_pads)}')
+    board_numbers, supplier_numbers = sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)
+    if len(board_numbers) != len(supplier_numbers):
+        return mode('pad_set_mismatch', 'board and supplier pad counts differ: '
+                    f'{board_numbers} vs {supplier_numbers}')
+    if board_numbers != supplier_numbers:
+        # Libraries number tabs and mounting pads differently. Pin 1 decides the rotation.
+        pin1['pad_numbering_differs'] = dict(board=board_numbers, supplier=supplier_numbers)
     board, board_frame, why_board = classify_pin1(board_pads)
     found_supplier, supplier_frame, why_supplier = classify_pin1(supplier_pads)
     pin1.update(board=board, supplier=found_supplier, frame=board_frame)

@@ -274,6 +274,24 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual([a['designator'] for a in applied], ['U1'])
         self.assertEqual(unmatched, [])
 
+    def footprint_pads_case(self, pads):
+        lib = 'lib:SOIC-8_3.9x4.9mm_P1.27mm'
+        rows = [['U1', '47.000000', '-35.000000', 'Top', '90']]
+        geometry = [probe('U1', lib, 47000000, 35000000, SOIC_BOX)]
+        return self.run_case(rows, geometry, [footprint(lib, 'U1', 47, 35, 90, pads)], {'U1': 'C1'},
+                             {'C1': supplier(soic_supplier())})[0][0]
+
+    def test_a_library_numbering_of_tabs_and_mounting_pads_does_not_block_the_pin1_check(self):
+        record = self.footprint_pads_case(SOIC_PADS.replace('(pad "8"', '(pad "MP"'))
+        self.assertEqual((record['execution'], record['outcome']), ('ok', 'pass'), record['modes'])
+        self.assertEqual(record['pin1']['pad_numbering_differs']['board'][-1], 'MP')
+
+    def test_a_different_pad_count_or_no_pin1_leaves_coverage_unavailable(self):
+        last = SOIC_PADS.rindex('(pad ')
+        self.assertEqual([m['mode'] for m in self.footprint_pads_case(SOIC_PADS[:last])['modes']], ['pad_set_mismatch'])
+        renamed = SOIC_PADS.replace('(pad "1"', '(pad "9"')
+        self.assertEqual([m['mode'] for m in self.footprint_pads_case(renamed)['modes']], ['pin1_unclassified'])
+
     def test_unmatched_footprint_whose_supplier_frame_needs_270_is_a_rotation_conflict(self):
         records, applied, unmatched = self.soic_case(lib='lib:SO8_custom')
         self.assertEqual(records[0]['outcome'], 'defect')
