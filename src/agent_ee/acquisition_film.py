@@ -266,6 +266,16 @@ def _requirements(files):
         brief['sources'] += ['film-reference/engineering/' + p for p in (
             'host-extraction-r2/MU.txt', 'technical-note.txt', 'model-cautions.txt',
             'impedance-observation.json', 'import.json')]
+        if 'power-reference/loop-applicability.md' in files:
+            brief['sources'].append('power-reference/loop-applicability.md')
+            if brief['requirement'] == 'ACQ-ELEC-2-SOURCE-EVALUATION':
+                brief['sources'] += ['analysis/film-loop/' + p for p in (
+                    'pilot/result.json', 'comparison/result.json', 'comparison-exact/result.json', 'REPRODUCE.md')]
+                brief['questions'].append(
+                    'Evaluate the new dual-injection loop evidence and its actual model scope. '
+                    'The final film cases remove implicit inductor resistance and retain the original '
+                    'datasheet ESR statements. Assess whether this resolves nominal application '
+                    'compatibility; model predicates alone do not constitute engineering acceptance.')
     def revise(row):
         if 'checks' in row:
             row['checks'] = [deepcopy(pool['film-power-retained-model' if c['id'] == 'adp-power-retained-model' else c['id']])
@@ -285,14 +295,53 @@ def _requirements(files):
     files['preparation/judgment-briefs.json'] = json_bytes(briefs)
 
 
-def prepare(base, selected, model_run, film_model, out):
+def _loop_evidence(files, root):
+    """Attach a fixed, reproducible model investigation without promoting its verdict."""
+    declaration = strict_json((DATA / 'loop-evidence.json').read_bytes())
+    for name in ('circuit', 'parts'):
+        if sha256(files[name + '.json']).hexdigest() != declaration[name + '_sha256']:
+            raise ValueError('loop evidence requires the exact generated ' + name)
+    additions = acquisition_power_prepare._captured(root, declaration['files'])
+    if set(additions) & set(files):
+        raise ValueError('loop evidence collides with existing candidate inputs')
+    pilot = strict_json(additions['analysis/film-loop/pilot/result.json'])
+    final = strict_json(additions['analysis/film-loop/comparison-exact/result.json'])
+    if (not pilot['suitable_for_conditional_comparison']
+            or not final['all_named_model_predicates_pass'] or final['case_count'] != 12
+            or final['accepted'] or final['file_release'] != 'not_assessed'):
+        raise ValueError('loop evidence does not establish the declared limited model result')
+    files.update(additions)
+    files['analysis/film-loop/evidence-manifest.json'] = json_bytes(declaration)
+    document = 'power-reference/loop-applicability.md'
+    basis = strict_json(files['power-reference/engineering-basis.json'])
+    basis['loop_applicability'] = dict(path=document, sha256=sha256(files[document]).hexdigest(),
+        status='Nominal application assessment awaiting fresh independent judgment; not physical validation.')
+    basis['sources'][document] = sha256(files[document]).hexdigest()
+    files['power-reference/engineering-basis.json'] = json_bytes(basis)
+    calculations = strict_json(files['engineering-calculations.json'])
+    calculations['sources']['power-reference/engineering-basis.json'] = sha256(files['power-reference/engineering-basis.json']).hexdigest()
+    calculations['sources'][document] = sha256(files[document]).hexdigest()
+    files['engineering-calculations.json'] = json_bytes(calculations)
+    files['OPERATING.md'] += (
+        '\nNominal power applicability: see power-reference/loop-applicability.md and '
+        'analysis/film-loop/REPRODUCE.md for the retained loop-response investigation. '
+        'It changes no operating condition and claims no physical validation. '
+        'Fresh candidate-bound engineering judgment remains required.\n').encode()
+
+
+def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None):
     base, selected, model_run, film_model, out = map(Path, (base, selected, model_run, film_model, out))
     if out.exists() or not out.parent.is_dir():
         raise ValueError('output must be new under an existing parent')
-    typed_overlay._disjoint('output', out.resolve(), dict(base=base.resolve(), selected=selected.resolve(),
-        model_run=model_run.resolve(), film_model=film_model.resolve()))
+    roots = dict(base=base.resolve(), selected=selected.resolve(),
+        model_run=model_run.resolve(), film_model=film_model.resolve())
+    if loop_evidence is not None:
+        roots['loop_evidence'] = Path(loop_evidence).resolve()
+    typed_overlay._disjoint('output', out.resolve(), roots)
     files, plan = sources(base, selected)
     measurements = _power(files, model_run, film_model)
+    if loop_evidence is not None:
+        _loop_evidence(files, Path(loop_evidence))
     _requirements(files)
     inventory, accounting = acquisition_power_prepare.materialize(files, plan, out, REFERENCE)
     report = dict(schema='agent-ee.acquisition-film-preparation/1', reference=REFERENCE,

@@ -9,10 +9,13 @@ ADP7104, B0520LW, bleeders, C3, 17 components and 18 placement relationships.
 The original ADP preparer retains the Samsung selection. The separate film
 preparer generates this replacement from the exact supplier CAD and captured
 part record. Its fresh native suite has 37 passing checks and one informational
-result. Independent review admits 12 of 14 judgments; capacitor ESR
-compatibility remains unresolved. The generator now also corrects the ADC
-supplement binding identified by that review. The revised operating document
-has been checked in generated output, but has not received fresh acceptance.
+result. The last independent review admitted 12 of 14 judgments. New
+[loop-response evidence](acquisition-loop-applicability.md) addresses its ESR
+applicability concern: twelve film cases have 52.2–60.5 degrees of modeled phase
+margin after explicitly removing LTspice's added inductor resistance. The
+generator can bind this retained investigation to the exact circuit and parts.
+It also corrects the ADC supplement binding identified by that review. The new
+evidence and operating document still require fresh candidate-bound acceptance.
 
 ## Why this change
 
@@ -285,7 +288,10 @@ operating-document hash is
 verification. The reviewed candidate and its negative judgments remain intact
 under `judgments/`.
 
-Resolve the specific ESR applicability question before another acceptance
-round. The proposed follow-up first establishes whether the captured vendor
-model supports a meaningful loop-response measurement; no such model run has
-been made. Full review, file release and frozen G4 credit remain outstanding.
+The follow-up now establishes model suitability with an analytic control and
+compares the actual frequency-dependent film network against the data-sheet
+references. See the [nominal loop assessment](acquisition-loop-applicability.md)
+for all cases, the simulator-default correction, retained failures and limits.
+This provides new evidence for a fresh acceptance round; it does not replace
+the earlier negative judgment. Full review, file release and frozen G4 credit
+remain outstanding.
