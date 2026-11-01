@@ -1,0 +1,8 @@
+{
+  "base_model": "123e302ecd312677500ca28173ca94a806f5ad96ab12518b548f04a582328915",
+  "model": "486dc5354d351f1bff274d7759a2e8805437be64701d51106cc3ac30e7dfbfd0",
+  "sources": {
+    "film-reference/datasheet/487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c.pdf": "487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c",
+    "film-reference/geometry-basis.json": "367dfd536429ee1f1d6728b9b9bb3bddb81e2f3ab157ffddaab05fa6f6bcfae9"
+  }
+}

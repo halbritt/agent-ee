@@ -42,7 +42,7 @@ ADDED_LEGS = {
 def _recipe(reference):
     if reference == 'acquisition-control':
         return LEGS, ADDED_LEGS
-    if reference != 'acquisition-control-reverse-blocking-r1':
+    if reference not in ('acquisition-control-reverse-blocking-r1', 'acquisition-control-film-r1'):
         raise ValueError('unsupported acquisition final-group reference')
     legs, added = dict(LEGS), dict(ADDED_LEGS)
     legs.update({('C1', 'supply'): ('U1', '8', 'C1', '1', '/VIN_PROTECTED'),

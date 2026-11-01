@@ -1,0 +1,11 @@
+{
+  "film-reference/C3778570.part-record.json": "b6c8c4e0ed4aa2ff50b1445256f99ea5201030aaa2d63b8fbb4bc9ce5333c26d",
+  "film-reference/catalog/catalog.json": "8dc0de2b633b0e87494e1b9dd60236ae6d19f81f496ab9dd4b045fa6731369b8",
+  "film-reference/catalog/responses/C3778570.json": "0028f076ba50bde4de24f8626bf30299c348be6797ef56a12cd4c0443bfdf343",
+  "film-reference/datasheet/487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c.pdf": "487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c",
+  "film-reference/datasheet/manifest.json": "0c2a9c6e53e84976d6c8e5ddc94a1ae48eea181daa5b3a1293f668b4327bada8",
+  "film-reference/datasheet/source-note.json": "734590f1b5a654d099b758076733a188848881701f96d765ba01e62e44511ffe",
+  "film-reference/supplier/C3778570.provenance.json": "e1c5311307b65b41c99d82e72d767d3b1763132dc65462123f70a651faa18892",
+  "film-reference/supplier/C3778570.raweasy.json": "18d3cbca60c3075883fc569c0c221269946463137ad89cb8d1f61d1fc967eabf",
+  "lib3d/Capacitor_SMD.3dshapes/C_1210_3225Metric.step": "f8510481c5044113cf49b0fa6dd54ddab9224508bd6808e1afab8ef0cefdefc9"
+}

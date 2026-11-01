@@ -24,7 +24,9 @@ def declaration(root):
 
 
 def _model_sources(model):
-    from . import acquisition_power_geometry
+    from . import acquisition_film, acquisition_power_geometry
+    if model == acquisition_film.MODEL:
+        return {**_model_sources(acquisition_power_geometry.MODEL), **acquisition_film.SOURCES}
     if model == acquisition_power_geometry.MODEL:
         return {**_model_sources(acquisition_power_geometry.BASE), **acquisition_power_geometry.SOURCES}
     if model in acquisition_connector_geometry.MODELS:

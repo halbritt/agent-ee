@@ -84,9 +84,8 @@ def _locality(files):
     files['placement.json'] = json_bytes(placement)
 
 
-def _catalog(files):
-    paths = ['preparation/power-repair/catalog/catalog.json',
-             'power-reference/u1-stock/catalog.json', 'power-reference/d1-stock/catalog.json']
+def _catalog(files, paths=('preparation/power-repair/catalog/catalog.json',
+                          'power-reference/u1-stock/catalog.json', 'power-reference/d1-stock/catalog.json')):
     parents = [strict_json(files[path]) for path in paths]
     contracts = [{k: v for k, v in p['source'].items() if k != 'min_interval_seconds'} for p in parents]
     if any(c != contracts[0] for c in contracts):
@@ -300,6 +299,18 @@ def prepare(base, selected, extra, out):
     _power(files)
     _requirements(files, context)
     plan = strict_json(plan_raw)
+    inventory, accounting = materialize(files, plan, out, REFERENCE)
+    report = dict(schema='agent-ee.acquisition-power-build-preparation/1', reference=REFERENCE,
+        files=inventory, parts_preparation=provenance, accounting=accounting,
+        accepted=False, file_release='not_assessed',
+        remaining=['Native build and required checks', 'Fresh candidate-bound judgments/full review',
+                   'New reusable source-role qualification before adaptation and frozenG4 owner decision'])
+    (out / 'preparation.json').write_bytes(json_bytes(report))
+    return report
+
+
+def materialize(files, plan, out, reference):
+    """Run the same typed source gates for each finite development reference."""
     plan['source'] = 'inputs'
     root = out / 'inputs'
     root.mkdir(parents=True)
@@ -311,17 +322,11 @@ def prepare(base, selected, extra, out):
         (root / path).write_bytes(json_bytes(document))
     write('placement-mechanics.json', acquisition_mechanics.declaration(root))
     acquisition_mechanics.load(root / 'placement-mechanics.json')
-    write(acquisition_block_source.PATH, acquisition_block_source.derive(root, plan, reference=REFERENCE))
+    write(acquisition_block_source.PATH, acquisition_block_source.derive(root, plan, reference=reference))
     (out / 'build-plan.json').write_bytes(json_bytes(plan))
     inventory = build_workflow.preflight_build(out / 'build-plan.json', out / 'validation')[5]
     record = spec_record.verify(files['spec-record.json'], files['spec.md'])
     obligation = requirement_map.load_obligations(files['obligations.json'], record, files['spec.md'])
     accounting = requirement_map.account_requirements(strict_json(files['requirement-map.json']),
         record, files['spec.md'], files=inventory, inputs=root, obligations=obligation)
-    report = dict(schema='agent-ee.acquisition-power-build-preparation/1', reference=REFERENCE,
-        files=inventory, parts_preparation=provenance, accounting=accounting,
-        accepted=False, file_release='not_assessed',
-        remaining=['Native build and required checks', 'Fresh candidate-bound judgments/full review',
-                   'New reusable source-role qualification before adaptation and frozenG4 owner decision'])
-    (out / 'preparation.json').write_bytes(json_bytes(report))
-    return report
+    return inventory, accounting

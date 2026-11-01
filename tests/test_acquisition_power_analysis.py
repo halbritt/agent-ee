@@ -16,6 +16,25 @@ sources_available = (SOURCE / 'circuit.json').is_file() and (MODELS / 'sub/ADP71
 trace_available = (TRACE / 'high-z-removal.raw').is_file()
 
 
+class SolverLogTests(unittest.TestCase):
+    def test_successful_gmin_recovery_is_distinct_from_unrecovered_or_later_failure(self):
+        # Observed in the2026-11-01 film physical-open run: native exit0 and a
+        # complete80ms trace were falsely rejected by the blanket "failed" scan.
+        recovery = (b'Direct Newton iteration failed to find operating point.\n'
+                    b'Starting Gmin stepping\n'
+                    b'Gmin stepping succeeded in finding the operating point.\n')
+        valid = b'temp = 25\n' + recovery + b'Total elapsed time: 265.901 seconds.\n'
+        self.assertEqual(power.completed_log(valid), 'gmin-after-newton')
+        cases = [valid.replace(b'Gmin stepping succeeded in finding the operating point.\n', b''),
+                 valid.replace(b'succeeded', b'failed'), valid + b'Fatal: timestep too small\n',
+                 valid.replace(b'Total elapsed time:', b'No completion:'),
+                 b'temp = 25\nTotal elapsed time: 1 second.\n' + recovery,
+                 valid + recovery]
+        for log in cases:
+            with self.subTest(log=log), self.assertRaisesRegex(ValueError, 'completion'):
+                power.completed_log(log)
+
+
 @unittest.skipUnless(sources_available, 'exact generated production and captured ADI library required')
 class PowerApplicationInputsTests(unittest.TestCase):
     def setUp(self):

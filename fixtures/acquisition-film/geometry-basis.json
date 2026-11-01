@@ -1,0 +1,43 @@
+{
+  "accepted": false,
+  "base_model": "123e302ecd312677500ca28173ca94a806f5ad96ab12518b548f04a582328915",
+  "changes": {
+    "C1": {
+      "basis": "Rubycon MU catalogue p2: 25MU225MB23225 row, 3.2+0.3 x 2.5+0.3 x 1.8+0.2 mm maximum; nonpolar acrylic film.",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        3.5,
+        2.8,
+        2.0
+      ]
+    },
+    "C2": {
+      "basis": "Rubycon MU catalogue p2: 25MU225MB23225 row, 3.2+0.3 x 2.5+0.3 x 1.8+0.2 mm maximum; nonpolar acrylic film.",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        3.5,
+        2.8,
+        2.0
+      ]
+    }
+  },
+  "render": {
+    "interpretation": "Generic KiCad 1210 appearance only; maximum-body checks use the MU dimensions.",
+    "path": "lib3d/Capacitor_SMD.3dshapes/C_1210_3225Metric.step",
+    "sha256": "f8510481c5044113cf49b0fa6dd54ddab9224508bd6808e1afab8ef0cefdefc9",
+    "source": "/usr/share/kicad/3dmodels/Capacitor_SMD.3dshapes/C_1210_3225Metric.step"
+  },
+  "schema": "agent-ee.acquisition-film-geometry/1",
+  "source": {
+    "locator": "25MU225MB23225; L/W/H tolerances in dimension headings",
+    "page": 2,
+    "path": "film-reference/datasheet/487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c.pdf",
+    "sha256": "487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c"
+  }
+}

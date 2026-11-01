@@ -145,13 +145,29 @@ def read_trace(raw):
     return rows
 
 
+def completed_log(raw):
+    """Accept the observed successful Gmin recovery, retaining all fatal guards."""
+    log = raw.decode('ascii').replace('\r\n', '\n')
+    recovery = ('Direct Newton iteration failed to find operating point.\n'
+                'Starting Gmin stepping\n'
+                'Gmin stepping succeeded in finding the operating point.\n')
+    # ADI documents Newton, Gmin, source stepping and pseudo-transient as
+    # successive operating-point methods. A failed first method is recoverable
+    # only with its explicit success before completion, not from exit0 alone.
+    # https://github.com/analogdevicesinc/ltspice-reference/blob/main/ai_ref/SIMULATION-COMMANDS-REFERENCE.md#op--dc-operating-point
+    recovered = (log.count(recovery) == 1 and 'Total elapsed time:' in log
+                 and log.index(recovery) < log.index('Total elapsed time:'))
+    diagnostic = log.replace(recovery, '', 1) if recovered else log
+    if ('temp = 25\n' not in log or 'Total elapsed time:' not in log
+            or re.search(r'(?i)\b(fatal|error|failed|singular matrix|timestep too small)\b', diagnostic)):
+        raise ValueError('LTspice log lacks successful nominal 25C completion or reports a solver failure')
+    return 'gmin-after-newton' if recovered else 'not_observed'
+
+
 def measurements(raw, log):
     """Report measured model predicates; process/circuit custody stays separate."""
     log_raw = log
-    log = log_raw.decode('ascii')
-    if ('temp = 25\n' not in log.replace('\r\n', '\n') or 'Total elapsed time:' not in log
-            or re.search(r'(?i)\b(fatal|error|failed|singular matrix|timestep too small)\b', log)):
-        raise ValueError('LTspice log lacks successful nominal 25C completion or reports a solver failure')
+    recovery = completed_log(log_raw)
     rows = read_trace(raw)
     steady = [r for r in rows if .011 <= r[0] <= .019]
     removal = [r for r in rows if r[0] >= .020002]
@@ -173,6 +189,7 @@ def measurements(raw, log):
         post_removal_bleed_range_a=[min(r[6] for r in removal), max(r[6] for r in removal)])
     return dict(schema='agent-ee.acquisition-power-model-measurements/1', case=CASE,
         trace_sha256=sha256(raw).hexdigest(), log_sha256=sha256(log_raw).hexdigest(),
+        operating_point_recovery=recovery,
         observations=observation,
         model_predicates=dict(steady_regulator_rail=3.234 <= low <= high <= 3.366,
             no_output_overshoot=max(r[2] for r in rows) <= 3.366,
@@ -188,3 +205,23 @@ def measurements(raw, log):
                     'this ground-clamp termination is not physical disconnection.',
                     'Model predicates do not establish source/runtime custody, capacitor/thermal applicability, '
                     'final-board voltage delivery, source-role qualification or independent engineering acceptance.'])
+
+
+def film_measurements(raw, log):
+    result = measurements(raw, log)
+    rows = read_trace(raw)
+    prior = [r for r in rows if .019502 <= r[0] <= .020000]
+    removal = [r for r in rows if r[0] >= .020002]
+    if not prior:
+        raise ValueError('film trace lacks the pre-removal high-impedance interval')
+    result['observations']['pre_removal_host_max_abs_a'] = max(abs(r[4]) for r in prior)
+    result['observations']['disconnected_source_max_abs_a'] = max(abs(r[3]) for r in removal)
+    result['model_predicates']['host_released_before_removal'] = max(abs(r[4]) for r in prior) <= 1e-12
+    result['model_predicates']['source_physically_open'] = max(abs(r[3]) for r in removal) <= 1e-12
+    result['condition'] = 'adp7104-film-25c-physical-open-sensitivity'
+    result['limitations'] = [
+        'Sampled reference-model sensitivity, not guaranteed continuous-time device behavior.',
+        'The source is disconnected and host released first in this model; actual sequencing is an operating condition.',
+        'MU R/L values are20C/DC0V references; all C values scaled by0.8. Nominal25C applicability needs source-backed judgment.',
+        'No final-board, thermal, source-role or independent file acceptance follows from model predicates.']
+    return result

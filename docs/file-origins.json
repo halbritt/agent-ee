@@ -4371,7 +4371,8 @@
     },
     {
       "paths": [
-        "fixtures/acquisition-reverse-blocking/"
+        "fixtures/acquisition-reverse-blocking/",
+        "fixtures/acquisition-film/"
       ],
       "kind": "owned-metadata",
       "origins": [
@@ -4388,6 +4389,19 @@
         "AE"
       ],
       "reviewed": "Original finite native CAD generator using numeric pin/land dimensions, declared primitive geometry and source hashes. The KiCad S-expressions are authored here; no stock library, vendor drawing text or supplier raw object is embedded. Supplier CAD is read only from exact runtime inputs."
+    },
+    {
+      "paths": [
+        "src/agent_ee/acquisition_film.py",
+        "src/agent_ee/acquisition_film_analysis.py",
+        "tests/test_acquisition_film.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original finite film-capacitor generation, exact source binding and regression checks. Vendor model/CAD/PDF bytes remain external runtime inputs.",
+      "reviewed": "Original KiCad footprint generator syntax and metadata written for agent-ee. It emits factual pad dimensions from an external, hash-pinned supplier capture; no supplier CAD body or vendor simulation model is embedded in this source. Body envelopes are numerical manufacturer facts. All raw captures remain local runtime inputs."
     }
   ]
 }

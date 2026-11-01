@@ -563,6 +563,14 @@ const MECHANICS_PH_SOURCES: &[(&str, &str)] = &[
 ];
 
 fn mechanics_sources(model: &str) -> Result<Vec<(&'static str, &'static str)>> {
+    if model == "486dc5354d351f1bff274d7759a2e8805437be64701d51106cc3ac30e7dfbfd0" {
+        let mut sources = mechanics_sources("123e302ecd312677500ca28173ca94a806f5ad96ab12518b548f04a582328915")?;
+        sources.extend_from_slice(&[
+            ("film-reference/geometry-basis.json", "367dfd536429ee1f1d6728b9b9bb3bddb81e2f3ab157ffddaab05fa6f6bcfae9"),
+            ("film-reference/datasheet/487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c.pdf", "487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c"),
+        ]);
+        return Ok(sources);
+    }
     if model == "123e302ecd312677500ca28173ca94a806f5ad96ab12518b548f04a582328915" {
         let mut sources = mechanics_sources("53187855ce84e712e539eed040dc741c2ffe0c8d7d331fc9b37203f033be4d0b")?;
         sources.extend_from_slice(&[
@@ -3734,17 +3742,28 @@ mod tests {
         use sha2::{Digest, Sha256};
         let cases: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-qualification/mechanics-derived-test-cases.json")).unwrap();
         let power: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-reverse-blocking/mechanics-test-case.json")).unwrap();
-        for case in cases["cases"].as_array().unwrap().iter().chain(std::iter::once(&power)) {
+        let film: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-film/mechanics-test-case.json")).unwrap();
+        for case in cases["cases"].as_array().unwrap().iter().chain([&power, &film]) {
             let mut raw = source_mechanics_fixture(true, false);
             raw["mechanics"]["model_raw"] = case["model_raw"].clone();
             raw["mechanics"]["sources"] = case["sources"].clone();
-            if case["kind"] == "ph-corrected" {
+            if case["kind"] == "ph-corrected" || case["kind"] == "film-capacitors" {
                 raw["footprints"][0]["source_body_local_nm"] = json!([-1950000,-1700000,3950000,2800000]);
                 raw["footprints"][0]["access_local_nm"] = json!([-2450000,-2200000,4450000,3300000]);
             }
+            if case["kind"] == "film-capacitors" {
+                raw["outline"]["rect_nm"] = json!([0,0,20_000_000,10_000_000]);
+                raw["footprints"][1]["source_body_local_nm"] = json!([-1750000,-1400000,1750000,1400000]);
+                // The larger film body intrudes into J1's access space at the
+                // old test position; source geometry must participate in grading.
+                let crowded = prepare(&raw).unwrap();
+                let poses: Vec<Pose> = crowded.footprints.iter().map(|f| f.initial).collect();
+                assert!(full_evaluate(&crowded, &poses).hard_count > 0);
+                raw["footprints"][1]["pose"]["x_nm"] = json!(11_000_000);
+            }
             let p = prepare(&raw).unwrap();
             let poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
-            assert_eq!(full_evaluate(&p, &poses).hard_count, 0);
+            assert_eq!(full_evaluate(&p, &poses).hard_count, 0, "{}", violations(&p, &poses).len());
             for key in case["sources"].as_object().unwrap().keys() {
                 let mut changed = raw.clone();
                 changed["mechanics"]["sources"].as_object_mut().unwrap().remove(key);

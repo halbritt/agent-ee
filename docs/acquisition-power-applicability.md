@@ -6,9 +6,9 @@ not file release, physical validation, or a replacement of the frozen G4 cases.
 The next power candidate is a specific change to C1 and C2: Rubycon
 25MU225MB23225 / C3778570, 2.2 uF, 25 V, nonpolar PMLCAP film. Retain the
 ADP7104, B0520LW, bleeders, C3, 17 components and 18 placement relationships.
-The production preparer still selects the original Samsung capacitors. Supplier
-CAD admission and a new generated native build are prerequisites to selecting
-the film parts there; their stock listing is not footprint evidence.
+The original ADP preparer retains the Samsung selection. The separate film
+preparer now generates this replacement from the exact supplier CAD and captured
+part record. Its second native build completed; acceptance remains incomplete.
 
 ## Why this change
 
@@ -82,7 +82,7 @@ stability, hot-swap behavior, surge tolerance or the encrypted model's internals
 
 ## Exact experiment and remaining gates
 
-The local film experiment replaces C1/C2 with the exact Rubycon RLC topology,
+The first local film experiment replaces C1/C2 with the exact Rubycon RLC topology,
 scaling all its capacitors by 0.8 while retaining its resistors and inductors.
 The ADP model, source, host schedule, C3 and 80 ms observation interval stay
 unchanged. This is a declared tolerance sensitivity. A 25 C simulator setting
@@ -104,9 +104,12 @@ the existing complete-footprint parser and supplier-provenance reader: ten
 records, two rectangular pads and no holes. The failed captures remain retained;
 this success does not isolate which request difference resolved the access error.
 
-Supplier CAD admission is complete. Continue with a source-bound generated C1/C2
-replacement and fresh geometry/assembly checks. Then obtain independent
-candidate-bound electrical judgments, full review and file-release evidence.
+Supplier CAD admission and generated C1/C2 source preparation are complete. The
+film source producer retains the specification, connectivity, other purchasing
+selections and all 18 functional relationships. Native assembly, body clearance
+and placement checks have evaluated its larger capacitor bodies. The remaining
+geometry measurement issues below precede independent candidate-bound electrical
+judgments, full review and file-release evidence.
 Do not refresh reusable roles or run frozen G4 against this unaccepted candidate.
 The package still requires editable native files, views, fabrication outputs,
 reproduction and all the original acceptance gates.
@@ -127,3 +130,77 @@ supplier component and the part record derived from the unchanged stock capture
 and historically imported manufacturer PDF. The latter keeps unknown redirect
 provenance. These source checks do not establish native placement, CPL rotation
 or electrical acceptance.
+
+## Generated film source and disconnected-source experiment
+
+`acquisition_film.prepare` derives `acquisition-control-film-r1` from the exact
+237-file ADP source. It selects C3778570 for C1/C2, uses both complete supplier
+pads, and binds maximum 3.5 × 2.8 × 2.0 mm bodies in the Python and Rust mechanics
+consumers. The generic KiCad 1210 STEP is an illustrative view model; the MU
+maximum dimensions govern clearance and height. Raw supplier CAD, PDFs and
+manufacturer models remain external captured inputs, not redistributed fixtures.
+
+The second experiment used the generated circuit and full parts hashes recorded
+before execution. Its changed hypothesis was a source with zero current after
+disconnection, including at negative VIN, and host release completed 499 µs before
+source removal began. This replaces the first experiment's zero-target clamp and
+concurrent host release. Capacitor models, tolerances and their applicability
+limitations otherwise remain as above.
+
+That run completed in 268.044 s with unchanged inputs. All ten model predicates
+passed across 40,575 samples: steady VOUT 3.299676 V, maximum VOUT 3.300225 V,
+minimum VIN −17.925 mV, and exactly zero sampled source current after removal.
+Host current was zero during the declared interval before source removal. The
+negative input prediction is a model observation, not a hardware measurement.
+
+The first parser replay rejected the log's failed Newton iteration even though
+Gmin stepping explicitly recovered and the transient completed. The parser now
+recognizes that exact recovery sequence before completion while retaining fatal,
+incomplete-trace and wrong-temperature refusals. No simulation was repeated for
+this parser repair. ADI documents these successive operating-point methods in its
+[LTspice reference](https://github.com/analogdevicesinc/ltspice-reference/blob/main/ai_ref/SIMULATION-COMMANDS-REFERENCE.md#op--dc-operating-point).
+
+Evidence is retained in
+`~/.local/share/agent-ee/zeroasic-20261029-agent707/film-build-integration-r1/`:
+`model-r1/` holds the pre-run bindings, execution, unchanged waveform and failed
+parser diagnosis; `bundle-r2/` holds 263 admitted source files. These results do
+not establish nominal-25 C capacitor applicability, final-board acceptance or
+permission to replace the frozen G4 reference.
+
+## Native film build and remaining geometry work
+
+The first build found an exact-feasible placement, then stopped because the
+routing caller selected the old TPS pin map for the new film model. The caller
+now selects the ADP pin map explicitly. A regression checks those endpoints
+against the generated circuit. No placement limit, footprint or net guard was
+relaxed. The second build completed through artwork in 469.860 s.
+
+The saved board is SHA-256
+`2040f20bd2eda776d37eb39a296bbc2c7429f61ff268aa0cbfe9b7df0cac38b1`.
+Its check suite completed in 136.378 s: 36 checks passed, the netlist check was
+informational, and the engineering-geometry tool failed. ERC, DRC, schematic
+parity and opens were all zero; native placement retained 17 components and
+18 functional relationships. The result remains incomplete, with no accepted
+file release or fresh independent judgments. All 123 Rust tests and 21 focused
+Python tests passed, including the actual captured source and model guards.
+
+The geometry tool stopped at C1.1 to U1.8. A read-only native diagnostic found
+that the 0.25 mm trace makes positive-area copper contact with C1, while its
+center line lies outside the pad. The existing graph only admits a trace whose
+center line enters the pad. A separate diagnostic that admits positive native
+copper intersections completed the measurements; it is not a replacement check
+or acceptance record.
+
+That diagnostic also found 0.326931 mm2 of the two declared J1-to-J3 ground
+strips outside saved bottom ground copper. The J1-to-J2 strip passed. This is a
+separate unresolved return-path witness, not proof that the whole ground plane
+is disconnected. The measured body gap was 0.494 mm and the estimated rail drop
+was 14.301 mV; all five local-loop lengths were within their existing limits.
+Next repair the pad/trace measurement and establish an unobstructed return
+path with the same width and resistance requirements. Preserve these failed
+checks and rerun the corrected candidate through the ordinary gates.
+
+`native-r1-diagnosis.json`, `native-r2/`, `checks-r1/`, and
+`geometry-diagnosis-r1/` and `geometry-diagnosis-r2/` retain the observations in
+the film-build integration directory above. Manufacturer applicability remains
+a separate electrical judgment; these geometric results do not resolve it.

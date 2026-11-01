@@ -1,0 +1,394 @@
+{
+  "dc_estimate": {
+    "contact_and_joint_ohm": 0.13,
+    "copper_um": 17.5,
+    "input_current_a": 0.013239394,
+    "plane_strip_width_mm": 0.1,
+    "rho_ohm_m": 1.724e-08,
+    "track_width_mm": 0.2
+  },
+  "ground_strips": {
+    "J1-to-J2-pin1": [
+      [
+        106,
+        126.3
+      ],
+      [
+        106,
+        124
+      ],
+      [
+        138,
+        124
+      ],
+      [
+        138,
+        112.7
+      ]
+    ],
+    "J1-to-J3-pin2": [
+      [
+        106,
+        126.3
+      ],
+      [
+        106,
+        101.5
+      ],
+      [
+        122,
+        101.5
+      ],
+      [
+        122,
+        104.3
+      ]
+    ],
+    "J1-to-J3-pin4": [
+      [
+        106,
+        126.3
+      ],
+      [
+        106,
+        101.5
+      ],
+      [
+        126,
+        101.5
+      ],
+      [
+        126,
+        104.3
+      ]
+    ]
+  },
+  "limits": [
+    "Material and etch reductions are conservative engineering assumptions, not supplier-guaranteed lower limits.",
+    "DC estimate and local routing inspection do not prove wideband plane impedance, EMC or physical measurements.",
+    "Bounding rectangles include IC leads; not exact3D meshes.",
+    "Connector dimensions are manufacturer reference dimensions. No enclosed mated-height fit claim.",
+    "0.075mm placement allowance is an assembly target requiring supplier preview/inspection.",
+    "ADP current screen uses manufacturer design-tool2mA ground-current allowance at nominal25C; not a universal maximum. Final ADC delivered rail and return path require fresh evaluation.",
+    "C1/C2 maximum MU body dimensions govern mechanical checks; the captured generic KiCad 1210 STEP is illustrative, not an exact manufacturer model."
+  ],
+  "loops": {
+    "adc_loop": [
+      [
+        [
+          "C3",
+          "1"
+        ],
+        [
+          "U2",
+          "8"
+        ]
+      ],
+      [
+        [
+          "C3",
+          "2"
+        ],
+        [
+          "U2",
+          "3"
+        ]
+      ]
+    ],
+    "filter0_loop": [
+      [
+        [
+          "C4",
+          "1"
+        ],
+        [
+          "U2",
+          "4"
+        ]
+      ],
+      [
+        [
+          "C4",
+          "2"
+        ],
+        [
+          "U2",
+          "3"
+        ]
+      ]
+    ],
+    "filter1_loop": [
+      [
+        [
+          "C5",
+          "1"
+        ],
+        [
+          "U2",
+          "5"
+        ]
+      ],
+      [
+        [
+          "C5",
+          "2"
+        ],
+        [
+          "U2",
+          "3"
+        ]
+      ]
+    ],
+    "input_loop": [
+      [
+        [
+          "C1",
+          "1"
+        ],
+        [
+          "U1",
+          "8"
+        ]
+      ],
+      [
+        [
+          "C1",
+          "2"
+        ],
+        [
+          "U1",
+          "6"
+        ]
+      ]
+    ],
+    "output_loop": [
+      [
+        [
+          "C2",
+          "1"
+        ],
+        [
+          "U1",
+          "1"
+        ]
+      ],
+      [
+        [
+          "C2",
+          "2"
+        ],
+        [
+          "U1",
+          "3"
+        ]
+      ]
+    ]
+  },
+  "packages": {
+    "C1": {
+      "basis": "Rubycon MU catalogue p2: 25MU225MB23225 row, 3.2+0.3 x 2.5+0.3 x 1.8+0.2 mm maximum; nonpolar acrylic film.",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        3.5,
+        2.8,
+        2.0
+      ]
+    },
+    "C2": {
+      "basis": "Rubycon MU catalogue p2: 25MU225MB23225 row, 3.2+0.3 x 2.5+0.3 x 1.8+0.2 mm maximum; nonpolar acrylic film.",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        3.5,
+        2.8,
+        2.0
+      ]
+    },
+    "C3": {
+      "basis": "YAGEO C3 / Murata GRM1885C1H103JA01 L/W/T +/-0.1mm",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.9
+      ]
+    },
+    "C4": {
+      "basis": "Murata GRM1885C1H103JA01D exact reference sheet GRM1885C1H103JA01-01A, physical p2 L/W/T 1.6/0.8/0.8 +/-0.1mm; source-supplement/murata/reference.pdf sha256 3f5a339eb51502df7716dfd2d4c4e6d33e837abc0df5cb8e4fc1e6e275d09790; reference dimensions, approval sheet pending before ordering",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.9
+      ]
+    },
+    "C5": {
+      "basis": "Murata GRM1885C1H103JA01D exact reference sheet GRM1885C1H103JA01-01A, physical p2 L/W/T 1.6/0.8/0.8 +/-0.1mm; source-supplement/murata/reference.pdf sha256 3f5a339eb51502df7716dfd2d4c4e6d33e837abc0df5cb8e4fc1e6e275d09790; reference dimensions, approval sheet pending before ordering",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.9
+      ]
+    },
+    "D1": {
+      "basis": "Captured B0520LW-7-F DS30051 Rev.18-2 p4 SOD123 lead-inclusive3.85mm/bodywidth1.70mm/height1.35mm maxima.",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        3.85,
+        1.7,
+        1.35
+      ]
+    },
+    "J1": {
+      "basis": "JST PH top-entry reference body: depth4.5mm, pin-row offset1.7mm, localY-1.7..2.8mm; manufacturer-text/jst-ph.txt physicalp1 and captured Connector_JST F.Fab body rectangles; molded-ear widths retained; reference dimensions, no guaranteed mated height",
+      "offset_mm": [
+        1,
+        0.55
+      ],
+      "size_mm": [
+        5.9,
+        4.5,
+        6.0
+      ]
+    },
+    "J2": {
+      "basis": "JST PH top-entry reference body: depth4.5mm, pin-row offset1.7mm, localY-1.7..2.8mm; manufacturer-text/jst-ph.txt physicalp1 and captured Connector_JST F.Fab body rectangles; molded-ear widths retained; reference dimensions, no guaranteed mated height",
+      "offset_mm": [
+        3,
+        0.55
+      ],
+      "size_mm": [
+        9.9,
+        4.5,
+        6.0
+      ]
+    },
+    "J3": {
+      "basis": "JST PH top-entry reference body: depth4.5mm, pin-row offset1.7mm, localY-1.7..2.8mm; manufacturer-text/jst-ph.txt physicalp1 and captured Connector_JST F.Fab body rectangles; molded-ear widths retained; reference dimensions, no guaranteed mated height",
+      "offset_mm": [
+        3,
+        0.55
+      ],
+      "size_mm": [
+        9.9,
+        4.5,
+        6.0
+      ]
+    },
+    "R1": {
+      "basis": "YAGEO RC0603 maximum;0.1W;1percent",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "R2": {
+      "basis": "YAGEO RC0603 maximum;0.1W;1percent",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "R3": {
+      "basis": "YAGEO RC0603 maximum;0.1W;1percent",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "R4": {
+      "basis": "YAGEO RC0603 maximum;0.1W;1percent",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "R5": {
+      "basis": "Captured selected YAGEO RC0603 series;1kR5/2.2kR6; maximum1.7x.9x.55mm,1percent.",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "R6": {
+      "basis": "Captured selected YAGEO RC0603 series;1kR5/2.2kR6; maximum1.7x.9x.55mm,1percent.",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        1.7,
+        0.9,
+        0.55
+      ]
+    },
+    "U1": {
+      "basis": "Captured ADP7104 supplier Rev.I2019 Figure81 RD-8-2: lead-inclusive6.20mm, bodylength5.00mm, height1.75mm; bounding rectangle, not exactmesh. Distinct from web-read newerRD-8-4 EP geometry.",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        6.2,
+        5.0,
+        1.75
+      ]
+    },
+    "U2": {
+      "basis": "TI DGS0010A overall lead span5.05;bodylength3.1 plus0.15flash each end",
+      "offset_mm": [
+        0,
+        0
+      ],
+      "size_mm": [
+        5.05,
+        3.4,
+        1.1
+      ]
+    }
+  },
+  "placement_allowance_mm": 0.075
+}

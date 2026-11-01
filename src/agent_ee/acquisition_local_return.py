@@ -46,7 +46,7 @@ def connections(reference=ORIGINAL_REFERENCE):
     """Select finite source-bound endpoints; all route and net guards still apply."""
     if reference == ORIGINAL_REFERENCE:
         return CONNECTIONS
-    if reference != 'acquisition-control-reverse-blocking-r1':
+    if reference not in ('acquisition-control-reverse-blocking-r1', 'acquisition-control-film-r1'):
         raise JobRefusal('local return: unsupported acquisition reference')
     return {**CONNECTIONS,
         'output-supply': ((('C2', '1'), ('U1', '1')), '/V3V3'),

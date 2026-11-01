@@ -16,8 +16,10 @@ SCHEMA='agent-ee.acquisition-local-routing/1'
 
 def power_reference(recipe):
     """A validated mechanical source revision selects the electrical recipe."""
-    from . import acquisition_power_geometry, acquisition_reverse_blocking
+    from . import acquisition_film, acquisition_power_geometry, acquisition_reverse_blocking
     mechanics._recipe(recipe)
+    if recipe['declaration']['sources']['analysis/geometry-model.json'] == acquisition_film.MODEL:
+        return acquisition_film.REFERENCE
     return (acquisition_reverse_blocking.REFERENCE
             if recipe['declaration']['sources']['analysis/geometry-model.json'] == acquisition_power_geometry.MODEL
             else local.ORIGINAL_REFERENCE)
