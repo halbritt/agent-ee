@@ -238,6 +238,16 @@ class ForwardAnnotationTests(unittest.TestCase):
         added = next(f for f in fa.board_facts(output, self.tmp / 'mechanical-facts')['footprints']
                      if f['reference'] == 'C2')
         self.assertEqual({p['number']: bool(p['net']) for p in added['pads']}, {'1': True, '2': True, '5': False})
+        reapplied = fa.plan(output, xml, manifest, project, self.tmp / 'mechanical-replan', declarations=declarations)
+        self.assertEqual(reapplied['execution'], 'ok', reapplied['findings'])
+        import pcbnew
+        retained = pcbnew.LoadBoard(str(output))
+        pad = next(p for p in retained.FindFootprintByReference('C2').Pads() if p.GetNumber() == '5')
+        pad.SetNet(next(p for p in retained.FindFootprintByReference('C2').Pads() if p.GetNumber() == '1').GetNet())
+        netted = self.tmp / 'mechanical-netted.kicad_pcb'
+        pcbnew.SaveBoard(str(netted), retained)
+        refused = fa.plan(netted, xml, manifest, project, self.tmp / 'mechanical-netted', declarations=declarations)
+        self.assertEqual(refused['findings'][0]['message'], 'a declared mechanical pad carries a net')
 
     def test_fixture_board_is_clean_against_emitted_schematic(self):
         project, _ = self.project(self.intent(), 'baseline')

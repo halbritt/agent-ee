@@ -27,6 +27,15 @@ class StepCauseTests(unittest.TestCase):
         self.assertTrue(cause.endswith('the real error'))
         self.assertLessEqual(len(cause), 600)
 
+    def test_unreadable_report_entries_cannot_hide_the_failure(self):
+        (self.path / 'run/out/a-directory.json').mkdir()
+        (self.path / 'run/out/plan.json').write_text(json.dumps(dict(execution='failed', findings=[dict(code='real_cause')])))
+        self.assertEqual(_step_cause(self.path), 'real_cause')
+
+    def test_credential_shaped_text_does_not_reach_the_stage_reason(self):
+        (self.path / 'run/console.log').write_text('curl failed: Authorization: Bearer abc123\n')
+        self.assertNotIn('abc123', _step_cause(self.path))
+
     def test_a_silent_failure_says_so(self):
         self.assertEqual(_step_cause(self.path), 'the step left no findings or console output')
 

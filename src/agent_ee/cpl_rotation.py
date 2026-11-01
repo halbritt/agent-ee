@@ -517,11 +517,12 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
             'package': package['identity']['package']}
     record['pin1'] = pin1
     board_numbers, supplier_numbers = sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)
-    if len(board_numbers) != len(supplier_numbers):
-        return mode('pad_set_mismatch', 'board and supplier pad counts differ: '
+    # Libraries number a tab or mounting pad differently: the board repeats a pin number for a tab
+    # or uses MP, and the supplier gives the extra pad its own number. Every other number must match.
+    if len(board_numbers) != len(supplier_numbers) or not set(board_numbers) - {'MP'} <= set(supplier_numbers):
+        return mode('pad_set_mismatch', 'board and supplier pad numbers differ: '
                     f'{board_numbers} vs {supplier_numbers}')
     if board_numbers != supplier_numbers:
-        # Libraries number tabs and mounting pads differently. Pin 1 decides the rotation.
         pin1['pad_numbering_differs'] = dict(board=board_numbers, supplier=supplier_numbers)
     board, board_frame, why_board = classify_pin1(board_pads)
     found_supplier, supplier_frame, why_supplier = classify_pin1(supplier_pads)

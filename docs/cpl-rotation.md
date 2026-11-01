@@ -319,9 +319,10 @@ every row has a midpoint but the outcome is not `pass`, the CPL goes to
 | `duplicate_designator`, `geometry_missing`, `binding_missing`, `supplier_missing`, `pin1_unclassified`, `pin1_frame_mismatch`, `pad_set_mismatch`, `polarity_unknown` | unsupported | Coverage is unavailable for that designator |
 | `anchor_mismatch`, `side_mismatch`, `footprint_mismatch`, `geometry_malformed` | malformed | The sealed sources disagree |
 
-`pad_set_mismatch` means the pad counts differ. When only the numbers differ, such as a
-SOT-223 tab numbered 2 on the board and 4 by the supplier, or `MP` mounting pads, the
-check continues from pin 1 and records `pad_numbering_differs`.
+`pad_set_mismatch` means the pad counts differ, or a board pad number other than `MP` is
+absent from the supplier. A SOT-223 tab numbered 2 on the board and 4 by the supplier, or
+`MP` mounting pads numbered 5 and 6 by the supplier, pass this test: the check continues
+from pin 1 and records `pad_numbering_differs`.
 
 The aggregate follows `land_pattern`:
 
@@ -343,8 +344,7 @@ A populated probe footprint that is missing from the CPL makes the result
   together and inspect every part in JLCPCB's preview. ICs, connectors, diodes
   and LEDs need the most care.
 - The bottom-side transform is unqualified. Pin-1 frames compare pad centres
-  only, and the board and supplier pad numbers must match as multisets. A
-  connector numbered `A1…B12` has no pad `1`, so it is `pin1_unclassified`.
+  only. A connector numbered `A1…B12` has no pad `1`, so it is `pin1_unclassified`.
 - Polarity uses names, not datasheets. Only `D*`/`LED*` designators are
   checked.
 - The fixture's supplier records are owned EasyEDA-format text. The real-format

@@ -25,6 +25,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -345,14 +346,14 @@ def _fine_pitch(problem):
     return False
 
 
-def router_grid(config, problem, trial_number):
+def router_grid(config, problem, *, after_failed_route):
     """The declared search grid, or a finer one when the pads or a failed trial call for it."""
     declared = config['router'].get('grid_step_mm')
     if declared is not None:
         return declared, 'declared'
     if _fine_pitch(problem):
         return FINE_ROUTER_GRID_MM, 'fine-pitch-pads'
-    if trial_number:
+    if after_failed_route:
         return FINE_ROUTER_GRID_MM, 'after-failed-route'
     return None, 'router-default'
 
@@ -1850,7 +1851,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # search from taking the entire portfolio budget. This is scheduling
         # policy, not an engineering relaxation; the outer deadline still wins.
         budget = clock.remaining() / (len(queue) - number)
-        grid_step, grid_basis = router_grid(config, problem, number)
+        # A resumed job's retained trials count too: each one failed or it would not resume.
+        grid_step, grid_basis = router_grid(config, problem, after_failed_route=bool(number or state.get('routing_trials')))
         trial = {'seed': selected['seed'], 'board_sha256': selected['board_sha256'],
                  'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
                  'budget_basis': 'agent-default/equal-remaining-share',
@@ -1911,7 +1913,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                            pair_impedance=impedance, router_checkout=config['router']['checkout'],
                                            length_match=length_match, ac_match=ac_match,
                                            local_routing=local_seed,
-                                           input_board=board_path, input_board_sha256=sha256_bytes(board_bytes))
+                                           input_board=board_path, input_board_sha256=sha256_bytes(board_bytes),
+                                           reject_silk_graphics=config.get('reject_silk_graphic_conflicts') is True)
             if local_seed is not None and report['final'].get('board'):
                 seed_check = report['final']['local_routing']
                 if (routed.get('copper_policy') != 'preserve_existing'
@@ -1940,10 +1943,14 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
 
 
 def _silk_graphic_conflicts(report):
-    """Silk findings that name no field. Artwork moves only fields, so another placement must fix them."""
+    """Silk findings that name no field, so moving fields cannot fix them.
+
+    KiCad 10 describes a field as ``Reference field of J2`` and quotes the content of a
+    text item, as in ``PCB Text 'field of view' on F.Silkscreen``.
+    """
     from .silk_artwork import ARTWORK_CONFLICTS
     return [violation for violation in report['violations'] if violation['type'] in ARTWORK_CONFLICTS
-            and not any(' field of ' in item['description'] for item in violation['items'])]
+            and not any(re.match(r"[^']* field of ", item['description']) for item in violation['items'])]
 
 
 def _completion_status(routed, incumbent, final):
@@ -2089,7 +2096,7 @@ def _verify_local_routing(board,incumbent,normalized,planes,record,*,clock,cance
 
 def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, refinement=None, clock=None, cancel_dir=None,
                  owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None,
-                 input_board=None, input_board_sha256=None, local_routing=None):
+                 input_board=None, input_board_sha256=None, local_routing=None, reject_silk_graphics=False):
     groups, intent, rails = (_bundle(normalized)[k] for k in ('groups', 'intent', 'rails'))
     import pcbnew
     clock = clock or Clock(300)
@@ -2234,7 +2241,8 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     if mechanics_result.get('status') != 'not_declared' and mechanics_result.get('board_sha256') != final_board_sha256:
         problems.append('final board changed after acquisition mechanics check')
     silk_conflicts = _silk_graphic_conflicts(report_)
-    failed = (problems or silk_conflicts or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
+    failed = (problems or (reject_silk_graphics and silk_conflicts) or any(split.values())
+              or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared')
               or block_result['status'] not in ('pass', 'info', 'not_declared')
               or mechanics_result['status'] not in ('pass', 'not_declared')

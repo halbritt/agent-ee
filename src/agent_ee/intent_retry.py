@@ -21,8 +21,10 @@ def _owned_spec(spec, manifest, editable):
     prefix = ['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3',
               '-B', '-P', '-m', 'agent_ee.schematic_stage', 'emit']
     names = ['board', 'schematic', 'intent', 'layout', 'captures', 'footprints']
-    if (argv[:8] != prefix or len(argv) != 20 or
-            argv[8::2] != ['--' + name for name in names] or
+    flags = ['--' + name for name in names]
+    if len(argv) == 22:
+        names, flags = [*names, 'footprint_declarations'], [*flags, '--footprint-declarations']
+    if (argv[:8] != prefix or len(argv) != 8 + 2 * len(names) or argv[8::2] != flags or
             len(spec['mounts']) != 1 or spec['mounts'][0]['at'] != '/tool/agent-ee'):
         return None
     args = dict(zip(names, argv[9::2]))
@@ -30,11 +32,12 @@ def _owned_spec(spec, manifest, editable):
             args['schematic'] != manifest['scope']['schematic'] or args['intent'] not in editable):
         return None
     inputs = spec.get('inputs', [])
-    if len(inputs) < 3 or inputs[0] != args['intent'] or inputs[-2:] != [args['layout'], args['footprints']]:
+    tail = [args['layout'], args['footprints'], *([args['footprint_declarations']] if 'footprint_declarations' in args else [])]
+    if len(inputs) < len(tail) + 1 or inputs[0] != args['intent'] or inputs[-len(tail):] != tail:
         return None
     # Generate the owned declaration from this installation, then substitute the
     # retained mount path. Replay needs the owned bytes, not the old host pathname.
-    expected = configuration(Path(__file__).resolve().parents[1], **args, seeds=inputs[1:-2])['implementation_steps'][0]
+    expected = configuration(Path(__file__).resolve().parents[1], **args, seeds=inputs[1:-len(tail)])['implementation_steps'][0]
     expected['mounts'] = spec['mounts']
     if validate_step(expected, host=False) != spec:
         return None

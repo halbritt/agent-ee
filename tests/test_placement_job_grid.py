@@ -17,15 +17,15 @@ class RouterGridTests(unittest.TestCase):
         declared = dict(router=dict(grid_step_mm=.1))
         omitted = dict(router={})
         cases = [
-            (declared, problem(MM // 2), 3, (.1, 'declared')),
-            (omitted, problem(650_000), 0, (.025, 'fine-pitch-pads')),
-            (omitted, problem(MM), 0, (None, 'router-default')),
-            (omitted, problem(650_000, nets=('A', 'A')), 0, (None, 'router-default')),
-            (omitted, problem(MM), 1, (.025, 'after-failed-route')),
+            (declared, problem(MM // 2), True, (.1, 'declared')),
+            (omitted, problem(650_000), False, (.025, 'fine-pitch-pads')),
+            (omitted, problem(MM), False, (None, 'router-default')),
+            (omitted, problem(650_000, nets=('A', 'A')), False, (None, 'router-default')),
+            (omitted, problem(MM), True, (.025, 'after-failed-route')),
         ]
-        for config, board, trial, expected in cases:
-            with self.subTest(expected=expected, trial=trial):
-                self.assertEqual(job.router_grid(config, board, trial), expected)
+        for config, board, failed, expected in cases:
+            with self.subTest(expected=expected, failed=failed):
+                self.assertEqual(job.router_grid(config, board, after_failed_route=failed), expected)
 
 
 class SilkGraphicConflictTests(unittest.TestCase):
@@ -36,8 +36,10 @@ class SilkGraphicConflictTests(unittest.TestCase):
         over_pad = finding('silk_over_copper', 'Segment of R1 on F.Silkscreen', 'Pad 1 [GND] of C3 on F.Cu')
         movable = finding('silk_overlap', 'Reference field of J2', 'Segment of R1 on F.Silkscreen')
         other = finding('lib_footprint_issues', 'Footprint U1')
-        report = dict(violations=[graphics, over_pad, movable, other])
-        self.assertEqual(job._silk_graphic_conflicts(report), [graphics, over_pad])
+        # Review counterexample: board text whose content happens to read like a field.
+        text = finding('silk_over_copper', "PCB Text 'electric field of sensor' on F.Silkscreen", 'Pad 2 [A] of R1 on F.Cu')
+        report = dict(violations=[graphics, over_pad, movable, other, text])
+        self.assertEqual(job._silk_graphic_conflicts(report), [graphics, over_pad, text])
 
 
 class RepeatedPadRefusalTests(unittest.TestCase):

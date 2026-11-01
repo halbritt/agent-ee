@@ -282,15 +282,20 @@ class EvaluateTests(unittest.TestCase):
                              {'C1': supplier(soic_supplier())})[0][0]
 
     def test_a_library_numbering_of_tabs_and_mounting_pads_does_not_block_the_pin1_check(self):
-        record = self.footprint_pads_case(SOIC_PADS.replace('(pad "8"', '(pad "MP"'))
-        self.assertEqual((record['execution'], record['outcome']), ('ok', 'pass'), record['modes'])
-        self.assertEqual(record['pin1']['pad_numbering_differs']['board'][-1], 'MP')
+        for pads, board_end in ((SOIC_PADS.replace('(pad "8"', '(pad "MP"'), 'MP'),
+                                (SOIC_PADS.replace('(pad "8"', '(pad "7"'), '7')):
+            with self.subTest(board_end=board_end):
+                record = self.footprint_pads_case(pads)
+                self.assertEqual((record['execution'], record['outcome']), ('ok', 'pass'), record['modes'])
+                self.assertEqual(record['pin1']['pad_numbering_differs']['board'][-1], board_end)
 
-    def test_a_different_pad_count_or_no_pin1_leaves_coverage_unavailable(self):
+    def test_a_renumbered_electrical_pad_or_different_count_leaves_coverage_unavailable(self):
+        # Review counterexample: pad 2 renamed 99 kept the same count and geometry.
         last = SOIC_PADS.rindex('(pad ')
-        self.assertEqual([m['mode'] for m in self.footprint_pads_case(SOIC_PADS[:last])['modes']], ['pad_set_mismatch'])
-        renamed = SOIC_PADS.replace('(pad "1"', '(pad "9"')
-        self.assertEqual([m['mode'] for m in self.footprint_pads_case(renamed)['modes']], ['pin1_unclassified'])
+        for pads in (SOIC_PADS[:last], SOIC_PADS.replace('(pad "2"', '(pad "99"')):
+            self.assertEqual([m['mode'] for m in self.footprint_pads_case(pads)['modes']], ['pad_set_mismatch'])
+        self.assertEqual([m['mode'] for m in self.footprint_pads_case(SOIC_PADS.replace('(pad "1"', '(pad "MP"'))['modes']],
+                         ['pin1_unclassified'])
 
     def test_unmatched_footprint_whose_supplier_frame_needs_270_is_a_rotation_conflict(self):
         records, applied, unmatched = self.soic_case(lib='lib:SO8_custom')

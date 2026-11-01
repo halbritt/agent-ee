@@ -225,17 +225,19 @@ The legacy `router.budget_s` field is accepted but ignored: routing receives
 the remaining overall time, with no minimum timeout extension. If less than one
 second remains, the integer-second router CLI is not started.
 
-A final board is ineligible when a native silkscreen finding names no field, such as one
-footprint's silk segment over another's. The artwork stage moves only fields, so it could
-never fix that board. The finding appears in `final.silk_graphic_conflicts`, and the job
-tries its next routing candidate.
+`final.silk_graphic_conflicts` lists native silkscreen findings that name no field, such
+as one footprint's silk segment over another's. With a true top-level
+`reject_silk_graphic_conflicts`, such a board is ineligible and the job tries its next
+routing candidate. A build sets it, because its artwork stage moves only fields and could
+never fix that board.
 
 Optional `router.grid_step_mm` selects the builtin router's search resolution
 in millimetres, including its coupled differential-pair and remaining-net
 passes. For example, `0.025` requests a 25 micrometre search grid. It does not
 change native widths or clearance requirements. When it is omitted, the job uses
 0.025 mm if any footprint has pads on different nets less than 1 mm apart, centre to
-centre, and on any trial after a failed route. Otherwise the router uses its own
+centre, and on any trial after a failed route, including one retained by a resumed job.
+Otherwise the router uses its own
 default. This is scheduling policy: on both sub-millimetre boards tried so far, the
 default left opens or dangling vias and 0.025 mm routed. The pinned CLI rejects
 non-finite, sub-nanometre or incompatible controls. Each entry in `routing_trials`

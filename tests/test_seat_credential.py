@@ -1,12 +1,11 @@
 """A login refresh during a long review must not fail the seats that start after it."""
 import os
 from pathlib import Path
-import shutil
 import stat
-import subprocess
 import tempfile
 import unittest
 
+from agent_ee import native_run
 from agent_ee.harnesses import seat_credential
 
 
@@ -32,12 +31,16 @@ class SeatCredentialTests(unittest.TestCase):
             with seat_credential(f'/proc/self/fd/{held.fileno()}') as copy:
                 self.assertEqual(copy.read_text(), 'first login')
 
-    @unittest.skipUnless(shutil.which('bwrap'), 'bwrap is required to bind the copy')
-    def test_copy_can_be_bind_mounted_by_the_seat_sandbox(self):
+    def test_seat_sandbox_binds_and_reads_the_copy(self):
+        from toolchain import require_toolchain
+        require_toolchain()
+        inputs = self.root / 'inputs'
+        inputs.mkdir()
         with seat_credential(self.login) as copy:
-            done = subprocess.run(['bwrap', '--ro-bind', '/', '/', '--ro-bind', str(copy), str(self.login),
-                                   '/bin/cat', str(self.login)], capture_output=True, text=True, timeout=30)
-        self.assertEqual((done.returncode, done.stdout), (0, 'first login'), done.stderr)
+            record = native_run.run(native_run.Intent('model', ['/usr/bin/cat', '/work/home/auth.json'], timeout=30),
+                                    inputs=inputs, work=self.root / 'work', mounts=[(copy, '/work/home/auth.json')])
+        self.assertEqual(record['execution'], 'ok', record)
+        self.assertEqual((self.root / 'work/stdout.log').read_text(), 'first login')
 
 
 if __name__ == '__main__':

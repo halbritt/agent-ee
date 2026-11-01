@@ -230,6 +230,9 @@ def _plan(plan, inventory, fields, facts, library, names):
         if numbers != sorted(comp['pins']):
             raise AnnotationError('pad_pin_mismatch', 'placed footprint pads differ from the symbol pins',
                                   '/components/' + ref)
+        if any(p['number'] in mechanical and p['net'] for p in fp['pads']):
+            raise AnnotationError('pad_pin_mismatch', 'a declared mechanical pad carries a net',
+                                  '/components/' + ref)
         plan['retain'].append(dict(footprint_uuid=fp['uuid'], path=fp['path'], reference=ref))
         if (fp['reference'], fp['value']) != (ref, comp['value']) or \
                 any(fp['fields'].get(k) != v for k, v in fields[ref].items()):
