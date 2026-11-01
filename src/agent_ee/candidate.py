@@ -107,17 +107,21 @@ def capture(scope_path, run_dir, profile_path=None):
     return manifest
 
 
-def verify_snapshot(run_dir):
+def verify_snapshot(run_dir, *, checkpoint=None):
+    if checkpoint is not None:
+        checkpoint()
     run_dir = Path(run_dir)
     m = read_json(run_dir / "candidate.json")
     root = run_dir / "inputs"
     actual = {}
     for p in root.rglob("*"):
+        if checkpoint is not None:
+            checkpoint()
         if p.is_symlink():
             raise ValueError(f"snapshot gained a live link: {p}")
         if p.is_file():
             try:
-                actual[p.relative_to(root).as_posix()] = digest(p, follow_symlinks=False)
+                actual[p.relative_to(root).as_posix()] = digest(p, checkpoint=checkpoint, follow_symlinks=False)
             except OSError as error:
                 if error.errno != errno.ELOOP:
                     raise

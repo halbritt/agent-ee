@@ -142,7 +142,7 @@ def _reopened(descriptor, flags=0):
     return os.open(f'/proc/self/fd/{descriptor}', os.O_RDONLY | os.O_CLOEXEC | flags)
 
 
-def _held_walk(directory, *, vanished=False):
+def _held_walk(directory, *, vanished=False, checkpoint=None):
     """Yield (relative path, directory descriptor, name, status) for every entry below a directory.
 
     Consumes the readable ``directory`` descriptor. Every entry is looked up as one component
@@ -154,12 +154,16 @@ def _held_walk(directory, *, vanished=False):
     """
     stack = []
     try:
+        if checkpoint is not None:
+            checkpoint()
         stack.append(('', directory, iter(sorted(os.listdir(directory)))))
     finally:
         if not stack:
             os.close(directory)
     try:
         while stack:
+            if checkpoint is not None:
+                checkpoint()
             prefix, current, names = stack[-1]
             name = next(names, None)
             if name is None:
@@ -195,14 +199,14 @@ def _held_walk(directory, *, vanished=False):
             os.close(current)
 
 
-def _entry_digest(directory, name):
+def _entry_digest(directory, name, *, checkpoint=None):
     """Digest of the regular file ``name`` in a held directory, opened without following a link."""
     entry = os.open(name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
     try:
         if not stat.S_ISREG(os.fstat(entry).st_mode):
             raise OSError(errno.ESTALE, 'entry replaced during walk', name)
         # The held object's magic link reaches that same file, never a new lookup of its name.
-        return digest(f'/proc/self/fd/{entry}')
+        return digest(f'/proc/self/fd/{entry}', **({} if checkpoint is None else {'checkpoint': checkpoint}))
     finally:
         os.close(entry)
 
@@ -508,8 +512,8 @@ def validate_step(spec, *, host=True):
             'adoptable_exits': sorted(exits), 'timeout_s': timeout}
 
 
-def _digest_fd(descriptor):
-    return digest_fd(descriptor)
+def _digest_fd(descriptor, *, checkpoint=None):
+    return digest_fd(descriptor, checkpoint=checkpoint)
 
 
 def _lookup(root, rel):
@@ -564,15 +568,21 @@ def _regular(root, rel, *, content=False, limit=None):
         return 'file', stream.read(-1 if limit is None else limit + 1)
 
 
-def _scan(descriptor, files, other, *, metadata=None):
+def _scan(descriptor, files, other, *, metadata=None, checkpoint=None):
     """Walk an open directory without following links; consumes descriptor."""
     try:
+        if checkpoint is not None:
+            checkpoint()
         stack = [(descriptor, '', iter(sorted(os.listdir(descriptor))))]
-    except OSError as exc:
+    except BaseException as exc:
         os.close(descriptor)
-        raise ValueError('directory cannot be listed') from exc
+        if isinstance(exc, OSError):
+            raise ValueError('directory cannot be listed') from exc
+        raise
     try:
         while stack:
+            if checkpoint is not None:
+                checkpoint()
             current, prefix, names = stack[-1]
             name = next(names, None)
             if name is None:
@@ -589,7 +599,7 @@ def _scan(descriptor, files, other, *, metadata=None):
                 continue
             mode = os.fstat(child).st_mode
             if stat.S_ISREG(mode):
-                files[rel] = _digest_fd(child)
+                files[rel] = _digest_fd(child, checkpoint=checkpoint)
                 if metadata is not None:
                     metadata[rel] = {'kind': 'file', 'mode': stat.S_IMODE(mode), 'sha256': files[rel]}
             elif stat.S_ISDIR(mode) and len(stack) < TREE_DEPTH:
@@ -614,14 +624,14 @@ def _scan(descriptor, files, other, *, metadata=None):
             os.close(current)
 
 
-def file_tree(root):
+def file_tree(root, *, checkpoint=None):
     """Regular files by relative path, plus every link or special entry."""
     try:
         descriptor = os.open(root, NOFOLLOW | os.O_DIRECTORY)
     except OSError as exc:
         raise ValueError(f'tree root is not a directory: {root}') from exc
     files, other = {}, []
-    _scan(descriptor, files, other)
+    _scan(descriptor, files, other, checkpoint=checkpoint)
     return dict(sorted(files.items())), sorted(other)
 
 
@@ -632,7 +642,7 @@ def _strict_tree(root):
     return files
 
 
-def _identity_tree(source, *, descriptor=None):
+def _identity_tree(source, *, descriptor=None, checkpoint=None):
     """Identity of a read-only tool mount: file bytes and link targets.
 
     The tree is walked relative to the held root object (``descriptor``, or the named
@@ -650,16 +660,19 @@ def _identity_tree(source, *, descriptor=None):
             os.close(held)
             held = os.open(source, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
+        if checkpoint is not None:
+            checkpoint()
         mode = os.fstat(held).st_mode
         if stat.S_ISREG(mode) and top:
-            entries = {name: digest(f'/proc/self/fd/{held}')}
+            entries = {name: digest(f'/proc/self/fd/{held}', checkpoint=checkpoint)}
         elif stat.S_ISDIR(mode):
             entries = {}
-            for rel, directory, entry, observed in _held_walk(_reopened(held, os.O_DIRECTORY)):
+            for rel, directory, entry, observed in _held_walk(_reopened(held, os.O_DIRECTORY), checkpoint=checkpoint):
                 if stat.S_ISLNK(observed.st_mode):
                     entries[rel] = 'link:' + os.readlink(entry, dir_fd=directory)
                 elif stat.S_ISREG(observed.st_mode):
-                    entries[rel] = _entry_digest(directory, entry)
+                    entries[rel] = _entry_digest(directory, entry,
+                        **({} if checkpoint is None else {'checkpoint': checkpoint}))
         else:
             raise NotADirectoryError(errno.ENOTDIR, 'tool tree is not a directory', str(source))
     finally:
@@ -667,9 +680,9 @@ def _identity_tree(source, *, descriptor=None):
     return {'sha256': identity(entries), 'files': len(entries)}
 
 
-def tree_identity(source):
+def tree_identity(source, *, checkpoint=None):
     """Identity of a retained tool tree in the form a receipt records it."""
-    return _identity_tree(source)
+    return _identity_tree(source, checkpoint=checkpoint)
 
 
 def _host_path(spec, sandbox_path, *, held=True):

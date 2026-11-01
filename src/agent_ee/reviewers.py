@@ -53,6 +53,11 @@ def evidence_schema(run_dir, packet, role):
             inventory.append(dict(path=path, **citation_format(read_captured(run, path))))
     inventory = list(inventory)
     if role == 'adjudicator':
+        from .judgment_context import citation_paths
+        judgment_paths = citation_paths(run)
+        for rel in judgment_paths:
+            validate_citation_path(rel, run, adjudication_paths=judgment_paths)
+            inventory.append(dict(path=rel, **citation_format(read_captured(run, rel))))
         for path in sorted((run / 'review-work').glob('*/experiments/**/*')):
             if path.is_file():
                 rel = path.relative_to(run).as_posix()
@@ -833,6 +838,9 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline, *, launch_con
     definition = {**profile["adjudicator"], "tool_mode": profile.get("tool_mode", "investigate")}
     # Findings and initial reviews stay inline: only the packet has a mounted copy.
     note, value = prompt_packet(run_dir, packet, definition["tool_mode"] == "investigate")
+    from . import judgment_context
+    context = judgment_context.prompt(run_dir, tools=definition['tool_mode'] == 'investigate', deadline=deadline)
+    testimony = {} if context is None else {'judgment_context': context}
     prompt = ("Preserve supported purpose-review waste observations beside correctness findings, with their "
         "estimated saving, basis and uncertainty. Purpose suggestions are minor/info concerns: note them when "
         "supported. Missing evidence for a purpose saving is a coverage limitation, never an acceptance "
@@ -866,7 +874,7 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline, *, launch_con
         "RF reviewer findings are adjudicated by the same rules; an RF missing-evidence statement, a 50 ohm "
         "declaration, calculator output, clearance pass or plane coverage never establishes RF qualification, and "
         "material RF concerns stay deferred until evidence resolves them.\n" + note +
-        json.dumps({"packet": value, "findings": findings, "initial_reviews": reviews}))
+        json.dumps({"packet": value, "findings": findings, "initial_reviews": reviews, **testimony}))
     schema = json.loads(json.dumps(DECISIONS_SCHEMA))
     for key, expected in {"schema": DECISIONS_VERSION, "candidate_id": packet["candidate_id"],
                           "run_id": packet["run_id"]}.items():

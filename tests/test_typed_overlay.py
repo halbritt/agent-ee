@@ -144,7 +144,7 @@ class PodOverlayTests(unittest.TestCase):
         self.assertEqual(manifest['accounting']['judgment_records_declared'], ['judgments/pod-ac-3-waivers.json'])
         self.assertEqual(manifest['accounting']['judgment_records_present'], [])
         self.assertFalse((out / 'judgments').exists())
-        self.assertTrue(any(s.startswith('POD-AC-3-WAIVERS: JUDGMENT PENDING') for s in manifest['accounting']['limitations']))
+        self.assertTrue(any(s.startswith('POD-AC-3-WAIVERS: JUDGMENT REQUIRED') for s in manifest['accounting']['limitations']))
         ac3 = next(e for e in derived['requirements'] if e['id'] == 'POD-AC-3')
         self.assertEqual([s['mapping']['id'] for s in ac3['spans']], ['POD-AC-3-NATIVE', 'POD-AC-3-WAIVERS'])
         self.assertIn('checks', ac3['spans'][0]['mapping'])

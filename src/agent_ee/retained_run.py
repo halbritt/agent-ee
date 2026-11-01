@@ -45,20 +45,24 @@ def retained_path(root, relative):
     return path
 
 
-def snapshot(root):
+def snapshot(root, *, checkpoint=None):
+    if checkpoint is not None:
+        checkpoint()
     report = strict_json(retained_path(root, 'build-report.json').read_bytes())
     if report.get('schema') != REPORT_SCHEMA or report.get('identity') != identity(report['inputs']):
         raise QualificationError('build identity differs from captured inputs', integrity=True)
-    if _inventory(retained_path(root, 'source')) != report['inputs']['source']:
+    if _inventory(retained_path(root, 'source'), checkpoint=checkpoint) != report['inputs']['source']:
         raise QualificationError('retained build source identity changed', integrity=True)
     completed = report['completed']
     if len(completed) > len(STAGES):
         raise QualificationError('completed stage inventory is invalid')
     for index, row in enumerate(completed):
+        if checkpoint is not None:
+            checkpoint()
         directory = retained_path(root, row['directory'])
         candidate = retained_path(root, row['candidate'])
         if (row['stage'] != STAGES[index] or candidate == directory or not candidate.is_relative_to(directory)
-                or tree_identity(directory) != row['tree']):
+                or tree_identity(directory, checkpoint=checkpoint) != row['tree']):
             raise QualificationError('completed stage identity changed: ' + row['stage'], integrity=True)
     if completed and report.get('candidate') != completed[-1]['candidate']:
         raise QualificationError('candidate differs from the last completed stage')
@@ -139,7 +143,7 @@ def review_resubmissions(limit):
         _review_resubmissions.reset(token)
 
 
-def review_candidate(scope, directory, timeout, profile=None):
+def review_candidate(scope, directory, timeout, profile=None, *, judgment_context=None):
     """Use the generated acceptance scope against this actual native candidate.
 
     Without a profile this is the checks-only review; with one, the ordinary
@@ -147,7 +151,8 @@ def review_candidate(scope, directory, timeout, profile=None):
     path = scope_path(directory)
     write_scope(directory, scope)
     run_review(path, directory / 'review', timeout, checks_only=profile is None, profile=profile,
-               output_stream=sys.stderr, **({} if _review_resubmissions.get() == 1 else
+               output_stream=sys.stderr, **({} if judgment_context is None else {'judgment_context': judgment_context}),
+               **({} if _review_resubmissions.get() == 1 else
                    {"max_schema_resubmissions": _review_resubmissions.get()}))
     return verify_stage_review(directory)
 

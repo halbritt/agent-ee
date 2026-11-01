@@ -72,10 +72,10 @@ def digest(path, *, checkpoint=None, follow_symlinks=True):
         return _hash_stream(stream, checkpoint)
 
 
-def digest_fd(descriptor):
+def digest_fd(descriptor, *, checkpoint=None):
     """SHA-256 of an already opened regular file, always read now; consumes descriptor."""
     with os.fdopen(descriptor, "rb") as stream:
-        return _hash_stream(stream, None)
+        return _hash_stream(stream, checkpoint)
 
 
 def fingerprint(path, *, checkpoint=None):

@@ -135,8 +135,14 @@ def _package(plan, candidate, stage_dir, scope, accounting, profile=None, *, out
         raise ValueError('strict block contract package acceptance requires final artwork revalidation from its retained run')
     group_proof = block_package.verify(out, candidate, scope, plan)
     qualification.manufacturing_coverage(plan, scope, accounting)
+    context = {}
+    if plan['schema'] == TYPED_SCHEMA and profile is not None:
+        if out is None:
+            raise ValueError('typed package review requires its retained build judgment context')
+        from .judgment_context import Source
+        context['judgment_context'] = Source(out, stage_dir, candidate)
     result = retained_run.review_candidate(candidate_scope(scope, candidate), stage_dir,
-                                           plan.get('verification_timeout_s', 3600), profile=profile)
+                                           plan.get('verification_timeout_s', 3600), profile=profile, **context)
     artifacts = qualification.package_artifacts(result, scope, candidate)
     extra = {}
     if group_proof is not None:

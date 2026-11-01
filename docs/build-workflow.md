@@ -330,6 +330,24 @@ converts testimony into a full review. Admitted testimony is `recorded`, never
 `pass`. Missing concurrence stays pending; dissent, stale bindings and unresolved
 defects block the dependent file claim.
 
+A typed package attempt with an explicit full-review profile captures those
+frozen records, witnesses, applicability inventory and compiled receipt in the
+review's `adjudication-judgments` directory. Initial reviewers cannot read or
+cite this context. The adjudicator receives it after their independent reviews
+and can cite its exact retained records. Candidate and shared-packet identities
+stay unchanged. Recorded concurrence does not close an independent concern or
+replace a passing check; missing or dissenting witnesses retain their admission
+status.
+
+The context is bound to the review candidate, run and archived calls. Replay
+verifies it without the original build directory; deleting or resealing it
+cannot reuse an earlier call. Capture allows at most 256 files, 512 directory
+entries and 8 MiB including its manifest. Inventory hashing observes the review
+deadline and cancellation between entries and file blocks. Diagnostic
+`build review` still has no such context: it can select an earlier completed
+stage and adds its own source-provenance file. It does not inherit the package
+attempt's judgments or acceptance.
+
 The rules register retains ERC/DRC ignored categories, native severities,
 waivers, constraint classes, default advisories and sourced-limit evidence. It
 does not regrade or promote defaults. The decision section identifies the

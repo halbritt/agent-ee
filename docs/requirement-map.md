@@ -129,7 +129,7 @@ envelope requirements are executable by construction and are not listed.
 | --- | --- | --- |
 | `executable` | `checks`, `limitation` | checks become baseline acceptance checks as in map/1 |
 | `operational` | `operational {criterion}`, `limitation` | `ID: OPERATIONAL PENDING: criterion; …` limitation; no check; the build consumer assesses it from sealed receipts |
-| `judgment` | `judgment {record}`, `limitation` | `ID: JUDGMENT PENDING: record path; …` limitation; the build consumer admits the record |
+| `judgment` | `judgment {record}`, `limitation` | `ID: JUDGMENT REQUIRED: record path; …` limitation; the build consumer assesses admission |
 | `physical` | `bench`, `limitation` | `ID: BENCH REQUIRED: …` as in map/1 |
 | `context` | `context` | prose context as in map/1 |
 

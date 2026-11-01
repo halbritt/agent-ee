@@ -398,18 +398,22 @@ def admit_judgment(document, *, requirement, span, files, source_text, applicabi
         return dict(status='failed', witness='missing', reason=str(exc))
 
 
-def _judgments(root, stage, entries, binding, plan):
+def _judgments(root, stage, entries, binding, plan, *, checkpoint=None):
+    if checkpoint is not None:
+        checkpoint()
     directory = stage / 'judgments'
     inventory = read_json(stage / 'judgment-inventory.json')
-    if _inventory(directory) != inventory:
+    if _inventory(directory, checkpoint=checkpoint) != inventory:
         raise QualificationError('frozen judgment inventory differs from package')
     captured = read_json(stage / 'applicability-inventory.json')
     candidate = _retained_path(root, entries['candidate'])
-    if _inventory(candidate) != captured['inputs'] or applicability_facts(candidate, plan) != captured['values']:
+    if _inventory(candidate, checkpoint=checkpoint) != captured['inputs'] or applicability_facts(candidate, plan) != captured['values']:
         raise QualificationError('frozen applicability inputs differ from final package candidate')
     source_text = {}
     witnesses = {}
     for path, pin in inventory.items():
+        if checkpoint is not None:
+            checkpoint()
         if path.startswith('verification/') and path.endswith('.json'):
             witness = strict_json(_retained_path(directory, path).read_bytes())
             if not isinstance(witness, dict) or witness.get('schema') != 'agent-ee.judgment-verification/1':
@@ -417,6 +421,8 @@ def _judgments(root, stage, entries, binding, plan):
             witnesses.setdefault(witness.get('judgment_sha256'), []).append((path, witness))
     output = []
     for entry in entries['requirements']:
+        if checkpoint is not None:
+            checkpoint()
         if entry['mode'] != 'judgment':
             continue
         rid = entry.get('parent_id', entry['id'])
@@ -429,7 +435,7 @@ def _judgments(root, stage, entries, binding, plan):
         if relative not in inventory:
             output.append(dict(row, status='pending', witness='missing', reason='Judgment record is missing'))
             continue
-        pin = digest(path)
+        pin = digest(path, checkpoint=checkpoint)
         document = strict_json(path.read_bytes())
         matched = witnesses.get(pin, [])
         if len(matched) > 1:
@@ -437,6 +443,8 @@ def _judgments(root, stage, entries, binding, plan):
             continue
         sources = document.get('sources', []) if isinstance(document, dict) else []
         for source in sources if isinstance(sources, list) else []:
+            if checkpoint is not None:
+                checkpoint()
             citation = source.get('citation', {}) if isinstance(source, dict) else {}
             name = citation.get('path') if isinstance(citation, dict) else None
             if name in captured['inputs']:

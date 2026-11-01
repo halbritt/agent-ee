@@ -144,7 +144,7 @@ def _validate_xpath(data, xpath):
         raise ValueError("citation xpath requires valid XML and an ElementTree-supported path") from exc
 
 
-def validate_citation_path(path_value, run_dir):
+def validate_citation_path(path_value, run_dir, *, adjudication_paths=()):
     if not isinstance(path_value, str) or not path_value.strip() or "\\" in path_value:
         raise ValueError(f"invalid citation path: {path_value!r}")
     rel = PurePosixPath(path_value)
@@ -153,6 +153,9 @@ def validate_citation_path(path_value, run_dir):
     head = rel.parts[0]
     if path_value == "baseline.json":
         pass  # Verify the coordinator baseline after the common file/link guards.
+    elif head == 'adjudication-judgments':
+        if path_value not in adjudication_paths:
+            raise ValueError('judgment citation requires admitted adjudicator context')
     elif head in ("inputs", "checks"):
         if len(rel.parts) < 2:
             raise ValueError(f"citation path must reference a file inside {head}/: {path_value!r}")
@@ -188,11 +191,11 @@ def validate_citation_path(path_value, run_dir):
     return rel.as_posix()
 
 
-def validate_citation(item, run_dir, *, require_structured=False):
+def validate_citation(item, run_dir, *, require_structured=False, adjudication_paths=()):
     if (not isinstance(item, dict) or not {"path", "locator"} <= item.keys() or
             item.keys() - {"path", "locator"} - STRUCTURED_CITATION_FIELDS):
         raise ValueError(f"malformed evidence citation: {item!r}")
-    path_norm = validate_citation_path(item["path"], run_dir)
+    path_norm = validate_citation_path(item["path"], run_dir, adjudication_paths=adjudication_paths)
     locator = _nonempty_str(item["locator"], "evidence locator")
     fields = item.keys() & STRUCTURED_CITATION_FIELDS
     if require_structured and not fields:
@@ -666,6 +669,8 @@ def _verify_closure_via_adjudicate(finding, decision, validated_evidence, curren
 
 def adjudicate(findings, decisions, run_dir):
     run_dir = Path(run_dir)
+    from .judgment_context import citation_paths
+    adjudication_paths = citation_paths(run_dir)
     if not isinstance(findings, list):
         raise ValueError("findings must be a list")
     if not isinstance(decisions, dict):
@@ -742,7 +747,8 @@ def adjudicate(findings, decisions, run_dir):
         raw_ev = item.get("evidence")
         if not isinstance(raw_ev, list):
             raise ValueError(f"decision {fid}: evidence must be a list")
-        validated_ev = [validate_citation(c, run_dir, require_structured=decisions["schema"] == DECISIONS_VERSION) for c in raw_ev]
+        validated_ev = [validate_citation(c, run_dir, require_structured=decisions["schema"] == DECISIONS_VERSION,
+                                         adjudication_paths=adjudication_paths) for c in raw_ev]
 
         dup_of = item.get("duplicate_of")
         if disp == "duplicate":

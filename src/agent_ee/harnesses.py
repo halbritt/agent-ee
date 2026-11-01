@@ -284,6 +284,9 @@ def evidence_mounts(run_dir, label):
         experiments.mkdir(parents=True, exist_ok=True)
         mounts.append((experiments, f'/evidence/review-work/{label}/experiments'))
     if label == 'adjudicator':
+        from . import judgment_context
+        if judgment_context.read(run) is not None:
+            mounts.append((run / judgment_context.DIRECTORY, '/evidence/' + judgment_context.DIRECTORY))
         mounts += [(p, '/experiments/' + p.parent.name) for p in (run / 'review-work').glob('*/experiments')]
     return mounts
 

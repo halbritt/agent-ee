@@ -96,7 +96,7 @@ def pcbnew_extension(*, checkpoint=None, python='/usr/bin/python3'):
 
 def artifacts(run):
     found = {p.relative_to(run).as_posix(): digest(p) for parent in
-            ("inputs", "work", "checks", "reviews", "review-work", "review-executions", "review-attempts")
+            ("inputs", "work", "checks", "reviews", "review-work", "review-executions", "review-attempts", "adjudication-judgments")
             for p in sorted((run / parent).rglob("*")) if p.is_file()}
     for p in (run / "events").glob("*.json"):
         found[p.relative_to(run).as_posix()] = digest(p)
@@ -145,6 +145,8 @@ def pinned(host, name, observe):
 def verify_records(run, result, *, current_source=True, observations=None, invoked=(), host=None):
     """Validate an explicit projection; callers separately bind publication intent."""
     manifest = verify_source(run) if current_source else verify_snapshot(run)
+    from . import judgment_context
+    judgment_context.read(run, result=result)
     if manifest["candidate_id"] != result.get("candidate_id"):
         raise ValueError("result candidate identity differs from snapshot")
     declared_limits = manifest["scope"].get("limitations", [])
@@ -506,7 +508,7 @@ def validate_scope(scope):
         seen.add(role)
 
 
-def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None, baseline_view=None, host=None):
+def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None, baseline_view=None, host=None, judgment_context=None):
     """Capture and review a fresh candidate into out. host, when given, holds the policy and runtime
     fingerprints the caller supplies for this run's observations and reviewer launches (see pinned)."""
     from .locking import writer_lock
@@ -515,10 +517,10 @@ def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None
                            previous=previous, profile=profile, expected_baseline=expected_baseline,
                            baseline_view=baseline_view, output_stream=output_stream,
                            max_schema_resubmissions=max_schema_resubmissions, fab_context=fab_context, stock_context=stock_context,
-                           review_roles=review_roles, routing_context=routing_context, host=host)
+                           review_roles=review_roles, routing_context=routing_context, host=host, judgment_context=judgment_context)
 
 
-def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None, baseline_view=None, host=None):
+def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None, baseline_view=None, host=None, judgment_context=None):
     from .checks import run_checks
     from .findings import adjudicate, collect_findings
     from .reviewers import adjudicator_call, build_packet, initial_reviews
@@ -574,6 +576,9 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
                       expected_check_ids=[c["id"] for c in m["scope"]["checks"]],
                       expected_review_roles=[r["role"] for r in m["scope"].get("review_profile", {}).get("reviewers",
                           [{"role": "circuit"}, {"role": "physical"}])])
+        if judgment_context is not None:
+            from . import judgment_context as judgments
+            result['judgment_context'] = judgments.capture(run, judgment_context, m, result['run_id'], deadline)
         qualification = result.get("final_qualification")
         if qualification is not None and qualification["blocking"]:
             from .board_envelope import describe_blockers
@@ -651,6 +656,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
             result["limitations"].append("Wall-clock work budget exhausted; uncompleted work remains unknown.")
         verify_snapshot(run)
         verify_source(run)
+        from . import judgment_context as judgments
+        judgments.read(run, result=result, deadline=deadline)
         from .kicad_happy import verify_installations
         verify_installations(result["checks"])
         from .preflight import runtime_drift

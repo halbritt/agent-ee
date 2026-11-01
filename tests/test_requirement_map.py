@@ -602,7 +602,7 @@ class TypedMapTests(unittest.TestCase):
             self.assertEqual(part['obligation_text_sha256'], sha256(self.spec_raw[a:b]))
             self.assertEqual((part['locator']['byte_start'], part['locator']['byte_end']), (a, b))
         self.assertEqual([r['id'] for r in scope['baseline']['requirements']], [rid + '-NATIVE'])
-        self.assertTrue(any(s.startswith(rid + '-JUDGMENT: JUDGMENT PENDING: record judgments/pod-ac-3.json')
+        self.assertTrue(any(s.startswith(rid + '-JUDGMENT: JUDGMENT REQUIRED: record judgments/pod-ac-3.json')
                             for s in scope['limitations']))
         # A map may not merge the two obligation spans back into one clause mapping.
         entry.clear()

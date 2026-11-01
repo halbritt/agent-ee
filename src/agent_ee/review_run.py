@@ -19,13 +19,17 @@ def resubmission_limit(value):
 
 def input_identity(run):
     files = {}
-    for parent in ('inputs', 'checks', 'work'):
+    for parent in ('inputs', 'checks', 'work', 'adjudication-judgments'):
         for path in sorted((run / parent).rglob('*')):
             if path.is_file():
                 files[path.relative_to(run).as_posix()] = digest(path)
     for name in ('candidate.json', 'packet.json', 'baseline.json', 'launch-expectation.json'):
         if (run / name).is_file():
             files[name] = digest(run / name)
+    if (run / 'result.json').is_file():
+        context = read_json(run / 'result.json').get('judgment_context')
+        if context is not None:
+            files['judgment_context_binding'] = identity(context)
     return identity(files)
 
 
@@ -82,6 +86,9 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
     limit = resubmission_limit(limit)
     transport_limit = transport_retry_limit(role, limit, transport_limit)
     prompt = with_resubmission_notice(prompt, limit)
+    from . import judgment_context
+    context = judgment_context.read(run)
+    original_context = None if context is None else context['context']['sha256']
     original_inputs = input_identity(run)
     work = run / 'review-work' / role
     from .native_run import DeadlineExhausted
@@ -175,6 +182,8 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
             accepted = None
         archive = run / 'review-attempts' / role / str(number)
         archive.mkdir(parents=True)
+        if original_context is not None:
+            record['judgment_context_sha256'] = original_context
         write_json(archive / 'execution.json', record)
         write_json(archive / 'response.json', value)
         write_json(archive / 'schema.json', schema)
@@ -242,6 +251,12 @@ def tree_identity(root):
 def verify_role_call(run, record, expected, role, boundary, *, limit=None, transport_limit=0):
     """Verify each distinct launch receipt, including refused prior outputs."""
     from .preflight import verify_receipt
+    from . import judgment_context
+    context = judgment_context.read(run)
+    context_pin = None if context is None else context['context']['sha256']
+    if (record.get('judgment_context_sha256') != context_pin or
+            (context_pin is not None and record.get('input_identity') != input_identity(Path(run)))):
+        raise ValueError('archived call judgment context or immutable inputs changed')
     transport_limit = transport_retry_limit(role, limit, transport_limit)
     if ((transport_limit and (type(record.get('max_transport_retries')) is not int
                              or record['max_transport_retries'] != transport_limit))

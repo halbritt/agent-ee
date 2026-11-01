@@ -84,7 +84,7 @@ class PlanProfileTests(unittest.TestCase):
         self.assertEqual(calls, [((None,), out), ((str(out / 'source/review/profile.json'),), out)])
         reviewed = []
         with mock.patch.object(retained_run, 'review_candidate',
-                               lambda scope, directory, timeout, profile=None: reviewed.append(profile) or {}), \
+                               lambda scope, directory, timeout, profile=None, **context: reviewed.append(profile) or {}), \
                 mock.patch.object(qualification, 'manufacturing_coverage'), \
                 mock.patch.object(qualification, 'package_artifacts', return_value={}):
             stage = self.root / 'stage'
@@ -92,7 +92,7 @@ class PlanProfileTests(unittest.TestCase):
             write_json(stage / 'judgment-inventory.json', {})
             (self.root / 'candidate').mkdir()
             build_stages._package(typed(), self.root / 'candidate', stage, {}, [])
-            build_stages._package(typed(), self.root / 'candidate', stage, {}, [], 'profile.json')
+            build_stages._package(typed(), self.root / 'candidate', stage, {}, [], 'profile.json', out=out)
         self.assertEqual(reviewed, [None, 'profile.json'])
 
 

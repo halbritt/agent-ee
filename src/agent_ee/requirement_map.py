@@ -370,10 +370,10 @@ def load_obligations(raw, record, spec_raw):
     return bound
 
 
-def input_inventory(root):
+def input_inventory(root, *, checkpoint=None):
     """Ordinary files under root by relative path; any file or directory link or special file refuses."""
     from .stage_receipts import file_tree
-    files, other = file_tree(root)
+    files, other = file_tree(root, checkpoint=checkpoint)
     if other:
         raise ValueError('build inputs contain links or special files: ' + str(other))
     return files
@@ -525,8 +525,8 @@ def account_requirements(declaration, record, spec_raw, *, files=None, inputs=No
             limitations.append(f'{rid}: OPERATIONAL PENDING: {entry[mode]["criterion"]}; '
                                'assessed by the build consumer from sealed receipts, never by checks')
         elif mode == 'judgment':
-            limitations.append(f'{rid}: JUDGMENT PENDING: record {entry[mode]["record"]}; '
-                               'admitted by the build consumer, never a check result')
+            limitations.append(f'{rid}: JUDGMENT REQUIRED: record {entry[mode]["record"]}; '
+                               'admission is assessed by the build consumer, never a check result')
         if mode == 'checks':
             ids = [check['id'] for check in entry['checks']]
             requirement = source.get('baseline', {'id': rid, 'statement': source['text'], 'intent': 'acceptance',
