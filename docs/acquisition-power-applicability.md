@@ -310,3 +310,16 @@ the ADC and filter grounds reached the plane only through the regulator's expose
 pad. The [local ground return work](acquisition-ground-return.md) adds generated
 plane connections and a required measurement on the saved board. A new candidate
 must still pass fresh judgments and the full review.
+
+That candidate passed its 39 checks. Its fresh judgments recorded no unresolved
+defect in the error, filter or return-path requirements, but the ACQ-MECH-4
+judgment found no captured assembly-process source for C3: the exact
+`CC0603KRX7R9BB104` sheet gives no soldering limits. No package was attempted.
+`acquisition_film.prepare(..., c3_assembly=DIRECTORY)` now attaches the YAGEO X7R
+series specification (V.27, March 6, 2026), with its bytes pinned in
+`fixtures/acquisition-film/c3-assembly-pins.json`. It raises `ValueError` if the
+bytes differ or C3 is another part. It reaches only that judgment's brief and
+changes no selection. The ordering code covers this part, and the specification
+gives reflow or wave soldering for 0603 at up to 1.0 µF, MSL level 1, and its
+soldering-heat and solderability test conditions. A series specification is not a
+supplier process qualification; fresh judgments must assess it.

@@ -34,6 +34,8 @@ CHECKERS = {row['model']:row['checker'] for row in (_GEOMETRY, _PREVIOUS_GEOMETR
 CHECKER = _GEOMETRY['checker']
 ANALYSIS = 'analysis/film/'
 STOCK = 'film-reference/assembly-stock-refresh/catalog.json'
+C3_MPN = 'CC0603KRX7R9BB104'
+C3_ASSEMBLY = 'film-reference/c3-assembly/'
 
 
 def footprint_bytes(raw):
@@ -268,6 +270,19 @@ def _stock_catalog(files, root):
     files.update(additions)
 
 
+def _c3_assembly_source(files, root):
+    """Attach the pinned series specification; it adds evidence and changes no selection."""
+    c3 = next(part for part in strict_json(files['parts.json'])['parts'] if part['id'] == 'C3')
+    if c3['mpn'] != C3_MPN:
+        raise ValueError('C3 assembly source applies to a different selected part')
+    pins = strict_json((DATA / 'c3-assembly-pins.json').read_bytes())
+    additions = {C3_ASSEMBLY + name: raw
+                 for name, raw in acquisition_power_prepare._captured(Path(root), pins).items()}
+    if set(additions) & set(files):
+        raise ValueError('C3 assembly source collides with retained source')
+    files.update(additions)
+
+
 def _requirements(files):
     document = strict_json(files['requirement-map.json'])
     pool = typed_overlay._check_pool(document)
@@ -323,6 +338,13 @@ def _requirements(files):
                 'ADS1115 sinks SDA but never SCL; host sink currents return at J2.1. '
                 'Do not turn material/plating assumptions, 25mA stress sensitivity, or selected RF parasitics '
                 'into guaranteed accuracy or attenuation. No original operating condition changes.')
+        if brief['requirement'] == 'ACQ-MECH-4-ASSEMBLY-APPLICABILITY' and C3_ASSEMBLY + 'datasheet.txt' in files:
+            brief['sources'] += [C3_ASSEMBLY + 'capture.json', C3_ASSEMBLY + 'datasheet.txt']
+            brief['questions'].append(
+                'The exact C3 CC0603KRX7R9BB104 sheet gives no assembly-process limits. Evaluate the attached YAGEO '
+                'X7R series specification against that exact part code, including its ordering code, rated voltage, '
+                'size, soldering recommendation, soldering-heat and solderability tests and MSL statement. '
+                'State what a series specification does not establish about a supplier process.')
         brief['sources'] += ['film-reference/engineering/' + p for p in (
             'host-extraction-r2/MU.txt', 'technical-note.txt', 'model-cautions.txt',
             'impedance-observation.json', 'import.json')]
@@ -403,7 +425,7 @@ def _loop_evidence(files, root):
 
 
 def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None, removal_evidence=None,
-            assembly_catalog=None):
+            assembly_catalog=None, c3_assembly=None):
     base, selected, model_run, film_model, out = map(Path, (base, selected, model_run, film_model, out))
     if out.exists() or not out.parent.is_dir():
         raise ValueError('output must be new under an existing parent')
@@ -415,6 +437,8 @@ def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None, r
         roots['removal_evidence'] = Path(removal_evidence).resolve()
     if assembly_catalog is not None:
         roots['assembly_catalog'] = Path(assembly_catalog).resolve()
+    if c3_assembly is not None:
+        roots['c3_assembly'] = Path(c3_assembly).resolve()
     typed_overlay._disjoint('output', out.resolve(), roots)
     files, plan = sources(base, selected)
     measurements = _power(files, model_run, film_model)
@@ -424,6 +448,8 @@ def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None, r
         acquisition_film_removal.attach(files, Path(removal_evidence))
     if assembly_catalog is not None:
         _stock_catalog(files, Path(assembly_catalog))
+    if c3_assembly is not None:
+        _c3_assembly_source(files, Path(c3_assembly))
     _requirements(files)
     inventory, accounting = acquisition_power_prepare.materialize(files, plan, out, REFERENCE)
     report = dict(schema='agent-ee.acquisition-film-preparation/1', reference=REFERENCE,
