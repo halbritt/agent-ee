@@ -250,3 +250,7 @@ board and the production-image measurement sandbox. Configure
 `AGENT_EE_POWER_BUILD_EXTRA` and `AGENT_EE_POWER_BUILD_NATIVE`; the last names a
 completed native build through the schematic checkpoint. The checked-in
 measurement executable hash requires the retained production image.
+
+The [nominal power applicability decision](acquisition-power-applicability.md)
+records the subsequent source correction, native copper observations and bounded
+film-capacitor experiment. That experiment has not changed the production parts.

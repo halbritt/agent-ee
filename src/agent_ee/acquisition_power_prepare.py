@@ -187,7 +187,7 @@ def _power(files):
                  'power-reference/ADI_LinearRegulators_Release.xlsm', 'power-reference/adi-full-table-selected.json']
                  if p in files},
         declaration=declaration,
-        input='B0520LW .385V maximum at0.1A/25C used conditionally at<=20mA by monotonic forward-bias inference; 10mV wire allowance gives4.355V. ADP accuracy requires VIN>=VOUT+1V;4.333V using3.333V high output leaves22mV.',
+        input='B0520LW .385V maximum at0.5A/25C used conditionally at<=20mA by monotonic forward-bias inference; 10mV wire allowance gives4.355V. ADP accuracy requires VIN>=VOUT+1V;4.333V using3.333V high output leaves22mV.',
         rail='ADP RevI Table1 0..85C accuracy -1.25%/+1% with >=1mA load gives3.25875..3.333V; retained16.5mV wiring budget leaves3.24225V,8.25mV above3.234V. Fresh thermal/route applicability judgment required.',
         current='R5=1k1%,R6=2.2k1%; retained1mA engineering reserve is not external-load permission. ADI_LinearRegulators_Release.xlsm xl/worksheets/sheet6.xml row533 supplies2mA dropout IGND as a design-tool allowance, conditional and not manufacturer maximum; macros not executed. Worst declared budget13.239394mA. R6 alone supplies>=1.4554455mA at3.234V.',
         reverse='D1 250uA maximum25C reverse leakage at20V is conditionally applied at5.25V by monotonic reverse-bias inference; R5max1010ohm gives0.2525V<0.3V. ADP reverse blocking removes the TPS reverse-differential restriction; its55mV threshold is typical, not a clamp guarantee.',
