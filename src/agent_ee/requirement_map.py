@@ -38,7 +38,8 @@ OPERATIONAL_CRITERIA = ('public_build_and_resume',)
 KIND_CLASS = {
     **dict.fromkeys(('erc', 'drc', 'geometry', 'placement', 'board_envelope', 'fab_profile', 'fab_package',
                      'fab_export', 'fab_roundtrip', 'assembly_readiness', 'parts_subset', 'cpl_rotation'), 'native'),
-    **dict.fromkeys(('netlist', 'netlist_parity', 'topology_rules', 'hardware_interface', 'net_names'), 'topology'),
+    **dict.fromkeys(('netlist', 'netlist_parity', 'topology_rules', 'hardware_interface', 'net_names',
+                     'block_provenance'), 'topology'),
     **dict.fromkeys(('interval_assertions', 'active_spice', 'rc_transient', 'dc_path'), 'model'),
     **dict.fromkeys(('measurements', 'dfm_geometry'), 'measurement'),
 }

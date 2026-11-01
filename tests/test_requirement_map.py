@@ -35,6 +35,29 @@ def mapped(declaration, rid):
     return next(e for e in declaration['requirements'] + declaration['prose'] if e['id'] == rid)
 
 
+class BlockBoundaryCoverageTests(unittest.TestCase):
+    def test_block_boundaries_follow_their_executed_provenance_results(self):
+        # R13 passed these native checks, but file release called their coverage unknown.
+        roles = ('analog', 'host', 'power')
+        receipt = dict(schema=RECEIPT_SCHEMA_2, requirements=[
+            dict(id=role + '-boundary', locator={}, mode='checks',
+                 obligation='executable', bound_ids=[role + '-provenance'])
+            for role in roles])
+        for execution, outcome, expected in (
+                ('ok', 'pass', 'pass'),
+                ('ok', 'defect', 'failed'),
+                ('unsupported', 'unknown', 'unknown')):
+            with self.subTest(execution=execution, outcome=outcome):
+                rows = [dict(id=role + '-provenance', kind='block_provenance',
+                             execution=execution, outcome=outcome) for role in roles]
+                view = coverage_view(receipt, rows)
+                for role in roles:
+                    clause = view[role + '-boundary']
+                    self.assertEqual(clause['status'], expected)
+                    self.assertEqual(clause['spans'][0]['executed'][0]['class'], 'topology')
+        self.assertEqual({row['status'] for row in coverage_view(receipt, []).values()}, {'pending'})
+
+
 class RequirementMapTests(unittest.TestCase):
     def setUp(self):
         self.value = read_json(MAP)
