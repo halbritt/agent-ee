@@ -238,6 +238,17 @@ class SeededGroundReferenceTests(unittest.TestCase):
         self.assertNotEqual(row['via_uuid'], identity)
         self.assertGreater(observed['metrics']['ground_return_path'], 3)
 
+    def test_backdrilled_tie_does_not_count_as_a_plane_transition(self):
+        # Independent review 2026-11-01: drilling out the barrel can disconnect the layers.
+        identity = self.receipt['connections'][0]['via_uuid']
+        marker = b'(uuid "' + identity.encode() + b'")'
+        raw = self.path.read_bytes()
+        self.assertEqual(raw.count(marker), 1)
+        self.path.write_bytes(raw.replace(marker, b'(backdrill (size 0.8) (layers "B.Cu" "F.Cu"))\n' + marker))
+        observed = self.measure()
+        self.assertNotEqual(observed['ground_reference']['connections'][0].get('via_uuid'), identity)
+        self.assertGreater(observed['metrics']['ground_return_path'], 3)
+
     def test_missing_plane_leaves_no_corridor_witness(self):
         board = k.LoadBoard(str(self.path))
         planes = [z for z in board.Zones() if not z.GetIsRuleArea() and z.GetNetname() == 'GND']

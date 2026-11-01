@@ -31,11 +31,13 @@ the native pad frame and pad edge. The via keeps the existing 0.6 mm diameter an
 0.3 mm drill, with the existing 0.2 mm clearance to the pad.
 
 Generation preserves every existing board node and writes a receipt.
-`acquisition_ground_ties.verify` checks the saved assignments before native
-loading, because KiCad 10.0.7 changed an explicitly foreign net on a via that
-touches ground copper to `GND`, during both save and load. It then checks the
-loaded via on both layers, the segment and the pad frame against the receipt.
-Native DRC and the final measurement are separate obligations.
+`acquisition_ground_ties.verify` compares each saved via and segment with its
+generated form before native loading, field by field with numbers compared by
+value. Any other saved property, such as a per-layer padstack or a backdrill,
+refuses the receipt. This comes first because KiCad 10.0.7 changed an explicitly
+foreign net on a via that touches ground copper to `GND`, during both save and
+load. It then checks the loaded via on both layers, the segment and the pad frame
+against the receipt. Native DRC and the final measurement are separate obligations.
 
 The bottom plane is added after routing, so native DRC on the seeded board reports
 each generated via as dangling. `acquisition_ground_ties.without_pending_plane_warnings`
@@ -70,8 +72,9 @@ inside the saved copper. It starts on the via annulus and ends on the J3 pad's
 own copper, inside the circle inscribed in the oval land and outside the drill.
 The checker raises an error, so the check cannot pass, unless J3.2 and J3.4 are
 plated GND lands on the bottom layer with a centred round drill. Only vias with a
-bottom land count as bottom copper. The search visits at most 5,000 nodes per
-attempt; failure is reported as a missing witness, not inferred from the net name.
+bottom land count as bottom copper, and a backdrilled or post-machined via does not
+count as a transition. The search visits at most 5,000 nodes per attempt; failure
+is reported as a missing witness, not inferred from the net name.
 
 The report's `ground_reference` section records each path, its conditional DC
 resistance and an RF sensitivity table for C4 and C5. The DC estimate assumes

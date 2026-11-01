@@ -129,7 +129,9 @@ def measure(board,graph,model):
     policy=model['local_plane_returns']
     copper=bottom_copper(board)
     vias=[v for v in board.GetTracks() if v.GetClass()=='PCB_VIA' and v.GetNetname()=='GND'
-          and v.TopLayer()==k.F_Cu and v.BottomLayer()==k.B_Cu and v.GetViaType()==k.VIATYPE_THROUGH]
+          and v.TopLayer()==k.F_Cu and v.BottomLayer()==k.B_Cu and v.GetViaType()==k.VIATYPE_THROUGH
+          # Drilling out the barrel can remove the connection between the two layers.
+          and not v.IsBackdrilledOrPostMachined(k.F_Cu) and not v.IsBackdrilledOrPostMachined(k.B_Cu)]
     thickness=k.ToMM(board.GetDesignSettings().GetBoardThickness())
     pads={(fp.GetReference(),p.GetNumber()):p for fp in board.GetFootprints() for p in fp.Pads()}
     rows=[];missing=0;corridor_missing=0

@@ -58,6 +58,10 @@ class GroundTieTests(unittest.TestCase):
         self.assertEqual((repeated, again), (output.read_bytes(), receipt))
         result = ties.verify(output, receipt)
         self.assertEqual(result['status'], 'pass')
+        # KiCad rewrites numbers without trailing zeros; that is not a change.
+        board = self.k.LoadBoard(str(output))
+        self.k.SaveBoard(str(output), board)
+        self.assertEqual(ties.verify(output, receipt)['status'], 'pass')
         self.assertEqual(len(result['connections']), 3)
         self.assertTrue(all(r['front_length_mm']+r['barrel_length_mm']<=3 for r in result['connections']))
 
@@ -81,14 +85,14 @@ class GroundTieTests(unittest.TestCase):
         k = self.k
         output, receipt = self.seeded()
         good = output.read_bytes()
-        for fault in ('missing','net','diameter','bottom land','drill','position','stub','pad'):
+        for fault in ('missing','net','diameter','bottom land','backdrill','drill','position','stub','pad'):
             with self.subTest(fault=fault):
                 output.write_bytes(good)
                 board = k.LoadBoard(str(output))
                 via = next(t for t in board.GetTracks() if t.GetClass()=='PCB_VIA')
                 track = next(t for t in board.GetTracks() if t.GetClass()=='PCB_TRACK')
                 if fault=='missing': board.Remove(via)
-                elif fault=='net': pass  # Persist the mutation below; native save infers GND.
+                elif fault in ('net','backdrill'): pass  # Persist the mutation in the saved bytes below.
                 elif fault=='diameter': via.SetWidth(700_000)
                 elif fault=='bottom land':
                     # Independent review 2026-11-01: the receipt checked F.Cu only.
@@ -110,6 +114,11 @@ class GroundTieTests(unittest.TestCase):
                     self.assertEqual(match.group().count(b'(net "GND")'),1)
                     output.write_bytes(raw[:match.start()]+match.group().replace(
                         b'(net "GND")',b'(net "SIGNAL")')+raw[match.end():])
+                if fault=='backdrill':
+                    # Independent review 2026-11-01: only named fields were compared.
+                    raw=output.read_bytes();marker=b'(uuid "'+via.m_Uuid.AsString().encode()+b'")'
+                    self.assertEqual(raw.count(marker),1)
+                    output.write_bytes(raw.replace(marker,b'(backdrill (size 0.8) (layers "B.Cu" "F.Cu"))\n'+marker))
                 with self.assertRaises(JobRefusal): ties.verify(output,receipt)
 
     def test_unknown_policy_source_or_helper_refuses(self):

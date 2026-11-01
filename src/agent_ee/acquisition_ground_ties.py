@@ -3,8 +3,10 @@
 Generation preserves existing board nodes. Native DRC and the final ground
 assessment remain separate obligations; a seed is not engineering acceptance.
 """
+from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
+import re
 import uuid
 
 from . import acquisition_local_return as local
@@ -17,6 +19,25 @@ POLICY = dict(schema='agent-ee.acquisition-ground-ties/1',
     endpoints=[['U2', '3'], ['C4', '2'], ['C5', '2']],
     track_width_mm=.25, via_diameter_mm=.6, via_drill_mm=.3,
     pad_edge_gap_mm=.2, maximum_path_mm=3)
+_NUMBER = re.compile(r'-?\d+(\.\d+)?')
+
+
+def _copper_nodes(row):
+    """The generated front segment and through via for one connection."""
+    x, y = row['via_nm']
+    a, b = row['pad_nm']
+    return (f'\n(segment (start {local._mm(a)} {local._mm(b)}) '
+            f'(end {local._mm(x)} {local._mm(y)}) (width 0.25) (layer "F.Cu") '
+            f'(net "GND") (uuid "{row["segment_uuid"]}"))\n'
+            f'(via (at {local._mm(x)} {local._mm(y)}) (size 0.6) (drill 0.3) '
+            f'(layers "F.Cu" "B.Cu") (net "GND") (uuid "{row["via_uuid"]}"))\n').encode()
+
+
+def _by_value(node):
+    """KiCad drops trailing zeros on save, so numbers compare by value."""
+    if isinstance(node, list):
+        return [_by_value(child) for child in node]
+    return Decimal(node) if _NUMBER.fullmatch(node) else node
 
 
 def plan(board, policy):
@@ -100,13 +121,7 @@ def seed(board_path, data, policy):
             if identity in existing:
                 raise JobRefusal('ground ties: generated UUID already present')
             row[kind+'_uuid'] = identity
-        x, y = row['via_nm']
-        a, b = row['pad_nm']
-        nodes.append((f'\n(segment (start {local._mm(a)} {local._mm(b)}) '
-            f'(end {local._mm(x)} {local._mm(y)}) (width 0.25) (layer "F.Cu") '
-            f'(net "GND") (uuid "{row["segment_uuid"]}"))\n'
-            f'(via (at {local._mm(x)} {local._mm(y)}) (size 0.6) (drill 0.3) '
-            f'(layers "F.Cu" "B.Cu") (net "GND") (uuid "{row["via_uuid"]}"))\n').encode())
+        nodes.append(_copper_nodes(row))
     end = data.rstrip().rfind(b')')
     result = data[:end] + b''.join(nodes) + data[end:]
     after = parse_sexpr(result)
@@ -147,14 +162,14 @@ def verify(board_path, record):
             or record.get('helper_sha256') != digest(Path(__file__))):
         raise JobRefusal('ground ties: policy/helper custody differs')
     tree=parse_sexpr(path.read_bytes())
-    # KiCad can infer a via's net from touching copper on load/save. Check the
-    # persisted assignment first so that normalization cannot hide a mutation.
+    # Compare whole saved nodes before native loading: KiCad can infer a via's net from
+    # touching copper, and any other saved property, such as a backdrill, must refuse.
     for row in record.get('connections',[]):
-        for kind in ('segment','via'):
-            nodes=[node for node in children(tree,kind)
-                   if children(node,'uuid')==[['uuid',row.get(kind+'_uuid')]]]
-            if len(nodes)!=1 or children(nodes[0],'net')!=[['net','GND']]:
-                raise JobRefusal('ground ties: saved copper identity/net differs')
+        for generated in parse_sexpr(b'(generated'+_copper_nodes(row)+b')')[1:]:
+            saved=[node for node in children(tree,generated[0])
+                   if children(node,'uuid')==children(generated,'uuid')]
+            if len(saved)!=1 or _by_value(saved[0])!=_by_value(generated):
+                raise JobRefusal('ground ties: saved copper differs from the generated form')
     board = k.LoadBoard(str(path))
     if board is None:
         raise JobRefusal('ground ties: native verification load failed')
