@@ -398,7 +398,7 @@ def admit_judgment(document, *, requirement, span, files, source_text, applicabi
         return dict(status='failed', witness='missing', reason=str(exc))
 
 
-def _judgments(root, stage, entries, binding, plan, *, checkpoint=None):
+def _judgments(root, stage, entries, binding, plan, *, checkpoint=None, diagnostic_source_sha256=None):
     if checkpoint is not None:
         checkpoint()
     directory = stage / 'judgments'
@@ -407,7 +407,11 @@ def _judgments(root, stage, entries, binding, plan, *, checkpoint=None):
         raise QualificationError('frozen judgment inventory differs from package')
     captured = read_json(stage / 'applicability-inventory.json')
     candidate = _retained_path(root, entries['candidate'])
-    if _inventory(candidate, checkpoint=checkpoint) != captured['inputs'] or applicability_facts(candidate, plan) != captured['values']:
+    candidate_files = _inventory(candidate, checkpoint=checkpoint)
+    if diagnostic_source_sha256 is not None:
+        if candidate_files.pop(retained_run.REVIEW_SOURCE, None) != diagnostic_source_sha256:
+            raise QualificationError('diagnostic provenance is missing or changed')
+    if candidate_files != captured['inputs'] or applicability_facts(candidate, plan) != captured['values']:
         raise QualificationError('frozen applicability inputs differ from final package candidate')
     source_text = {}
     witnesses = {}

@@ -19,6 +19,16 @@ from agent_ee.storage import digest, identity, json_bytes, read_json, write_json
 from tests.test_build_plan import declaration
 
 
+def complete_package(build, stage, candidate):
+    report = read_json(build / 'build-report.json')
+    report['completed'].append(dict(stage='package', directory=str(stage.relative_to(build)),
+        candidate=str(candidate.relative_to(build)), tree=tree_identity(stage)))
+    report.update(candidate=str(candidate.relative_to(build)), status='pending')
+    report['attempts'][-1]['status'] = 'completed'
+    write_json(build / 'build-report.json', report)
+    (build / '.lock').touch()
+
+
 class JudgmentContextTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -281,11 +291,118 @@ class JudgmentContextTests(unittest.TestCase):
                 self.assertEqual(len(os.listdir('/proc/self/fd')), descriptors)
 
 
+class DiagnosticJudgmentContextTests(unittest.TestCase):
+    setUp = JudgmentContextTests.setUp
+
+    def diagnostic_inputs(self, *, change=None, extra=False, complete=True):
+        if complete:
+            complete_package(self.build, self.stage, self.candidate)
+        selected = retained_run.review_source(self.build)
+        provenance = copy.deepcopy(selected.selection)
+        if change is not None:
+            change(provenance)
+        source = self.tmp / 'diagnostic-source.json'
+        write_json(source, provenance)
+        scope = build_stages.candidate_scope(selected.scope, selected.candidate)
+        scope['inputs'].append(dict(path=str(source), at=retained_run.REVIEW_SOURCE))
+        if extra:
+            scope['inputs'].append(dict(path=str(source), at='unrelated.json'))
+        # A diagnostic may explicitly choose a different valid review profile.
+        profile = self.tmp / 'diagnostic-profile.json'
+        write_json(profile, dict(self.profile, name='Separate diagnostic profile'))
+        write_json(self.tmp / 'diagnostic-scope.json', scope)
+        self.run = self.tmp / 'diagnostic-review'
+        self.run.mkdir()
+        self.manifest = capture(self.tmp / 'diagnostic-scope.json', self.run, profile)
+        write_json(self.run / 'result.json', dict(candidate_id=self.manifest['candidate_id'], run_id=self.run_id))
+
+    def capture_diagnostic(self):
+        from agent_ee import judgment_context
+        link = judgment_context.capture(self.run,
+            judgment_context.Source(self.build, self.stage, self.candidate, diagnostic=True),
+            self.manifest, self.run_id, time.monotonic() + 30)
+        result = read_json(self.run / 'result.json')
+        write_json(self.run / 'result.json', dict(result, judgment_context=link))
+        return judgment_context.read(self.run)
+
+    def test_completed_package_context_replays_with_exact_provenance_and_explicit_profile(self):
+        from agent_ee import judgment_context
+        self.diagnostic_inputs()
+        before = (self.run / 'candidate.json').read_bytes()
+        context = self.capture_diagnostic()
+        self.assertEqual(context['schema'], judgment_context.DIAGNOSTIC_SCHEMA)
+        self.assertEqual(context['judgments'][0]['record']['candidate'], self.binding)
+        self.assertEqual(set(self.manifest['files']),
+            set(requirement_map.input_inventory(self.candidate)) | {retained_run.REVIEW_SOURCE})
+        self.assertEqual((self.run / 'candidate.json').read_bytes(), before)
+        shutil.rmtree(self.build)
+        self.assertEqual(judgment_context.read(self.run), context)
+
+    def test_wrong_diagnostic_source_selection_is_refused(self):
+        self.diagnostic_inputs(change=lambda value: value['selected'].update(stage='artwork'))
+        with self.assertRaisesRegex(ValueError, 'provenance differs'):
+            self.capture_diagnostic()
+
+    def test_unrelated_extra_input_is_not_exempted(self):
+        self.diagnostic_inputs(extra=True)
+        with self.assertRaisesRegex(ValueError, 'differs from review candidate files'):
+            self.capture_diagnostic()
+
+    def test_earlier_completed_stage_cannot_inherit_running_package_testimony(self):
+        self.diagnostic_inputs(complete=False)
+        with self.assertRaisesRegex(ValueError, 'selected completed package'):
+            self.capture_diagnostic()
+
+    def test_missing_diagnostic_provenance_is_refused(self):
+        complete_package(self.build, self.stage, self.candidate)
+        with self.assertRaises(FileNotFoundError):
+            self.capture_diagnostic()
+
+    def test_earlier_stage_and_checks_only_dispatch_without_package_context(self):
+        from agent_ee import build_workflow
+        (self.build / '.lock').touch()
+        for completed in (False, True):
+            if completed:
+                complete_package(self.build, self.stage, self.candidate)
+            for profile in (None, self.build / 'source/profile.json'):
+                if completed and profile is not None:
+                    continue
+                with self.subTest(completed=completed, profile=profile), \
+                        mock.patch.object(retained_run, 'review_candidate', side_effect=InterruptedError('dispatch boundary')) as review:
+                    with self.assertRaisesRegex(InterruptedError, 'dispatch boundary'):
+                        build_workflow.review_build(self.build, self.tmp / f'dispatch-{completed}-{profile is None}',
+                            profile=profile)
+                    self.assertNotIn('judgment_context', review.call_args.kwargs)
+
+    def test_resealed_diagnostic_applicability_drift_is_refused(self):
+        from agent_ee import judgment_context
+        self.diagnostic_inputs()
+        self.capture_diagnostic()
+        directory = self.run / judgment_context.DIRECTORY
+        inventory = read_json(directory / 'applicability-inventory.json')
+        inventory['inputs']['spec.md'] = 'f' * 64
+        write_json(directory / 'applicability-inventory.json', inventory)
+        manifest = read_json(directory / 'manifest.json')
+        manifest['files']['applicability-inventory.json'] = digest(directory / 'applicability-inventory.json')
+        write_json(directory / 'manifest.json', manifest)
+        result = read_json(self.run / 'result.json')
+        result['judgment_context']['sha256'] = digest(directory / 'manifest.json')
+        write_json(self.run / 'result.json', result)
+        with self.assertRaisesRegex(ValueError, 'applicability inputs differ'):
+            judgment_context.read(self.run)
+
+
 class NativeJudgmentContextTests(unittest.TestCase):
     setUp = JudgmentContextTests.setUp
 
     def test_package_review_transports_testimony_and_preserves_independent_deferral(self):
-        from agent_ee import executor, harnesses, judgment_context, preflight, run_record
+        self.exercise_review(diagnostic=False)
+
+    def test_diagnostic_review_transports_testimony_without_accepting_package(self):
+        self.exercise_review(diagnostic=True)
+
+    def exercise_review(self, *, diagnostic):
+        from agent_ee import build_workflow, executor, harnesses, judgment_context, preflight, run_record
         from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         script = '''import json, sys
@@ -337,25 +454,38 @@ print(json.dumps(request['response']))
         runtime = {name: dict(path='/usr/bin/true', sha256=digest('/usr/bin/true'))
                    for name in ('codex', 'claude', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli')}
         scope = build_stages.candidate_scope(read_json(self.authored_scope), self.candidate)
+        output = self.tmp / 'diagnostic' if diagnostic else self.stage
+        run = output / 'review'
+        if diagnostic:
+            complete_package(self.build, self.stage, self.candidate)
+            original_build = tree_identity(self.build)
         with mock.patch.object(run_record, 'runtime_files', lambda **kw: copy.deepcopy(runtime)), \
                 mock.patch.object(preflight, 'runtime_files', lambda **kw: copy.deepcopy(runtime)), \
                 mock.patch('agent_ee.reviewers.dispatch', side_effect=provider), \
                 retained_run.review_resubmissions(0), contextlib.redirect_stdout(io.StringIO()):
-            result = retained_run.review_candidate(scope, self.stage, 120,
-                profile=str(self.build / 'source/profile.json'),
-                judgment_context=judgment_context.Source(self.build, self.stage, self.candidate))
-            replay = run_record.verify(self.stage / 'review', current_source=False)
+            if diagnostic:
+                report = build_workflow.review_build(self.build, output, max_seconds=120,
+                    profile=self.build / 'source/profile.json')
+                self.assertFalse(report['accepted'])
+                self.assertEqual(read_json(output / 'qualification.json')['dimensions']['file_release']['status'],
+                    'not_assessed')
+                self.assertEqual(tree_identity(self.build), original_build)
+                result = read_json(run / 'result.json')
+            else:
+                result = retained_run.review_candidate(scope, output, 120,
+                    profile=str(self.build / 'source/profile.json'),
+                    judgment_context=judgment_context.Source(self.build, self.stage, self.candidate))
+            replay = run_record.verify(run, current_source=False)
         self.assertTrue(all(execution == 'ok' for _, execution in observed), observed)
         self.assertEqual(result, replay)
         self.assertTrue(result['adjudicated'], dict(error=result.get('error'),
             checks=[{key: row[key] for key in ('id', 'execution', 'outcome', 'summary')} for row in result['checks']],
-            adjudicator=read_json(self.stage / 'review/adjudicator-execution.json').get('error')))
+            adjudicator=read_json(run / 'adjudicator-execution.json').get('error')))
         self.assertEqual(result['outcome'], 'defects_or_unresolved')
         self.assertEqual(next(row for row in result['findings'] if row['id'] == 'circuit/return')['disposition'], 'deferred')
         self.assertTrue(all(row['disposition'] == 'accepted' for row in result['findings'] if row['source'] == 'check'))
-        self.assertEqual(judgment_context.read(self.stage / 'review')['judgments'][0]['status'], 'recorded')
+        self.assertEqual(judgment_context.read(run)['judgments'][0]['status'], 'recorded')
         # A new artifact seal cannot erase the successful calls' context binding.
-        run = self.stage / 'review'
         shutil.rmtree(run / judgment_context.DIRECTORY)
         del result['judgment_context']
         run_record.save_result(run, result)

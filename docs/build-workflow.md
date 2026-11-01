@@ -343,10 +343,14 @@ The context is bound to the review candidate, run and archived calls. Replay
 verifies it without the original build directory; deleting or resealing it
 cannot reuse an earlier call. Capture allows at most 256 files, 512 directory
 entries and 8 MiB including its manifest. Inventory hashing observes the review
-deadline and cancellation between entries and file blocks. Diagnostic
-`build review` still has no such context: it can select an earlier completed
-stage and adds its own source-provenance file. It does not inherit the package
-attempt's judgments or acceptance.
+deadline and cancellation between entries and file blocks. A diagnostic
+`build review --profile PROFILE` of a completed typed package captures that
+package's context under `agent-ee.diagnostic-judgment-context/1`. It requires
+the same original candidate files and the exact added `build-review/source.json`
+provenance; no other input is exempted from applicability binding. Its explicit
+review profile may differ from the original package profile. Diagnostics of
+earlier stages, legacy builds and checks-only runs receive no package testimony.
+Diagnostic testimony does not grant package acceptance or a file-release claim.
 
 The rules register retains ERC/DRC ignored categories, native severities,
 waivers, constraint classes, default advisories and sourced-limit evidence. It

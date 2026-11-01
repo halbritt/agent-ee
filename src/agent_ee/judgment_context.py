@@ -12,6 +12,7 @@ from .storage import digest, json_bytes, read_json
 
 DIRECTORY = 'adjudication-judgments'
 SCHEMA = 'agent-ee.judgment-context/1'
+DIAGNOSTIC_SCHEMA = 'agent-ee.diagnostic-judgment-context/1'
 MAX_FILES = 256
 MAX_BYTES = 8 * 1024 * 1024
 MAX_ENTRIES = 2 * MAX_FILES
@@ -22,6 +23,7 @@ class Source:
     root: Path
     stage: Path
     candidate: Path
+    diagnostic: bool = False
 
 
 def checkpoint(deadline=None):
@@ -92,6 +94,15 @@ def capture(run, source, manifest, run_id, deadline):
     if not packages or candidate != stage / 'candidate':
         raise ValueError('judgment context is not the selected package candidate')
     selected = retained_run.scope(root, report)
+    diagnostic_pin = None
+    if source.diagnostic:
+        last = report['completed'][-1]
+        if last['stage'] != 'package' or root / last['directory'] != stage or root / last['candidate'] != candidate:
+            raise ValueError('diagnostic judgment context requires the selected completed package')
+        expected = json_bytes(retained_run.review_selection(root, report, selected))
+        if _bytes(Path(run) / 'inputs' / retained_run.REVIEW_SOURCE, deadline) != expected:
+            raise ValueError('diagnostic judgment provenance differs from the retained build selection')
+        diagnostic_pin = hashlib.sha256(expected).hexdigest()
     scaffold = retained_run.completed_stage(root, 'scaffold', report)
     accounting = retained_run.completed_stage(root, 'requirements', report)
     paths = {'scope.json': selected.path, 'requirements.json': scaffold.directory / 'requirements.json',
@@ -107,13 +118,20 @@ def capture(run, source, manifest, run_id, deadline):
                   _files(stage / 'judgments', deadline, MAX_BYTES - total).items()})
     record = dict(schema=SCHEMA, candidate_id=manifest['candidate_id'], run_id=run_id,
                   build_identity=report['identity'], files=_pins(files))
+    if diagnostic_pin is not None:
+        record.update(schema=DIAGNOSTIC_SCHEMA, diagnostic_source_sha256=diagnostic_pin)
     record_raw = json_bytes(record)
     if len(files) >= MAX_FILES or sum(map(len, files.values())) + len(record_raw) > MAX_BYTES:
         raise ValueError('judgment context exceeds capture limits')
     receipt = strict_json(files['requirements.json'])
     qualification._bind_receipt(root, receipt, plan, provisional=False,
         accounting=strict_json(files['accounting.json'])['requirements'])
-    if requirement_map.input_inventory(candidate, checkpoint=poll) != manifest['files']:
+    expected_files = requirement_map.input_inventory(candidate, checkpoint=poll)
+    if diagnostic_pin is not None:
+        if any(name == 'build-review' or name.startswith('build-review/') for name in expected_files):
+            raise ValueError('package occupies reserved diagnostic provenance namespace')
+        expected_files[retained_run.REVIEW_SOURCE] = diagnostic_pin
+    if expected_files != manifest['files']:
         raise ValueError('judgment package differs from review candidate files')
     directory = Path(run) / DIRECTORY
     directory.mkdir(exist_ok=False)
@@ -142,8 +160,12 @@ def _read(run, link, manifest, run_id, deadline=None):
     if raw is None or hashlib.sha256(raw).hexdigest() != link['sha256']:
         raise ValueError('judgment context manifest changed or disappeared')
     context = strict_json(raw)
-    if (set(context) != {'schema', 'candidate_id', 'run_id', 'build_identity', 'files'}
-            or context['schema'] != SCHEMA or context['candidate_id'] != manifest['candidate_id']
+    diagnostic = context.get('schema') == DIAGNOSTIC_SCHEMA
+    fields = {'schema', 'candidate_id', 'run_id', 'build_identity', 'files'}
+    if diagnostic:
+        fields.add('diagnostic_source_sha256')
+    if (set(context) != fields
+            or context['schema'] not in (SCHEMA, DIAGNOSTIC_SCHEMA) or context['candidate_id'] != manifest['candidate_id']
             or context['run_id'] != run_id or context['files'] != _pins(files)):
         raise ValueError('judgment context identity or file inventory changed')
     plan = strict_json(files['plan.json'])
@@ -153,9 +175,19 @@ def _read(run, link, manifest, run_id, deadline=None):
     without_inputs = lambda value: {k: v for k, v in value.items() if k not in ('inputs', 'review_profile')}
     if without_inputs(original) != without_inputs(scope):
         raise ValueError('judgment authored scope differs from reviewed criteria')
-    if 'review_profile' in plan and scope.get('review_profile') != read_json(run / 'inputs' / plan['review_profile']):
+    if not diagnostic and 'review_profile' in plan and scope.get('review_profile') != read_json(run / 'inputs' / plan['review_profile']):
         raise ValueError('judgment context differs from captured review profile')
     inputs = run / 'inputs'
+    diagnostic_pin = context.get('diagnostic_source_sha256')
+    if diagnostic:
+        source = strict_json(_bytes(inputs / retained_run.REVIEW_SOURCE, deadline))
+        if (manifest['files'].get(retained_run.REVIEW_SOURCE) != diagnostic_pin
+                or source.get('schema') != 'agent-ee.build-review-source/1'
+                or source.get('qualification_mode') != 'typed'
+                or source.get('build_identity') != context['build_identity']
+                or source.get('scope_sha256') != context['files']['scope.json']
+                or source.get('selected', {}).get('stage') != 'package'):
+            raise ValueError('diagnostic judgment source identity differs from captured provenance')
     requirement_map.bind_receipt(receipt, (inputs / plan['requirements']['spec']).read_bytes(),
         source_hashes={field: manifest['files'][plan['requirements'][name]] for name, field in
             [('map', 'map_sha256'), ('record', 'spec_record_sha256'), ('spec', 'spec_sha256'),
@@ -164,9 +196,9 @@ def _read(run, link, manifest, run_id, deadline=None):
     binding = dict(board_sha256=manifest['files'][scope['board']], scope_sha256=context['files']['scope.json'])
     checkpoint(deadline)
     judgments = qualification._judgments(run, directory, dict(receipt, candidate='inputs'), binding, plan,
-                                         checkpoint=lambda: checkpoint(deadline))
+        checkpoint=lambda: checkpoint(deadline), diagnostic_source_sha256=diagnostic_pin)
     checkpoint(deadline)
-    return dict(schema=SCHEMA, binding=binding, judgments=judgments, context=link)
+    return dict(schema=context['schema'], binding=binding, judgments=judgments, context=link)
 
 
 def read(run, *, result=None, deadline=None):

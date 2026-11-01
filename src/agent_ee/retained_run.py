@@ -18,6 +18,7 @@ from .run_record import run_review, verify
 REPORT_SCHEMA = 'agent-ee.build-report/1'
 TYPED_SCHEMA = build_plan.TYPED_SCHEMA
 STAGES = ('requirements', 'parts', 'scaffold', 'schematic', 'placement-routing', 'artwork', 'package')
+REVIEW_SOURCE = 'build-review/source.json'
 _inventory = requirement_map.input_inventory
 
 
@@ -210,18 +211,22 @@ def review_source(run):
         raise ValueError('build candidate differs from its last completed stage')
     candidate = retained_path(run, completed[-1]['candidate'])
     selected_scope = scope(run, report)
-    scope_path = selected_scope.path
-    scope_document = strict_json(scope_path.read_bytes())
+    scope_document = strict_json(selected_scope.path.read_bytes())
+    return ReviewSource(candidate, scope_document, review_selection(run, report, selected_scope))
+
+
+def review_selection(run, report, selected_scope):
+    """Diagnostic provenance from an already validated build report and scope."""
     selection = dict(schema='agent-ee.build-review-source/1', build_run=str(run),
-        build_report_sha256=digest(path), build_identity=report['identity'],
-        build_runtime=inputs['runtime'], selected=completed[-1],
-        scope_sha256=digest(scope_path), scaffold=selected_scope.stage.record)
+        build_report_sha256=digest(retained_path(run, 'build-report.json')), build_identity=report['identity'],
+        build_runtime=report['inputs']['runtime'], selected=report['completed'][-1],
+        scope_sha256=digest(selected_scope.path), scaffold=selected_scope.stage.record)
     plan_path = retained_path(run, 'build-plan.json')
     if plan_path.exists():
-        if digest(plan_path) != inputs['plan_sha256']:
+        if digest(plan_path) != report['inputs']['plan_sha256']:
             raise ValueError('captured build plan identity changed')
         selection['qualification_mode'] = 'typed' if strict_json(plan_path.read_bytes())['schema'] == TYPED_SCHEMA else 'legacy'
-    return ReviewSource(candidate, scope_document, selection)
+    return selection
 
 
 @dataclass(frozen=True)

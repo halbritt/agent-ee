@@ -76,9 +76,15 @@ def review_build(run, out, *, max_seconds=900, profile=None):
         source = out / 'source.json'
         write_json(source, selection)
         bound_scope = build_stages.candidate_scope(scope, candidate)
-        bound_scope['inputs'].append(dict(path=str(source), at='build-review/source.json'))
+        bound_scope['inputs'].append(dict(path=str(source), at=retained_run.REVIEW_SOURCE))
+        context = {}
+        if (profile is not None and selection.get('qualification_mode') == 'typed'
+                and selection['selected']['stage'] == 'package'):
+            from .judgment_context import Source
+            context['judgment_context'] = Source(run, run / selection['selected']['directory'], candidate,
+                                                diagnostic=True)
         result = retained_run.review_candidate(bound_scope, out, max_seconds,
-                                               profile=None if profile is None else str(profile))
+                                               profile=None if profile is None else str(profile), **context)
         if retained_run.review_source(run).selection != selection:
             raise ValueError('retained build changed during diagnostic verification')
         summary = dict(schema='agent-ee.build-review/1', accepted=False,
