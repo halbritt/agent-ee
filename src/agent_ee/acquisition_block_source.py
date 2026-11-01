@@ -39,11 +39,29 @@ ADDED_LEGS = {
 }
 
 
-def engineering_text():
-    lines = ['Coordinator root706 engineering placement choices adopted 2026-10-29.',
+def _recipe(reference):
+    if reference == 'acquisition-control':
+        return LEGS, ADDED_LEGS
+    if reference != 'acquisition-control-reverse-blocking-r1':
+        raise ValueError('unsupported acquisition final-group reference')
+    legs, added = dict(LEGS), dict(ADDED_LEGS)
+    legs.update({('C1', 'supply'): ('U1', '8', 'C1', '1', '/VIN_PROTECTED'),
+                 ('C1', 'return'): ('U1', '6', 'C1', '2', 'GND'),
+                 ('C2', 'supply'): ('U1', '1', 'C2', '1', '/V3V3'),
+                 ('C2', 'return'): ('U1', '3', 'C2', '2', 'GND')})
+    added['group-protected-input'] = ('D1', '1', 'U1', '8', '/VIN_PROTECTED', 5000000)
+    return legs, added
+
+
+def engineering_text(*, reference='acquisition-control'):
+    _, added = _recipe(reference)
+    heading = ('Coordinator root706 engineering placement choices adopted 2026-10-29.'
+               if reference == 'acquisition-control' else
+               'Coordinator root706 distance limits retained; agent707 ADP pin endpoints derived 2026-11-01.')
+    lines = [heading,
              'These are not owner or datasheet mandates. Native feasibility remains unverified.']
     lines += [f'{a}.{ap} to {b}.{bp} pad distance shall be at most {limit // 1000000} mm.'
-              for a, ap, b, bp, net, limit in ADDED_LEGS.values()]
+              for a, ap, b, bp, net, limit in added.values()]
     return ('\n'.join(lines) + '\n').encode('utf-8')
 
 
@@ -74,8 +92,9 @@ def apply(root, plan):
     (root / plan['placement']['intent']).write_bytes(json_bytes(placement))
 
 
-def derive(root, plan):
+def derive(root, plan, *, reference='acquisition-control'):
     """Read operative admitted inputs; refuse drift instead of inferring new roles."""
+    legs, added = _recipe(reference)
     names = ('spec.md', 'groups.json', 'electrical-locality.json', plan['envelope'],
              plan['parts']['manifest'], plan['parts']['circuit'],
              'analysis/geometry-model.json', 'analysis/geometry_model.py',
@@ -112,12 +131,12 @@ def derive(root, plan):
     electrical_locality.validate(locality)
     if locality.get('source_records', {}).get('spec.md') != raw['spec.md'].decode('utf-8'):
         raise ValueError('acquisition final-group locality does not bind the operative spec')
-    if (raw[ENGINEERING_PATH] != engineering_text()
+    if (raw[ENGINEERING_PATH] != engineering_text(reference=reference)
             or locality['source_records'].get(ENGINEERING_PATH) != raw[ENGINEERING_PATH].decode()
             or strict_json(raw[plan['placement']['intent']]).get('electrical_locality') != locality):
         raise ValueError('final-group engineering source or operative locality copies differ')
-    expected = {key:(signature, 3000000) for key,signature in LEGS.items()}
-    expected.update({(key, 'leg'):(row[:5], row[5]) for key,row in ADDED_LEGS.items()})
+    expected = {key:(signature, 3000000) for key,signature in legs.items()}
+    expected.update({(key, 'leg'):(row[:5], row[5]) for key,row in added.items()})
     pairs, templates = {}, []
     for obligation in locality['obligations']:
         for role in electrical_locality.roles(obligation):
@@ -132,7 +151,7 @@ def derive(root, plan):
                 if memberships.get((endpoint['reference'], endpoint['pad'])) != endpoint['net'].removeprefix('/'):
                     raise ValueError('acquisition final-group pad/net differs from captured circuit')
             citation = pair.get('provenance', {}).get('citation', {})
-            path = 'spec.md' if key in LEGS else ENGINEERING_PATH
+            path = 'spec.md' if key in legs else ENGINEERING_PATH
             if (citation.get('path') != path or citation.get('sha256') != sha256(raw[path]).hexdigest()
                     or pair.get('provenance', {}).get('class') != 'engineering'
                     or not pair.get('citation') or pair['citation'] != citation.get('quote')

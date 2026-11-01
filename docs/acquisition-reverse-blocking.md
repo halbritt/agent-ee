@@ -194,3 +194,50 @@ removal began. These are model observations for the declared case, not guarantee
 startup/discharge times or final-board measurements. Final voltage delivery,
 capacitor applicability, thermal paths and independent engineering acceptance
 remain required.
+
+## Complete development build input
+
+`acquisition_power_prepare.prepare(base, selected, extra, out)` creates a new
+`build-plan.json`, `inputs/` and preparation receipt. `base` is the exact retained
+acquisition build source with its adjacent build plan; `selected` holds the
+captured U1/D1 part context; `extra` holds the files listed in
+`fixtures/acquisition-reverse-blocking/build-extra-pins.json`. The producer
+checks those inputs before the ordinary typed build consumes them. It reads
+captured sources without launching a native CAD tool or network request. Input
+hash drift and an existing or overlapping output directory raise `ValueError`;
+failed preparation output remains available for diagnosis.
+
+The specification and authored obligation spans remain unchanged. The distinct
+reference replaces the eight TPS-specific model checks with explicit ADP
+interval calculations and a replay through the existing `measurements` check.
+The replay binds the current circuit, selected electrical parts, original
+execution inputs, model/deck and waveform. It calculates new metrics from the
+retained waveform; it does not run a simulator. Its limits are declared in the
+requirement map, outside the parser. Changed circuit or waveform bytes refuse.
+
+The source includes new regulator geometry, all 17 components and all 18
+placement relationships. Python and Rust recognize the same exact mechanical
+model and source hashes. The captured Rev. I RD-8-2 exposed-pad dimensions match
+the generated footprint. The generic SOIC STEP body is captured for views and
+height assessment; it omits the exposed pad. Actual pad9 geometry, paste and
+thermal conclusions require their separate checks. Native pin-frame comparison
+sets the new regulator's CPL correction to 270 degrees and the diode's to zero.
+The validated mechanical source identity also selects the local copper
+endpoints: C2.1 to U1.1 and C2.2 to U1.3. The producer records this reference
+through its seed chain, and final verification rejects a different reference.
+The original TPS reference keeps its existing endpoints.
+
+Stock observations keep their original dates and the 24-hour age limit. Old
+power-role qualifications and judgment verdicts are not part of this new
+reference. Fresh judgment briefs address the original spans, including nominal
+25 C power applicability and final return paths. The output remains unaccepted
+until native manufacturing checks, candidate-bound judgments and full review
+pass. New reusable roles must be qualified from the resulting design before
+adaptation or G4 credit; this preparation does not replace the frozen G4 cases.
+
+The new integration tests consume actual retained sources, a generated native
+board and the production-image measurement sandbox. Configure
+`AGENT_EE_ACQUISITION_INPUTS`, `AGENT_EE_POWER_PART_SOURCES`,
+`AGENT_EE_POWER_BUILD_EXTRA` and `AGENT_EE_POWER_BUILD_NATIVE`; the last names a
+completed native build through the schematic checkpoint. The checked-in
+measurement executable hash requires the retained production image.

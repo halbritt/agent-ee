@@ -14,6 +14,15 @@ from .symbol_library import children, nanometres, parse_sexpr
 SCHEMA='agent-ee.acquisition-local-routing/1'
 
 
+def power_reference(recipe):
+    """A validated mechanical source revision selects the electrical recipe."""
+    from . import acquisition_power_geometry, acquisition_reverse_blocking
+    mechanics._recipe(recipe)
+    return (acquisition_reverse_blocking.REFERENCE
+            if recipe['declaration']['sources']['analysis/geometry-model.json'] == acquisition_power_geometry.MODEL
+            else local.ORIGINAL_REFERENCE)
+
+
 def rectangles(strips,clearance_mm):
     """Reserve the checker's 0.1 mm square-joined strip plus plane clearance."""
     margin=100_000+nanometres(str(clearance_mm));result=set()
@@ -115,7 +124,8 @@ def produce(candidate_dir,destination,*,expected_inputs,mechanics_binding,planes
             raise JobRefusal('local routing: original source/helper drift')
     try:
         write_json(destination/'record.json',record)
-        loops=local.produce_loops(source,destination/'loops',expected_inputs=expected_inputs,clock=clock,cancel_dir=cancel_dir)
+        loops=local.produce_loops(source,destination/'loops',expected_inputs=expected_inputs,
+            clock=clock,cancel_dir=cancel_dir,reference=power_reference(recipe))
         record['loops']=loops;current=Path(loops['output']);captured=local._capture(current)
         local.verify_seed(current/local.FILES[0],loops,clock=clock,cancel_dir=cancel_dir)
         baseline_raw=local._report_bytes(current);baseline=strict_json(baseline_raw)
@@ -167,6 +177,8 @@ def verify(board_path,record,*,clock,cancel_dir=None):
             or local._sha(local._report_bytes(source))!=record['native']['report_sha256']):
         raise JobRefusal('local routing: retained operation/seed/report changed')
     before=digest(Path(board_path))
+    if record['loops'].get('reference', local.ORIGINAL_REFERENCE) != power_reference(record['recipe']):
+        raise JobRefusal('local routing: loop electrical reference differs from captured mechanics')
     loops=local.verify_seed(board_path,record['loops'],clock=clock,cancel_dir=cancel_dir)
     prior=local._capture(Path(record['loops']['output']))
     expected,reservations=reservation_bytes(prior[local.FILES[0]],record['recipe'],record['planes_raw'].encode('utf-8'))

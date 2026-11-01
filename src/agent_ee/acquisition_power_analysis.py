@@ -8,11 +8,6 @@ from hashlib import sha256
 import math
 import re
 
-from . import acquisition_reverse_blocking as variant
-from . import parts_manifest
-from .catalog import strict_json
-from .storage import json_bytes
-
 MODEL_SHA256 = '23d5d9774f3a2508df39266749f8b3ae93bc655651cb2826faf37ee9d32748c9'
 SYMBOL_SHA256 = '2729608ea88c85aa76feba64772916b9f749a066084c58d90ab3d4a4f118e9bc'
 CASE = 'high-z-removal'
@@ -26,6 +21,10 @@ def inputs(circuit_raw, parts_raw, model, symbol):
     and native netlist parity must establish the board's actual connectivity.
     This producer performs neither operation and does not infer their success.
     """
+    from . import acquisition_reverse_blocking as variant
+    from . import parts_manifest
+    from .catalog import strict_json
+    from .storage import json_bytes
     expected = strict_json(variant.circuit_bytes((variant.DATA / 'base-circuit.json').read_bytes()))
     next(c for c in expected['components'] if c['reference'] == 'U2')['value'] = 'ADS1115IDGST'
     if circuit_raw != json_bytes(expected):

@@ -1,0 +1,22 @@
+{
+  "schema": "agent-ee.acquisition-power-build-extra/1",
+  "files": {
+    "lib3d/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step": "07f46cff378d30e6c27dfd5a03092c795323f86d91c71fc7e743f4f418dc553a",
+    "analysis/adp7104/execution.json": "588b024bd6c5c927d223eb218d9a14dc763eb705643b8846f1c443d33351f4a0",
+    "analysis/adp7104/ADP7104-3.3.asy": "2729608ea88c85aa76feba64772916b9f749a066084c58d90ab3d4a4f118e9bc",
+    "analysis/adp7104/ADP7104-3.3.sub": "23d5d9774f3a2508df39266749f8b3ae93bc655651cb2826faf37ee9d32748c9",
+    "analysis/adp7104/high-z-removal.cir": "f767b54767d6cc67883f5caa1d4565eed87692c220a4add247a77f0b5962a756",
+    "analysis/adp7104/high-z-removal.raw": "4e17eea418ef41548b39d3d9a240565fb98ab86108f8c9a92fdecebd201b163f",
+    "analysis/adp7104/high-z-removal.log": "12ecadb6015a870ec0fd1d66e86450321386f895130fabd0992d3f3cb9d53323",
+    "analysis/adp7104/input-pins.json": "d5757da5ba7373fa7d35f02b2151b7595a41b79f975aa03fbd7be201e1c30310",
+    "analysis/adp7104/executed-application.json": "ed52ac5d3dfde47c1481cc5b5c1a38edc1655e8d9acd3d1122ba63ed76cd429b",
+    "analysis/adp7104/model-custody.json": "ac05d44d7bb044c6d693c92708b01c5f4feba8b56370d3849516d13e7c57e20e",
+    "power-reference/ADI_LinearRegulators_Release.xlsm": "1c4ea5a78b6f5d7edcb20852a99653de0bfb026f7b2ee168ccfa764ad8c08109",
+    "power-reference/adi-full-table-selected.json": "cbbdd5b8fca6fa03bc2b43c321786820dbf3ce94671ebd1491f3c15db49758bd"
+  },
+  "model_provenance": {
+    "source": "Local KiCad installation /usr/share/kicad/3dmodels/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step",
+    "captured_at": "2026-11-01T06:18:05.395550+00:00",
+    "purpose": "Generic SOIC body visualization. Omits exposed pad; manufacturer source geometry and actual native pad9 remain authoritative. No upstream commit or EP thermal qualification inferred."
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "schema": "agent-ee.retained-power-model/1",
+  "files": {
+    "execution.json": "588b024bd6c5c927d223eb218d9a14dc763eb705643b8846f1c443d33351f4a0",
+    "ADP7104-3.3.asy": "2729608ea88c85aa76feba64772916b9f749a066084c58d90ab3d4a4f118e9bc",
+    "ADP7104-3.3.sub": "23d5d9774f3a2508df39266749f8b3ae93bc655651cb2826faf37ee9d32748c9",
+    "high-z-removal.cir": "f767b54767d6cc67883f5caa1d4565eed87692c220a4add247a77f0b5962a756",
+    "high-z-removal.raw": "4e17eea418ef41548b39d3d9a240565fb98ab86108f8c9a92fdecebd201b163f",
+    "high-z-removal.log": "12ecadb6015a870ec0fd1d66e86450321386f895130fabd0992d3f3cb9d53323",
+    "input-pins.json": "d5757da5ba7373fa7d35f02b2151b7595a41b79f975aa03fbd7be201e1c30310",
+    "executed-application.json": "ed52ac5d3dfde47c1481cc5b5c1a38edc1655e8d9acd3d1122ba63ed76cd429b",
+    "model-custody.json": "ac05d44d7bb044c6d693c92708b01c5f4feba8b56370d3849516d13e7c57e20e"
+  },
+  "circuit_sha256": "c6a900ca5f1bcb634e316910a0feabe7536c4bcd7f0bdcabf98e6d335ea8b3db",
+  "parts_sha256": "bae06c55484e72a8ae1a4d2c1d4d524e562d85ca3350e2ac7a8ec8f14a4a5bf2",
+  "selections": {
+    "C1": {
+      "lcsc": "C15850",
+      "mpn": "CL21A106KAYNNNE"
+    },
+    "C2": {
+      "lcsc": "C15850",
+      "mpn": "CL21A106KAYNNNE"
+    },
+    "C3": {
+      "lcsc": "C14663",
+      "mpn": "CC0603KRX7R9BB104"
+    },
+    "D1": {
+      "lcsc": "C155367",
+      "mpn": "B0520LW-7-F"
+    },
+    "R3": {
+      "lcsc": "C114662",
+      "mpn": "RC0603FR-072K2L"
+    },
+    "R4": {
+      "lcsc": "C114662",
+      "mpn": "RC0603FR-072K2L"
+    },
+    "R5": {
+      "lcsc": "C22548",
+      "mpn": "RC0603FR-071KL"
+    },
+    "R6": {
+      "lcsc": "C114662",
+      "mpn": "RC0603FR-072K2L"
+    },
+    "U1": {
+      "lcsc": "C2903961",
+      "mpn": "ADP7104ARDZ-3.3-R7"
+    },
+    "U2": {
+      "lcsc": "C468683",
+      "mpn": "ADS1115IDGST"
+    }
+  },
+  "operation": "Retained 2026-11-01 native model execution; not a new run or candidate acceptance."
+}

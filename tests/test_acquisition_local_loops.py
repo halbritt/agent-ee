@@ -33,6 +33,29 @@ class AcquisitionLocalLoopsTest(unittest.TestCase):
     drc_result = fixture.AcquisitionLocalReturnTest.drc_result
     clear_drc = fixture.AcquisitionLocalReturnTest.clear_drc
 
+    def test_adp_reference_survives_all_seed_receipts_and_rejects_recipe_substitution(self):
+        import json
+        from agent_ee.symbol_library import children, parse_sexpr
+        from agent_ee.schematic_emit import format_sexpr
+        self.prepare()
+        tree = parse_sexpr(self.board)
+        u1 = next(fp for fp in children(tree, 'footprint') if children(fp, 'reference')[0][1] == 'U1')
+        for pad in children(u1, 'pad'):
+            pad[1] = {'5': '1', '2': '3'}[pad[1]]
+        self.board = ('\n'.join(format_sexpr(tree)) + '\n').encode()
+        (self.source / local.FILES[0]).write_bytes(self.board)
+        ref = 'acquisition-control-reverse-blocking-r1'
+        record = local.produce_loops(self.source, self.output,
+            expected_inputs=local._identity(local._capture(self.source)), clock=Clock(60), reference=ref)
+        self.assertEqual(record['reference'], ref)
+        self.assertTrue(all(s['reference'] == ref for s in record['connections']))
+        final = Path(record['output']) / local.FILES[0]
+        self.assertEqual(local.verify_seed(final, record, clock=Clock(10))['status'], 'pass')
+        record['reference'] = local.ORIGINAL_REFERENCE
+        Path(record['record']).write_text(json.dumps(record))
+        with self.assertRaisesRegex(JobRefusal, 'seed custody chain changed'):
+            local.verify_seed(final, record, clock=Clock(10))
+
     def prepare(self):
         from types import SimpleNamespace as NS
         import sys

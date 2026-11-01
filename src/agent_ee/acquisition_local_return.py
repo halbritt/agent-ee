@@ -39,6 +39,18 @@ CONNECTIONS = {
     'filter1-return': ((('C5', '2'), ('U2', '3')), 'GND'),
 }
 LOOP_LIMITS = {'adc':10., 'output':10., 'filter0':12., 'filter1':12.}
+ORIGINAL_REFERENCE = 'acquisition-control'
+
+
+def connections(reference=ORIGINAL_REFERENCE):
+    """Select finite source-bound endpoints; all route and net guards still apply."""
+    if reference == ORIGINAL_REFERENCE:
+        return CONNECTIONS
+    if reference != 'acquisition-control-reverse-blocking-r1':
+        raise JobRefusal('local return: unsupported acquisition reference')
+    return {**CONNECTIONS,
+        'output-supply': ((('C2', '1'), ('U1', '1')), '/V3V3'),
+        'output-return': ((('C2', '2'), ('U1', '3')), 'GND')}
 
 
 class LocalSearchExhausted(JobRefusal):
@@ -68,15 +80,16 @@ def _identity(captured):
     return {name: None if data is None else _sha(data) for name, data in captured.items()}
 
 
-def _endpoints(path, *, seed=None, connection='adc-return'):
+def _endpoints(path, *, seed=None, connection='adc-return', reference=ORIGINAL_REFERENCE):
     """One read-only pcbnew load; identities and coordinates are never imported."""
     import pcbnew as k
     board = k.LoadBoard(str(path))
     if board is None:
         raise JobRefusal('local return: native board load failed')
-    if connection not in CONNECTIONS:
+    selected = connections(reference)
+    if connection not in selected:
         raise JobRefusal('local return: unknown acquisition connection')
-    terminals, net = CONNECTIONS[connection]
+    terminals, net = selected[connection]
     result = []
     for ref, number in terminals:
         fps = [fp for fp in board.GetFootprints() if fp.GetReference() == ref]
@@ -501,7 +514,7 @@ def produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=No
 
 
 def _produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir, connection, obstacle_search,
-             max_length_mm=None, two_layer=False):
+             max_length_mm=None, two_layer=False, reference=ORIGINAL_REFERENCE):
     """Return a complete checked seed directory; refuse without adopting a trial.
 
     expected_inputs must bind all FILES to SHA256 (None for absent rules), from
@@ -510,6 +523,7 @@ def _produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir, 
     The existing placement clock and CANCEL propagate without an extra grant.
     """
     _check_stop(clock, cancel_dir)
+    connections(reference)
     source = Path(candidate_dir).absolute()
     destination = Path(destination).absolute()
     if destination.resolve() != destination or destination.exists() or destination.is_relative_to(source):
@@ -530,6 +544,8 @@ def _produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir, 
                   acceptance_assessed=False, final_geometry_required=('fresh supply + return <= 12 mm'
                       if connection.startswith('filter') else 'fresh supply + return <= 10 mm'),
                   router_copper_policy='preserve_existing', owned_copper_retries=False)
+    if reference != ORIGINAL_REFERENCE:
+        record['reference'] = reference
 
     def custody():
         _check_stop(clock, cancel_dir)
@@ -547,7 +563,7 @@ def _produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir, 
         rules = project['board']['design_settings']['rules']
         if rules['min_clearance'] != CLEARANCE_MM or not 0 < rules['min_track_width'] <= WIDTH_NM / 1e6:
             raise JobRefusal('local return: requires 0.2 mm native minimum clearance and <=0.25 mm minimum width')
-        endpoints = _endpoints(source / FILES[0], connection=connection)
+        endpoints = _endpoints(source / FILES[0], connection=connection, reference=reference)
         record['endpoints'] = endpoints
         custody()
         if captured['board.kicad_dru'] is not None:
@@ -612,7 +628,7 @@ def _produce(candidate_dir, destination, *, expected_inputs, clock, cancel_dir, 
                     (trial_dir / name).write_bytes(board if name == FILES[0] else data)
             trial.update(segment_uuids=ids,vias=vias,board_sha256=_sha(board))
             write_json(destination / 'record.json', record)
-            if _endpoints(trial_dir / FILES[0], seed=trial, connection=connection) != endpoints:
+            if _endpoints(trial_dir / FILES[0], seed=trial, connection=connection, reference=reference) != endpoints:
                 raise JobRefusal('local return: saved native endpoint identity/geometry changed')
             report, execution = drc(trial_dir / FILES[0], trial_dir, clock=clock, cancel_dir=cancel_dir)
             trial['execution'] = execution
@@ -691,7 +707,8 @@ def verify_seed(board, record, *, clock, cancel_dir=None):
     board = Path(board)
     before = _sha(board.read_bytes())
     endpoints = _endpoints(board, seed=trial if 'layers' in trial else (trial['path_nm'],trial['segment_uuids']),
-                           connection=record.get('connection', 'adc-return'))
+                           connection=record.get('connection', 'adc-return'),
+                           reference=record.get('reference', ORIGINAL_REFERENCE))
     if trial.get('vias'):
         plans=geometry.two_layer_plans(board,endpoints,clock=clock,cancel_dir=cancel_dir)
         proposal=trial.get('proposal','perpendicular')
@@ -712,9 +729,11 @@ def verify_seed(board, record, *, clock, cancel_dir=None):
                 segment_uuids=trial['segment_uuids'], acceptance_assessed=False)
 
 
-def produce_loops(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=None):
+def produce_loops(candidate_dir, destination, *, expected_inputs, clock, cancel_dir=None,
+                  reference=ORIGINAL_REFERENCE):
     """Seed the fixed acquisition legs under one caller-owned clock and custody chain."""
     _check_stop(clock, cancel_dir)
+    selected = connections(reference)
     source, destination = Path(candidate_dir).absolute(), Path(destination).absolute()
     if destination.resolve()!=destination or destination.exists() or destination.is_relative_to(source):
         raise JobRefusal('local loops: output exists/aliases/overlaps source')
@@ -727,6 +746,8 @@ def produce_loops(candidate_dir, destination, *, expected_inputs, clock, cancel_
                   helper_sha256=helper_hash, connections=[], record=str(destination/'record.json'),
                   geometry_helper_sha256=geometry_hash,loop_limits_mm=dict(LOOP_LIMITS),loop_lengths_mm={},
                   acceptance_assessed=False, router_copper_policy='preserve_existing')
+    if reference != ORIGINAL_REFERENCE:
+        record['reference'] = reference
     current, pins = source, expected_inputs
     lengths={name:0. for name in LOOP_LIMITS}
     def custody():
@@ -735,13 +756,13 @@ def produce_loops(candidate_dir, destination, *, expected_inputs, clock, cancel_
                 or _sha(Path(geometry.__file__).read_bytes()) != geometry_hash):
             raise JobRefusal('local loops: original source/helper drift')
     try:
-        for connection in CONNECTIONS:
+        for connection in selected:
             custody()
             record['active_connection'] = connection
             write_json(destination/'record.json', record)
             loop=connection.split('-')[0]
             arguments=dict(expected_inputs=pins, clock=clock, cancel_dir=cancel_dir,
-                           connection=connection, obstacle_search=True,
+                           connection=connection, obstacle_search=True, reference=reference,
                            max_length_mm=LOOP_LIMITS[loop]-lengths[loop])
             try:
                 seed = _produce(current, destination/connection, **arguments)
@@ -778,9 +799,11 @@ def _verify_loops(board, record, *, clock, cancel_dir=None):
     _check_stop(clock, cancel_dir)
     receipt = Path(record['record'])
     raw = receipt.read_bytes()
+    reference = record.get('reference', ORIGINAL_REFERENCE)
+    selected = connections(reference)
     if (receipt.is_symlink() or record.get('status')!='seeded'
             or canonical(json.loads(raw))!=canonical(record)
-            or [s.get('connection') for s in record['connections']]!=list(CONNECTIONS)):
+            or [s.get('connection') for s in record['connections']]!=list(selected)):
         raise JobRefusal('local loops: retained operation record changed')
     _verify_rejected_families(record)
     pins = record['inputs']
@@ -789,6 +812,7 @@ def _verify_loops(board, record, *, clock, cancel_dir=None):
     for seed in record['connections']:
         loop=seed['connection'].split('-')[0]
         if (seed['inputs']!=pins or seed['helper_sha256']!=record['helper_sha256']
+                or seed.get('reference', ORIGINAL_REFERENCE)!=reference
                 or seed['geometry_helper_sha256']!=record['geometry_helper_sha256']
                 or seed['max_length_mm']!=LOOP_LIMITS[loop]-lengths[loop]):
             raise JobRefusal('local loops: seed custody chain changed')
@@ -817,6 +841,7 @@ def _verify_rejected_families(record):
     if (receipt.is_symlink() or _sha(raw)!=entry['record_sha256']
             or failed.get('status')!='refused' or failed.get('failure_kind')!='search_exhausted'
             or failed.get('connection')!='filter0-signal' or 'output' in failed
+            or failed.get('reference', ORIGINAL_REFERENCE)!=record.get('reference', ORIGINAL_REFERENCE)
             or failed.get('inputs')!=record['inputs']
             or failed.get('helper_sha256')!=record['helper_sha256']
             or failed.get('geometry_helper_sha256')!=record['geometry_helper_sha256']

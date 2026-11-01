@@ -1,0 +1,20 @@
+{
+  "accepted": false,
+  "base_sha256": "53187855ce84e712e539eed040dc741c2ffe0c8d7d331fc9b37203f033be4d0b",
+  "changes": [
+    "U1 lead-inclusiveSOIC envelope6.20x5.00x1.75mm from captured Rev.I RD-8-2 drawing.",
+    "D1 selectedDS30051SOD123 maximumenvelope unchanged.",
+    "R5/R6 selectedRC0603 package dimensions unchanged; source text corrected.",
+    "Local capacitor loops use nativeU1VIN8/GND6 andOUT1/GND3.",
+    "Current13.239394mA is a rounded-up conditional nominal allowance, not universalmaximum."
+  ],
+  "reference": "acquisition-control-reverse-blocking-r1",
+  "schema": "agent-ee.acquisition-power-geometry-basis/1",
+  "source_documents": {
+    "power-reference/d1-datasheet/af204fbee5194f301b15b9b6c1a4751c8484cc6ed93c3cd11aac964c757f7579.pdf": "af204fbee5194f301b15b9b6c1a4751c8484cc6ed93c3cd11aac964c757f7579",
+    "power-reference/u1-datasheet/d724cf4f61ea188bc7cef569b309591f0fe028af55e3db46c16cd5f475a8406a.pdf": "958844711dc322d705b9a22c04d50633fb86d62184e638b591d251cd3160ddef"
+  },
+  "unchanged": [
+    "All other package envelopes/offsets,connector access,margins,ground strips and all distance limits."
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "base_model": "53187855ce84e712e539eed040dc741c2ffe0c8d7d331fc9b37203f033be4d0b",
+  "model": "123e302ecd312677500ca28173ca94a806f5ad96ab12518b548f04a582328915",
+  "sources": {
+    "power-reference/d1-datasheet/af204fbee5194f301b15b9b6c1a4751c8484cc6ed93c3cd11aac964c757f7579.pdf": "af204fbee5194f301b15b9b6c1a4751c8484cc6ed93c3cd11aac964c757f7579",
+    "power-reference/geometry-basis.json": "8a9805f303f8307cb750d0034776c0a50b9bf4218afe0d7a0ba0b039140b01ca",
+    "power-reference/u1-datasheet/d724cf4f61ea188bc7cef569b309591f0fe028af55e3db46c16cd5f475a8406a.pdf": "958844711dc322d705b9a22c04d50633fb86d62184e638b591d251cd3160ddef"
+  }
+}

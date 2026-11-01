@@ -563,6 +563,15 @@ const MECHANICS_PH_SOURCES: &[(&str, &str)] = &[
 ];
 
 fn mechanics_sources(model: &str) -> Result<Vec<(&'static str, &'static str)>> {
+    if model == "123e302ecd312677500ca28173ca94a806f5ad96ab12518b548f04a582328915" {
+        let mut sources = mechanics_sources("53187855ce84e712e539eed040dc741c2ffe0c8d7d331fc9b37203f033be4d0b")?;
+        sources.extend_from_slice(&[
+            ("power-reference/geometry-basis.json", "8a9805f303f8307cb750d0034776c0a50b9bf4218afe0d7a0ba0b039140b01ca"),
+            ("power-reference/u1-datasheet/d724cf4f61ea188bc7cef569b309591f0fe028af55e3db46c16cd5f475a8406a.pdf", "958844711dc322d705b9a22c04d50633fb86d62184e638b591d251cd3160ddef"),
+            ("power-reference/d1-datasheet/af204fbee5194f301b15b9b6c1a4751c8484cc6ed93c3cd11aac964c757f7579.pdf", "af204fbee5194f301b15b9b6c1a4751c8484cc6ed93c3cd11aac964c757f7579"),
+        ]);
+        return Ok(sources);
+    }
     let preceding = match model {
         "4155f201ba2efb2c74a44a3f8ffe30187a28eac4884b7b34a729e76d15c40e52" => Some(MECHANICS_ORIGINAL),
         "4aaad94d06dfc4d838e0992259219c51ce1f3d364948cc2a3929e741a150d21f" => Some(MECHANICS_MURATA),
@@ -3724,7 +3733,8 @@ mod tests {
     fn derived_mechanics_versions_keep_exact_source_and_geometry_guards() {
         use sha2::{Digest, Sha256};
         let cases: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-qualification/mechanics-derived-test-cases.json")).unwrap();
-        for case in cases["cases"].as_array().unwrap() {
+        let power: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-reverse-blocking/mechanics-test-case.json")).unwrap();
+        for case in cases["cases"].as_array().unwrap().iter().chain(std::iter::once(&power)) {
             let mut raw = source_mechanics_fixture(true, false);
             raw["mechanics"]["model_raw"] = case["model_raw"].clone();
             raw["mechanics"]["sources"] = case["sources"].clone();

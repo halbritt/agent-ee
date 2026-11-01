@@ -65,6 +65,11 @@ reports; callers must use a fresh evidence directory for a later authorized run.
 `JobStopped` propagates the caller's deadline or cancellation.
 
 `acquisition_local_return.produce_loops` owns the eight-leg custody chain.
+The default reference keeps the original TPS endpoints. For the
+[ADP development reference](acquisition-reverse-blocking.md),
+`acquisition_local_routing` selects output pins U1.1/U1.3 from the validated
+mechanical source identity. Every seed carries that reference, and replay
+checks it against the captured recipe; unknown or substituted references refuse.
 Each leg binds its input and output hashes, helper hashes, native endpoint
 identities, trial geometry, reports and execution receipts. Original native
 nodes remain intact. An exact existing segment with the same net, layer, width
