@@ -96,13 +96,15 @@ eight declared model predicates passed across 40,619 samples. Steady VOUT was
 they do not establish a guaranteed ESR corner, physical stability or acceptance.
 
 The dated JLC capture reported 2,094 units at 2026-11-01 09:18:42 UTC. No part
-was purchased or reserved. Exact supplier component and documented footprint-SVG
-requests returned HTTP 403. A previously working C155367 control request also
-received a CloudFront access error, so this is not evidence that C3778570 lacks
-CAD. Those failed captures remain retained; the existing
-CPL/source guards remain in force.
+was purchased or reserved. Initial supplier component, footprint-SVG and Pro
+catalog requests returned HTTP 403, including a previously working control part.
+Subsequent requests carrying the official viewer's Origin/Referer metadata
+returned the SVG and full component record. The exact C3778570 source now passes
+the existing complete-footprint parser and supplier-provenance reader: ten
+records, two rectangular pads and no holes. The failed captures remain retained;
+this success does not isolate which request difference resolved the access error.
 
-Continue with exact supplier CAD admission, a source-bound generated C1/C2
+Supplier CAD admission is complete. Continue with a source-bound generated C1/C2
 replacement and fresh geometry/assembly checks. Then obtain independent
 candidate-bound electrical judgments, full review and file-release evidence.
 Do not refresh reusable roles or run frozen G4 against this unaccepted candidate.
@@ -117,3 +119,11 @@ The retained engineering record is
 bind board SHA-256
 `2eabd5bc1bd73974359192cc5118478a41773516aac4fe89fc9cb58aa472240b`.
 Manufacturer models remain in the local capture and are not redistributed here.
+
+The later supplier admission is retained under
+`~/.local/share/agent-ee/zeroasic-20261029-agent707/film-cad-admission-r1/`.
+`cad-admission.json` pins all eight prepared source files, including the exact
+supplier component and the part record derived from the unchanged stock capture
+and historically imported manufacturer PDF. The latter keeps unknown redirect
+provenance. These source checks do not establish native placement, CPL rotation
+or electrical acceptance.
