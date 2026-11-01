@@ -550,6 +550,29 @@ def _fetch_one(cache, relative, receipt, *, timeout, max_file_bytes):
     return {"status": "not-found", "attempts": attempts}
 
 
+def fetch_stock_references(references, cache: Path, *, timeout=30,
+                           max_file_bytes=32 * 1024 * 1024) -> dict:
+    """Fetch explicit stock-relative model paths without requiring a placed board."""
+    if timeout <= 0 or max_file_bytes <= 0:
+        raise ValueError("model download timeout and size limit must be positive")
+    required = sorted(set(_stock_relative(ref).as_posix() for ref in references))
+    cache = Path(cache).expanduser().resolve()
+    for relative in required:
+        _cache_path(cache, relative)
+    cache.mkdir(parents=True, exist_ok=True)
+    receipt = _read_receipt(cache)
+    files = []
+    for relative in required:
+        record = _fetch_one(cache, relative, receipt, timeout=timeout, max_file_bytes=max_file_bytes)
+        files.append({"path": relative, **record})
+        _atomic_json(cache / STOCK_RECEIPT, receipt)
+    if not required:
+        _atomic_json(cache / STOCK_RECEIPT, receipt)
+    missing = sum(r["status"] == "not-found" for r in files)
+    return {"schema": "agent-ee.models-fetch/1", "repository": STOCK_REPOSITORY,
+            "status": "partial" if missing else "complete", "files": files, "missing": missing}
+
+
 def fetch_stock_models(board: Path, cache: Path, *, env=None, timeout=30,
                        max_file_bytes=32 * 1024 * 1024) -> dict:
     """Explicitly fetch exact enabled stock references into a persistent cache.

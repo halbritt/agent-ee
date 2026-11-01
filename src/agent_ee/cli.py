@@ -173,6 +173,8 @@ def main(argv=None, *, host=None):
     from . import build_workflow
     build_parser = sub.add_parser('build', help='run a captured engineering design through native manufacture checks')
     build_workflow.configure_parser(build_parser)
+    from . import design
+    design.configure_parser(sub.add_parser('design', help='capture and compile explicit board design decisions'))
     scaffold_parser = sub.add_parser('scaffold', help='create an empty native candidate from captured planning inputs')
     scaffold_parser.add_argument('envelope')
     scaffold_parser.add_argument('parts')
@@ -288,6 +290,8 @@ def main(argv=None, *, host=None):
             return placement_job.execute(args, placement_parser)
         if args.command == 'parts':
             return parts_stage.execute(args)
+        if args.command == 'design':
+            return design.execute(args)
         if args.command == 'build':
             return build_workflow.execute(args)
         if args.command == 'scaffold':

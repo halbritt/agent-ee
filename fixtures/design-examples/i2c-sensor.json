@@ -1,0 +1,363 @@
+{
+  "bench": [
+    "Inspect supplier previews, polarity and assembly, then measure output voltage, capacitor stability, I2C rise time and communication on assembled hardware."
+  ],
+  "board": {
+    "copper_layers": 2,
+    "height_mm": 30,
+    "max_component_height_mm": 8,
+    "thickness_mm": 1.2,
+    "width_mm": 40
+  },
+  "connectors": [
+    {
+      "edge": "left",
+      "insertion": "from_top",
+      "inset_mm": 4,
+      "position_mm": 15,
+      "reference": "J1",
+      "rotation_deg": 0
+    },
+    {
+      "edge": "right",
+      "insertion": "through_edge",
+      "inset_mm": 3.3,
+      "position_mm": 15,
+      "reference": "J2",
+      "rotation_deg": 90
+    }
+  ],
+  "decoupling": [
+    {
+      "capacitor": "C1",
+      "device": "U1",
+      "max_distance_mm": 5,
+      "return": [
+        "U1.2",
+        "C1.2"
+      ],
+      "supply": [
+        "U1.1",
+        "C1.1"
+      ]
+    },
+    {
+      "capacitor": "C2",
+      "device": "U1",
+      "max_distance_mm": 5,
+      "return": [
+        "U1.2",
+        "C2.2"
+      ],
+      "supply": [
+        "U1.5",
+        "C2.1"
+      ]
+    },
+    {
+      "capacitor": "C3",
+      "device": "U2",
+      "max_distance_mm": 5,
+      "return": [
+        "U2.7",
+        "C3.2"
+      ],
+      "supply": [
+        "U2.8",
+        "C3.1"
+      ]
+    }
+  ],
+  "functional": [
+    {
+      "text": "J1 shall accept positive VIN on pin 1 and GND on pin 2, with input and output bypass capacitors.",
+      "witnesses": [
+        {
+          "id": "j1-vin",
+          "net": "VIN",
+          "terminal": "J1.1",
+          "type": "pin_net"
+        },
+        {
+          "id": "j1-gnd",
+          "net": "GND",
+          "terminal": "J1.2",
+          "type": "pin_net"
+        },
+        {
+          "class": "capacitor",
+          "id": "input-bypass",
+          "nets": [
+            "VIN",
+            "GND"
+          ],
+          "type": "element_between",
+          "value": "10u"
+        },
+        {
+          "class": "capacitor",
+          "id": "output-bypass",
+          "nets": [
+            "V3V3",
+            "GND"
+          ],
+          "type": "element_between",
+          "value": "22u"
+        }
+      ]
+    },
+    {
+      "text": "U2 shall have VDD, VDDIO and CSB on V3V3 with local bypass and a 10 k SDO pull-down.",
+      "witnesses": [
+        {
+          "id": "u2-vdd",
+          "net": "V3V3",
+          "terminal": "U2.8",
+          "type": "pin_net"
+        },
+        {
+          "id": "u2-vddio",
+          "net": "V3V3",
+          "terminal": "U2.6",
+          "type": "pin_net"
+        },
+        {
+          "id": "u2-csb",
+          "net": "V3V3",
+          "terminal": "U2.2",
+          "type": "pin_net"
+        },
+        {
+          "class": "capacitor",
+          "id": "sensor-bypass",
+          "nets": [
+            "V3V3",
+            "GND"
+          ],
+          "type": "element_between",
+          "value": "100n"
+        },
+        {
+          "class": "resistor",
+          "id": "sdo-pulldown",
+          "nets": [
+            "SDO",
+            "GND"
+          ],
+          "type": "element_between",
+          "value": "10k"
+        }
+      ]
+    },
+    {
+      "text": "J2 shall expose GND, V3V3, SDA and SCL on pins 1 through 4, with 4.7 k pull-ups on SDA and SCL.",
+      "witnesses": [
+        {
+          "id": "j2-gnd",
+          "net": "GND",
+          "terminal": "J2.1",
+          "type": "pin_net"
+        },
+        {
+          "id": "j2-vcc",
+          "net": "V3V3",
+          "terminal": "J2.2",
+          "type": "pin_net"
+        },
+        {
+          "id": "j2-sda",
+          "net": "SDA",
+          "terminal": "J2.3",
+          "type": "pin_net"
+        },
+        {
+          "id": "j2-scl",
+          "net": "SCL",
+          "terminal": "J2.4",
+          "type": "pin_net"
+        },
+        {
+          "id": "u2-sda",
+          "net": "SDA",
+          "terminal": "U2.3",
+          "type": "pin_net"
+        },
+        {
+          "id": "u2-scl",
+          "net": "SCL",
+          "terminal": "U2.4",
+          "type": "pin_net"
+        },
+        {
+          "class": "resistor",
+          "id": "sda-pullup",
+          "nets": [
+            "SDA",
+            "V3V3"
+          ],
+          "type": "element_between",
+          "value": "4.7k"
+        },
+        {
+          "class": "resistor",
+          "id": "scl-pullup",
+          "nets": [
+            "SCL",
+            "V3V3"
+          ],
+          "type": "element_between",
+          "value": "4.7k"
+        }
+      ]
+    }
+  ],
+  "ground": "GND",
+  "groups": [
+    {
+      "anchor": "J1",
+      "name": "power",
+      "title": "5 V input and regulated supply"
+    },
+    {
+      "anchor": "J2",
+      "name": "sensor",
+      "title": "I2C sensor and interface"
+    }
+  ],
+  "intent": "An agent-selected 5 V input, 3.3 V regulated BME280 environmental sensor breakout with a Qwiic-order JST SH interface. This is a tool measurement design; electrical suitability and physical operation remain unverified.",
+  "name": "i2csense",
+  "nets": {
+    "GND": [
+      "J1.2",
+      "J2.1",
+      "U1.2",
+      "U2.1",
+      "U2.7",
+      "C1.2",
+      "C2.2",
+      "C3.2",
+      "R3.2",
+      "J2.MP"
+    ],
+    "SCL": [
+      "U2.4",
+      "R2.2",
+      "J2.4"
+    ],
+    "SDA": [
+      "U2.3",
+      "R1.2",
+      "J2.3"
+    ],
+    "SDO": [
+      "U2.5",
+      "R3.1"
+    ],
+    "V3V3": [
+      "U1.5",
+      "C2.1",
+      "C3.1",
+      "U2.8",
+      "U2.6",
+      "U2.2",
+      "R1.1",
+      "R2.1",
+      "J2.2"
+    ],
+    "VIN": [
+      "J1.1",
+      "U1.1",
+      "U1.3",
+      "C1.1"
+    ]
+  },
+  "no_connects": [
+    "U1.4"
+  ],
+  "parts": {
+    "C1": {
+      "footprint": "Capacitor_SMD:C_0805_2012Metric",
+      "group": "power",
+      "lcsc": "C15850",
+      "lib_id": "Device:C",
+      "value": "10u"
+    },
+    "C2": {
+      "footprint": "Capacitor_SMD:C_0805_2012Metric",
+      "group": "power",
+      "lcsc": "C45783",
+      "lib_id": "Device:C",
+      "value": "22u"
+    },
+    "C3": {
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "group": "sensor",
+      "lcsc": "C14663",
+      "lib_id": "Device:C",
+      "value": "100n"
+    },
+    "J1": {
+      "connector": {
+        "columns": 2,
+        "rows": 1
+      },
+      "footprint": "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical",
+      "group": "power",
+      "lcsc": "C158012",
+      "lib_id": "Connector_Generic:Conn_01x02",
+      "value": "PWR_5V"
+    },
+    "J2": {
+      "footprint": "Connector_JST:JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal",
+      "group": "sensor",
+      "lcsc": "C160404",
+      "lib_id": "Connector_Generic_MountingPin:Conn_01x04_MountingPin",
+      "value": "I2C"
+    },
+    "R1": {
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "group": "sensor",
+      "lcsc": "C23162",
+      "lib_id": "Device:R",
+      "value": "4.7k"
+    },
+    "R2": {
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "group": "sensor",
+      "lcsc": "C23162",
+      "lib_id": "Device:R",
+      "value": "4.7k"
+    },
+    "R3": {
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "group": "sensor",
+      "lcsc": "C25804",
+      "lib_id": "Device:R",
+      "value": "10k"
+    },
+    "U1": {
+      "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+      "group": "power",
+      "lcsc": "C51118",
+      "lib_id": "Regulator_Linear:AP2112K-3.3",
+      "value": "AP2112K-3.3"
+    },
+    "U2": {
+      "footprint": "Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering",
+      "group": "sensor",
+      "lcsc": "C92489",
+      "lib_id": "Sensor:BME280",
+      "value": "BME280"
+    }
+  },
+  "plane": {
+    "layer": "B.Cu",
+    "net": "GND"
+  },
+  "power_flags": [
+    "GND",
+    "VIN"
+  ],
+  "requirement_prefix": "I2C",
+  "schema": "agent-ee.design/1"
+}

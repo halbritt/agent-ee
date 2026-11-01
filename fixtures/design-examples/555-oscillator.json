@@ -1,0 +1,269 @@
+{
+  "bench": [
+    "Inspect supplier previews and assembly, then measure supply polarity, oscillator frequency, duty cycle, waveform and output drive on hardware before use."
+  ],
+  "board": {
+    "copper_layers": 2,
+    "height_mm": 30,
+    "max_component_height_mm": 8,
+    "thickness_mm": 1.2,
+    "width_mm": 40
+  },
+  "connectors": [
+    {
+      "edge": "left",
+      "insertion": "from_top",
+      "inset_mm": 4,
+      "position_mm": 15,
+      "reference": "J1",
+      "rotation_deg": 0
+    },
+    {
+      "edge": "right",
+      "insertion": "from_top",
+      "inset_mm": 4,
+      "position_mm": 15,
+      "reference": "J2",
+      "rotation_deg": 180
+    }
+  ],
+  "decoupling": [
+    {
+      "capacitor": "C2",
+      "device": "U1",
+      "max_distance_mm": 6,
+      "return": [
+        "U1.1",
+        "C2.2"
+      ],
+      "supply": [
+        "U1.8",
+        "C2.1"
+      ]
+    }
+  ],
+  "functional": [
+    {
+      "text": "The NE555 shall have supply and reset on VIN, trigger and threshold on TIMING, and discharge on DISCHARGE.",
+      "witnesses": [
+        {
+          "id": "timer-supply",
+          "net": "VIN",
+          "terminal": "U1.8",
+          "type": "pin_net"
+        },
+        {
+          "id": "timer-reset",
+          "net": "VIN",
+          "terminal": "U1.4",
+          "type": "pin_net"
+        },
+        {
+          "id": "timer-ground",
+          "net": "GND",
+          "terminal": "U1.1",
+          "type": "pin_net"
+        },
+        {
+          "id": "timer-trigger",
+          "net": "TIMING",
+          "terminal": "U1.2",
+          "type": "pin_net"
+        },
+        {
+          "id": "timer-threshold",
+          "net": "TIMING",
+          "terminal": "U1.6",
+          "type": "pin_net"
+        },
+        {
+          "id": "timer-discharge",
+          "net": "DISCHARGE",
+          "terminal": "U1.7",
+          "type": "pin_net"
+        }
+      ]
+    },
+    {
+      "text": "The astable shall have 10 k resistors from VIN to DISCHARGE and DISCHARGE to TIMING, a 100 n timing capacitor to ground and an output on J2 pin 1.",
+      "witnesses": [
+        {
+          "class": "resistor",
+          "id": "charge-resistor",
+          "nets": [
+            "VIN",
+            "DISCHARGE"
+          ],
+          "type": "element_between",
+          "value": "10k"
+        },
+        {
+          "class": "resistor",
+          "id": "timing-resistor",
+          "nets": [
+            "DISCHARGE",
+            "TIMING"
+          ],
+          "type": "element_between",
+          "value": "10k"
+        },
+        {
+          "class": "capacitor",
+          "id": "timing-capacitor",
+          "nets": [
+            "TIMING",
+            "GND"
+          ],
+          "type": "element_between",
+          "value": "100n"
+        },
+        {
+          "id": "output-pin",
+          "net": "OUTPUT",
+          "terminal": "U1.3",
+          "type": "pin_net"
+        },
+        {
+          "id": "output-connector",
+          "net": "OUTPUT",
+          "terminal": "J2.1",
+          "type": "pin_net"
+        },
+        {
+          "id": "output-return",
+          "net": "GND",
+          "terminal": "J2.2",
+          "type": "pin_net"
+        }
+      ]
+    }
+  ],
+  "ground": "GND",
+  "groups": [
+    {
+      "anchor": "J1",
+      "name": "supply",
+      "title": "5 V input"
+    },
+    {
+      "anchor": "U1",
+      "name": "timer",
+      "title": "Astable oscillator and output"
+    }
+  ],
+  "intent": "An agent-selected nominal 5 V NE555 astable oscillator with a connector output. Timing values are design declarations; output frequency, drive capability and supply behavior need physical tests.",
+  "name": "timer555",
+  "nets": {
+    "CONTROL": [
+      "U1.5",
+      "C3.1"
+    ],
+    "DISCHARGE": [
+      "U1.7",
+      "R1.2",
+      "R2.1"
+    ],
+    "GND": [
+      "J1.2",
+      "J2.2",
+      "U1.1",
+      "C1.2",
+      "C2.2",
+      "C3.2"
+    ],
+    "OUTPUT": [
+      "U1.3",
+      "J2.1"
+    ],
+    "TIMING": [
+      "U1.2",
+      "U1.6",
+      "R2.2",
+      "C1.1"
+    ],
+    "VIN": [
+      "J1.1",
+      "U1.8",
+      "U1.4",
+      "R1.1",
+      "C2.1"
+    ]
+  },
+  "no_connects": [],
+  "parts": {
+    "C1": {
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "group": "timer",
+      "lcsc": "C14663",
+      "lib_id": "Device:C",
+      "value": "100n"
+    },
+    "C2": {
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "group": "timer",
+      "lcsc": "C14663",
+      "lib_id": "Device:C",
+      "value": "100n"
+    },
+    "C3": {
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "group": "timer",
+      "lcsc": "C14663",
+      "lib_id": "Device:C",
+      "value": "100n"
+    },
+    "J1": {
+      "connector": {
+        "columns": 2,
+        "rows": 1
+      },
+      "footprint": "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical",
+      "group": "supply",
+      "lcsc": "C158012",
+      "lib_id": "Connector_Generic:Conn_01x02",
+      "value": "5V"
+    },
+    "J2": {
+      "connector": {
+        "columns": 2,
+        "rows": 1
+      },
+      "footprint": "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical",
+      "group": "timer",
+      "lcsc": "C158012",
+      "lib_id": "Connector_Generic:Conn_01x02",
+      "value": "OUTPUT"
+    },
+    "R1": {
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "group": "timer",
+      "lcsc": "C25804",
+      "lib_id": "Device:R",
+      "value": "10k"
+    },
+    "R2": {
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "group": "timer",
+      "lcsc": "C25804",
+      "lib_id": "Device:R",
+      "value": "10k"
+    },
+    "U1": {
+      "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+      "group": "timer",
+      "lcsc": "C7593",
+      "lib_id": "Timer:NE555D",
+      "value": "NE555"
+    }
+  },
+  "plane": {
+    "layer": "B.Cu",
+    "net": "GND"
+  },
+  "power_flags": [
+    "GND",
+    "VIN"
+  ],
+  "requirement_prefix": "TIM",
+  "schema": "agent-ee.design/1"
+}

@@ -1,0 +1,176 @@
+{
+  "as_of": "2026-10-24",
+  "finished_thickness_tolerance": {
+    "min_nominal_thickness_mm": 1,
+    "percent": 10,
+    "source": {
+      "as_of": "2026-10-24",
+      "page": 1,
+      "path": "fab-sources/selected-facts.txt",
+      "quote": "nominal >= 1.0 mm / finished thickness: +/-10 %",
+      "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+      "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
+    }
+  },
+  "limits": [
+    {
+      "id": "trace",
+      "key": "min_trace_mm",
+      "source": {
+        "as_of": "2026-10-24",
+        "page": 1,
+        "path": "fab-sources/selected-facts.txt",
+        "quote": "1 and 2-layer / 1 oz / trace / spacing: 0.10 / 0.10 mm",
+        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
+      },
+      "tier": "minimum",
+      "unit": "mm",
+      "value": 0.1
+    },
+    {
+      "id": "clearance",
+      "key": "min_clearance_mm",
+      "source": {
+        "as_of": "2026-10-24",
+        "page": 1,
+        "path": "fab-sources/selected-facts.txt",
+        "quote": "1 and 2-layer / 1 oz / trace / spacing: 0.10 / 0.10 mm",
+        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
+      },
+      "tier": "minimum",
+      "unit": "mm",
+      "value": 0.1
+    },
+    {
+      "id": "via-drill",
+      "key": "min_via_drill_mm",
+      "source": {
+        "as_of": "2026-10-24",
+        "page": 1,
+        "path": "fab-sources/selected-facts.txt",
+        "quote": "2-layer / via / drill / diameter: 0.15 / 0.25 mm",
+        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
+      },
+      "tier": "minimum",
+      "unit": "mm",
+      "value": 0.15
+    },
+    {
+      "id": "via-pad",
+      "key": "min_via_pad_mm",
+      "source": {
+        "as_of": "2026-10-24",
+        "page": 1,
+        "path": "fab-sources/selected-facts.txt",
+        "quote": "2-layer / via / drill / diameter: 0.15 / 0.25 mm",
+        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
+      },
+      "tier": "minimum",
+      "unit": "mm",
+      "value": 0.25
+    },
+    {
+      "id": "edge",
+      "key": "min_edge_clearance_mm",
+      "source": {
+        "as_of": "2026-10-24",
+        "page": 1,
+        "path": "fab-sources/selected-facts.txt",
+        "quote": "routed / copper / edge: 0.2 mm",
+        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
+      },
+      "tier": "minimum",
+      "unit": "mm",
+      "value": 0.2
+    },
+    {
+      "id": "holes",
+      "key": "min_hole_to_hole_mm",
+      "source": {
+        "as_of": "2026-10-24",
+        "page": 1,
+        "path": "fab-sources/selected-facts.txt",
+        "quote": "pad / hole / hole: 0.45 mm",
+        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
+      },
+      "tier": "minimum",
+      "unit": "mm",
+      "value": 0.45
+    },
+    {
+      "id": "layers",
+      "key": "max_layers",
+      "source": {
+        "as_of": "2026-10-24",
+        "page": 1,
+        "path": "fab-sources/selected-facts.txt",
+        "quote": "layers selected: 2",
+        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
+      },
+      "tier": "minimum",
+      "unit": "count",
+      "value": 2
+    },
+    {
+      "id": "size",
+      "key": "max_board_mm",
+      "source": {
+        "as_of": "2026-10-24",
+        "page": 1,
+        "path": "fab-sources/selected-facts.txt",
+        "quote": "FR4 / 2-layer / maximum: 670 / 600 mm",
+        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
+      },
+      "tier": "minimum",
+      "unit": "mm",
+      "value": [
+        670,
+        600
+      ]
+    }
+  ],
+  "name": "jlcpcb-2layer-1oz",
+  "schema": "agent-ee.fab-profile/2",
+  "stackup": {
+    "layer_count": 2,
+    "layer_thickness_tolerance_mm": 0,
+    "layers": [
+      {
+        "copper_weight_oz": 1,
+        "kind": "copper",
+        "name": "F.Cu",
+        "thickness_mm": 0.035
+      },
+      {
+        "kind": "dielectric",
+        "name": "core",
+        "thickness_mm": null
+      },
+      {
+        "copper_weight_oz": 1,
+        "kind": "copper",
+        "name": "B.Cu",
+        "thickness_mm": 0.035
+      }
+    ],
+    "name": "jlcpcb-2layer-1oz-1p2",
+    "nominal_thickness_mm": 1.2,
+    "source": {
+      "as_of": "2026-10-24",
+      "page": 1,
+      "path": "fab-sources/selected-facts.txt",
+      "quote": "nominal 1.2 mm / finished thickness: 1.08 to 1.32 mm (calculated from published +/-10 % tolerance)\nPublished FR4 nominal thickness choices include 1.2 mm\n2-layer / finished outer copper: 1 / 2 / 2.5 / 3.5 / 4.5 oz\n1 oz / nominal copper thickness: 35 um\nSelected 2-layer stack: 2 x 1 oz outer copper with FR-4 dielectric. No core thickness is published.",
+      "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+      "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
+    },
+    "thickness_mm": null
+  }
+}
