@@ -1,9 +1,17 @@
-"""The captured acquisition body/access recipe, bound once to original native owners."""
+"""Declared body/access mechanics, bound once to original native owners.
+
+Known acquisition recipe revisions keep their exact source custody. Any other model must
+state `"custody": "design-declared"`, so an edited recipe model cannot pass as one. It
+lists its own source files and access owners, and every declared source is verified
+against its captured bytes when loaded. Declaring a model does not qualify its numbers;
+checks and review do that.
+"""
 from decimal import Decimal
 from pathlib import Path
 import hashlib
 
 from . import acquisition_source_supplement, acquisition_power_repair, acquisition_resistor, acquisition_connector_geometry
+from .candidate import safe_relative
 from .catalog import strict_json
 from .mechanical_reservations import _native_owner, _current_owner, _sha
 from .storage import canonical, digest
@@ -16,11 +24,49 @@ CHECKER = 'fb225768d6812abf6b116da31e029b940ca64ccf1427f9c0ef7b04814cf10294'
 CONNECTORS = ('J1', 'J2', 'J3')
 
 
+def access_owners(model):
+    """References whose bodies keep a mating and cable access column."""
+    owners = model.get('access_owners', CONNECTORS)
+    if not isinstance(owners, (list, tuple)) or not all(isinstance(ref, str) for ref in owners):
+        raise ValueError('mechanics access owners must be a list of references')
+    return tuple(owners)
+
+
 def declaration(root):
     root = Path(root)
     sources = {rel: digest(root / rel) for rel in SOURCES}
-    sources.update(_model_sources(sources['analysis/geometry-model.json']) or {})
+    known = _model_sources(sources['analysis/geometry-model.json'])
+    if known is None:
+        model = strict_json((root / 'analysis/geometry-model.json').read_bytes())
+        known = {rel: digest(root / rel) for rel in _design_files(model)}
+    sources.update(known)
     return {'schema': SCHEMA, 'sources': sources}
+
+
+def _design_files(model):
+    """The extra source files a design's own model names, confined to its source root."""
+    files = model.get('source_files', []) if isinstance(model, dict) else None
+    if not isinstance(files, list) or not all(isinstance(rel, str) for rel in files):
+        raise ValueError('mechanics source_files must be a list of source-relative paths')
+    return [str(safe_relative(rel)) for rel in files]
+
+
+def _design_model(model, sources):
+    """Refuse a malformed design model here, before any native capture or engine run."""
+    if set(sources) != set(SOURCES) | set(_design_files(model)):
+        raise ValueError("mechanics declaration differs from its model's source_files")
+    if 'access_owners' not in model:
+        raise ValueError('a design-declared model must list its access_owners')
+    packages = model.get('packages')
+    if not isinstance(packages, dict) or not packages:
+        raise ValueError('mechanics model must list its packages')
+    for ref, package in packages.items():
+        size, offset = package.get('size_mm') if isinstance(package, dict) else None, \
+            package.get('offset_mm') if isinstance(package, dict) else None
+        if (not isinstance(size, list) or len(size) != 3 or not isinstance(offset, list) or len(offset) != 2
+                or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in size + offset)):
+            raise ValueError('mechanics package needs size_mm [x, y, z] and offset_mm [x, y]: ' + ref)
+    access_owners(model)
 
 
 def _model_sources(model):
@@ -51,15 +97,22 @@ def load(path):
             or document['schema'] != SCHEMA or not isinstance(document['sources'], dict)
             or not set(SOURCES) <= set(document['sources'])):
         raise ValueError('unsupported acquisition mechanics recipe')
-    _version(document)
+    known = _model_sources(document['sources']['analysis/geometry-model.json']) is not None
+    if known:
+        _version(document)
     raw = {}
     for rel, expected in document['sources'].items():
+        safe_relative(rel)
         source = path.parent / rel
         if any(p.is_symlink() for p in (source, *source.parents)) or not source.is_file():
             raise ValueError('acquisition mechanics source must be a regular captured file: ' + rel)
         raw[rel] = source.read_bytes()
         if hashlib.sha256(raw[rel]).hexdigest() != expected:
             raise ValueError('acquisition mechanics source changed: ' + rel)
+    model = strict_json(raw['analysis/geometry-model.json'])
+    if not known:
+        _version(document, model)
+        _design_model(model, document['sources'])
     requirements = strict_json(raw['requirement-map.json'])
     from .typed_overlay import _check_pool
     try:
@@ -72,10 +125,10 @@ def load(path):
     if (len(limits) != 1 or not isinstance(limits[0], dict) or any(
             not isinstance(limits[0].get(key), dict) or limits[0][key].get(bound) != value
             or limits[0][key].get('unit') != unit
-            or limits[0][key].get('condition') != 'nominal25C-reviewed-acquisition'
+            or (known and limits[0][key].get('condition') != 'nominal25C-reviewed-acquisition')
             for key, bound, value, unit in expected_limits)):
         raise ValueError('acquisition mechanics requirements differ from the captured recipe')
-    return {'declaration': document, 'model': strict_json(raw['analysis/geometry-model.json']),
+    return {'declaration': document, 'model': model,
             'model_raw': raw['analysis/geometry-model.json'].decode('utf-8')}
 
 
@@ -83,11 +136,13 @@ def _identity(binding):
     return hashlib.sha256(canonical({k: v for k, v in binding.items() if k != 'binding_sha256'})).hexdigest()
 
 
-def _version(document):
+def _version(document, parsed=None):
     from . import acquisition_film
     sources = document['sources']
     model = sources['analysis/geometry-model.json']
     extra = _model_sources(model)
+    if extra is None and isinstance(parsed, dict) and parsed.get('custody') == 'design-declared':
+        return
     checker = acquisition_film.CHECKERS.get(model, CHECKER)
     if (extra is None or sources['analysis/geometry_model.py'] != checker
             or set(sources) != set(SOURCES) | set(extra)
@@ -96,7 +151,7 @@ def _version(document):
 
 
 def _recipe(recipe):
-    _version(recipe['declaration'])
+    _version(recipe['declaration'], recipe['model'])
     if (hashlib.sha256(recipe['model_raw'].encode()).hexdigest()
             != recipe['declaration']['sources']['analysis/geometry-model.json']
             or strict_json(recipe['model_raw'].encode()) != recipe['model']
@@ -113,13 +168,13 @@ def bind(recipe, capture):
     refs = [o['ref'] for o in owners]
     if (len(set(refs)) != len(refs) or len({o['uuid'] for o in owners}) != len(owners)
             or set(refs) != set(recipe['model']['packages'])):
-        raise ValueError('acquisition model/native owner coverage differs')
+        raise ValueError('mechanics model/native owner coverage differs')
     native = {fp['ref']: fp for fp in capture['footprints']}
     for owner in owners:
         if owner['side'] != 'F' or owner['rotation_deg'] % 90:
             raise ValueError('acquisition model requires front orthogonal owners')
-    if any(native[ref].get('locked') is not True for ref in CONNECTORS):
-        raise ValueError('acquisition connector anchors must be natively locked')
+    if any(native.get(ref, {}).get('locked') is not True for ref in access_owners(recipe['model'])):
+        raise ValueError('mechanics access owners must be natively locked')
     binding = {'schema': BINDING, 'original_board_sha256': capture['board_sha256'],
                'recipe': recipe, 'owners': owners,
                'fixed': [fp['uuid'] for fp in capture['footprints'] if fp['locked']]}
@@ -157,10 +212,10 @@ def attach(description, binding, capture):
         row['source_body_local_nm'] = [int(v) for v in local]
         row['access_local_nm'] = ([int(local[0])-500000, int(local[1])-500000,
                                    int(local[2])+500000, int(local[3])+500000]
-                                  if owner['ref'] in CONNECTORS else None)
+                                  if owner['ref'] in access_owners(binding['recipe']['model']) else None)
     description['mechanics'] = {'schema': SCHEMA, 'binding_sha256': binding['binding_sha256'],
         'original_board_sha256': binding['original_board_sha256'],
         'sources': binding['recipe']['declaration']['sources'],
         'model_raw': binding['recipe']['model_raw'],
-        'limits': binding['recipe']['model']['limits']}
+        'limits': binding['recipe']['model'].get('limits', [])}
     return description

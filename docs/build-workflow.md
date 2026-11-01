@@ -277,6 +277,49 @@ runtime against an already qualified build. It verifies a real package gate,
 changes only copies, and checks refusal bytes, migration and corruption; a
 typed input also exercises its frozen judgment directory.
 
+## Declared mechanics
+
+A design can declare its package bodies and connector access columns without a code
+change or an engine rebuild. Set `placement.mechanics` to a source-relative
+`placement-mechanics.json`. Its paths resolve from its own directory, so keep it at the
+source root. `acquisition_mechanics.declaration(root)` returns its contents from these
+sources:
+
+- `spec.md`, `requirement-map.json` and `analysis/geometry_model.py`.
+- `analysis/geometry-model.json`, with these fields:
+
+```json
+{
+  "custody": "design-declared",
+  "access_owners": ["J1"],
+  "source_files": ["analysis/j1-drawing.txt"],
+  "packages": {
+    "J1": {"size_mm": [5.9, 4.5, 6.0], "offset_mm": [1.0, 0.25]},
+    "R1": {"size_mm": [1.7, 0.9, 0.55], "offset_mm": [0, 0]}
+  }
+}
+```
+
+`packages` must cover every reference on the board, and every owner must be on the
+front at a multiple of 90 degrees. `access_owners` lists the references that keep a
+mating and cable access column, and each must be locked on the board. Each path in
+`source_files` is declared by SHA-256 too. Loading refuses if a declared file differs
+from its captured bytes, if a path leaves the source root, or if the declaration and
+`source_files` differ.
+
+The `engineering-geometry` check in `requirement-map.json` must state the limits the
+engine applies: `body_gap` min 0.2 mm, `body_overlap` and `body_outside` max 0 mm2, and
+`access_obstruction` max 1e-8 mm2. The engine holds no model list. It authenticates the
+model bytes and required sources, then grades the declared bodies.
+
+Declaring a model does not qualify its numbers. Checks and review do that, so cite the
+source of each dimension in the model and in `source_files`.
+
+Without the `custody` field, a model must be one of the known acquisition revisions,
+which keep exact checker and source custody, so an edited recipe model cannot pass as
+a design's own. Local loop seeding runs only for those revisions, because it knows
+only that recipe's named connections. Other designs route without it.
+
 ## Authored judgments and package records
 
 Judgments that bind a candidate must exist before the first package attempt,

@@ -515,158 +515,28 @@ pub fn aliases(uuids: &[String], supplied: &[Option<String>]) -> Result<Vec<Stri
     Ok(out)
 }
 
-const MECHANICS_ORIGINAL: &str = "0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4";
-const MECHANICS_MURATA: &str = "311df5d1398780f8b65e061a512bea2384d15298ba6278d505a6e77e3159cb6c";
-const MECHANICS_R6: &str = "43be6345262e5eeb0f54b9214009d13168fa5889333b006315f489dac7c8fa8f";
-const MECHANICS_R6_470: &str = "02292f70aca8b8a07b2dbbbab42515824b1c2c6d40ba49103a2ef3d7b23b5ffa";
-const MECHANICS_PANASONIC: &str = "2bb1d93ff3f1cc0420088c02b16278394e3124230b05da950d6838432f049479";
-const MECHANICS_PANASONIC_470: &str = "fa010715d48ba3fe6e1843e17744834583b98f03a23fb61e004909a7840507b2";
-const MECHANICS_CHECKER: &str = "fb225768d6812abf6b116da31e029b940ca64ccf1427f9c0ef7b04814cf10294";
 const MECHANICS_BASE_SOURCES: [&str; 4] = ["spec.md", "requirement-map.json", "analysis/geometry-model.json", "analysis/geometry_model.py"];
-const MECHANICS_MURATA_SOURCES: &[(&str, &str)] = &[
-    ("source-supplement/extraction-sources.json", "afdb87be73830c81b247f87e388de3ddb8456a84ea78172f916d317e75a5a499"),
-    ("source-supplement/manifest.json", "08b29c03f9fc9a8861ca61d9b16eb8974ebf5f76f669b329e107bc177b6f3e20"),
-    ("source-supplement/murata-exact.txt", "ee40f81b32de35c37e18bcd55cecd469a1de730c4b4e95b6f55b6ba8bf1b1f29"),
-    ("source-supplement/murata/reference.pdf", "3f5a339eb51502df7716dfd2d4c4e6d33e837abc0df5cb8e4fc1e6e275d09790"),
-    ("source-supplement/murata/request-06.body", "d4abc842e6b75c8f6f0f31e503c72c41f127518c683c26dfdf48834cdb4819b0"),
-    ("source-supplement/murata/request-07.json", "0b3347c452b439434ff9a8a066d585f706803ab729d5a9383d3fac43677f87bd"),
-    ("source-supplement/murata/source.json", "c5f225a103344744df1d6e586dc3f98551a4ef34af62de325ea1c183c37a007f"),
-];
-const MECHANICS_R6_SOURCES: &[(&str, &str)] = &[
-    ("power-repair/activation.txt", "0c531a8c3789d318dbfd4193e424094bbb387c37f5eb7afe7adc589f0c223e80"),
-    ("power-repair/request-04.body", "7773bdb7ba69857695d47efe9c3b454887c85f6498e0c16f772b4bb35223f9b4"),
-    ("power-repair/request-04.headers", "183eeeaad16589d5ad81f8811f378f551ee5f096f98ad3ced1a658d02bf6b742"),
-    ("power-repair/request-04.curl.json", "771819e78fe2ea1abb82174225a37a1c432817c26b59d22bf2c17890f4b41c57"),
-    ("power-repair/exact620.txt", "96581a5a8236cff878d056ce4c98942a3289d8082b44424dd4f1ab87beb5830e"),
-    ("power-repair/derivation.json", "7c01f9960f78fac87969eaa59deb4ab39710254725ebb4b13a83b281b2bcaace"),
-];
+const DEFAULT_ACCESS_OWNERS: [&str; 3] = ["J1", "J2", "J3"];
 
-const MECHANICS_R6_470_SOURCES: &[(&str, &str)] = &[
-    ("power-repair/activation.txt", "c873e7f8632f67fca1a0a9f73acfae296adc2674e0cc694456ad91fb27058f51"),
-    ("power-repair/derivation470.json", "c1f8d633277f21547564fcf004b73ecdf0b81f7c5d62ce926508e619cd3a19b6"),
-    ("power-repair/manufacturer/original-manifest.json", "ced5377feed6eac2a0679be4277fd8d6d9a1316a7f315330f91425805dbaa597"),
-    ("power-repair/manufacturer/rc-series.pdf", "7b6f0ae72708ca4b38126f84b5407a3e970a94cb60bc1a0afdaeb25a23d839bb"),
-    ("power-repair/manufacturer/rc-series.txt", "e92249df44472848f9a18eb0606ec309a099112d773b150876c33d654b8a9439"),
-];
-
-const MECHANICS_PANASONIC_SOURCES: &[(&str, &str)] = &[
-    ("preparation/resistor-context/datasheets/b29db0c4cad7699a57e1e17182f49e77b78470bd85f595dc22f75144e7b780c5.pdf", "78825b819853a63f57cc18214f321d2f1da9dc205a7e58af7db18ae73563e378"),
-    ("preparation/resistor-context/request-11.body", "dce85b4894ccf97307f6a6b1b34176ff3ca4ee02850f1271b866f87127521214"),
-];
-const MECHANICS_PH_SOURCES: &[(&str, &str)] = &[
-    ("manufacturer-text/jst-ph.txt", "9553878588234be82b72e0a89774ac67bbc0022c4aef14cfdbac1383b32d8df1"),
-    ("manufacturer-text/manifest.json", "ee1c4d695cdd0ba20527a50bd73516dc2e955559a9bd59829edd5d35748fe43f"),
-    ("datasheets-connectors-bulk/manifest.json", "0851bd57b2b559e831d97b583c8218ac3f02ed190c5a362d63f76ad3afe9a685"),
-    ("datasheets-connectors-bulk/bb0b7c344f87ea4a2eb01dbf02c4541bd9482608f57c1dc3ca2f5e333a0dd2a4.pdf", "447624f4f2f7d37c58c1eaa7ee314ad757fe7aff48f6186491ef6f69fbc00b96"),
-    ("Connector_JST.pretty/JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical.kicad_mod", "dd59286748b9a6fa9174237072608f811cf3169dddf00eab54a5c196fcb6f7e8"),
-    ("Connector_JST.pretty/JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical.kicad_mod", "f5488d79bbafc8c929bcfacf8e960e81dcfc126c598e03083de317607937b58e"),
-];
-
-fn mechanics_sources(model: &str) -> Result<Vec<(&'static str, &'static str)>> {
-    if model == "cf34e468aaedbf2dfcb4b3d2c7a3ba74c116537a96d4546e0d93c68441c24bc1" {
-        let mut sources = mechanics_sources("457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4")?;
-        sources.extend_from_slice(&[
-            ("analysis/geometry_adapter.py", "2ded5b6240d1a53f0ef9e9960e4429cb0ec1af3ab4cd2d80496bc3fe35e5f578"),
-            ("analysis/ground_reference.py", "c61fb840a8e558f7b57f68e2a6e39681f78e1ee3348e614ae2e81831e2c5c2fe"),
-            ("film-reference/ground-return-basis.md", "aef3052ed50cdf2421b5577d2c4dab5f71a155464f1c3a5df840cbe06e34f172"),
-        ]);
-        return Ok(sources);
-    }
-    if model == "d451823e8f2d817245cdb4aa3da057ef0b273edf90067e35ae1433ab4d11d0c3" {
-        let mut sources = mechanics_sources("457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4")?;
-        sources.extend_from_slice(&[
-            ("analysis/geometry_adapter.py", "2ded5b6240d1a53f0ef9e9960e4429cb0ec1af3ab4cd2d80496bc3fe35e5f578"),
-            ("analysis/ground_reference.py", "c85cf5bfd88dee599b26dac95e3d9caf9e68c41185e6b3548ab99d0eef82c4f7"),
-            ("film-reference/ground-return-basis.md", "94619c4ceea7ff4e747f718f1a157408ae8ab0898e9c8a95201f5f62cf1af76a"),
-        ]);
-        return Ok(sources);
-    }
-    if model == "457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4" {
-        let mut sources = mechanics_sources("486dc5354d351f1bff274d7759a2e8805437be64701d51106cc3ac30e7dfbfd0")?;
-        sources.extend_from_slice(&[
-            ("analysis/geometry_contact.py", "11bcf0cc22bf06a817fb682a9579fb2457c3ef97cb5f53e809f266b3345ffab0"),
-            ("film-reference/geometry-path-basis.json", "1463621bfab1b11021fffdc49fb5bc4d16208825651581e7be4e283a00b3eef7"),
-        ]);
-        return Ok(sources);
-    }
-    if model == "486dc5354d351f1bff274d7759a2e8805437be64701d51106cc3ac30e7dfbfd0" {
-        let mut sources = mechanics_sources("123e302ecd312677500ca28173ca94a806f5ad96ab12518b548f04a582328915")?;
-        sources.extend_from_slice(&[
-            ("film-reference/geometry-basis.json", "367dfd536429ee1f1d6728b9b9bb3bddb81e2f3ab157ffddaab05fa6f6bcfae9"),
-            ("film-reference/datasheet/487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c.pdf", "487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c"),
-        ]);
-        return Ok(sources);
-    }
-    if model == "123e302ecd312677500ca28173ca94a806f5ad96ab12518b548f04a582328915" {
-        let mut sources = mechanics_sources("53187855ce84e712e539eed040dc741c2ffe0c8d7d331fc9b37203f033be4d0b")?;
-        sources.extend_from_slice(&[
-            ("power-reference/geometry-basis.json", "8a9805f303f8307cb750d0034776c0a50b9bf4218afe0d7a0ba0b039140b01ca"),
-            ("power-reference/u1-datasheet/d724cf4f61ea188bc7cef569b309591f0fe028af55e3db46c16cd5f475a8406a.pdf", "958844711dc322d705b9a22c04d50633fb86d62184e638b591d251cd3160ddef"),
-            ("power-reference/d1-datasheet/af204fbee5194f301b15b9b6c1a4751c8484cc6ed93c3cd11aac964c757f7579.pdf", "af204fbee5194f301b15b9b6c1a4751c8484cc6ed93c3cd11aac964c757f7579"),
-        ]);
-        return Ok(sources);
-    }
-    let preceding = match model {
-        "4155f201ba2efb2c74a44a3f8ffe30187a28eac4884b7b34a729e76d15c40e52" => Some(MECHANICS_ORIGINAL),
-        "4aaad94d06dfc4d838e0992259219c51ce1f3d364948cc2a3929e741a150d21f" => Some(MECHANICS_MURATA),
-        "2c2b46cbfa91cf19e9e56b4c3f1ff4b1161d9ca1822f5f73432bc96ad53e3646" => Some(MECHANICS_R6),
-        "38669f433c5005587b3f310af6bb51cc91fa89ba301d348799421bf83fa5cb64" => Some(MECHANICS_PANASONIC),
-        "53187855ce84e712e539eed040dc741c2ffe0c8d7d331fc9b37203f033be4d0b" => Some(MECHANICS_R6_470),
-        "c6ad86348e39e9a2be7d0f6a23b00b0a08b436847e3f691f320511a2d02f82e1" => Some(MECHANICS_PANASONIC_470),
-        _ => None,
-    };
-    if let Some(original) = preceding {
-        let mut sources = mechanics_sources(original)?;
-        sources.extend_from_slice(MECHANICS_PH_SOURCES);
-        sources.push(("preparation/connector-geometry/original-model.json", original));
-        return Ok(sources);
-    }
-    let mut sources: Vec<_> = match model {
-        MECHANICS_ORIGINAL => Vec::new(),
-        MECHANICS_MURATA => MECHANICS_MURATA_SOURCES.iter().copied().collect(),
-        MECHANICS_R6_470 | MECHANICS_PANASONIC_470 => MECHANICS_MURATA_SOURCES.iter().chain(MECHANICS_R6_470_SOURCES.iter()).copied().collect(),
-        MECHANICS_R6 | MECHANICS_PANASONIC => MECHANICS_MURATA_SOURCES.iter().chain(MECHANICS_R6_SOURCES.iter()).copied().collect(),
-        _ => bail!("unsupported mechanics model/checker"),
-    };
-    if matches!(model, MECHANICS_PANASONIC | MECHANICS_PANASONIC_470) {
-        sources.extend_from_slice(MECHANICS_PANASONIC_SOURCES);
-    }
-    Ok(sources)
-}
-
-/// The same finite model/source versions as Python acquisition_mechanics._version.
-/// Upstream capture verifies source files; this boundary rechecks their pinned
-/// declarations and authenticates the full model bytes before reading geometry.
+/// Authenticate the declared model bytes before reading geometry. The Python
+/// controller verifies every declared source file against its captured bytes and
+/// owns which recipe revisions it admits, so this engine holds no model table.
 fn acquisition_source_model(m: &Value) -> Result<Value> {
     use sha2::{Digest, Sha256};
     ensure!(m["schema"] == "agent-ee.acquisition-mechanics/1", "unsupported mechanics source");
     ensure!(text(m, "binding_sha256")?.len() == 64 && text(m, "original_board_sha256")?.len() == 64,
             "missing original mechanics binding");
     let sources = m["sources"].as_object().context("mechanics sources must be an object")?;
-    let model = sources.get("analysis/geometry-model.json").and_then(Value::as_str)
-        .context("missing mechanics model hash")?;
-    let supplementary = mechanics_sources(model)?;
-    let checker = match model {
-        "cf34e468aaedbf2dfcb4b3d2c7a3ba74c116537a96d4546e0d93c68441c24bc1" | "d451823e8f2d817245cdb4aa3da057ef0b273edf90067e35ae1433ab4d11d0c3" => "58a61adf28ca7d29479258ba7cb52373d3faaee4e884e40658ce5be9abce3100",
-        "457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4" => "bdf1eb99dc911e3380a73f9e6d0eab54033ff8b156d1300e4a32698f341bbbf9",
-        _ => MECHANICS_CHECKER,
-    };
-    ensure!(sources.get("analysis/geometry_model.py").and_then(Value::as_str) == Some(checker),
-            "unsupported mechanics model/checker");
-    ensure!(sources.len() == MECHANICS_BASE_SOURCES.len() + supplementary.len()
-            && MECHANICS_BASE_SOURCES.iter().all(|key| sources.contains_key(*key)),
-            "mechanics source coverage differs from the known model version");
-    for key in MECHANICS_BASE_SOURCES {
-        let hash = sources[key].as_str().context("mechanics source hash must be text")?;
+    ensure!(MECHANICS_BASE_SOURCES.iter().all(|key| sources.contains_key(*key)),
+            "mechanics declaration omits a required source");
+    for (key, hash) in sources {
+        let hash = hash.as_str().context("mechanics source hash must be text")?;
         ensure!(hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
                 "malformed mechanics source hash for {key}");
     }
-    for (path, expected) in supplementary {
-        ensure!(sources.get(path).and_then(Value::as_str) == Some(expected),
-                "mechanics supplementary source changed or missing: {path}");
-    }
     let raw = text(m, "model_raw")?;
-    ensure!(format!("{:x}", Sha256::digest(raw.as_bytes())) == model,
+    ensure!(sources.get("analysis/geometry-model.json").and_then(Value::as_str)
+                == Some(format!("{:x}", Sha256::digest(raw.as_bytes())).as_str()),
             "mechanics source model bytes changed");
     serde_json::from_str(raw).context("mechanics source JSON")
 }
@@ -698,6 +568,12 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     let source_model = match mechanics {
         Some(m) => acquisition_source_model(m)?,
         None => Value::Null,
+    };
+    let access_owners: Vec<String> = match source_model.get("access_owners") {
+        Some(owners) => owners.as_array().context("mechanics access owners must be a list")?.iter()
+            .map(|owner| owner.as_str().map(str::to_string).context("mechanics access owner must be text"))
+            .collect::<Result<_>>()?,
+        None => DEFAULT_ACCESS_OWNERS.iter().map(|owner| owner.to_string()).collect(),
     };
     let identity = text(input, "problem_sha256")?.to_string();
     ensure!(identity.len() == 64, "problem_sha256 must be a full SHA-256");
@@ -882,7 +758,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
             Some(v) => Some(Rect::parse(v, "source access")?), None => None
         };
         if mechanics.is_some() {
-            let connector = matches!(native_ref.as_str(), "J1" | "J2" | "J3");
+            let connector = access_owners.contains(&native_ref);
             ensure!(access == if connector { source_body.map(|r| r.grown(500_000)) } else { None },
                     "source access differs from exact connector body expansion");
         }
@@ -3597,13 +3473,27 @@ mod tests {
             b["pose"]["x_nm"] = json!(10_000_000);
         }
         raw["footprints"] = json!([a,b]); raw["groups"] = json!([]);
-        raw["mechanics"] = json!({"schema":"agent-ee.acquisition-mechanics/1", "binding_sha256":"b".repeat(64),
-            "original_board_sha256":"c".repeat(64),
-            "model_raw":include_str!("../../../fixtures/acquisition-qualification/geometry-model.json"),"sources":{
-            "spec.md":"d".repeat(64),"requirement-map.json":"e".repeat(64),
-            "analysis/geometry-model.json":"0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4",
-            "analysis/geometry_model.py":"fb225768d6812abf6b116da31e029b940ca64ccf1427f9c0ef7b04814cf10294"}});
+        declare_mechanics(&mut raw, &source_model_json([1.0, 0.25], [2.2, 1.45]));
         raw
+    }
+
+    /// A small declared model covering only the references these tests place.
+    fn source_model_json(connector_offset: [f64; 2], other_size: [f64; 2]) -> String {
+        json!({"packages":{
+            "J1":{"size_mm":[5.9,4.5,6.0],"offset_mm":connector_offset},
+            "J2":{"size_mm":[9.9,4.5,6.0],"offset_mm":[3.0,0.25]},
+            "R1":{"size_mm":[1.7,0.9,0.55],"offset_mm":[0,0]},
+            "C2":{"size_mm":[other_size[0],other_size[1],1.0],"offset_mm":[0,0]},
+            "C3":{"size_mm":[1.7,0.9,0.9],"offset_mm":[0,0]}}}).to_string()
+    }
+
+    fn declare_mechanics(raw: &mut Value, model: &str) {
+        use sha2::{Digest, Sha256};
+        raw["mechanics"] = json!({"schema":"agent-ee.acquisition-mechanics/1", "binding_sha256":"b".repeat(64),
+            "original_board_sha256":"c".repeat(64), "model_raw":model, "sources":{
+            "spec.md":"d".repeat(64),"requirement-map.json":"e".repeat(64),
+            "analysis/geometry-model.json":format!("{:x}", Sha256::digest(model.as_bytes())),
+            "analysis/geometry_model.py":"f".repeat(64)}});
     }
 
     #[test]
@@ -3681,173 +3571,107 @@ mod tests {
         assert_eq!(mechanics_report(&p,&poses)["status"],"pass"); // Remaining6000nm2 is below the TOTAL10000nm2 limit.
     }
 
-    fn captured_mechanics_version(version: usize) -> Value {
+    #[test]
+    fn declared_model_keeps_body_and_connector_obligations() {
+        let raw = source_mechanics_fixture(true, false);
+        let p = prepare(&raw).unwrap();
+        let poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+        assert_eq!(full_evaluate(&p, &poses).hard_count, 0);
+        let mut moved = poses.clone();
+        moved[1].x = 9_300_000;
+        assert!(mechanics_report(&p, &moved)["defects"].as_array().unwrap().iter().any(|d|d["kind"] == "connector_access"));
+        let mut changed = raw.clone();
+        changed["footprints"][1]["source_body_local_nm"][0] = json!(-1_000_000);
+        assert!(prepare(&changed).is_err(), "body differing from the model was trusted");
+        changed = raw.clone();
+        changed["footprints"][0]["access_local_nm"][0] = json!(-2_000_000);
+        assert!(prepare(&changed).is_err(), "access differing from the body expansion was trusted");
+    }
+
+    #[test]
+    fn declared_mechanics_authenticate_model_bytes_and_required_sources() {
+        use sha2::{Digest, Sha256};
+        let raw = source_mechanics_fixture(true, false);
+        for key in MECHANICS_BASE_SOURCES {
+            let mut changed = raw.clone();
+            changed["mechanics"]["sources"].as_object_mut().unwrap().remove(key);
+            assert!(prepare(&changed).is_err(), "missing {key}");
+        }
+        let mut changed = raw.clone();
+        let altered = format!("{} ", raw["mechanics"]["model_raw"].as_str().unwrap());
+        changed["mechanics"]["model_raw"] = json!(altered);
+        assert!(prepare(&changed).is_err(), "changed model bytes under the declared hash");
+        changed["mechanics"]["sources"]["analysis/geometry-model.json"] = json!(format!("{:x}", Sha256::digest(altered.as_bytes())));
+        assert!(prepare(&changed).is_ok(), "a declared model needs no compiled admission");
+        changed = raw.clone();
+        changed["mechanics"]["sources"]["extra-input"] = json!("not a digest");
+        assert!(prepare(&changed).is_err(), "malformed source digest");
+        changed = raw.clone();
+        changed["mechanics"]["sources"]["extra-input"] = json!("0".repeat(64));
+        assert!(prepare(&changed).is_ok(), "a design may declare its own source files");
+    }
+
+    #[test]
+    fn access_owners_come_from_the_declared_model() {
         let mut raw = source_mechanics_fixture(true, false);
-        let (model, hash) = match version {
-            0 => (include_str!("../../../fixtures/acquisition-qualification/geometry-model.json"),
-                  "0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4"),
-            1 => (include_str!("../../../fixtures/acquisition-qualification/geometry-model-murata.json"),
-                  "311df5d1398780f8b65e061a512bea2384d15298ba6278d505a6e77e3159cb6c"),
-            2 => (include_str!("../../../fixtures/acquisition-qualification/geometry-model-r6.json"),
-                  "43be6345262e5eeb0f54b9214009d13168fa5889333b006315f489dac7c8fa8f"),
-            3 => (include_str!("../../../fixtures/acquisition-qualification/geometry-model-r6-470.json"), "02292f70aca8b8a07b2dbbbab42515824b1c2c6d40ba49103a2ef3d7b23b5ffa"),
-            _ => panic!("test version"),
-        };
-        raw["mechanics"]["model_raw"] = json!(model);
-        raw["mechanics"]["sources"]["analysis/geometry-model.json"] = json!(hash);
-        if version > 0 {
-            let capture: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-typed/source-supplement.json")).unwrap();
-            for (name, hash) in capture["geometry_sources"].as_object().unwrap() {
-                raw["mechanics"]["sources"][format!("source-supplement/{name}")] = hash.clone();
-            }
-        }
-        if version == 2 {
-            let capture: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-typed/power-repair.json")).unwrap();
-            for name in ["activation.txt", "request-04.body", "request-04.headers", "request-04.curl.json", "exact620.txt", "derivation.json"] {
-                raw["mechanics"]["sources"][format!("power-repair/{name}")] = capture["files"][name].clone();
-            }
-        }
-        if version == 3 {
-            let capture: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-typed/power-repair-470.json")).unwrap();
-            for (name, hash) in capture["geometry_sources"].as_object().unwrap() {
-                raw["mechanics"]["sources"][format!("power-repair/{name}")] = hash.clone();
-            }
-        }
-        raw
+        // The default owners do not include this design's connector reference.
+        let model = json!({"access_owners":["X9"],"packages":{
+            "X9":{"size_mm":[5.9,4.5,6.0],"offset_mm":[1.0,0.25]},
+            "C2":{"size_mm":[2.2,1.45,1.0],"offset_mm":[0,0]}}}).to_string();
+        declare_mechanics(&mut raw, &model);
+        raw["footprints"][0]["native_ref"] = json!("X9");
+        assert!(prepare(&raw).is_ok());
+        let mut changed = raw.clone();
+        changed["footprints"][0]["access_local_nm"] = Value::Null;
+        assert!(prepare(&changed).is_err(), "a declared access owner needs its access rectangle");
+        changed = raw.clone();
+        changed["footprints"][1]["access_local_nm"] = json!([-1_600_000,-1_225_000,1_600_000,1_225_000]);
+        assert!(prepare(&changed).is_err(), "only declared owners carry access rectangles");
     }
 
     #[test]
-    fn source_mechanics_captured_versions_keep_body_and_connector_obligations() {
-        for version in 0..4 {
-            let raw = captured_mechanics_version(version);
-            let p = prepare(&raw).unwrap();
-            let poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
-            assert_eq!(full_evaluate(&p, &poses).hard_count, 0);
-            let mut moved = poses.clone();
-            moved[1].x = 9_300_000;
-            assert!(mechanics_report(&p, &moved)["defects"].as_array().unwrap().iter().any(|d|d["kind"] == "connector_access"));
-            let mut changed = raw.clone();
-            changed["footprints"][1]["source_body_local_nm"][0] = json!(-1_000_000);
-            assert!(prepare(&changed).is_err(), "body was trusted for version{version}");
-            changed = raw.clone();
-            changed["footprints"][0]["access_local_nm"][0] = json!(-2_000_000);
-            assert!(prepare(&changed).is_err(), "access was trusted for version{version}");
-        }
+    fn larger_declared_body_participates_in_grading() {
+        let mut raw = source_mechanics_fixture(true, false);
+        declare_mechanics(&mut raw, &source_model_json([1.0, 0.55], [3.5, 2.8]));
+        raw["footprints"][0]["source_body_local_nm"] = json!([-1950000,-1700000,3950000,2800000]);
+        raw["footprints"][0]["access_local_nm"] = json!([-2450000,-2200000,4450000,3300000]);
+        raw["outline"]["rect_nm"] = json!([0,0,20_000_000,10_000_000]);
+        raw["footprints"][1]["source_body_local_nm"] = json!([-1750000,-1400000,1750000,1400000]);
+        let crowded = prepare(&raw).unwrap();
+        let poses: Vec<Pose> = crowded.footprints.iter().map(|f| f.initial).collect();
+        assert!(full_evaluate(&crowded, &poses).hard_count > 0);
+        raw["footprints"][1]["pose"]["x_nm"] = json!(11_000_000);
+        let p = prepare(&raw).unwrap();
+        let poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+        assert_eq!(full_evaluate(&p, &poses).hard_count, 0, "{}", violations(&p, &poses).len());
     }
 
     #[test]
-    fn source_mechanics_captured_versions_reject_raw_checker_and_source_mutations() {
-        use sha2::{Digest, Sha256};
-        for version in 0..4 {
-            let raw = captured_mechanics_version(version);
-            for key in ["spec.md", "requirement-map.json", "analysis/geometry-model.json", "analysis/geometry_model.py"] {
-                let mut changed = raw.clone();
-                changed["mechanics"]["sources"].as_object_mut().unwrap().remove(key);
-                assert!(prepare(&changed).is_err(), "missing {key} version{version}");
-            }
-            let mut changed = raw.clone();
-            let altered = format!("{} ", raw["mechanics"]["model_raw"].as_str().unwrap());
-            changed["mechanics"]["model_raw"] = json!(altered);
-            assert!(prepare(&changed).is_err());
-            changed["mechanics"]["sources"]["analysis/geometry-model.json"] = json!(format!("{:x}", Sha256::digest(altered.as_bytes())));
-            assert!(prepare(&changed).is_err(), "caller rehashed an unknown model");
-            changed = raw.clone();
-            changed["mechanics"]["sources"]["analysis/geometry_model.py"] = json!("0".repeat(64));
-            assert!(prepare(&changed).is_err());
-            changed = raw.clone();
-            changed["mechanics"]["sources"]["extra-input"] = json!("0".repeat(64));
-            assert!(prepare(&changed).is_err());
-            for key in raw["mechanics"]["sources"].as_object().unwrap().keys().filter(|k|k.starts_with("source-supplement/") || k.starts_with("power-repair/")) {
-                changed = raw.clone();
-                changed["mechanics"]["sources"].as_object_mut().unwrap().remove(key);
-                assert!(prepare(&changed).is_err(), "missing {key}");
-                changed = raw.clone();
-                changed["mechanics"]["sources"][key] = json!("0".repeat(64));
-                assert!(prepare(&changed).is_err(), "changed {key}");
-            }
+    fn connector_access_rotates_with_the_declared_body() {
+        let mut raw = source_mechanics_fixture(true, false);
+        declare_mechanics(&mut raw, &source_model_json([1.0, 0.55], [2.2, 1.45]));
+        raw["footprints"][0]["source_body_local_nm"] = json!([-1950000,-1700000,3950000,2800000]);
+        raw["footprints"][0]["access_local_nm"] = json!([-2450000,-2200000,4450000,3300000]);
+        let p = prepare(&raw).unwrap();
+        let poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+        let expected = [[8050000,8300000,13950000,12800000],
+            [8300000,6050000,12800000,11950000],
+            [6050000,7200000,11950000,11700000],
+            [7200000,8050000,11700000,13950000]];
+        for (q, bounds) in expected.iter().enumerate() {
+            let pose = Pose {x:10_000_000, y:10_000_000, q:q as i64};
+            let body = place_rect(&p.footprints[0].source_body.unwrap(), &pose);
+            assert_eq!(body.as_value(), json!(bounds));
+            assert_eq!(place_rect(&p.footprints[0].access.unwrap(), &pose).as_value(), body.grown(500000).as_value());
         }
-    }
-
-    #[test]
-    fn derived_mechanics_versions_keep_exact_source_and_geometry_guards() {
-        use sha2::{Digest, Sha256};
-        let cases: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-qualification/mechanics-derived-test-cases.json")).unwrap();
-        let power: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-reverse-blocking/mechanics-test-case.json")).unwrap();
-        let film: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-film/mechanics-test-case.json")).unwrap();
-        let film_original: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-film/mechanics-test-case-r1.json")).unwrap();
-        let film_previous: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-film/mechanics-test-case-r2.json")).unwrap();
-        let film_ground: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-film/mechanics-test-case-r3.json")).unwrap();
-        for case in cases["cases"].as_array().unwrap().iter().chain([&power, &film_original, &film_previous, &film_ground, &film]) {
-            let mut raw = source_mechanics_fixture(true, false);
-            raw["mechanics"]["model_raw"] = case["model_raw"].clone();
-            raw["mechanics"]["sources"] = case["sources"].clone();
-            if case["kind"] == "ph-corrected" || case["kind"] == "film-capacitors" {
-                raw["footprints"][0]["source_body_local_nm"] = json!([-1950000,-1700000,3950000,2800000]);
-                raw["footprints"][0]["access_local_nm"] = json!([-2450000,-2200000,4450000,3300000]);
-            }
-            if case["kind"] == "film-capacitors" {
-                raw["outline"]["rect_nm"] = json!([0,0,20_000_000,10_000_000]);
-                raw["footprints"][1]["source_body_local_nm"] = json!([-1750000,-1400000,1750000,1400000]);
-                // The larger film body intrudes into J1's access space at the
-                // old test position; source geometry must participate in grading.
-                let crowded = prepare(&raw).unwrap();
-                let poses: Vec<Pose> = crowded.footprints.iter().map(|f| f.initial).collect();
-                assert!(full_evaluate(&crowded, &poses).hard_count > 0);
-                raw["footprints"][1]["pose"]["x_nm"] = json!(11_000_000);
-            }
-            let p = prepare(&raw).unwrap();
-            let poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
-            assert_eq!(full_evaluate(&p, &poses).hard_count, 0, "{}", violations(&p, &poses).len());
-            for key in case["sources"].as_object().unwrap().keys() {
-                let mut changed = raw.clone();
-                changed["mechanics"]["sources"].as_object_mut().unwrap().remove(key);
-                assert!(prepare(&changed).is_err(), "missing {key}");
-                if !MECHANICS_BASE_SOURCES.contains(&key.as_str()) {
-                    changed = raw.clone();
-                    changed["mechanics"]["sources"][key] = json!("0".repeat(64));
-                    assert!(prepare(&changed).is_err(), "changed {key}");
-                }
-            }
-            let mut changed = raw.clone();
-            let altered = format!("{} ", case["model_raw"].as_str().unwrap());
-            changed["mechanics"]["model_raw"] = json!(altered);
-            assert!(prepare(&changed).is_err());
-            changed["mechanics"]["sources"]["analysis/geometry-model.json"] = json!(format!("{:x}", Sha256::digest(altered.as_bytes())));
-            assert!(prepare(&changed).is_err(), "rehashing unknown model cannot admit it");
-            changed = raw.clone();
-            changed["mechanics"]["sources"]["analysis/geometry_model.py"] = json!("0".repeat(64));
-            assert!(prepare(&changed).is_err());
-            changed = raw.clone();
-            changed["mechanics"]["sources"]["extra-input"] = json!("0".repeat(64));
-            assert!(prepare(&changed).is_err());
-            changed = raw.clone();
-            changed["footprints"][0]["source_body_local_nm"][1] = json!(-1600000);
-            assert!(prepare(&changed).is_err());
-            changed = raw.clone();
-            changed["footprints"][0]["access_local_nm"][1] = json!(-2100000);
-            assert!(prepare(&changed).is_err());
-            if case["kind"] == "ph-corrected" {
-                let expected = [[8050000,8300000,13950000,12800000],
-                    [8300000,6050000,12800000,11950000],
-                    [6050000,7200000,11950000,11700000],
-                    [7200000,8050000,11700000,13950000]];
-                for (q, bounds) in expected.iter().enumerate() {
-                    let pose = Pose {x:10_000_000, y:10_000_000, q:q as i64};
-                    let body = place_rect(&p.footprints[0].source_body.unwrap(), &pose);
-                    assert_eq!(body.as_value(), json!(bounds));
-                    assert_eq!(place_rect(&p.footprints[0].access.unwrap(), &pose).as_value(), body.grown(500000).as_value());
-                }
-                // A component in the previously omitted access strip is now
-                // rejected, even though the physical bodies remain separated.
-                let mut placed = poses;
-                placed[0].y = 3_000_000;
-                placed[1].x = 5_000_000; placed[1].y = 6_825_000;
-                let report = mechanics_report(&p, &placed);
-                assert!(report["defects"].as_array().unwrap().iter().any(|d| d["kind"] == "connector_access"));
-                let old = prepare(&source_mechanics_fixture(true, false)).unwrap();
-                assert_eq!(mechanics_report(&old, &placed)["status"], "pass");
-            }
-        }
+        // A component in the previously omitted access strip is rejected, even
+        // though the physical bodies remain separated.
+        let mut placed = poses;
+        placed[0].y = 3_000_000;
+        placed[1].x = 5_000_000; placed[1].y = 6_825_000;
+        assert!(mechanics_report(&p, &placed)["defects"].as_array().unwrap().iter().any(|d| d["kind"] == "connector_access"));
+        let old = prepare(&source_mechanics_fixture(true, false)).unwrap();
+        assert_eq!(mechanics_report(&old, &placed)["status"], "pass");
     }
 
 }

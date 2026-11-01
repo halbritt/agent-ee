@@ -21,19 +21,6 @@ class PlacementEngineBuildTest(unittest.TestCase):
         self.root = Path(temporary.name)
         for name in ('crates/placement-engine/Cargo.toml', 'crates/placement-engine/Cargo.lock',
                      'crates/placement-engine/src/main.rs', 'src/agent_ee/data/jlcpcb-locality.json',
-                     'fixtures/acquisition-qualification/geometry-model.json',
-                     'fixtures/acquisition-qualification/geometry-model-murata.json',
-                     'fixtures/acquisition-qualification/geometry-model-r6.json',
-                     'fixtures/acquisition-qualification/geometry-model-r6-470.json',
-                     'fixtures/acquisition-qualification/mechanics-derived-test-cases.json',
-                     'fixtures/acquisition-reverse-blocking/mechanics-test-case.json',
-                     'fixtures/acquisition-film/mechanics-test-case.json',
-                     'fixtures/acquisition-film/mechanics-test-case-r1.json',
-                     'fixtures/acquisition-film/mechanics-test-case-r2.json',
-                     'fixtures/acquisition-film/mechanics-test-case-r3.json',
-                     'fixtures/acquisition-typed/source-supplement.json',
-                     'fixtures/acquisition-typed/power-repair.json',
-                     'fixtures/acquisition-typed/power-repair-470.json',
                      'scripts/build_placement_engine.py'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -63,19 +50,6 @@ class PlacementEngineBuildTest(unittest.TestCase):
     def test_source_resource_lock_binary_and_compiler_drift_are_refused(self):
         for name in ('crates/placement-engine/src/main.rs', 'crates/placement-engine/Cargo.lock',
                      'src/agent_ee/data/jlcpcb-locality.json', 'scripts/build_placement_engine.py',
-                     'fixtures/acquisition-qualification/geometry-model.json',
-                     'fixtures/acquisition-qualification/geometry-model-murata.json',
-                     'fixtures/acquisition-qualification/geometry-model-r6.json',
-                     'fixtures/acquisition-qualification/geometry-model-r6-470.json',
-                     'fixtures/acquisition-qualification/mechanics-derived-test-cases.json',
-                     'fixtures/acquisition-reverse-blocking/mechanics-test-case.json',
-                     'fixtures/acquisition-film/mechanics-test-case.json',
-                     'fixtures/acquisition-film/mechanics-test-case-r1.json',
-                     'fixtures/acquisition-film/mechanics-test-case-r2.json',
-                     'fixtures/acquisition-film/mechanics-test-case-r3.json',
-                     'fixtures/acquisition-typed/source-supplement.json',
-                     'fixtures/acquisition-typed/power-repair.json',
-                     'fixtures/acquisition-typed/power-repair-470.json',
                      'installed/agent-ee-placement'):
             with self.subTest(name=name):
                 path = self.root / name

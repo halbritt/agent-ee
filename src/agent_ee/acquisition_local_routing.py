@@ -15,6 +15,11 @@ from .symbol_library import children, nanometres, parse_sexpr
 SCHEMA='agent-ee.acquisition-local-routing/1'
 
 
+def applies(recipe):
+    """Local loop seeding knows only the acquisition recipe's named connections."""
+    return mechanics._model_sources(recipe['declaration']['sources']['analysis/geometry-model.json']) is not None
+
+
 def power_reference(recipe):
     """A validated mechanical source revision selects the electrical recipe."""
     from . import acquisition_film, acquisition_power_geometry, acquisition_reverse_blocking

@@ -306,6 +306,11 @@ def check_block_contract(path, normalized, *, clock=None, cancel_dir=None, retai
 
 
 
+def acquisition_local_routing_applies(recipe):
+    from .acquisition_local_routing import applies
+    return applies(recipe)
+
+
 def check_mechanics(path, normalized, *, clock=None, cancel_dir=None):
     if 'mechanics' not in normalized:
         return {'status': 'not_declared'}
@@ -1807,9 +1812,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             _check_stop(clock, job_dir)
             route_input = selected['directory']
             local_seed = None
-            if 'mechanics' in normalized:
-                # This finite mechanics declaration admits only the captured
-                # acquisition recipe. Never seed an exploratory/invalid pose.
+            if 'mechanics' in normalized and acquisition_local_routing_applies(normalized['mechanics']):
+                # Seed only the acquisition recipe's named local loops, and never an
+                # exploratory or invalid pose. Other designs route without this seed.
                 if (not _placement_eligible(selected)
                         or selected.get('mechanics', {}).get('status') != 'pass'
                         or selected['mechanics'].get('binding_sha256') != normalized['mechanics_binding']['binding_sha256']
