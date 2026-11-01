@@ -15,10 +15,11 @@ from .catalog import strict_json
 from .storage import canonical, digest
 from .symbol_library import children, parse_sexpr
 
-POLICY = dict(schema='agent-ee.acquisition-ground-ties/1',
+POLICY = dict(schema='agent-ee.acquisition-ground-ties/2',
     endpoints=[['U2', '3'], ['C4', '2'], ['C5', '2']],
     track_width_mm=.25, via_diameter_mm=.6, via_drill_mm=.3,
-    pad_edge_gap_mm=.2, maximum_path_mm=3)
+    pad_edge_gap_mm=.2, maximum_path_mm=3,
+    exposed_pad_bars=dict(reference='U1', pad='9', width_mm=.81))
 _NUMBER = re.compile(r'-?\d+(\.\d+)?')
 
 
@@ -31,6 +32,14 @@ def _copper_nodes(row):
             f'(net "GND") (uuid "{row["segment_uuid"]}"))\n'
             f'(via (at {local._mm(x)} {local._mm(y)}) (size 0.6) (drill 0.3) '
             f'(layers "F.Cu" "B.Cu") (net "GND") (uuid "{row["via_uuid"]}"))\n').encode()
+
+
+def _bar_node(row):
+    """One generated B.Cu bar across a pair of exposed-pad holes."""
+    a, b = row['start_nm']
+    x, y = row['end_nm']
+    return (f'\n(segment (start {local._mm(a)} {local._mm(b)}) (end {local._mm(x)} {local._mm(y)}) '
+            f'(width 0.81) (layer "B.Cu") (net "GND") (uuid "{row["segment_uuid"]}"))\n').encode()
 
 
 def _by_value(node):
@@ -96,6 +105,32 @@ def plan(board, policy):
     return rows
 
 
+def exposed_pad_bars(board, policy):
+    """Pair the regulator's thermal holes along their native rows for bottom-copper bars.
+
+    The supplier land stays in the footprint, and F.Cu holes already sit inside the
+    exposed pad. Only B.Cu needs copper to reach the supplier's annular-ring recommendation.
+    """
+    import pcbnew as k
+    spec = policy['exposed_pad_bars']
+    footprints = [fp for fp in board.GetFootprints() if fp.GetReference() == spec['reference']]
+    if len(footprints) != 1:
+        raise JobRefusal('ground ties: exposed-pad footprint is missing or ambiguous')
+    holes = [pad for pad in footprints[0].Pads() if pad.GetNumber() == spec['pad'] and pad.HasHole()]
+    if (len(holes) != 4 or any(pad.GetAttribute() != k.PAD_ATTRIB_PTH or pad.GetNetname() != 'GND'
+                               or not pad.FlashLayer(k.B_Cu) for pad in holes)):
+        raise JobRefusal('ground ties: exposed pad needs four plated ground holes on B.Cu')
+    points = sorted(([pad.GetPosition().x, pad.GetPosition().y], pad.m_Uuid.AsString()) for pad in holes)
+    pairs = [points[:2], points[2:]]
+    if any(a[0] != b[0] for (a, _), (b, _) in pairs):
+        points.sort(key=lambda row: (row[0][1], row[0][0]))
+        pairs = [points[:2], points[2:]]
+        if any(a[1] != b[1] for (a, _), (b, _) in pairs):
+            raise JobRefusal('ground ties: exposed-pad holes are not an orthogonal pair of rows')
+    return [dict(start_nm=a, end_nm=b, pad_uuids=[first, second])
+            for (a, first), (b, second) in pairs]
+
+
 def seed(board_path, data, policy):
     """Return bytes and a reproducible receipt; do not write the source board."""
     import pcbnew as k
@@ -107,6 +142,7 @@ def seed(board_path, data, policy):
     if board is None:
         raise JobRefusal('ground ties: native board load failed')
     rows = plan(board, policy)
+    bars = exposed_pad_bars(board, policy)
     parent = sha256(data).hexdigest()
     tree = parse_sexpr(data)
     if tree[0] != 'kicad_pcb' or children(tree, 'version') != [['version', '20260206']]:
@@ -122,14 +158,20 @@ def seed(board_path, data, policy):
                 raise JobRefusal('ground ties: generated UUID already present')
             row[kind+'_uuid'] = identity
         nodes.append(_copper_nodes(row))
+    for index, row in enumerate(bars):
+        row['segment_uuid'] = str(uuid.uuid5(uuid.NAMESPACE_URL,
+            'agent-ee/ground-ties/' + parent + '/exposed-pad-bar/' + str(index)))
+        if row['segment_uuid'] in existing:
+            raise JobRefusal('ground ties: generated UUID already present')
+        nodes.append(_bar_node(row))
     end = data.rstrip().rfind(b')')
     result = data[:end] + b''.join(nodes) + data[end:]
     after = parse_sexpr(result)
-    if after[:-6] != tree or [n[0] for n in after[-6:]] != ['segment', 'via']*3:
+    if after[:-8] != tree or [n[0] for n in after[-8:]] != ['segment', 'via']*3 + ['segment']*2:
         raise JobRefusal('ground ties: generation changed original board nodes')
     if path.read_bytes() != before:
         raise JobRefusal('ground ties: native inspection changed source')
-    return result, dict(schema=POLICY['schema'], policy=strict_json(canonical(policy)), connections=rows,
+    return result, dict(schema=POLICY['schema'], policy=strict_json(canonical(policy)), connections=rows, bars=bars,
         native_source_sha256=sha256(before).hexdigest(), input_sha256=parent,
         output_sha256=sha256(result).hexdigest(), helper_sha256=digest(Path(__file__)),
         acceptance_assessed=False)
@@ -164,16 +206,20 @@ def verify(board_path, record):
     tree=parse_sexpr(path.read_bytes())
     # Compare whole saved nodes before native loading: KiCad can infer a via's net from
     # touching copper, and any other saved property, such as a backdrill, must refuse.
-    for row in record.get('connections',[]):
-        for generated in parse_sexpr(b'(generated'+_copper_nodes(row)+b')')[1:]:
-            saved=[node for node in children(tree,generated[0])
-                   if children(node,'uuid')==children(generated,'uuid')]
-            if len(saved)!=1 or _by_value(saved[0])!=_by_value(generated):
-                raise JobRefusal('ground ties: saved copper differs from the generated form')
+    generated_nodes=b''.join([_copper_nodes(row) for row in record.get('connections',[])]
+                             +[_bar_node(row) for row in record.get('bars',[])])
+    for generated in parse_sexpr(b'(generated'+generated_nodes+b')')[1:]:
+        saved=[node for node in children(tree,generated[0])
+               if children(node,'uuid')==children(generated,'uuid')]
+        if len(saved)!=1 or _by_value(saved[0])!=_by_value(generated):
+            raise JobRefusal('ground ties: saved copper differs from the generated form')
     board = k.LoadBoard(str(path))
     if board is None:
         raise JobRefusal('ground ties: native verification load failed')
     expected = plan(board, record['policy'])
+    bars = exposed_pad_bars(board, record['policy'])
+    if ([{key: row.get(key) for key in bars[0]} for row in record.get('bars', [])] != bars):
+        raise JobRefusal('ground ties: exposed-pad hole frame differs')
     recorded = record.get('connections')
     if not isinstance(recorded, list) or len(recorded) != len(expected):
         raise JobRefusal('ground ties: connection inventory differs')
@@ -201,5 +247,5 @@ def verify(board_path, record):
             raise JobRefusal('ground ties: native stub differs')
     if digest(path) != before:
         raise JobRefusal('ground ties: verification changed board')
-    return dict(status='pass', board_sha256=before, connections=recorded,
+    return dict(status='pass', board_sha256=before, connections=recorded, bars=record['bars'],
                 acceptance_assessed=False)

@@ -41,6 +41,21 @@ class GroundTieTests(unittest.TestCase):
                 pad.SetPosition(k.VECTOR2I(x*1_000_000 + (-1_000_000 if number in ('2','3') else 1_000_000),40_000_000))
                 pad.SetNet(gnd if number in ('2','3') else signal)
                 fp.Add(pad)
+        regulator = k.FOOTPRINT(board)
+        regulator.SetReference('U1')
+        regulator.SetPosition(k.VECTOR2I(60_000_000, 40_000_000))
+        board.Add(regulator)
+        for dx, dy in ((-500_000, -500_000), (500_000, -500_000), (-500_000, 500_000), (500_000, 500_000)):
+            hole = k.PAD(regulator)
+            hole.SetNumber('9')
+            hole.SetAttribute(k.PAD_ATTRIB_PTH)
+            hole.SetShape(k.PAD_SHAPE_CIRCLE)
+            hole.SetSize(k.VECTOR2I(609_600, 609_600))
+            hole.SetDrillSize(k.VECTOR2I(304_800, 304_800))
+            hole.SetLayerSet(k.LSET.AllCuMask())
+            hole.SetPosition(k.VECTOR2I(60_000_000 + dx, 40_000_000 + dy))
+            hole.SetNet(gnd)
+            regulator.Add(hole)
         k.SaveBoard(str(self.path), board)
         self.original = self.path.read_bytes()
 
@@ -53,7 +68,7 @@ class GroundTieTests(unittest.TestCase):
     def test_generated_paths_preserve_native_source_and_replay_deterministically(self):
         output, receipt = self.seeded()
         self.assertEqual(self.path.read_bytes(), self.original)
-        self.assertEqual(parse_sexpr(output.read_bytes())[:-6], parse_sexpr(self.original))
+        self.assertEqual(parse_sexpr(output.read_bytes())[:-8], parse_sexpr(self.original))
         repeated, again = ties.seed(self.path, self.original, ties.POLICY)
         self.assertEqual((repeated, again), (output.read_bytes(), receipt))
         result = ties.verify(output, receipt)
@@ -64,6 +79,7 @@ class GroundTieTests(unittest.TestCase):
         self.assertEqual(ties.verify(output, receipt)['status'], 'pass')
         self.assertEqual(len(result['connections']), 3)
         self.assertTrue(all(r['front_length_mm']+r['barrel_length_mm']<=3 for r in result['connections']))
+        self.assertEqual(len(result['bars']), 2)
 
     def test_translated_and_rotated_pad_frames_drive_the_seed(self):
         k = self.k
@@ -80,12 +96,14 @@ class GroundTieTests(unittest.TestCase):
         for row in receipt['connections']:
             self.assertEqual(row['pad_nm'][0],row['via_nm'][0])
             self.assertNotEqual(row['pad_nm'][1],row['via_nm'][1])
+        for bar in receipt['bars']:
+            self.assertEqual(sum(a!=b for a,b in zip(bar['start_nm'],bar['end_nm'])),1)
 
     def test_changed_copper_or_endpoint_cannot_borrow_the_receipt(self):
         k = self.k
         output, receipt = self.seeded()
         good = output.read_bytes()
-        for fault in ('missing','net','diameter','bottom land','backdrill','drill','position','stub','pad'):
+        for fault in ('missing','net','diameter','bottom land','backdrill','drill','position','stub','pad','bar','no bar','hole'):
             with self.subTest(fault=fault):
                 output.write_bytes(good)
                 board = k.LoadBoard(str(output))
@@ -102,8 +120,13 @@ class GroundTieTests(unittest.TestCase):
                 elif fault=='drill': via.SetDrill(400_000)
                 elif fault=='position': via.SetPosition(via.GetPosition()+k.VECTOR2I(1,0))
                 elif fault=='stub': track.SetWidth(200_000)
+                elif fault in ('bar','no bar'):
+                    identity=receipt['bars'][0]['segment_uuid']
+                    bar=next(t for t in board.GetTracks() if t.m_Uuid.AsString()==identity)
+                    if fault=='bar': bar.SetWidth(600_000)
+                    else: board.Remove(bar)
                 else:
-                    fp=next(f for f in board.GetFootprints() if f.GetReference()=='U2')
+                    fp=next(f for f in board.GetFootprints() if f.GetReference()==('U2' if fault=='pad' else 'U1'))
                     pad=next(iter(fp.Pads()))
                     pad.SetPosition(pad.GetPosition()+k.VECTOR2I(1,0))
                 k.SaveBoard(str(output),board)
@@ -149,6 +172,21 @@ class GroundTieTests(unittest.TestCase):
         unrelated=copy.deepcopy(receipt)
         unrelated['connections'][0]['via_uuid']='00000000-0000-0000-0000-000000000000'
         self.assertFalse(_legal(ties.without_pending_plane_warnings(report,unrelated)))
+
+    def test_exposed_pad_needs_four_plated_ground_holes_in_two_rows(self):
+        k=self.k
+        for change in ('three holes','foreign net','skewed row'):
+            with self.subTest(change=change):
+                self.path.write_bytes(self.original)
+                board=k.LoadBoard(str(self.path))
+                fp=next(f for f in board.GetFootprints() if f.GetReference()=='U1')
+                holes=list(fp.Pads())
+                if change=='three holes': fp.Remove(holes[0])
+                elif change=='foreign net': holes[0].SetNet(board.FindNet('SIGNAL'))
+                else: holes[0].SetPosition(holes[0].GetPosition()+k.VECTOR2I(1,1))
+                k.SaveBoard(str(self.path),board)
+                with self.assertRaisesRegex(JobRefusal,'exposed pad|exposed-pad'):
+                    ties.seed(self.path,self.path.read_bytes(),ties.POLICY)
 
     def test_repeated_endpoint_reference_refuses(self):
         k=self.k

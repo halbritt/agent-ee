@@ -60,6 +60,17 @@ candidate-bound judgments must assess the geometry, conditional arithmetic and
 remaining applicability limits. Native continuity and DRC do not establish
 physical accuracy, EMC performance or a calibrated result.
 
+The generator also adds two 0.81 mm B.Cu bars, one across each pair of U1
+thermal holes. Those holes keep the supplier's 0.6096 mm land and 0.3048 mm drill,
+which gives a 0.1524 mm land ring. The captured JLCPCB page allows that for a via
+but gives, for a 2-layer 1 oz plated hole, "Recommended 0.25 mm or above; absolute
+minimum 0.18 mm". The output does not settle which class the supplier applies, so
+the bars widen the copper to about 0.25 mm on B.Cu; on F.Cu the holes sit inside
+the exposed pad. The holes stay 0.3048 mm with an open mask, below the page's
+recommended 0.5 mm plated hole size, and supplier preview has not been performed.
+The check measures unbroken saved copper around every plated pad hole on both outer
+layers and requires at least the 0.18 mm minimum.
+
 Primary source: captured `manufacturer-text/ads1115.txt`, TI SBAS444E,
 sections 5.5, 7.5.1, 9.1.7, 10.2 and 11.1;
 https://www.ti.com/lit/ds/symlink/ads1115.pdf.

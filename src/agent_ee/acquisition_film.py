@@ -27,10 +27,11 @@ MODEL_PATH = 'lib3d/Capacitor_SMD.3dshapes/C_1210_3225Metric.step'
 _GEOMETRY = strict_json((DATA / 'geometry-sources.json').read_bytes())
 _LEGACY_GEOMETRY = strict_json((DATA / 'geometry-sources-r1.json').read_bytes())
 _PREVIOUS_GEOMETRY = strict_json((DATA / 'geometry-sources-r2.json').read_bytes())
+_GROUND_GEOMETRY = strict_json((DATA / 'geometry-sources-r3.json').read_bytes())
 MODEL = _GEOMETRY['model']
 SOURCES = _GEOMETRY['sources']
-MODELS = {row['model']:row['sources'] for row in (_GEOMETRY, _PREVIOUS_GEOMETRY, _LEGACY_GEOMETRY)}
-CHECKERS = {row['model']:row['checker'] for row in (_GEOMETRY, _PREVIOUS_GEOMETRY)}
+MODELS = {row['model']:row['sources'] for row in (_GEOMETRY, _GROUND_GEOMETRY, _PREVIOUS_GEOMETRY, _LEGACY_GEOMETRY)}
+CHECKERS = {row['model']:row['checker'] for row in (_GEOMETRY, _GROUND_GEOMETRY, _PREVIOUS_GEOMETRY)}
 CHECKER = _GEOMETRY['checker']
 ANALYSIS = 'analysis/film/'
 STOCK = 'film-reference/assembly-stock-refresh/catalog.json'
@@ -293,6 +294,8 @@ def _requirements(files):
         pool['engineering-geometry']['params']['limits'][name]=dict(
             max=limit,unit=unit,condition='nominal25C-reviewed-acquisition')
     pool['engineering-geometry']['params']['limits']['ground_plane_components']['min']=1
+    pool['engineering-geometry']['params']['limits']['plated_ring_minimum']=dict(
+        min=.18,unit='mm',condition='nominal25C-reviewed-acquisition')
     catalog = acquisition_power_prepare._catalog(files, (
         'preparation/power-repair/catalog/catalog.json', 'power-reference/u1-stock/catalog.json',
         'power-reference/d1-stock/catalog.json', 'film-reference/catalog/catalog.json'))

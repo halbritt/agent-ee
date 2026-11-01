@@ -89,7 +89,8 @@ class FilmPreparationTests(unittest.TestCase):
             'ground_transition_missing':dict(max=0,unit='count',condition='nominal25C-reviewed-acquisition'),
             'ground_corridor_missing':dict(max=0,unit='count',condition='nominal25C-reviewed-acquisition'),
             'ground_plane_components':dict(min=1,max=1,unit='count',condition='nominal25C-reviewed-acquisition'),
-            'ground_return_path':dict(max=3,unit='mm',condition='nominal25C-reviewed-acquisition')})
+            'ground_return_path':dict(max=3,unit='mm',condition='nominal25C-reviewed-acquisition'),
+            'plated_ring_minimum':dict(min=.18,unit='mm',condition='nominal25C-reviewed-acquisition')})
         self.assertEqual(after['engineering-geometry'], expected_geometry)
         self.assertEqual(after['assembly']['params']['max_age_hours'], before['assembly']['params']['max_age_hours'])
 
@@ -103,8 +104,9 @@ class FilmPreparationTests(unittest.TestCase):
             self.assertEqual((points[0], points[-1]), (before['ground_strips'][name][0], before['ground_strips'][name][-1]))
         self.assertEqual(before['ground_strips']['J1-to-J2-pin1'], after['ground_strips']['J1-to-J2-pin1'])
         acquisition_mechanics._version(dict(schema=acquisition_mechanics.SCHEMA, sources=old['sources']))
-        previous=json.loads((film.DATA/'mechanics-test-case-r2.json').read_text())
-        acquisition_mechanics._version(dict(schema=acquisition_mechanics.SCHEMA,sources=previous['sources']))
+        for revision in ('r2','r3'):
+            previous=json.loads((film.DATA/f'mechanics-test-case-{revision}.json').read_text())
+            acquisition_mechanics._version(dict(schema=acquisition_mechanics.SCHEMA,sources=previous['sources']))
         current = json.loads((self.inputs / 'placement-mechanics.json').read_text())
         for name in ('analysis/geometry_model.py', 'analysis/geometry_contact.py', 'film-reference/geometry-path-basis.json',
                      'analysis/ground_reference.py','analysis/geometry_adapter.py','film-reference/ground-return-basis.md'):

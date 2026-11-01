@@ -104,7 +104,8 @@
     "ADP current screen uses manufacturer design-tool2mA ground-current allowance at nominal25C; not a universal maximum. Final ADC delivered rail and return path require fresh evaluation.",
     "C1/C2 maximum MU body dimensions govern mechanical checks; the captured generic KiCad 1210 STEP is illustrative, not an exact manufacturer model.",
     "Ground-strip witnesses detour around observed EP9 thermal reliefs at unchanged0.2mm width; final native copper and original rail-drop limits must still pass.",
-    "Local ground ties and DC/RF assessment add explicit measurement-reference evidence; selected3mm path and conditional material/parasitic models are not manufacturer accuracy guarantees."
+    "Local ground ties and DC/RF assessment add explicit measurement-reference evidence; selected3mm path and conditional material/parasitic models are not manufacturer accuracy guarantees.",
+    "U1 thermal hole bars widen bottom copper to the captured supplier recommendation; the supplier land and open mask are unchanged and supplier preview remains undeclared."
   ],
   "local_plane_returns": {
     "endpoints": [
@@ -121,9 +122,14 @@
         "2"
       ]
     ],
+    "exposed_pad_bars": {
+      "pad": "9",
+      "reference": "U1",
+      "width_mm": 0.81
+    },
     "maximum_path_mm": 3,
     "pad_edge_gap_mm": 0.2,
-    "schema": "agent-ee.acquisition-ground-ties/1",
+    "schema": "agent-ee.acquisition-ground-ties/2",
     "track_width_mm": 0.25,
     "via_diameter_mm": 0.6,
     "via_drill_mm": 0.3

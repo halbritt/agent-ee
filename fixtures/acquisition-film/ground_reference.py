@@ -1,4 +1,4 @@
-"""Native return-path witnesses and conditional DC/RF arithmetic.
+"""Native return-path witnesses, plated-hole rings and conditional DC/RF arithmetic.
 
 This is not a field solver or a calibrated ADC accuracy model. The narrow copper
 paths are constructive DC resistance estimates. RF values are sensitivities.
@@ -125,6 +125,57 @@ def annulus_ports(pad):
     return [(center.x+dx*radius,center.y+dy*radius) for dx,dy in ((1,0),(-1,0),(0,1),(0,-1))]
 
 
+def net_copper(board,net,layer):
+    """Saved copper of one net on one layer, before any drill is subtracted."""
+    copper=k.SHAPE_POLY_SET()
+    for zone in board.Zones():
+        if not zone.GetIsRuleArea() and zone.GetNetname()==net and zone.HasFilledPolysForLayer(layer):
+            copper.Append(zone.GetFilledPolysList(layer))
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if pad.GetNetname()==net and pad.IsOnLayer(layer) and pad.FlashLayer(layer):
+                pad.TransformShapeToPolygon(copper,layer,0,1,k.ERROR_INSIDE)
+    for item in board.GetTracks():
+        if item.GetNetname()!=net:continue
+        if item.GetClass()=='PCB_VIA':
+            if item.IsOnLayer(layer) and item.FlashLayer(layer):
+                item.TransformShapeToPolygon(copper,layer,0,1,k.ERROR_INSIDE)
+        elif item.GetLayer()==layer:
+            item.TransformShapeToPolygon(copper,layer,0,1,k.ERROR_INSIDE)
+    copper.Simplify()
+    return copper
+
+
+def plated_rings(board,ceiling_nm=500_000):
+    """Largest ring of unbroken saved copper around each plated pad hole on each outer layer.
+
+    A footprint land size misses copper that widens it, so this measures the saved copper.
+    """
+    cached={};rows=[]
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if pad.GetAttribute()!=k.PAD_ATTRIB_PTH:continue
+            drill=pad.GetDrillSize()
+            if drill.x!=drill.y or pad.GetOffset(k.B_Cu).x or pad.GetOffset(k.B_Cu).y:
+                raise ValueError('plated ring model needs a centred round drill')
+            for layer,name in ((k.F_Cu,'F.Cu'),(k.B_Cu,'B.Cu')):
+                key=(pad.GetNetname(),layer)
+                if key not in cached:cached[key]=net_copper(board,*key)
+                def holds(ring):
+                    disc=circle(pad.GetPosition(),drill.x/2+ring)
+                    disc.BooleanSubtract(cached[key]);disc.Simplify()
+                    return disc.IsEmpty() or disc.Area()==0
+                low,high=0,ceiling_nm
+                if holds(high):low=high
+                while high-low>1000:
+                    middle=(low+high)//2
+                    if holds(middle):low=middle
+                    else:high=middle
+                rows.append(dict(reference=fp.GetReference(),pad=pad.GetNumber(),layer=name,
+                    drill_mm=drill.x/1e6,ring_mm=low/1e6,at_ceiling=low==ceiling_nm))
+    return rows
+
+
 def measure(board,graph,model):
     policy=model['local_plane_returns']
     copper=bottom_copper(board)
@@ -186,10 +237,12 @@ def measure(board,graph,model):
             front_length_mm=length,barrel_length_mm=thickness,total_length_mm=length+thickness,
             conditional_front_ohm=front_r,conditional_barrel_ohm=barrel_r,
             plane_corridors=witnesses,filter_sensitivity=rf))
-    return dict(connections=rows,copper_components=copper.OutlineCount(),graph_resolution_mm=.0001,
+    rings=plated_rings(board)
+    return dict(connections=rows,copper_components=copper.OutlineCount(),graph_resolution_mm=.0001,plated_rings=rings,
         metrics=dict(ground_transition_missing=missing,ground_corridor_missing=corridor_missing,
             ground_plane_components=copper.OutlineCount(),
-            ground_return_path=max((r['total_length_mm'] for r in rows if r['status']=='measured'),default=0)),
+            ground_return_path=max((r['total_length_mm'] for r in rows if r['status']=='measured'),default=0),
+            plated_ring_minimum=min(row['ring_mm'] for row in rings)),
         limitations=['Constructive DC strip estimates use 17.5 um copper, 0.2 mm tracks, 20 um via plating and the retained 0.13 ohm contact allowance; not supplier guarantees.',
             '25 mA is a network stress sensitivity; no declared total-accuracy limit or calibration is inferred.',
             'ADC can sink SDA only. Host drives SCL and returns its current via J2.1.',

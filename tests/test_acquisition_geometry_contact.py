@@ -206,6 +206,20 @@ class SeededGroundReferenceTests(unittest.TestCase):
                 self.assertEqual(corridor['status'], 'witnessed')
                 self.assertGreater(corridor['conditional_path_ohm'], row['conditional_front_ohm'])
                 self.assert_reported_path_is_saved_copper(corridor, row['endpoint'])
+        self.assertGreaterEqual(metrics['plated_ring_minimum'], .18)
+        rings = {(r['reference'], r['pad'], r['layer']): r for r in observed['ground_reference']['plated_rings']}
+        self.assertGreaterEqual(rings[('U1', '9', 'B.Cu')]['ring_mm'], .25)
+        self.assertTrue(rings[('U1', '9', 'F.Cu')]['at_ceiling'])
+
+    def test_supplier_land_alone_falls_below_the_plated_ring_minimum(self):
+        # Full review 2026-11-01: 0.1524 mm is below the captured 0.18 mm PTH minimum.
+        board = k.LoadBoard(str(self.path))
+        for bar in self.receipt['bars']:
+            board.Remove(next(t for t in board.GetTracks() if t.m_Uuid.AsString() == bar['segment_uuid']))
+        k.SaveBoard(str(self.path), board)
+        ring = self.measure()['metrics']['plated_ring_minimum']
+        self.assertLess(ring, .18)
+        self.assertGreater(ring, .15)
 
     def assert_reported_path_is_saved_copper(self, corridor, endpoint):
         """Re-prove the reported points, independently of the search that found them."""

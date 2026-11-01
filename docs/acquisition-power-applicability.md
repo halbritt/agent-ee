@@ -323,3 +323,9 @@ changes no selection. The ordering code covers this part, and the specification
 gives reflow or wave soldering for 0603 at up to 1.0 µF, MSL level 1, and its
 soldering-heat and solderability test conditions. A series specification is not a
 supplier process qualification; fresh judgments must assess it.
+
+The candidate with that source passed all fourteen judgments and `file_release`,
+and the earlier ground concern no longer appeared. Its full review deferred one
+minor concern: the U1 thermal holes could be classed as plated holes below the
+supplier's annular-ring minimum. The [ground return note](acquisition-ground-return.md#u1-thermal-holes)
+describes the generated copper and the measured limit that remove that ambiguity.

@@ -61,6 +61,7 @@ every existing limit:
 | `ground_corridor_missing` | 0 | No constructed bottom-copper witness from the via to a J3 ground pin |
 | `ground_plane_components` | exactly 1 | Connected regions of bottom ground copper, after subtracting drills |
 | `ground_return_path` | 3 mm | Longest front path plus board thickness |
+| `plated_ring_minimum` | at least 0.18 mm | Smallest ring of unbroken saved copper around any plated pad hole, on either outer layer |
 
 The 3 mm limit is an engineering selection that makes the plane connection
 explicit. It is not a manufacturer requirement. Removing a tie does not always
@@ -88,6 +89,28 @@ is the pinned note that reviewers receive. It includes the driver correction:
 TI SBAS444E sections 7.5.1 and 9.1.7 state that the ADS1115 never drives SCL, so
 only SDA sink current can flow through U2.3. Host-driven SCL and SDA currents
 return through J2.1.
+
+## U1 thermal holes
+
+The ADP7104 footprint keeps the supplier's four thermal holes in the exposed pad:
+0.3048 mm drill on a 0.6096 mm land, a 0.1524 mm ring. The captured JLCPCB page
+allows that for a via. For a 2-layer 1 oz plated hole it gives "Recommended 0.25 mm
+or above; absolute minimum 0.18 mm". The mask is open, and neither the drill file
+nor the Gerbers settle which class the supplier applies, so a full review deferred
+this as a minor concern that only a supplier preview could close.
+
+Rather than rely on that classification, `acquisition_ground_ties.seed` adds two
+0.81 mm B.Cu bars, one across each pair of holes. This widens the copper to about
+0.25 mm on B.Cu, and on F.Cu the holes already sit inside the exposed pad. The
+footprint is unchanged because `parts.json` binds its hash and the retained model
+evidence binds `parts.json`. The bars join the receipt, so changing or removing one
+refuses it. The mask opening stays at the land size, so the copper beyond it is
+covered by mask.
+
+`ground_reference.plated_rings` measures saved copper because a footprint land size
+misses copper that widens it. Without the bars the measurement falls to about
+0.15 mm and fails the limit. The holes remain below the page's recommended 0.5 mm
+plated hole size, and no supplier preview has been performed.
 
 ## Refreshing assembly stock
 

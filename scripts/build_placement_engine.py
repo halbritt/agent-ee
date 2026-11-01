@@ -36,6 +36,7 @@ def sources(root):
              Path('fixtures/acquisition-film/mechanics-test-case.json'),
              Path('fixtures/acquisition-film/mechanics-test-case-r1.json'),
              Path('fixtures/acquisition-film/mechanics-test-case-r2.json'),
+             Path('fixtures/acquisition-film/mechanics-test-case-r3.json'),
              Path('fixtures/acquisition-typed/source-supplement.json'),
              Path('fixtures/acquisition-typed/power-repair.json'),
              Path('fixtures/acquisition-typed/power-repair-470.json'),
