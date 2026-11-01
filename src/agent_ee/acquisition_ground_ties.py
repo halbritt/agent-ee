@@ -120,6 +120,24 @@ def seed(board_path, data, policy):
         acceptance_assessed=False)
 
 
+def without_pending_plane_warnings(report, record):
+    """Drop one dangling-via warning per generated via, before the plane exists.
+
+    The bottom plane is added after routing. Final native DRC runs on the filled
+    board without this allowance, so a tie left unconnected still fails there.
+    """
+    pending = {row['via_uuid'] for row in record['connections']}
+    kept = []
+    for finding in report['violations']:
+        items = finding['items']
+        if (finding['type'] == 'via_dangling' and finding['severity'] == 'warning'
+                and len(items) == 1 and items[0]['uuid'] in pending):
+            pending.remove(items[0]['uuid'])
+        else:
+            kept.append(finding)
+    return {**report, 'violations': kept}
+
+
 def verify(board_path, record):
     """Verify actual saved copper and endpoint frames, including exact via centres."""
     import pcbnew as k

@@ -37,6 +37,11 @@ touches ground copper to `GND`, during both save and load. It then checks the
 loaded via, segment and pad frame against the receipt. Native DRC and the final
 measurement are separate obligations.
 
+The bottom plane is added after routing, so native DRC on the seeded board reports
+each generated via as dangling. `acquisition_ground_ties.without_pending_plane_warnings`
+removes one such warning per via in the receipt for that pre-route check only.
+Final DRC runs on the filled board without this allowance.
+
 The film geometry model keeps earlier model and checker revisions selectable
 through `geometry-sources-r1.json` and `geometry-sources-r2.json`, so earlier
 evidence retains its original identity.

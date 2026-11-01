@@ -119,6 +119,23 @@ class GroundTieTests(unittest.TestCase):
         with self.assertRaisesRegex(JobRefusal,'custody differs'):
             ties.verify(output,receipt)
 
+    def test_pending_plane_allowance_covers_only_generated_vias_before_the_plane_exists(self):
+        # Regression for the first native build on 2026-11-01: the reservation
+        # DRC runs before the bottom plane exists, so every generated via dangled.
+        from agent_ee.acquisition_local_return import _legal
+        from agent_ee.placement_job import drc
+        output,receipt=self.seeded()
+        report,_=drc(output,self.directory)
+        dangling=[v for v in report['violations'] if v['type']=='via_dangling']
+        self.assertEqual(len(dangling),3)
+        # This synthetic board has no outline, so keep only the findings under test.
+        report={**report,'violations':dangling,'schematic_parity':[]}
+        self.assertFalse(_legal(report))
+        self.assertTrue(_legal(ties.without_pending_plane_warnings(report,receipt)))
+        unrelated=copy.deepcopy(receipt)
+        unrelated['connections'][0]['via_uuid']='00000000-0000-0000-0000-000000000000'
+        self.assertFalse(_legal(ties.without_pending_plane_warnings(report,unrelated)))
+
     def test_repeated_endpoint_reference_refuses(self):
         k=self.k
         board=k.LoadBoard(str(self.path))

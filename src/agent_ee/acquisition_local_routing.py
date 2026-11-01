@@ -148,7 +148,9 @@ def produce(candidate_dir,destination,*,expected_inputs,mechanics_binding,planes
         report,execution=drc(trial/local.FILES[0],trial,clock=clock,cancel_dir=cancel_dir)
         report_sha=local._raw_report(trial,report,execution)
         record['native']=dict(execution=execution,report_sha256=report_sha)
-        if not local._legal(report) or local._warnings(report)!=local._warnings(baseline):
+        assessed=(ground.without_pending_plane_warnings(report,record['ground_ties'])
+                  if 'ground_ties' in record else report)
+        if not local._legal(assessed) or local._warnings(report)!=local._warnings(baseline):
             raise JobRefusal('local routing: ground reservations fail native checks')
         custody()
         local.verify_seed(trial/local.FILES[0],loops,clock=clock,cancel_dir=cancel_dir)
