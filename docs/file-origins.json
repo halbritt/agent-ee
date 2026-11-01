@@ -4382,6 +4382,17 @@
     },
     {
       "paths": [
+        "fixtures/acquisition-film/geometry_model.py",
+        "fixtures/acquisition-film/geometry_contact.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original native KiCad measurement code. The geometry checker derives from the owned acquisition-qualification checker; the contact helper uses native polygon operations and numeric path calculations. Neither file embeds vendor CAD, library shapes or manufacturer text."
+    },
+    {
+      "paths": [
         "src/agent_ee/acquisition_reverse_blocking.py"
       ],
       "kind": "owned-source",

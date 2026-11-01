@@ -25,8 +25,8 @@ def declaration(root):
 
 def _model_sources(model):
     from . import acquisition_film, acquisition_power_geometry
-    if model == acquisition_film.MODEL:
-        return {**_model_sources(acquisition_power_geometry.MODEL), **acquisition_film.SOURCES}
+    if model in acquisition_film.MODELS:
+        return {**_model_sources(acquisition_power_geometry.MODEL), **acquisition_film.MODELS[model]}
     if model == acquisition_power_geometry.MODEL:
         return {**_model_sources(acquisition_power_geometry.BASE), **acquisition_power_geometry.SOURCES}
     if model in acquisition_connector_geometry.MODELS:
@@ -84,10 +84,12 @@ def _identity(binding):
 
 
 def _version(document):
+    from . import acquisition_film
     sources = document['sources']
     model = sources['analysis/geometry-model.json']
     extra = _model_sources(model)
-    if (extra is None or sources['analysis/geometry_model.py'] != CHECKER
+    checker = acquisition_film.CHECKER if model == acquisition_film.MODEL else CHECKER
+    if (extra is None or sources['analysis/geometry_model.py'] != checker
             or set(sources) != set(SOURCES) | set(extra)
             or any(sources.get(name) != pin for name, pin in extra.items())):
         raise ValueError('unsupported acquisition model/checker revision or source custody')

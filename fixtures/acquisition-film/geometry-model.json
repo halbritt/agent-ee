@@ -33,6 +33,22 @@
       ],
       [
         106,
+        118.8
+      ],
+      [
+        105.5,
+        118.8
+      ],
+      [
+        105.5,
+        116.3
+      ],
+      [
+        106,
+        116.3
+      ],
+      [
+        106,
         101.5
       ],
       [
@@ -48,6 +64,22 @@
       [
         106,
         126.3
+      ],
+      [
+        106,
+        118.8
+      ],
+      [
+        105.5,
+        118.8
+      ],
+      [
+        105.5,
+        116.3
+      ],
+      [
+        106,
+        116.3
       ],
       [
         106,
@@ -70,7 +102,8 @@
     "Connector dimensions are manufacturer reference dimensions. No enclosed mated-height fit claim.",
     "0.075mm placement allowance is an assembly target requiring supplier preview/inspection.",
     "ADP current screen uses manufacturer design-tool2mA ground-current allowance at nominal25C; not a universal maximum. Final ADC delivered rail and return path require fresh evaluation.",
-    "C1/C2 maximum MU body dimensions govern mechanical checks; the captured generic KiCad 1210 STEP is illustrative, not an exact manufacturer model."
+    "C1/C2 maximum MU body dimensions govern mechanical checks; the captured generic KiCad 1210 STEP is illustrative, not an exact manufacturer model.",
+    "Ground-strip witnesses detour around observed EP9 thermal reliefs at unchanged0.2mm width; final native copper and original rail-drop limits must still pass."
   ],
   "loops": {
     "adc_loop": [

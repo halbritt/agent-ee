@@ -1,0 +1,132 @@
+{
+  "accepted": false,
+  "base_checker": "fb225768d6812abf6b116da31e029b940ca64ccf1427f9c0ef7b04814cf10294",
+  "base_model": "486dc5354d351f1bff274d7759a2e8805437be64701d51106cc3ac30e7dfbfd0",
+  "checker_sha256": "bdf1eb99dc911e3380a73f9e6d0eab54033ff8b156d1300e4a32698f341bbbf9",
+  "contact": "Join only positive-area same-net, same-layer native copper. Convex SMD and straight-track legs pass through a verified interior point; no proximity or zero-area touching joins.",
+  "contact_helper_sha256": "11bcf0cc22bf06a817fb682a9579fb2457c3ef97cb5f53e809f266b3345ffab0",
+  "ground_strips": {
+    "J1-to-J3-pin2": {
+      "after": [
+        [
+          106,
+          126.3
+        ],
+        [
+          106,
+          118.8
+        ],
+        [
+          105.5,
+          118.8
+        ],
+        [
+          105.5,
+          116.3
+        ],
+        [
+          106,
+          116.3
+        ],
+        [
+          106,
+          101.5
+        ],
+        [
+          122,
+          101.5
+        ],
+        [
+          122,
+          104.3
+        ]
+      ],
+      "before": [
+        [
+          106,
+          126.3
+        ],
+        [
+          106,
+          101.5
+        ],
+        [
+          122,
+          101.5
+        ],
+        [
+          122,
+          104.3
+        ]
+      ]
+    },
+    "J1-to-J3-pin4": {
+      "after": [
+        [
+          106,
+          126.3
+        ],
+        [
+          106,
+          118.8
+        ],
+        [
+          105.5,
+          118.8
+        ],
+        [
+          105.5,
+          116.3
+        ],
+        [
+          106,
+          116.3
+        ],
+        [
+          106,
+          101.5
+        ],
+        [
+          126,
+          101.5
+        ],
+        [
+          126,
+          104.3
+        ]
+      ],
+      "before": [
+        [
+          106,
+          126.3
+        ],
+        [
+          106,
+          101.5
+        ],
+        [
+          126,
+          101.5
+        ],
+        [
+          126,
+          104.3
+        ]
+      ]
+    }
+  },
+  "observation": {
+    "board_sha256": "2040f20bd2eda776d37eb39a296bbc2c7429f61ff268aa0cbfe9b7df0cac38b1",
+    "original_outside_mm2": 0.326930779039,
+    "revised_outside_mm2": 0,
+    "source": "Retained native ground-diagnosis-r2; software observation, not physical validation."
+  },
+  "schema": "agent-ee.acquisition-film-geometry-paths/1",
+  "unchanged": [
+    "Circuit and selected part manifests",
+    "Every component body, pad, drill and placement relationship",
+    "Connector endpoints, ground-strip width and DC resistance formula/limits",
+    "Native routing reservations, full ERC/DRC and independent acceptance gates"
+  ],
+  "width_mm": 0.2
+}

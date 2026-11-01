@@ -25,8 +25,11 @@ SUPPLIER = 'film-reference/supplier/C3778570.raweasy.json'
 RECORD = 'film-reference/C3778570.part-record.json'
 MODEL_PATH = 'lib3d/Capacitor_SMD.3dshapes/C_1210_3225Metric.step'
 _GEOMETRY = strict_json((DATA / 'geometry-sources.json').read_bytes())
+_LEGACY_GEOMETRY = strict_json((DATA / 'geometry-sources-r1.json').read_bytes())
 MODEL = _GEOMETRY['model']
 SOURCES = _GEOMETRY['sources']
+MODELS = {MODEL: SOURCES, _LEGACY_GEOMETRY['model']: _LEGACY_GEOMETRY['sources']}
+CHECKER = _GEOMETRY['checker']
 ANALYSIS = 'analysis/film/'
 
 
@@ -140,6 +143,9 @@ def sources(base, selected):
     _parts(files, record)
     for path, fixture, expected in [
             ('analysis/geometry-model.json', 'geometry-model.json', MODEL),
+            ('analysis/geometry_model.py', 'geometry_model.py', CHECKER),
+            ('analysis/geometry_contact.py', 'geometry_contact.py', SOURCES['analysis/geometry_contact.py']),
+            ('film-reference/geometry-path-basis.json', 'geometry-path-basis.json', SOURCES['film-reference/geometry-path-basis.json']),
             ('film-reference/geometry-basis.json', 'geometry-basis.json', SOURCES['film-reference/geometry-basis.json'])]:
         raw = (DATA / fixture).read_bytes()
         if sha256(raw).hexdigest() != expected:
@@ -218,6 +224,7 @@ def _power(files, run, film_model):
 def _requirements(files):
     document = strict_json(files['requirement-map.json'])
     pool = typed_overlay._check_pool(document)
+    pool['engineering-geometry']['params']['tool']['inputs'].append('analysis/geometry_contact.py')
     catalog = acquisition_power_prepare._catalog(files, (
         'preparation/power-repair/catalog/catalog.json', 'power-reference/u1-stock/catalog.json',
         'power-reference/d1-stock/catalog.json', 'film-reference/catalog/catalog.json'))
@@ -246,6 +253,7 @@ def _requirements(files):
         brief['sources'] = [ANALYSIS + 'power-application.json' if p.startswith(acquisition_power_prepare.ANALYSIS) else p
                             for p in brief['sources']]
         brief['sources'].append('film-reference/geometry-basis.json')
+        brief['sources'].append('film-reference/geometry-path-basis.json')
         brief['sources'] += ['film-reference/engineering/' + p for p in (
             'host-extraction-r2/MU.txt', 'technical-note.txt', 'model-cautions.txt',
             'impedance-observation.json', 'import.json')]

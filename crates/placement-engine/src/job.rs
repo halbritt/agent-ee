@@ -563,6 +563,14 @@ const MECHANICS_PH_SOURCES: &[(&str, &str)] = &[
 ];
 
 fn mechanics_sources(model: &str) -> Result<Vec<(&'static str, &'static str)>> {
+    if model == "457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4" {
+        let mut sources = mechanics_sources("486dc5354d351f1bff274d7759a2e8805437be64701d51106cc3ac30e7dfbfd0")?;
+        sources.extend_from_slice(&[
+            ("analysis/geometry_contact.py", "11bcf0cc22bf06a817fb682a9579fb2457c3ef97cb5f53e809f266b3345ffab0"),
+            ("film-reference/geometry-path-basis.json", "1463621bfab1b11021fffdc49fb5bc4d16208825651581e7be4e283a00b3eef7"),
+        ]);
+        return Ok(sources);
+    }
     if model == "486dc5354d351f1bff274d7759a2e8805437be64701d51106cc3ac30e7dfbfd0" {
         let mut sources = mechanics_sources("123e302ecd312677500ca28173ca94a806f5ad96ab12518b548f04a582328915")?;
         sources.extend_from_slice(&[
@@ -620,7 +628,10 @@ fn acquisition_source_model(m: &Value) -> Result<Value> {
     let model = sources.get("analysis/geometry-model.json").and_then(Value::as_str)
         .context("missing mechanics model hash")?;
     let supplementary = mechanics_sources(model)?;
-    ensure!(sources.get("analysis/geometry_model.py").and_then(Value::as_str) == Some(MECHANICS_CHECKER),
+    let checker = if model == "457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4" {
+        "bdf1eb99dc911e3380a73f9e6d0eab54033ff8b156d1300e4a32698f341bbbf9"
+    } else { MECHANICS_CHECKER };
+    ensure!(sources.get("analysis/geometry_model.py").and_then(Value::as_str) == Some(checker),
             "unsupported mechanics model/checker");
     ensure!(sources.len() == MECHANICS_BASE_SOURCES.len() + supplementary.len()
             && MECHANICS_BASE_SOURCES.iter().all(|key| sources.contains_key(*key)),
@@ -3743,7 +3754,8 @@ mod tests {
         let cases: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-qualification/mechanics-derived-test-cases.json")).unwrap();
         let power: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-reverse-blocking/mechanics-test-case.json")).unwrap();
         let film: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-film/mechanics-test-case.json")).unwrap();
-        for case in cases["cases"].as_array().unwrap().iter().chain([&power, &film]) {
+        let film_original: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-film/mechanics-test-case-r1.json")).unwrap();
+        for case in cases["cases"].as_array().unwrap().iter().chain([&power, &film_original, &film]) {
             let mut raw = source_mechanics_fixture(true, false);
             raw["mechanics"]["model_raw"] = case["model_raw"].clone();
             raw["mechanics"]["sources"] = case["sources"].clone();

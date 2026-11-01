@@ -204,3 +204,49 @@ checks and rerun the corrected candidate through the ordinary gates.
 `geometry-diagnosis-r1/` and `geometry-diagnosis-r2/` retain the observations in
 the film-build integration directory above. Manufacturer applicability remains
 a separate electrical judgment; these geometric results do not resolve it.
+
+## Native copper contact and ground-corridor repair
+
+The film geometry checker now measures positive-area pad/trace contact even
+when the trace center line lies outside the pad. It requires matching native
+net and layer identities. For supported convex SMD pads, the measured path
+runs from the pad center through a point inside both copper shapes and then
+to the trace center line. Gaps, touching edges and wrong nets or layers cannot
+create a connection. Unsupported positive contacts stop the check. The prior
+film model retains its original checker; the new model binds the new checker,
+contact helper and path-basis record by exact hashes.
+
+The two J1-to-J3 ground corridors crossed thermal-relief cuts around U1's
+exposed-pad holes. They did not cross the drill holes themselves. Both generated
+corridors now detour 0.5 mm left between y=118.8 and y=116.3 mm. Each gains 1 mm
+of path length at the original 0.2 mm width. Routing reserves these corridors
+before the final native copper check. Connector endpoints, component geometry,
+electrical inputs, resistance calculation and numeric limits are unchanged.
+
+On the unchanged saved board above, the corrected checker and corridors give
+zero ground-strip area outside copper and an estimated rail drop of 14.432 mV,
+below the existing 16.5 mV limit. All other original geometry limits pass.
+This is a diagnostic result, not acceptance of a regenerated board. Thirty
+focused Python/native tests passed with no skips, including that exact saved
+board and source-tamper refusals; all 123 Rust tests passed.
+
+These records are retained under
+`~/.local/share/agent-ee/zeroasic-20261029-agent707/film-geometry-closure-r1/`:
+`ground-diagnosis-r1/`, `ground-diagnosis-r2/`, `target-measurement-r1/`,
+`regressions-r3/` and `planner-build-execution.json`. The failed attempts remain
+available alongside the successful tests.
+
+The regenerated candidate completed through artwork in 484.592 s. Its saved
+board SHA-256 is
+`c38405ad95afe463d4f8baeef38f21ecd3f6f242467ef305a71a48b2ae72fe07`.
+The fresh suite completed in 163.572 s: 37 checks passed and one netlist check
+was informational. ERC, DRC, schematic parity and opens were zero. All 17
+components and 18 final-coordinate relationships passed the placement contract.
+The geometry check measured zero ground-strip area outside copper and a
+14.432 mV rail drop; all original margins passed. `native-r1/`, `checks-r1/`
+and `native-result.json` bind these results to the new board.
+
+The two geometry failures are closed for this generated candidate. Overall
+review status remains incomplete while fresh independent judgments and the
+full release checks are outstanding. These results do not grant nominal power
+applicability or permission to replace the frozen G4 reference.
