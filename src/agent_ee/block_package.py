@@ -223,7 +223,7 @@ def _check_fresh_original(out, scope, plan):
                 shutil.copyfile(source, Path(work) / ('board' + suffix))
         try:
             problem, record = placement_job.capture(Path(work) / 'board.kicad_pcb', normalized,
-                                                    clock=placement_job.Clock(60), cancel_dir=Path(out))
+                                                    clock=placement_job.Clock(120), cancel_dir=Path(out))
         except (placement_job.JobRefusal, placement_job.JobStopped) as exc:
             raise ValueError('mechanics fresh original capture failed: ' + str(exc)) from exc
     job = placement.directory / 'placement'
