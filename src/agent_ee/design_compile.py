@@ -201,7 +201,14 @@ def selected_parts(design, root, record, members_sha):
                 ),
             )
         )
-    write_json(root / "decisions.json", decisions)
+    write_json(
+        root / "decisions.json",
+        dict(
+            parts=[
+                dict(id=ref, reason=reason) for ref, reason in sorted(decisions.items())
+            ]
+        ),
+    )
     for p in parts:
         p["selection"]["decision_ref"]["sha256"] = digest(root / "decisions.json")
     declaration = next(
@@ -579,8 +586,11 @@ def cpl_policy(design, root):
         pr = root / f"cpl/supplier/{lcsc}.provenance.json"
         provenance = load(pr)
         provenance["path"] = f"cpl/supplier/{lcsc}.raweasy.json"
-        if "response" in provenance:
-            provenance["response"]["path"] = f"cpl/supplier/{lcsc}.full.json"
+        span_receipt = root / f"cpl/supplier/{lcsc}.capture.json"
+        if span_receipt.is_file():
+            receipt = load(span_receipt)
+            receipt["path"] = f"cpl/supplier/{lcsc}.full.json"
+            write_json(span_receipt, receipt)
         write_json(pr, provenance)
         suppliers.append(f"cpl/supplier/{lcsc}.provenance.json")
         native = library_footprint(cad, captures, part["footprint"])

@@ -28,7 +28,7 @@ Unknown fields are refused.
 | Field | Design decision |
 | --- | --- |
 | `name` | Short project identifier, also used for native filenames. |
-| `requirement_prefix` | Prefix for generated source requirement IDs. |
+| `requirement_prefix` | 1–16 uppercase ASCII letters/digits, beginning with a letter; used for generated source requirement IDs. |
 | `intent` | One paragraph describing the design and its limits. |
 | `board` | `width_mm`, `height_mm`, `thickness_mm`, `copper_layers`, `max_component_height_mm`. |
 | `parts` | Object keyed by reference; each part has `lcsc`, `value`, `lib_id`, `footprint`, `group`, and optional `connector: {rows, columns}`. Assembly type comes from the native footprint attribute. |

@@ -494,3 +494,57 @@ class DesignCompileTests(unittest.TestCase):
         self.assertEqual(
             derivation["selected_routing"]["via_diameter"], routing["via_diameter"]
         )
+
+    def test_supplier_response_span_is_replayed_and_remains_bound_after_relocation(
+        self,
+    ):
+        from agent_ee.design_capture import result_span
+
+        raw = (self.captures / "supplier/C1.raweasy.json").read_bytes()
+        full = b'{"success":true,"result":' + raw + b"}"
+        span, (start, end) = result_span(full)
+        (self.captures / "supplier/C1.full.json").write_bytes(full)
+        write_json(
+            self.captures / "supplier/C1.capture.json",
+            dict(
+                path="supplier/C1.full.json",
+                sha256=hashlib.sha256(full).hexdigest(),
+                byte_start=start,
+                byte_end=end,
+            ),
+        )
+        self.compile()
+        root = self.root / "bundle/inputs"
+        receipt = json.loads((root / "cpl/supplier/C1.capture.json").read_text())
+        self.assertTrue((root / receipt["path"]).is_file())
+        self.assertEqual(
+            (root / receipt["path"]).read_bytes()[
+                receipt["byte_start"] : receipt["byte_end"]
+            ],
+            span,
+        )
+        (self.captures / "supplier/C1.full.json").write_bytes(full + b" ")
+        with self.assertRaises(DesignError) as caught:
+            self.compile("refused")
+        self.assertIn("supplier full response", str(caught.exception))
+        self.assertFalse((self.root / "refused").exists())
+
+    def test_linked_capture_and_invalid_requirement_prefix_are_refused_before_output(
+        self,
+    ):
+        path = self.captures / "cad/Owned.kicad_sym"
+        raw = path.read_bytes()
+        target = self.root / "external-symbol"
+        target.write_bytes(raw)
+        path.unlink()
+        path.symlink_to(target)
+        with self.assertRaises(DesignError) as caught:
+            self.compile()
+        self.assertIn("captures:", str(caught.exception))
+        path.unlink()
+        path.write_bytes(raw)
+        self.design["requirement_prefix"] = "lower_case"
+        with self.assertRaises(DesignError) as caught:
+            self.compile()
+        self.assertIn("requirement_prefix", str(caught.exception))
+        self.assertFalse((self.root / "bundle").exists())

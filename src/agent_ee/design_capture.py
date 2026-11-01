@@ -17,6 +17,9 @@ MAX_SUPPLIER_BYTES = 8 * 1024 * 1024
 
 def result_span(raw):
     """Retain the exact UTF-8 byte span of the top-level result object."""
+    from .catalog import strict_json
+
+    strict_json(raw)
     text = raw.decode("utf-8")
     decoder = json.JSONDecoder()
     pos = 0
@@ -61,6 +64,38 @@ def result_span(raw):
     if found is None:
         raise ValueError("supplier response lacks result")
     return raw[found[0] : found[1]], found
+
+
+def validate_supplier_capture(root, lcsc):
+    """Replay a retained component and, when present, its exact response span."""
+    from .design import load
+    from .land_pattern import validate_provenance
+    from .easyeda_footprint import parse_package
+
+    root = Path(root)
+    provenance = load(root / f"supplier/{lcsc}.provenance.json")
+    validate_provenance(provenance, lcsc)
+    raw = (root / provenance["path"]).read_bytes()
+    if (
+        hashlib.sha256(raw).hexdigest() != provenance["sha256"]
+        or len(raw) != provenance["size_bytes"]
+    ):
+        raise ValueError("supplier footprint bytes differ from provenance")
+    parse_package(raw, lcsc, 200)
+    receipt_path = root / f"supplier/{lcsc}.capture.json"
+    if receipt_path.is_file():
+        receipt = load(receipt_path)
+        from .candidate import safe_relative
+
+        full = (root / safe_relative(receipt["path"])).read_bytes()
+        if hashlib.sha256(full).hexdigest() != receipt["sha256"]:
+            raise ValueError("supplier full response differs from capture receipt")
+        span, (start, end) = result_span(full)
+        if (start, end) != (receipt["byte_start"], receipt["byte_end"]) or span != raw:
+            raise ValueError(
+                "supplier component is not the exact recorded result byte span"
+            )
+    return provenance
 
 
 def capture_cad(design, out, kicad_root):

@@ -66,6 +66,20 @@ def validate(design, captures=None, *, cad_only=False):
     shape_errors = problems(design)
     if shape_errors:
         raise DesignError(shape_errors)
+    if captures is not None:
+        from .requirement_map import input_inventory
+
+        try:
+            root = Path(captures)
+            if not root.is_dir() or root.is_symlink():
+                raise ValueError("capture root must be a real directory")
+            input_inventory(root)
+        except (OSError, ValueError) as exc:
+            raise DesignError(
+                [
+                    f"captures: supply regular captured files without links or special files: {exc}"
+                ]
+            ) from exc
     errors = []
 
     def fail(path, why):
@@ -114,6 +128,14 @@ def validate(design, captures=None, *, cad_only=False):
             r"[A-Za-z][A-Za-z0-9_-]{0,47}", design[key]
         ):
             fail(key, "use a short identifier beginning with a letter")
+
+    from .spec_record import PREFIX
+
+    if not PREFIX.fullmatch(design["requirement_prefix"]):
+        fail(
+            "requirement_prefix",
+            "use 1 to 16 uppercase ASCII letters/digits, beginning with a letter",
+        )
 
     def prose(text, path):
         if (
@@ -177,6 +199,11 @@ def validate(design, captures=None, *, cad_only=False):
     cad = Path(captures) / "cad" if captures is not None else None
     for ref, p in parts.items():
         path = "parts." + ref
+        if ref == "PWR01" or re.fullmatch(r"FLG[0-9]+", ref):
+            fail(
+                path,
+                "reference is reserved for generated power symbols; select another physical reference",
+            )
         if not re.fullmatch(r"[A-Z]+[1-9][0-9]*", ref):
             fail(path, "use a physical KiCad reference such as U1")
         if not fields(
@@ -227,7 +254,10 @@ def validate(design, captures=None, *, cad_only=False):
                 node = parse_sexpr((cad / footprint_path(p)).read_bytes())
                 pads[ref] = [n[1] for n in children(node, "pad") if n[1]]
                 if any(n[3] == "custom" for n in children(node, "pad")):
-                    fail(path + ".footprint", "custom pads need native qualification and are not supported by offline design compile; select ordinary pads")
+                    fail(
+                        path + ".footprint",
+                        "custom pads need native qualification and are not supported by offline design compile; select ordinary pads",
+                    )
                 attrs = {v for n in children(node, "attr") for v in n[1:]} & {
                     "smd",
                     "through_hole",
@@ -244,7 +274,7 @@ def validate(design, captures=None, *, cad_only=False):
                         path + ".footprint",
                         f"symbol pins {sorted(pins[ref])} and footprint pads {sorted(set(pads[ref]))} must agree; select matching CAD",
                     )
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError, IndexError, TypeError) as exc:
                 fail(path + ".footprint", f"capture the selected footprint: {exc}")
 
     def terminal(term, path):
@@ -542,15 +572,6 @@ def validate(design, captures=None, *, cad_only=False):
                             "supply finite dimensions in the footprint local frame",
                         )
     if captures is not None and not cad_only:
-        from .requirement_map import input_inventory
-
-        try:
-            input_inventory(captures)
-        except (OSError, ValueError) as exc:
-            fail(
-                "captures",
-                f"use a regular directory without links or special files: {exc}",
-            )
         from .part_record import prepare_record
 
         for ref, p in parts.items():
@@ -577,15 +598,9 @@ def validate(design, captures=None, *, cad_only=False):
                     blob(root, "datasheets/manifest.json"),
                     dsid,
                 )
-                provenance = root / f"supplier/{p['lcsc']}.provenance.json"
-                if not provenance.is_file():
-                    raise ValueError("missing supplier footprint record")
-                pr = load(provenance)
-                from .land_pattern import validate_provenance
+                from .design_capture import validate_supplier_capture
 
-                validate_provenance(pr, p["lcsc"])
-                if digest(root / pr["path"]) != pr["sha256"]:
-                    raise ValueError("supplier footprint hash mismatch")
+                validate_supplier_capture(root, p["lcsc"])
             except (OSError, ValueError, KeyError) as exc:
                 fail(
                     "parts." + ref + ".lcsc", f"run design capture for this part: {exc}"
