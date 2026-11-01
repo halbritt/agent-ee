@@ -1,10 +1,12 @@
 """Native subscription adapters adapted from Relay/Council's observed CLI contracts."""
+import contextlib
 import hashlib
 import json
 import os
 import re
 import shutil
 import stat
+import tempfile
 from pathlib import Path
 from uuid import UUID
 
@@ -206,7 +208,7 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
         if not credential.is_file():
             record['error'] = 'subscription credential unavailable; no fallback attempted'
             return record, None
-        mounts = [(executable, '/reviewer'), (credential, guest), *evidence_mounts(run_dir, label)]
+        mounts = [(executable, '/reviewer'), *evidence_mounts(run_dir, label)]
         if harness == 'codex' and tools:
             host = Path(executable).parent / 'codex-code-mode-host'
             if not host.is_file():
@@ -215,15 +217,16 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
             mounts += [(host, '/codex-code-mode-host')]
             record['tool_host_sha256'] = digest(host)
         record['harness_binary_sha256'] = digest(executable)
-        record.update(
-            native_run.run(
-                native_run.Intent('model', argv, stdin=stdin, timeout=timeout, network=True),
-                inputs=Path(run_dir) / 'inputs',
-                work=work,
-                mounts=mounts,
-                cancel=cancellation,
+        with seat_credential(credential) as mounted:
+            record.update(
+                native_run.run(
+                    native_run.Intent('model', argv, stdin=stdin, timeout=timeout, network=True),
+                    inputs=Path(run_dir) / 'inputs',
+                    work=work,
+                    mounts=[(mounted, guest), *mounts],
+                    cancel=cancellation,
+                )
             )
-        )
         if record['execution'] != 'ok':
             record['error'] = 'harness execution failed; inspect retained console; no fallback attempted'
             return record, None
@@ -259,6 +262,21 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
         return record, None
     finally:
         shutil.rmtree(home)
+
+
+@contextlib.contextmanager
+def seat_credential(path):
+    """A RAM-only copy of a login credential for one seat to mount read-only.
+
+    A login refresh replaces the credential file. A container's single-file bind then
+    holds the unlinked inode, which still reads but can no longer be bind-mounted, so
+    every seat started after the refresh would fail. The copy is never in a retained run.
+    """
+    with tempfile.TemporaryDirectory(dir='/dev/shm', prefix='agent-ee-credential-') as directory:
+        copy = Path(directory) / Path(path).name
+        shutil.copyfile(path, copy)
+        copy.chmod(0o400)
+        yield copy
 
 
 def evidence_mounts(run_dir, label):

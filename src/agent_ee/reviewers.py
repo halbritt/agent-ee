@@ -491,19 +491,20 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
                 "--json-schema", json.dumps(schema, separators=(",", ":"))]
         if tools:
             argv += ["--allowedTools", "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch", "--add-dir", "/candidate", "--output-format", "stream-json", "--verbose"]
-        from .harnesses import evidence_mounts
+        from .harnesses import evidence_mounts, seat_credential
 
-        execution = native_run.run(
-            native_run.Intent('reviewer', argv, stdin=prompt, timeout=timeout, network=True),
-            inputs=run_dir / "inputs",
-            work=work,
-            cancel=cancellation,
-            mounts=[
-                (executable, "/reviewer"),
-                (credentials, "/work/home/.claude/.credentials.json"),
-                *evidence_mounts(run_dir, label),
-            ],
-        )
+        with seat_credential(credentials) as credential:
+            execution = native_run.run(
+                native_run.Intent('reviewer', argv, stdin=prompt, timeout=timeout, network=True),
+                inputs=run_dir / "inputs",
+                work=work,
+                cancel=cancellation,
+                mounts=[
+                    (executable, "/reviewer"),
+                    (credential, "/work/home/.claude/.credentials.json"),
+                    *evidence_mounts(run_dir, label),
+                ],
+            )
         record.update(execution)
         record["harness_binary_sha256"] = digest(executable)
         if execution["execution"] != "ok":
@@ -543,7 +544,7 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
             record["error"] = str(exc)
             return record, None
     finally:
-        # Credentials are a read-only mount, never a copy in the retained run.
+        # Credentials are a read-only mount from RAM, never a copy in the retained run.
         shutil.rmtree(work / "home", ignore_errors=False)
 
 

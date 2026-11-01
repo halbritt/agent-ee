@@ -150,7 +150,9 @@ engineering workflow. The model-selection experiment uses `investigate`.
 | Codex | `~/.codex/auth.json`; `AGENT_EE_CODEX_AUTH_HOME` selects an existing auth directory explicitly | ChatGPT login required, user config/rules ignored, ephemeral session, ordinary tools plus live web search, native JSONL and strict response schema |
 | Agy | `~/.gemini/antigravity-cli/antigravity-oauth-token` | Fresh settings/home, native tools, JSONL and terminal `structured_output`; requested model/session checked |
 
-Credentials are read-only mounts, not copied to artifacts. The parent environment
+Each seat mounts a read-only copy of its credential from `/dev/shm`, removed when the
+seat ends and never copied to artifacts, so a login refresh during a long review does
+not fail the seats that start after it. The parent environment
 is cleared. There is no API-key/OpenRouter route, automatic account switch or
 model substitution. Initial reviews run concurrently, at most two calls at once.
 Call admission and harness-failure publication share a coordinator lock: a call
