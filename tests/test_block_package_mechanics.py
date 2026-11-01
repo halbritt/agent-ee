@@ -236,12 +236,23 @@ class MechanicsPackageTests(unittest.TestCase):
         """The same retained run, as a build that declares mechanics and no block contract."""
         plan=deepcopy(self.plan);plan['placement'].pop('block_contract')
         path=self.placement.directory/'placement/capture.json';capture=read_json(path)
-        capture.pop('block_contract');write_json(path,capture);self.reseal()
+        capture.pop('block_contract');capture['schema']='agent-ee.placement-job-capture/1'
+        write_json(path,capture);self.reseal()
+        self.original_capture=json.dumps(dict(problem=read_json(path.with_name('problem.json')),record=capture)).encode()
         return plan
+
+    def fresh_capture(self,call):
+        """The native read of the sealed original board, which retained edits cannot change."""
+        self.assertEqual(call.intent.argv[-2],'_capture')
+        return native_run.Outcome(stdout=self.original_capture)
+
+    def produce_mechanics_only(self,plan):
+        with native_run.using(native_run.Recorded(self.fresh_capture)):
+            block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,plan)
 
     def test_mechanics_only_build_proves_final_mechanics_through_package(self):
         plan=self.mechanics_only()
-        block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,plan)
+        self.produce_mechanics_only(plan)
         retained_run.record_completion(self.root,self.report,self.artwork,self.candidate);retained_run.write_report(self.root,self.report)
         binding=block_package.verify(self.root,self.candidate,self.scope,plan)
         self.assertEqual(binding['board_sha256'],digest(self.candidate/self.scope['board']))
@@ -251,7 +262,7 @@ class MechanicsPackageTests(unittest.TestCase):
 
     def test_mechanics_only_build_refuses_failed_or_substituted_evidence(self):
         plan=self.mechanics_only()
-        produce=lambda:block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,plan)
+        produce=lambda:self.produce_mechanics_only(plan)
         job=self.placement.directory/'placement'
         def rewrite(name,change):
             value=read_json(job/name);change(value);write_json(job/name,value);self.reseal()
@@ -259,10 +270,16 @@ class MechanicsPackageTests(unittest.TestCase):
         cases=dict(
             failed_final=('job-report.json',lambda r:r['final']['mechanics'].update(status='defect'),'missing, failed or stale'),
             other_board=('job-report.json',lambda r:r['final'].update(board_sha256='b'*64),'missing, failed or stale'),
-            changed_binding=('capture.json',lambda c:c['mechanics'].update(binding_sha256='b'*64),'binding differs'),
-            missing_binding=('capture.json',lambda c:c.pop('mechanics'),'binding differs'),
-            other_problem=('problem.json',lambda p:(p['mechanics'].update(binding_sha256='b'*64),problem_identity(p)),'problem identity differs'),
-            stale_problem=('problem.json',lambda p:p['footprints'][0]['pose'].update(x_nm=1),'problem identity differs'))
+            changed_binding=('capture.json',lambda c:c['mechanics'].update(binding_sha256='b'*64),'fresh capture'),
+            missing_binding=('capture.json',lambda c:c.pop('mechanics'),'fresh capture'),
+            other_problem=('problem.json',lambda p:(p['mechanics'].update(binding_sha256='b'*64),problem_identity(p)),'fresh capture'),
+            stale_problem=('problem.json',lambda p:p['footprints'][0]['pose'].update(x_nm=1),'fresh capture'),
+            moved_owner=('problem.json',lambda p:(p['footprints'][0]['pose'].update(x_nm=1),problem_identity(p)),'fresh capture'),
+            changed_body=('problem.json',lambda p:(p['footprints'][0].update(source_body_local_nm=[-1,-1,1,1]),problem_identity(p)),'fresh capture'),
+            changed_role=('problem.json',lambda p:(p['footprints'][0].update(role='fixed_body'),problem_identity(p)),'fresh capture'),
+            changed_pad=('problem.json',lambda p:(p['footprints'][0]['pads'][0].update(number='99'),problem_identity(p)),'fresh capture'),
+            other_facts=('capture.json',lambda c:c.update(facts_sha256='b'*64),'fresh capture'),
+            original_board=('capture.json',lambda c:c.update(board_sha256='b'*64),'fresh capture'))
         for case,(name,change,message) in cases.items():
             raw=(job/name).read_bytes();rewrite(name,change)
             with self.subTest(case=case),self.assertRaisesRegex(ValueError,message):produce()
@@ -273,9 +290,15 @@ class MechanicsPackageTests(unittest.TestCase):
         (self.candidate/'analysis/geometry_model.py').write_bytes(b'changed checker')
         with self.assertRaisesRegex(ValueError,'source differs in the final candidate'):produce()
 
+    def test_mechanics_only_final_candidate_keeps_the_proved_declaration(self):
+        plan=self.mechanics_only()
+        (self.candidate/'placement-mechanics.json').write_text('{}')
+        with self.assertRaisesRegex(ValueError,'source differs in the final candidate'):
+            self.produce_mechanics_only(plan)
+
     def test_mechanics_only_package_refuses_a_missing_or_changed_final_proof(self):
         plan=self.mechanics_only()
-        block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,plan)
+        self.produce_mechanics_only(plan)
         path=self.artwork.directory/block_package.PROOF;proof=read_json(path)
         path.unlink()
         retained_run.record_completion(self.root,self.report,self.artwork,self.candidate);retained_run.write_report(self.root,self.report)
@@ -285,6 +308,24 @@ class MechanicsPackageTests(unittest.TestCase):
         write_json(path,proof);self.reseal()
         with self.assertRaisesRegex(ValueError,'proof differs'):
             block_package.verify(self.root,self.candidate,self.scope,plan)
+
+    def test_mechanics_only_package_detects_evidence_changed_after_the_fresh_capture(self):
+        plan=self.mechanics_only();self.produce_mechanics_only(plan)
+        retained_run.record_completion(self.root,self.report,self.artwork,self.candidate);retained_run.write_report(self.root,self.report)
+        job=self.placement.directory/'placement'
+        def moved(problem):
+            problem['footprints'][0]['pose']['x_nm']=1
+            problem['problem_sha256']=placement_problem.identity(problem)
+        def stale(problem):
+            problem['footprints'][0]['pose']['x_nm']=1
+        def rebound(capture):
+            capture['mechanics']['binding_sha256']='b'*64
+        for name,change,message in (('problem.json',moved,'proof differs'),('problem.json',stale,'problem identity differs'),
+                                    ('capture.json',rebound,'binding differs')):
+            raw=(job/name).read_bytes();value=read_json(job/name);change(value);write_json(job/name,value);self.reseal()
+            with self.subTest(change=change.__name__),self.assertRaisesRegex(ValueError,message):
+                block_package.verify(self.root,self.candidate,self.scope,plan)
+            (job/name).write_bytes(raw);self.reseal()
 
     def test_block_source_proof_is_still_required_before_mechanics_reconstruction(self):
         from agent_ee import block_source_stage

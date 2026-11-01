@@ -324,9 +324,10 @@ refuses it, and local loop seeding, which knows only that recipe's named connect
 does not run. Other designs route without that seeding.
 
 A build with mechanics and no block contract writes its final proof at the artwork
-stage. Package replays it against the sealed sources, the capture binding and the
-completed job's passing result on the accepted board, then checks that artwork
-preserved that board apart from any qualified silk repair. See
+stage, after a fresh native capture of the sealed original board matches the retained
+placement capture. Package replays the proof against the sealed sources and the
+completed job's passing result on the accepted board, and checks that artwork preserved
+that board apart from any qualified silk repair. See
 [strict package mechanics](strict-package-mechanics.md).
 
 ## Authored judgments and package records

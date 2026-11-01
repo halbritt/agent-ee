@@ -1,6 +1,8 @@
 """Final saved-board block evidence owned by the artwork and package stages."""
 from copy import deepcopy
 from pathlib import Path
+import shutil
+import tempfile
 
 from . import block_source_stage, placement_contract, placement_job, retained_run
 from .catalog import strict_json
@@ -194,8 +196,41 @@ def _mechanics_only_basis(out, scope, plan):
             or mechanics.get('model_raw') != recipe['model_raw']
             or mechanics.get('sources') != recipe['declaration']['sources']):
         raise ValueError('mechanics original problem identity differs')
+    name = plan['placement']['mechanics']
     return dict(mechanics=_final_mechanics(placement, job, scope, bound, problem),
-                declarations=recipe['declaration']['sources'], policy_sha256=identity(policy_files()))
+                declarations={**recipe['declaration']['sources'], name: digest(schematic.candidate / name)},
+                policy_sha256=identity(policy_files()))
+
+
+def _check_fresh_original(out, scope, plan):
+    """Capture the sealed original board natively, so retained evidence is compared, not trusted."""
+    from . import acquisition_mechanics
+    schematic = retained_run.completed_stage(Path(out), 'schematic')
+    placement = retained_run.completed_stage(Path(out), 'placement-routing')
+    original = schematic.candidate
+    read = lambda name: block_source_stage._read(original, name)
+    board, groups = read(scope['board']), read(plan['placement']['groups'])
+    locality = block_source_stage.locality_path(scope, original)
+    normalized = placement_job.normalize_intent(
+        strict_json(read(plan['placement']['intent'])), strict_json(groups),
+        locality=strict_json(read(locality)) if locality else None,
+        board_sha256=placement_job.sha256_bytes(board), groups_sha256=placement_job.sha256_bytes(groups))
+    normalized['mechanics'] = acquisition_mechanics.load(original / plan['placement']['mechanics'])
+    with tempfile.TemporaryDirectory() as work:
+        for suffix in ('.kicad_pcb', '.kicad_pro', '.kicad_dru'):
+            source = (original / scope['board']).with_suffix(suffix)
+            if source.exists():
+                shutil.copyfile(source, Path(work) / ('board' + suffix))
+        try:
+            problem, record = placement_job.capture(Path(work) / 'board.kicad_pcb', normalized,
+                                                    clock=placement_job.Clock(60), cancel_dir=Path(out))
+        except (placement_job.JobRefusal, placement_job.JobStopped) as exc:
+            raise ValueError('mechanics fresh original capture failed: ' + str(exc)) from exc
+    job = placement.directory / 'placement'
+    retained_record, retained_problem = read_json(job / 'capture.json'), read_json(job / 'problem.json')
+    if (any(record.get(key) != retained_record.get(key) for key in ('mechanics', 'facts_sha256', 'board_sha256'))
+            or any(problem.get(key) != retained_problem.get(key) for key in ('mechanics', 'footprints'))):
+        raise ValueError('mechanics retained capture differs from a fresh capture of the original board')
 
 
 def _mechanics_only_proof(out, candidate, directory, scope, plan):
@@ -280,6 +315,7 @@ def _validate(proof, normalized, basis, files, board, transition=None):
 
 def produce(out, candidate, directory, scope, plan):
     if mechanics_only(plan):
+        _check_fresh_original(out, scope, plan)
         write_json(directory / PROOF, _mechanics_only_proof(out, candidate, directory, scope, plan))
         return
     if not declared(plan):
