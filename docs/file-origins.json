@@ -4368,6 +4368,26 @@
         "AE"
       ],
       "reviewed": "Original purpose-review and scoped-source regression code. The direct empty KiCad board literal is an authored captured-input stand-in; schematic bytes use the owned native-binding generator. Referencing existing test generators, native test helpers and fixture paths does not embed third-party design/library assets in this source; those fixtures retain their separate origin classifications."
+    },
+    {
+      "paths": [
+        "fixtures/acquisition-reverse-blocking/"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original acquisition recipe and factual supplier/manufacturer identity, source hashes, URLs, dimensions and pin/polarity observations. Raw vendor CAD/PDF bytes remain external runtime inputs and are not included."
+    },
+    {
+      "paths": [
+        "src/agent_ee/acquisition_reverse_blocking.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original finite native CAD generator using numeric pin/land dimensions, declared primitive geometry and source hashes. The KiCad S-expressions are authored here; no stock library, vendor drawing text or supplier raw object is embedded. Supplier CAD is read only from exact runtime inputs."
     }
   ]
 }

@@ -1,0 +1,76 @@
+{
+  "schema": "agent-ee.acquisition-reverse-blocking-sources/1",
+  "reference": "acquisition-control-reverse-blocking-r1",
+  "files": {
+    "base-circuit.json": "15b8339e27832824914412e274e2efa4c46150502864418c8e0e604510f21da5"
+  },
+  "manufacturer": [
+    {
+      "url": "https://www.analog.com/media/en/technical-documentation/data-sheets/ADP7104.pdf",
+      "revision": "L, February2026",
+      "locator": "Table5 page6 pinout; ordering RD-8-4 page24",
+      "raw_capture": false
+    },
+    {
+      "url": "https://www.analog.com/media/en/package-pcb-resources/package/pkg_pdf/soic_edrd/rd-8-4.pdf",
+      "revision": "02-02-2021-A PKG-005197",
+      "body_max_mm": [
+        "3.99",
+        "5.00"
+      ],
+      "lead_span_max_mm": "6.20",
+      "height_max_mm": "1.75",
+      "exposed_pad_nominal_mm": [
+        "2.29",
+        "2.29"
+      ],
+      "raw_capture": false
+    },
+    {
+      "part": "B0520LW-7-F",
+      "url": "https://datasheet.lcsc.com/datasheet/pdf/32611786d3104d8c1476a821556bbfcb.pdf?productCode=C155367",
+      "revision": "DS30051 Rev.18-2, October2022",
+      "locator": "Package Outline Dimensions, page4",
+      "body_max_mm": [
+        "2.85",
+        "1.70"
+      ],
+      "lead_span_max_mm": "3.85",
+      "height_max_mm": "1.35",
+      "raw_capture": true,
+      "raw_sha256": "af204fbee5194f301b15b9b6c1a4751c8484cc6ed93c3cd11aac964c757f7579",
+      "raw_size": 666723,
+      "custody": "Retained development source capture; PDF is not bundled with this fixture or qualified for production."
+    }
+  ],
+  "supplier": {
+    "C2903961": {
+      "http_body_sha256": "8bad68be6aea63fb18e3843409d05c06b91d838482eaf62951e40889289d07d3",
+      "result_span_bytes": [
+        34,
+        23155
+      ],
+      "raw_sha256": "a5bb40921bc42f87fc1545b620f6c2d2572d60b1b7deb21898e99e2d23431ca6",
+      "raw_size": 23121,
+      "url": "https://easyeda.com/api/products/C2903961/components?version=6.4.19.5",
+      "retrieved_at": "2026-11-01T03:47:23.589305+00:00"
+    },
+    "C155367": {
+      "http_body_sha256": "84213cd8c1cdef3126f154d9299058858d9bcad3e518715fe289c771254c7a3d",
+      "result_span_bytes": [
+        34,
+        13987
+      ],
+      "raw_sha256": "f7cde338c6cdafdb6406d0aaf6b219edb7eea222bfd86ee59a142cdf83930e9d",
+      "raw_size": 13953,
+      "url": "https://easyeda.com/api/products/C155367/components?version=6.4.19.5",
+      "retrieved_at": "2026-11-01T03:47:23.937183+00:00",
+      "polarity": "Captured symbol pin1 at x380 and cathode stroke x395; pin2 at x420 and anode x405. Footprint pad1 has negative x and the left cathode marking. No orientation transform."
+    }
+  },
+  "limits": [
+    "Source derivation only; no board/file release, source-role qualification or production preparation acceptance.",
+    "C2903961 supplier includes4 thermalvias; current complete-footprint parser refuses them. Native generation preserves their copper/holes, never drops them.",
+    "Unavailable raw manufacturer captures remain unavailable; web-read facts are attributed engineering inputs, not captured-PDF claims."
+  ]
+}

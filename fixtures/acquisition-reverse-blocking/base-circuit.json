@@ -1,0 +1,608 @@
+{
+  "components": [
+    {
+      "footprint": "",
+      "id": "U1",
+      "lib_id": "Regulator_Linear:TPS7A20xxxDBV",
+      "reference": "U1",
+      "units": [
+        1
+      ],
+      "value": "TPS7A2033PDBVR"
+    },
+    {
+      "footprint": "",
+      "id": "U2",
+      "lib_id": "Analog_ADC:ADS1115IDGS",
+      "reference": "U2",
+      "units": [
+        1
+      ],
+      "value": "ADS1115IDGSR"
+    },
+    {
+      "footprint": "",
+      "id": "J1",
+      "lib_id": "Connector_Generic:Conn_01x02",
+      "reference": "J1",
+      "units": [
+        1
+      ],
+      "value": "POWER"
+    },
+    {
+      "footprint": "",
+      "id": "J2",
+      "lib_id": "Connector_Generic:Conn_01x04",
+      "reference": "J2",
+      "units": [
+        1
+      ],
+      "value": "HOST"
+    },
+    {
+      "footprint": "",
+      "id": "J3",
+      "lib_id": "Connector_Generic:Conn_01x04",
+      "reference": "J3",
+      "units": [
+        1
+      ],
+      "value": "ANALOG"
+    },
+    {
+      "footprint": "",
+      "id": "D1",
+      "lib_id": "Device:D_Schottky",
+      "reference": "D1",
+      "units": [
+        1
+      ],
+      "value": "BAT46W"
+    },
+    {
+      "footprint": "",
+      "id": "C1",
+      "lib_id": "Device:C",
+      "reference": "C1",
+      "units": [
+        1
+      ],
+      "value": "10u"
+    },
+    {
+      "footprint": "",
+      "id": "C2",
+      "lib_id": "Device:C",
+      "reference": "C2",
+      "units": [
+        1
+      ],
+      "value": "10u"
+    },
+    {
+      "footprint": "",
+      "id": "C3",
+      "lib_id": "Device:C",
+      "reference": "C3",
+      "units": [
+        1
+      ],
+      "value": "100n"
+    },
+    {
+      "footprint": "",
+      "id": "C4",
+      "lib_id": "Device:C",
+      "reference": "C4",
+      "units": [
+        1
+      ],
+      "value": "10n"
+    },
+    {
+      "footprint": "",
+      "id": "C5",
+      "lib_id": "Device:C",
+      "reference": "C5",
+      "units": [
+        1
+      ],
+      "value": "10n"
+    },
+    {
+      "footprint": "",
+      "id": "R1",
+      "lib_id": "Device:R",
+      "reference": "R1",
+      "units": [
+        1
+      ],
+      "value": "1k"
+    },
+    {
+      "footprint": "",
+      "id": "R2",
+      "lib_id": "Device:R",
+      "reference": "R2",
+      "units": [
+        1
+      ],
+      "value": "1k"
+    },
+    {
+      "footprint": "",
+      "id": "R3",
+      "lib_id": "Device:R",
+      "reference": "R3",
+      "units": [
+        1
+      ],
+      "value": "2.2k"
+    },
+    {
+      "footprint": "",
+      "id": "R4",
+      "lib_id": "Device:R",
+      "reference": "R4",
+      "units": [
+        1
+      ],
+      "value": "2.2k"
+    },
+    {
+      "footprint": "",
+      "id": "R5",
+      "lib_id": "Device:R",
+      "reference": "R5",
+      "units": [
+        1
+      ],
+      "value": "22k"
+    },
+    {
+      "footprint": "",
+      "id": "R6",
+      "lib_id": "Device:R",
+      "reference": "R6",
+      "units": [
+        1
+      ],
+      "value": "2.2k"
+    },
+    {
+      "footprint": "",
+      "id": "PWR01",
+      "lib_id": "power:GND",
+      "reference": "#PWR01",
+      "units": [
+        1
+      ],
+      "value": "GND"
+    },
+    {
+      "footprint": "",
+      "id": "FLG01",
+      "lib_id": "power:PWR_FLAG",
+      "reference": "#FLG01",
+      "units": [
+        1
+      ],
+      "value": "PWR_FLAG"
+    },
+    {
+      "footprint": "",
+      "id": "FLG02",
+      "lib_id": "power:PWR_FLAG",
+      "reference": "#FLG02",
+      "units": [
+        1
+      ],
+      "value": "PWR_FLAG"
+    }
+  ],
+  "libraries": [
+    {
+      "name": "Analog_ADC",
+      "path": "Analog_ADC.kicad_sym",
+      "sha256": "af1ef0295c52c23bc73ffc6d6b2f63efcf5029badd8327a09b41cfef49f25770"
+    },
+    {
+      "name": "Connector_Generic",
+      "path": "Connector_Generic.kicad_sym",
+      "sha256": "b148b6f6e4576d451f1e66663957e93bb10916f0a0c82f0f454be0d679fbd18d"
+    },
+    {
+      "name": "Device",
+      "path": "Device.kicad_sym",
+      "sha256": "88785d6f8fea6e5155d00e2344c279ba60678b896c838ac0d0a7850db921d005"
+    },
+    {
+      "name": "Regulator_Linear",
+      "path": "Regulator_Linear.kicad_sym",
+      "sha256": "e4f4fc2a95c363ebc47bb96fa39d6859be763467aa7b151a2a3da1d3a1307447"
+    },
+    {
+      "name": "power",
+      "path": "power.kicad_sym",
+      "sha256": "d3bc5f4e414b2b65617363963287a2792d7fbb4c4585b3b6cae25edace802a08"
+    }
+  ],
+  "nets": [
+    {
+      "id": "GND",
+      "name": "GND",
+      "terminals": [
+        {
+          "component": "J1",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "J2",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "J3",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "J3",
+          "pin": {
+            "number": "4"
+          }
+        },
+        {
+          "component": "U1",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "U2",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "U2",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "U2",
+          "pin": {
+            "number": "6"
+          }
+        },
+        {
+          "component": "U2",
+          "pin": {
+            "number": "7"
+          }
+        },
+        {
+          "component": "C1",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "C2",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "C3",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "C4",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "C5",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "R5",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "R6",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "PWR01",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "FLG01",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VIN",
+      "name": "VIN",
+      "terminals": [
+        {
+          "component": "J1",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "D1",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "VIN_PROTECTED",
+      "name": "VIN_PROTECTED",
+      "terminals": [
+        {
+          "component": "D1",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "U1",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "U1",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "C1",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "R5",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "FLG02",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "V3V3",
+      "name": "V3V3",
+      "terminals": [
+        {
+          "component": "U1",
+          "pin": {
+            "number": "5"
+          }
+        },
+        {
+          "component": "U2",
+          "pin": {
+            "number": "8"
+          }
+        },
+        {
+          "component": "C2",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "C3",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "R3",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "R4",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "R6",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "J2",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "SDA",
+      "name": "SDA",
+      "terminals": [
+        {
+          "component": "U2",
+          "pin": {
+            "number": "9"
+          }
+        },
+        {
+          "component": "R3",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "J2",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "SCL",
+      "name": "SCL",
+      "terminals": [
+        {
+          "component": "U2",
+          "pin": {
+            "number": "10"
+          }
+        },
+        {
+          "component": "R4",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "J2",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ANALOG0_IN",
+      "name": "ANALOG0_IN",
+      "terminals": [
+        {
+          "component": "J3",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "R1",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ANALOG0",
+      "name": "ANALOG0",
+      "terminals": [
+        {
+          "component": "R1",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "C4",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "U2",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ANALOG1_IN",
+      "name": "ANALOG1_IN",
+      "terminals": [
+        {
+          "component": "J3",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "R2",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ANALOG1",
+      "name": "ANALOG1",
+      "terminals": [
+        {
+          "component": "R2",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "C5",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "U2",
+          "pin": {
+            "number": "5"
+          }
+        }
+      ]
+    }
+  ],
+  "no_connects": [
+    {
+      "component": "U1",
+      "pin": {
+        "number": "4"
+      }
+    },
+    {
+      "component": "U2",
+      "pin": {
+        "number": "2"
+      }
+    }
+  ],
+  "schema": "agent-ee.connectivity-intent/1"
+}
