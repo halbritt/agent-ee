@@ -295,3 +295,11 @@ for all cases, the simulator-default correction, retained failures and limits.
 This provides new evidence for a fresh acceptance round; it does not replace
 the earlier negative judgment. Full review, file release and frozen G4 credit
 remain outstanding.
+
+The subsequent package passed checks, all fourteen independent judgments and
+its file-release dimension, while the full engineering review stayed incomplete.
+Its circuit reviewer identified an unexecuted independent C1/C2 removal
+combination. The [independent removal investigation](acquisition-removal-bounds.md)
+now covers all eight low/high capacitor and source-limit cases with the original
+electrical limits. All model predicates pass; a new required replay check and
+fresh candidate-bound acceptance remain necessary.

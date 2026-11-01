@@ -8,7 +8,7 @@ from fractions import Fraction
 from hashlib import sha256
 from pathlib import Path
 
-from . import (acquisition_film_analysis, acquisition_power_analysis, acquisition_power_prepare,
+from . import (acquisition_film_analysis, acquisition_film_removal, acquisition_power_analysis, acquisition_power_prepare,
                acquisition_reverse_blocking, cpl_rotation, easyeda_footprint,
                part_record, parts_manifest, typed_overlay)
 from .catalog import strict_json
@@ -254,6 +254,10 @@ def _requirements(files):
     for name in ('pre_removal_host', 'disconnected_source'):
         params['limits'][name] = dict(max=1e-12, unit='A', condition=acquisition_film_analysis.CONDITION)
     pool[replay['id']] = replay
+    removal = None
+    if acquisition_film_removal.AT + 'evidence-manifest.json' in files:
+        removal = acquisition_film_removal.check(replay, files)
+        pool[removal['id']] = removal
     briefs = strict_json(files['preparation/judgment-briefs.json'])
     for brief in briefs.values():
         brief['questions'][0] = 'Evaluate the exact authored span on the fresh film-capacitor candidate; no previous verdict applies.'
@@ -276,10 +280,23 @@ def _requirements(files):
                     'The final film cases remove implicit inductor resistance and retain the original '
                     'datasheet ESR statements. Assess whether this resolves nominal application '
                     'compatibility; model predicates alone do not constitute engineering acceptance.')
+        if removal is not None and brief['requirement'] == 'ACQ-ELEC-2-SOURCE-EVALUATION':
+            brief['sources'] += ['power-reference/removal-bounds.md',
+                                 'analysis/film-removal/summary.json']
+            brief['questions'].append(
+                'Evaluate independent C1/C2 low/high removal sensitivities at both input limits, '
+                'with explicit zero inductor Rser and the unchanged host/source sequence. '
+                'Use the fresh film-independent-removal check and retained raw traces. '
+                'Distinguish model evidence from guaranteed product corners or physical validation.')
     def revise(row):
         if 'checks' in row:
-            row['checks'] = [deepcopy(pool['film-power-retained-model' if c['id'] == 'adp-power-retained-model' else c['id']])
-                             for c in row['checks']]
+            checks = []
+            for check in row['checks']:
+                selected = 'film-power-retained-model' if check['id'] == 'adp-power-retained-model' else check['id']
+                checks.append(deepcopy(pool[selected]))
+                if removal is not None and selected == 'film-power-retained-model':
+                    checks.append(deepcopy(removal))
+            row['checks'] = checks
         for span in row.get('spans', []):
             revise(span['mapping'])
     for row in document['requirements'] + document['prose']:
@@ -329,7 +346,7 @@ def _loop_evidence(files, root):
         'Fresh candidate-bound engineering judgment remains required.\n').encode()
 
 
-def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None):
+def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None, removal_evidence=None):
     base, selected, model_run, film_model, out = map(Path, (base, selected, model_run, film_model, out))
     if out.exists() or not out.parent.is_dir():
         raise ValueError('output must be new under an existing parent')
@@ -337,11 +354,15 @@ def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None):
         model_run=model_run.resolve(), film_model=film_model.resolve())
     if loop_evidence is not None:
         roots['loop_evidence'] = Path(loop_evidence).resolve()
+    if removal_evidence is not None:
+        roots['removal_evidence'] = Path(removal_evidence).resolve()
     typed_overlay._disjoint('output', out.resolve(), roots)
     files, plan = sources(base, selected)
     measurements = _power(files, model_run, film_model)
     if loop_evidence is not None:
         _loop_evidence(files, Path(loop_evidence))
+    if removal_evidence is not None:
+        acquisition_film_removal.attach(files, Path(removal_evidence))
     _requirements(files)
     inventory, accounting = acquisition_power_prepare.materialize(files, plan, out, REFERENCE)
     report = dict(schema='agent-ee.acquisition-film-preparation/1', reference=REFERENCE,
