@@ -823,8 +823,10 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
                     assignment['findings'].append(dict(code='pad_pin_parity', missing_pads=missing, extra_pads=extra))
                 if comp['connector'] is not None:
                     expected = comp['connector']['rows'] * comp['connector']['columns']
-                    if len(numbers) != expected:
-                        assignment['findings'].append(dict(code='connector_count', expected=expected, actual=len(numbers)))
+                    # KiCad's stock connectors number mounting pads MP; those are not positions.
+                    positions = numbers - {'MP'}
+                    if len(positions) != expected:
+                        assignment['findings'].append(dict(code='connector_count', expected=expected, actual=len(positions)))
                 # Declared thermal vias are electrical but do not make an SMD part through-hole.
                 types = {p['type'] for p in fp['pads'] if p['role'] == 'electrical' and not p.get('thermal_via')}
                 attrs = set(fp['attributes']) & {'smd', 'through_hole'}

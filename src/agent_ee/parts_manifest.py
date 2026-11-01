@@ -353,8 +353,19 @@ def qualify_manifest(document, root):
     cad = check_assignments(cad_manifest, captures, declaration, native_membership=True,
                             declarations=declarations)
     if cad['execution'] != 'ok' or cad['outcome'] != 'pass' or cad['coverage'] != 'complete':
-        raise ValueError('captured CAD assignments unavailable or inconsistent')
+        raise ValueError('captured CAD assignments unavailable or inconsistent: ' + _cad_problems(cad))
     return dict(dependencies=closure, selection=selection, cad=cad, missing_provenance=missing)
+
+
+def _cad_problems(cad):
+    """Name the cause, so a failed parts stage does not need a separate diagnosis."""
+    context = ('reference', 'code', 'footprint', 'lib_id')
+    rows = [' '.join((row.get('reference', 'library'), row['code'],
+                      *(f'{key}={value}' for key, value in row.items() if key not in context)))
+            for row in cad['findings'][:8]]
+    if len(cad['findings']) > len(rows):
+        rows.append(f"and {len(cad['findings']) - len(rows)} more")
+    return '; '.join(rows) or f"execution={cad['execution']} outcome={cad['outcome']} coverage={cad['coverage']}"
 
 
 def prepare_manifest(proposal, root):

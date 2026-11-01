@@ -228,9 +228,13 @@ second remains, the integer-second router CLI is not started.
 Optional `router.grid_step_mm` selects the builtin router's search resolution
 in millimetres, including its coupled differential-pair and remaining-net
 passes. For example, `0.025` requests a 25 micrometre search grid. It does not
-change native widths or clearance requirements. Omission uses the router
-default; the pinned CLI rejects non-finite, sub-nanometre or incompatible
-controls. The chosen value is retained in the configuration and routing record.
+change native widths or clearance requirements. When it is omitted, the job uses
+0.025 mm if any footprint has pads on different nets less than 1 mm apart, centre to
+centre, and on any trial after a failed route. Otherwise the router uses its own
+default. This is scheduling policy: on both sub-millimetre boards tried so far, the
+default left opens or dangling vias and 0.025 mm routed. The pinned CLI rejects
+non-finite, sub-nanometre or incompatible controls. Each entry in `routing_trials`
+records its `grid_step_mm` and `grid_basis`.
 
 Optional `router.intra_pair_match` requests length matching of newly routed
 pairs. Supply both `tolerance_mm` and `amplitude_mm`, for example

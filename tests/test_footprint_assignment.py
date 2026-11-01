@@ -39,3 +39,18 @@ class PodFootprintAssignmentTests(unittest.TestCase):
         self.assertIn('1', result['findings'][0]['missing_pads'])
         del files[member['path']]
         self.assertEqual(check_assignments(manifest, files, declaration)['outcome'], 'unknown')
+
+    def test_mounting_pads_do_not_count_as_connector_positions(self):
+        import hashlib
+        manifest, files, declaration = self.inputs()
+        d1 = next(c for c in declaration['components'] if c['reference'] == 'D1')
+        path = next(m['path'] for lib in manifest['libraries'] for m in lib['members'] if m['path'].endswith(
+            d1['footprint'].split(':')[1] + '.kicad_mod'))
+        files[path] = files[path].replace(b'(pad "3"', b'(pad "MP"', 1)
+        next(m for lib in manifest['libraries'] for m in lib['members'] if m['path'] == path).update(
+            sha256=hashlib.sha256(files[path]).hexdigest())
+        for columns, expected in ((2, []), (3, [dict(expected=3, actual=2)])):
+            d1['connector'] = dict(rows=1, columns=columns)
+            findings = [row for row in check_assignments(manifest, files, declaration)['findings']
+                        if row['code'] == 'connector_count']
+            self.assertEqual([{k: row[k] for k in ('expected', 'actual')} for row in findings], expected)

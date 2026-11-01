@@ -269,11 +269,26 @@ def check_locality(path, normalized, *, clock=None, cancel_dir=None):
     return checked
 
 
+def _land_choices(facts, unknown):
+    """Name the lands of a repeated pad number, because a declared uuid must select one."""
+    lands = {}
+    for row in unknown:
+        for endpoint in (row.get('from'), row.get('to')):
+            if isinstance(endpoint, dict) and 'uuid' not in endpoint:
+                pads = [pad for fp in facts['footprints'] if fp['ref'] == endpoint.get('reference')
+                        for pad in fp['pads'] if pad['number'] == endpoint.get('pad')]
+                if len(pads) > 1:
+                    lands[f"{endpoint['reference']}.{endpoint['pad']}"] = [
+                        dict(uuid=pad.get('uuid'), size_nm=pad.get('size_nm')) for pad in pads]
+    return '; set uuid on the endpoint to choose a land: ' + canonical(lands).decode() if lands else ''
+
+
 def _locality_grade(facts, document):
     from .electrical_locality import grade
     result = grade(facts, document)
     if result['unknown']:
-        raise JobRefusal('electrical locality cannot be evaluated: ' + canonical(result['unknown']).decode())
+        raise JobRefusal('electrical locality cannot be evaluated: ' + canonical(result['unknown']).decode()
+                         + _land_choices(facts, result['unknown']))
     return result
 
 
@@ -309,6 +324,37 @@ def check_block_contract(path, normalized, *, clock=None, cancel_dir=None, retai
 def acquisition_local_routing_applies(recipe):
     from .acquisition_local_routing import applies
     return applies(recipe)
+
+
+# Scheduling policy for the builtin router, not a design rule: its 0.1 mm default left
+# opens and dangling vias on every trial of both sub-millimetre boards tried so far,
+# and 0.025 mm routed them.
+FINE_ROUTER_GRID_MM = 0.025
+FINE_PITCH_NM = 1_000_000
+
+
+def _fine_pitch(problem):
+    """Whether any footprint has pads on different nets less than 1 mm apart, centre to centre."""
+    for footprint in problem['footprints']:
+        pads = footprint['pads']
+        for index, a in enumerate(pads):
+            for b in pads[index+1:]:
+                if a['net'] != b['net'] and math.hypot(a['local_nm'][0]-b['local_nm'][0],
+                                                       a['local_nm'][1]-b['local_nm'][1]) < FINE_PITCH_NM:
+                    return True
+    return False
+
+
+def router_grid(config, problem, trial_number):
+    """The declared search grid, or a finer one when the pads or a failed trial call for it."""
+    declared = config['router'].get('grid_step_mm')
+    if declared is not None:
+        return declared, 'declared'
+    if _fine_pitch(problem):
+        return FINE_ROUTER_GRID_MM, 'fine-pitch-pads'
+    if trial_number:
+        return FINE_ROUTER_GRID_MM, 'after-failed-route'
+    return None, 'router-default'
 
 
 def check_mechanics(path, normalized, *, clock=None, cancel_dir=None):
@@ -1804,9 +1850,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # search from taking the entire portfolio budget. This is scheduling
         # policy, not an engineering relaxation; the outer deadline still wins.
         budget = clock.remaining() / (len(queue) - number)
+        grid_step, grid_basis = router_grid(config, problem, number)
         trial = {'seed': selected['seed'], 'board_sha256': selected['board_sha256'],
                  'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
-                 'budget_basis': 'agent-default/equal-remaining-share'}
+                 'budget_basis': 'agent-default/equal-remaining-share',
+                 'grid_step_mm': grid_step, 'grid_basis': grid_basis}
         report['routing_trials'].append(trial)
         with clock.phase('export'):
             _check_stop(clock, job_dir)
@@ -1847,7 +1895,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             routed = route(route_input, job_dir / f'route-{suffix}', config['router']['checkout'],
                            budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
-                           grid_step_mm=config['router'].get('grid_step_mm'),
+                           grid_step_mm=grid_step,
                            intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers, pair_impedance=impedance,
                            bus=bus, length_match=length_match, ac_match=ac_match)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}

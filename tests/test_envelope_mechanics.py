@@ -780,7 +780,7 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             try:
                 self.parts_capture(resealed)
                 self.refused('J1 part identity unestablished: parts: captured CAD assignments unavailable or '
-                             'inconsistent')
+                             'inconsistent: J1 pad_pin_parity')
             finally:
                 cad_path.write_bytes(pristine)
         with self.subTest(mode='real control'):

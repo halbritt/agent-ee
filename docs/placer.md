@@ -1558,7 +1558,8 @@ land of a multi-pad pin, including exposed-pad thermal lands with repeated pad
 numbers. A missing, duplicated or mismatched UUID remains unknown. Without a
 UUID, duplicate pad numbers still refuse; the checker never picks the first or
 nearest land. There is no implicit pad-set aggregation. Declare separate
-UUID-selected obligations when every land must meet a limit.
+UUID-selected obligations when every land must meet a limit. A placement job's
+refusal lists each land's UUID and size, so one failed capture gives the values.
 
 AGENTEE-328 measures `pad-centre-to-centre` between native **copper-land
 centroids**, before drill subtraction, in the board plane. Symmetric stock
