@@ -1,7 +1,7 @@
 # Mechanics continuity through strict packaging
 
 When a strict block build declares `placement.mechanics`, packaging authenticates
-that recipe and its four source hashes against the sealed schematic candidate.
+that recipe and its declared source hashes against the sealed schematic candidate.
 It reconstructs original native references from the block binding's explicit UUID
 aliases, checks the original capture identity, and requires exact equality with a
 fresh source-model mechanics binding. The retained problem must have its correct
