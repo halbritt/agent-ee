@@ -3,8 +3,9 @@
 The input is the raw component object exactly as captured (sha256-pinned by the
 caller). Nothing is fetched. Every package record is either converted into a
 land-geometry pad/hole, proven non-electrical by its declared layer, or refused:
-unknown record types (for example ``PT~M``), polygon/ellipse pads, vias and
-conductive non-pad records make the footprint unsupported rather than dropped.
+unknown record types (for example ``PT~M``), polygon/ellipse pads and conductive
+non-pad records make the footprint unsupported rather than dropped. Standard
+through vias are represented only with unambiguous rectangular SMD-pad ownership.
 Coordinates are exact decimals; one canvas unit is 10 mil = 254000 nm, +Y down.
 """
 from decimal import Decimal
@@ -18,6 +19,7 @@ FORMAT = 'easyeda-std-component/1'
 UNIT_NM = Fraction(254000)
 MAX_BYTES = 16 * 1024 * 1024
 MAX_RECORDS = 20000
+MAX_CONTAINED_VIAS = 64
 # EasyEDA standard layer ids. Inner copper (21..52) is conductive and not qualified.
 SURFACE = {'1': ('F.Cu',), '2': ('B.Cu',), '11': ('B.Cu', 'F.Cu')}
 NONCOPPER = {'3': 'TopSilk', '4': 'BottomSilk', '5': 'TopPaste', '6': 'BottomPaste',
@@ -256,6 +258,73 @@ def _layer_of(kind, fields):
     return fields[index] if index < len(fields) else None
 
 
+def _bounds(primitive):
+    cx, cy = primitive['center']
+    w, h = primitive['size']
+    if primitive['angle'] % 180:
+        w, h = h, w
+    return (cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
+
+
+def _touches(a, b):
+    """Conservative closed-box intersection; possible contact must not be ignored."""
+    return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
+
+
+def _contained_vias(records, pads, holes, locators):
+    """Append complete through-via copper/holes to locally owned parser lists.
+
+    EasyEDA Standard documents VIA diameter, hole radius and all-layer through
+    plating. A blank-net VIA has no pin number. Derive that number only when its
+    whole annulus lies in exactly one isolated rectangular SMD pad. Record this
+    inference separately from source fields; no geometric tolerance changes it.
+    Bounding-box exclusion is conservative for other shapes. This qualifies
+    copper/drill representation, not mask, paste, via filling or assembly.
+    """
+    if not records:
+        return
+    if len(records) > MAX_CONTAINED_VIAS:
+        _unsupported('more than 64 footprint vias exceeds the bounded qualification')
+    source_pads, source_holes = list(pads), list(holes)
+    boxes = [_bounds(p['primitive']) for p in source_pads]
+    ids = {p['id'] for p in locators} | {h['id'] for h in holes if h.get('id')}
+    via_boxes = []
+    for index, fields in records:
+        if len(fields) != 8 or fields[4] or fields[7] not in ('', '0', '1'):
+            _unsupported('VIA requires eight fields, a blank net and a known lock flag')
+        cx, cy, diameter, radius = (decimal(fields[i], 'VIA geometry') for i in (1, 2, 3, 5))
+        if not fields[6] or not 0 < 2 * radius < diameter:
+            _malformed('VIA requires an id and positive drill smaller than copper diameter')
+        if fields[6] in ids:
+            _unsupported('VIA id duplicates a conductive feature or hole')
+        ids.add(fields[6])
+        primitive = dict(shape='circle', center=[cx, cy], size=[diameter, diameter], angle=0)
+        box = _bounds(primitive)
+        owners = [i for i, (pad, bounds) in enumerate(zip(source_pads, boxes))
+                  if pad['primitive']['shape'] == 'rect' and len(pad['layers']) == 1
+                  and bounds[0] <= box[0] and bounds[1] <= box[1]
+                  and bounds[2] >= box[2] and bounds[3] >= box[3]]
+        if len(owners) != 1:
+            _unsupported('VIA annulus is not contained by exactly one rectangular SMD pad')
+        owner = owners[0]
+        owning = source_pads[owner]
+        for i, (pad, bounds) in enumerate(zip(source_pads, boxes)):
+            if i != owner and (_touches(box, bounds) or
+                    (set(pad['layers']) & set(owning['layers']) and _touches(boxes[owner], bounds))):
+                _unsupported('VIA or its owning pad may contact other source copper')
+        if any(_touches(boxes[owner], _bounds(hole)) for hole in source_holes):
+            _unsupported('VIA owning pad may be interrupted by another source hole')
+        if any(_touches(box, other) for other in via_boxes):
+            _unsupported('VIA annuli may overlap; separate contained vias are required')
+        via_boxes.append(box)
+        holes.append(dict(shape='circle', center=[cx, cy], size=[2 * radius, 2 * radius], angle=0,
+                          owner=len(pads), plated=True, id=fields[6]))
+        pads.append(dict(number=owning['number'], layers=['B.Cu', 'F.Cu'], primitive=primitive))
+        locators.append(dict(record='VIA', id=fields[6], number=owning['number'], index=index, raw=fields,
+            pin_assignment=dict(method='unique_rectangular_smd_containment', pad_index=owner,
+                                pad_id=locators[owner]['id'])))
+
+
 def parse_package(data, lcsc, tolerance_nm):
     """Return the supplier land pattern in footprint-origin canvas units plus inventory.
 
@@ -265,7 +334,7 @@ def parse_package(data, lcsc, tolerance_nm):
     """
     tol = Fraction(tolerance_nm) / UNIT_NM
     record, shapes, origin = identity(strict_json(data), lcsc)
-    pads, holes, locators, ignored = [], [], [], {}
+    pads, holes, locators, ignored, vias = [], [], [], {}, []
     for index, raw in enumerate(shapes):
         if not isinstance(raw, str) or '\x00' in raw:
             _malformed(f'shape #{index} is not a text record')
@@ -287,8 +356,7 @@ def parse_package(data, lcsc, tolerance_nm):
             holes.append(dict(shape='circle', center=[cx, cy], size=[2 * radius, 2 * radius], angle=0,
                               owner=None, plated=False, id=fields[4]))
         elif kind == 'VIA':
-            _unsupported(f'VIA {fields[-2] if len(fields) > 2 else "?"}: footprint vias are conductive '
-                         'and not qualified')
+            vias.append((index, fields))
         elif kind in GRAPHIC_LAYER or kind == 'SVGNODE':
             layer = _layer_of(kind, fields)
             if kind == 'SVGNODE' and layer != '19':
@@ -303,6 +371,7 @@ def parse_package(data, lcsc, tolerance_nm):
             _unsupported(f'record #{index} has unsupported shape type {kind!r}: {raw[:80]!r}')
     if not pads:
         _unsupported('package has no conductive pads', 'empty_copper')
+    _contained_vias(vias, pads, holes, locators)
 
     def local(point):
         return [text((point[0] - origin[0]) * UNIT_NM), text((point[1] - origin[1]) * UNIT_NM)]
@@ -317,6 +386,8 @@ def parse_package(data, lcsc, tolerance_nm):
     hole_locators = [dict(owner=h['owner'], plated=h['plated'], id=h.get('id')) for h in holes]
     inventory = dict(records=len(shapes), pads=len(pads), holes=len(holes),
                      ignored_noncopper=dict(sorted(ignored.items())))
+    if vias:
+        inventory['vias'] = len(vias)
     return dict(identity=record, pattern=pattern, pad_locators=locators, hole_locators=hole_locators,
                 inventory=inventory, tolerance_nm=text(tolerance_nm), units='nm', frame='easyeda-origin/y-down')
 

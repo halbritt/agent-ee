@@ -85,13 +85,95 @@ class RecipeTests(unittest.TestCase):
             variant.locality(original)
 
     @require_captures
-    def test_complete_supplier_gate_still_refuses_unqualified_vias(self):
-        with self.assertRaisesRegex(easyeda_footprint.SupplierError, 'footprint vias'):
-            easyeda_footprint.parse_package((CAPTURES / 'C2903961.raweasy.json').read_bytes(), 'C2903961', 200)
+    def test_complete_supplier_represents_all_vias_with_explicit_ownership(self):
+        parsed = easyeda_footprint.parse_package((CAPTURES / 'C2903961.raweasy.json').read_bytes(), 'C2903961', 200)
+        self.assertEqual((parsed['inventory']['pads'], parsed['inventory']['holes'], parsed['inventory']['vias']),
+                         (13, 4, 4))
+        vias = [p for p in parsed['pad_locators'] if p['record'] == 'VIA']
+        self.assertEqual(len(vias), 4)
+        self.assertTrue(all(p['number'] == '9' and p['pin_assignment']['pad_index'] == 8 for p in vias))
 
 
 @require_captures
 class NativeFootprintTests(unittest.TestCase):
+    def test_complete_supplier_matches_native_saved_copper_holes_and_pin_frame(self):
+        from tests.toolchain import require_toolchain
+        from tests.land_pattern_fixtures import manifest
+        from agent_ee import cpl_rotation, executor, land_pattern
+        from fractions import Fraction
+        require_toolchain(native=True)
+        raw = (CAPTURES / 'C2903961.raweasy.json').read_bytes()
+        supplier = easyeda_footprint.parse_package(raw, 'C2903961', 200)
+        criteria = dict(threshold='0.98', pin_tolerance_nm='100000', refinement_levels=[2, 4, 8, 16])
+        item = dict(registration=dict(translation='declared_origin', rotation='270', mirror=False), pin_aliases=None)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = root / 'original.pretty'
+            original.mkdir()
+            filename = variant.FOOTPRINT + '.kicad_mod'
+            (original / filename).write_bytes(variant.footprint_bytes(raw))
+            # Keep native SWIG ownership inside the existing sandbox boundary;
+            # pure comparison failures must not leave native objects in a traceback.
+            (root / 'generate.py').write_text('''from pathlib import Path
+import sys
+import pcbnew as k
+name = sys.argv[1]
+io = k.PCB_IO_KICAD_SEXPR()
+for case in ('control', 'omitted-via', 'wrong-drill', 'wrong-pin'):
+    fp = io.FootprintLoad('/candidate/original.pretty', name)
+    assert fp is not None
+    drills = [p for p in fp.Pads() if p.GetAttribute() == k.PAD_ATTRIB_PTH]
+    assert len(drills) == 4
+    if case == 'omitted-via':
+        fp.Remove(drills[0])
+    elif case == 'wrong-drill':
+        drills[0].SetDrillSize(k.VECTOR2I(254000, 254000))
+    elif case == 'wrong-pin':
+        drills[0].SetNumber('8')
+    out = Path('/work') / (case + '.pretty')
+    out.mkdir()
+    io.FootprintSave(str(out), fp)
+''')
+            # Source and work must be disjoint for the normal executor.
+            work = root.parent / (root.name + '-native')
+            self.addCleanup(shutil.rmtree, work, True)
+            saved = executor.execute(root, work, ['/usr/bin/python3', '/candidate/generate.py', variant.FOOTPRINT],
+                                     timeout=30)
+            self.assertEqual(saved['execution'], 'ok', saved)
+            reports, pin1_offset = {}, None
+            for case in ('control', 'omitted-via', 'wrong-drill', 'wrong-pin'):
+                name = case + '.pretty/' + filename
+                captures = {name: (work / name).read_bytes()}
+                native = land_pattern.library_footprint(manifest(captures, library=variant.LIBRARY), captures,
+                                                       variant.LIBRARY + ':' + variant.FOOTPRINT)
+                with self.subTest(case=case):
+                    reports[case] = land_pattern.compare(native, supplier, item, criteria)
+                if case not in reports:
+                    continue
+                self.assertEqual(reports[case]['outcome'], 'pass' if case == 'control' else 'defect', reports[case])
+                if case == 'control':
+                    self.assertEqual(set(reports[case]['copper']), {'F.Cu', 'B.Cu'})
+                    self.assertEqual(reports[case]['holes']['decision'], 'pass')
+                    self.assertEqual(len(reports[case]['pins']['pairs']), 13)
+                    def frame(pattern):
+                        return cpl_rotation.classify_pin1([(p['number'], Fraction(p['primitive']['center'][0]),
+                            -Fraction(p['primitive']['center'][1])) for p in pattern['pads']])
+                    source_pin, source_frame, _ = frame(supplier['pattern'])
+                    native_pin, native_frame, _ = frame(native['pattern'])
+                    self.assertEqual((source_pin, native_pin), ('bottomside_left', 'leftside_top'))
+                    self.assertEqual((source_frame, native_frame), ('sided', 'sided'))
+                    self.assertEqual(cpl_rotation.pin1_offset(source_pin, native_pin), 270)
+                    pin1_offset = 270
+            artifact = os.environ.get('AGENT_EE_VIA_QUALIFICATION_ARTIFACTS')
+            if artifact:
+                (work / 'geometry-results.json').write_text(json.dumps(dict(
+                    supplier_sha256=sha256(raw).hexdigest(), criteria=criteria, registration=item['registration'],
+                    reports=reports, supplier_inventory=supplier['inventory'],
+                    supplier_vias=[p for p in supplier['pad_locators'] if p['record'] == 'VIA'],
+                    complete=len(reports) == 4, cpl_pin1_offset_degrees=pin1_offset,
+                    qualification='Copper/drill geometry and pin frame only; no assembly acceptance'), indent=2)+'\n')
+                shutil.copytree(work, Path(artifact))
+
     def test_generated_footprint_preserves_all_copper_and_drills(self):
         from tests.toolchain import require_toolchain
         require_toolchain(native=True)

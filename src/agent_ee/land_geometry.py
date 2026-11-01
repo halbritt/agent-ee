@@ -89,33 +89,49 @@ def _intersection_x(a, b, c, d, budget):
 
 def _boolean_area(groups, predicate, budget):
     """Each group is a union; predicate selects their Boolean combination."""
-    polygons, group_ids = [], []
+    memberships = {}
     for group_id, group in enumerate(groups):
-        for poly in sorted(set(tuple(p) for p in group)):
-            polygons.append(poly)
-            group_ids.append(group_id)
+        for poly in group:
+            memberships.setdefault(tuple(poly), set()).add(group_id)
+    # One identical boundary can belong to several Boolean operands. Sweep it
+    # once while preserving all memberships, including subtractive operands.
+    polygons = sorted(memberships)
+    group_ids = [memberships[poly] for poly in polygons]
     segments = [(a, b, i) for i, p in enumerate(polygons) for a, b in _edges(p)]
     if len(segments) > budget.limits.max_segments:
         raise GeometryError('work_limit', 'max_segments exhausted')
     xs = {p[0] for poly in polygons for p in poly}
-    for i, (a, b, _) in enumerate(segments):
-        for c, d, _ in segments[i+1:]:
+    # Vertical edges can add no new sweep event: their X is already a vertex X.
+    # Sort remaining X intervals so disjoint pairs never enter the quadratic
+    # intersection loop. Y exclusion is exact as well; no tolerance is used.
+    ordered = sorted((min(a[0], b[0]), max(a[0], b[0]), min(a[1], b[1]), max(a[1], b[1]), a, b, i)
+                     for a, b, i in segments if a[0] != b[0])
+    for i, (xmin, xmax, ymin, ymax, a, b, _) in enumerate(ordered):
+        for xlo, xhi, ylo, yhi, c, d, _ in ordered[i+1:]:
+            if xlo > xmax:
+                break
             budget.spend('max_pair_checks')
+            if ylo > ymax or ymin > yhi:
+                continue
             x = _intersection_x(a, b, c, d, budget)
             if x is not None:
                 xs.add(x)
     xs = sorted(xs)
     area = Fraction(0)
+    active, cursor = {}, 0
     for xl, xr in zip(xs, xs[1:]):
         budget.spend('max_slabs')
         mid = (xl+xr)/2
+        while cursor < len(ordered) and ordered[cursor][0] < mid:
+            _, xmax, _, _, a, b, i = ordered[cursor]
+            slope = (b[1]-a[1])/(b[0]-a[0])
+            active[cursor] = xmax, slope, a[1]-slope*a[0], i
+            cursor += 1
+        active = {key: value for key, value in active.items() if value[0] > mid}
         crossings = []
-        for a, b, i in segments:
+        for _, slope, intercept, i in active.values():
             budget.spend('max_pair_checks')
-            if min(a[0], b[0]) < mid < max(a[0], b[0]):
-                slope = (b[1]-a[1])/(b[0]-a[0])
-                intercept = a[1]-slope*a[0]
-                crossings.append((budget.checked(slope*mid+intercept), slope, intercept, i))
+            crossings.append((budget.checked(slope*mid+intercept), slope, intercept, i))
         crossings.sort()
         inside, counts = set(), [0]*len(groups)
         lower = None
@@ -128,13 +144,14 @@ def _boolean_area(groups, predicate, budget):
                 budget.checked(area)
             while j < len(crossings) and crossings[j][0] == y:
                 i = crossings[j][3]
-                group = group_ids[i]
                 if i in inside:
                     inside.remove(i)
-                    counts[group] -= 1
+                    for group in group_ids[i]:
+                        counts[group] -= 1
                 else:
                     inside.add(i)
-                    counts[group] += 1
+                    for group in group_ids[i]:
+                        counts[group] += 1
                 j += 1
             lower = slope, intercept
     return area

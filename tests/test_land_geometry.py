@@ -6,6 +6,25 @@ from agent_ee.land_geometry import polygon_area
 
 
 class PolygonTests(unittest.TestCase):
+    def test_identical_boundary_keeps_all_boolean_operand_memberships(self):
+        from agent_ee.land_geometry import polygon_intersection_area
+        a = [(0, 0), (2, 0), (2, 3), (0, 3)]
+        b = [(1, 0), (3, 0), (3, 3), (1, 3)]
+        self.assertEqual(polygon_area([a, a], subtract=[a]), 0)
+        self.assertEqual(polygon_intersection_area([a, b], [a, a]), 6)
+        self.assertEqual(polygon_area([a, b], subtract=[a, a]), 3)
+
+    def test_separated_regions_and_apertures_fit_a_finite_sweep_budget(self):
+        from agent_ee.land_geometry import Limits, polygon_intersection_area
+        lands, holes = [], []
+        for n in range(40):
+            x = 10*n
+            lands.append([(x, 0), (x+2, 0), (x+2, 3), (x, 3)])
+            holes.append([(x, 1), (x+1, 1), (x+1, 2), (x, 2)])
+        limits = Limits(max_pair_checks=2000)
+        self.assertEqual(polygon_area(lands, subtract=holes, limits=limits), 200)
+        self.assertEqual(polygon_intersection_area(lands, holes, limits=limits), 40)
+
     def test_overlapping_union_and_aperture(self):
         a = [(0, 0), (2, 0), (2, 2), (0, 2)]
         b = [(1, 0), (3, 0), (3, 2), (1, 2)]

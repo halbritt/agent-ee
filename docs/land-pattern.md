@@ -114,7 +114,7 @@ footprint origin. Every package record is accounted for:
 | `PAD` POLYGON | `unsupported_shape` |
 | Drilled `PAD` | Must be multilayer (11) and plated `Y`. The round hole or axis-aligned slot is centred on the pad; length, endpoints and midpoint are consistency-checked |
 | `HOLE` | Non-plated circular aperture |
-| `VIA` | `unsupported_shape` (conductive, not a pad) |
+| `VIA` | Through copper and plated circular drill, only when the full annulus is contained by exactly one isolated rectangular SMD pad; pin ownership is recorded as derived |
 | `TRACK`/`SOLIDREGION`/`CIRCLE`/`ARC`/`RECT`/`TEXT` | Ignored only on proven non-copper layers (silk, paste, mask, outline, document, assembly, mechanical, 3D, component/lead shape, marking); on copper or inner layers `unsupported_shape`; unknown layers `unsupported_layer` |
 | `SVGNODE` | Ignored only on layer 19 (3D model) |
 | Anything else, e.g. `PT~M …` | `unsupported_shape` |
@@ -125,6 +125,22 @@ rotations (the EasyEDA direction convention is not qualified for general
 angles), and inner/unknown pad layers are unsupported. Duplicate pad numbers
 and positions are kept as separate physical pads. Ignored records are counted
 by type and layer in `inventory.ignored_noncopper`.
+
+Contained vias use the documented [standard VIA fields](https://docs.easyeda.com/en/DocumentFormat/3-EasyEDA-PCB-File-Format/):
+copper diameter and drill radius. EasyEDA Standard supports
+[through vias](https://docs.easyeda.com/en/PCB/PCB-Tools/index.html), so each
+admitted via contributes both surface copper layers and a plated hole. A via
+requires exactly eight fields, an empty net, a nonempty unique id, and a known
+lock flag. Its derived pin number and the owning source pad are explicit in
+`pad_locators[].pin_assignment`; source bytes are retained unchanged.
+
+Containment is exact and does not use the source-roundoff tolerance. Other
+copper touching the owning pad on its layer, other copper touching the via on
+either surface, holes interrupting the owner, overlapping via annuli, and
+ambiguous or unsupported owners refuse. Bounding boxes conservatively exclude
+possible contact. At most 64 vias are admitted per package. This represents
+copper and drills only; it does not qualify solder mask, stencil, via filling,
+fabrication or assembly.
 
 ## Native extraction
 

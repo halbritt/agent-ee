@@ -2,8 +2,8 @@
 
 This derives new intent and CAD inputs, never edits a native candidate. The
 existing unchanged-reference preparer is deliberately not an entry point for it.
-Supplier footprint generation is separate from the complete land-pattern gate:
-that gate currently refuses C2903961's vias, and this module grants no exemption.
+Supplier footprint generation is separate from the complete land-pattern gate.
+Contained vias have a strict geometry path; assembly qualification is still separate.
 """
 import copy
 from fractions import Fraction
@@ -221,7 +221,7 @@ def inputs(original, regulator_supplier, diode_supplier):
         accepted=False, file_release='not_assessed',
         pending=['Complete source-bound production preparation and model integration',
                  'Manufacturer raw-document custody and source-role qualification',
-                 'Supplier thermal-via/assembly-process qualification',
+                 'Stencil and thermal-via assembly-process qualification',
                  'Generated final placement, return paths, rail drops, thermal and capacitor applicability',
                  'Fresh native checks, independent judgments/full review and manufacturing package'])
     return files, report

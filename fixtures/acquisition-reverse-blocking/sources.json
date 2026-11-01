@@ -70,7 +70,7 @@
   },
   "limits": [
     "Source derivation only; no board/file release, source-role qualification or production preparation acceptance.",
-    "C2903961 supplier includes4 thermalvias; current complete-footprint parser refuses them. Native generation preserves their copper/holes, never drops them.",
+    "C2903961 includes four thermal vias. Complete parsing preserves their copper/holes and records pin9 ownership derived from unique rectangular SMD-pad containment. Stencil and assembly qualification remain separate.",
     "Unavailable raw manufacturer captures remain unavailable; web-read facts are attributed engineering inputs, not captured-PDF claims."
   ]
 }

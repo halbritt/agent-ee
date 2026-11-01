@@ -37,9 +37,13 @@ orientation. This replaces the provisional stock footprint, whose pad geometry
 differs. The maximum body envelope follows Diodes DS30051 Rev. 18-2, page 4.
 Supplier geometry preservation does not establish assembly or CPL acceptance.
 
-The existing complete supplier parser refuses these vias. Generation does not
-change that guard or qualify the footprint, its stencil or a via-in-pad assembly
-process. The single exposed-pad paste opening is a draft declaration requiring
+The complete supplier parser represents these vias using strict
+[contained-via ownership](land-pattern.md): all four belong to exposed pad 9.
+Native geometry comparison checks both copper surfaces, all drills and pin
+agreement; omitted vias, changed drills and wrong pin numbers fail. The original
+unsupported result remains in the retained development evidence. Geometry
+verification does not qualify the stencil or a via-in-pad assembly process.
+The single exposed-pad paste opening is a draft declaration requiring
 assembly review. No purchase, fabrication or process approval follows from it.
 
 The [tests](../tests/test_acquisition_reverse_blocking.py) check the independent
