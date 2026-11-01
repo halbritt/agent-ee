@@ -1,0 +1,11 @@
+{
+  "base_model": "123e302ecd312677500ca28173ca94a806f5ad96ab12518b548f04a582328915",
+  "checker": "bdf1eb99dc911e3380a73f9e6d0eab54033ff8b156d1300e4a32698f341bbbf9",
+  "model": "457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4",
+  "sources": {
+    "analysis/geometry_contact.py": "11bcf0cc22bf06a817fb682a9579fb2457c3ef97cb5f53e809f266b3345ffab0",
+    "film-reference/datasheet/487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c.pdf": "487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c",
+    "film-reference/geometry-basis.json": "367dfd536429ee1f1d6728b9b9bb3bddb81e2f3ab157ffddaab05fa6f6bcfae9",
+    "film-reference/geometry-path-basis.json": "1463621bfab1b11021fffdc49fb5bc4d16208825651581e7be4e283a00b3eef7"
+  }
+}

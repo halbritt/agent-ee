@@ -88,7 +88,7 @@ def _version(document):
     sources = document['sources']
     model = sources['analysis/geometry-model.json']
     extra = _model_sources(model)
-    checker = acquisition_film.CHECKER if model == acquisition_film.MODEL else CHECKER
+    checker = acquisition_film.CHECKERS.get(model, CHECKER)
     if (extra is None or sources['analysis/geometry_model.py'] != checker
             or set(sources) != set(SOURCES) | set(extra)
             or any(sources.get(name) != pin for name, pin in extra.items())):

@@ -4383,13 +4383,15 @@
     {
       "paths": [
         "fixtures/acquisition-film/geometry_model.py",
-        "fixtures/acquisition-film/geometry_contact.py"
+        "fixtures/acquisition-film/geometry_contact.py",
+        "fixtures/acquisition-film/ground_reference.py",
+        "fixtures/acquisition-film/geometry_adapter.py"
       ],
       "kind": "owned-source",
       "origins": [
         "AE"
       ],
-      "reviewed": "Original native KiCad measurement code. The geometry checker derives from the owned acquisition-qualification checker; the contact helper uses native polygon operations and numeric path calculations. Neither file embeds vendor CAD, library shapes or manufacturer text."
+      "reviewed": "Original native KiCad measurement code. The geometry checker derives from the owned acquisition-qualification checker; the contact and ground-reference helpers use native polygon operations and numeric path calculations; the adapter only parses their JSON. None of these files embeds vendor CAD, library shapes or manufacturer text."
     },
     {
       "paths": [

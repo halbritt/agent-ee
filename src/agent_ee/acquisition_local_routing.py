@@ -4,7 +4,8 @@ from pathlib import Path
 import shutil
 import uuid
 
-from . import acquisition_local_return as local, acquisition_mechanics as mechanics
+from . import (acquisition_ground_ties as ground, acquisition_local_return as local,
+               acquisition_mechanics as mechanics)
 from .add_planes import validate_plan
 from .catalog import strict_json
 from .placement_job import JobRefusal, JobStopped, _check_stop, drc
@@ -131,13 +132,19 @@ def produce(candidate_dir,destination,*,expected_inputs,mechanics_binding,planes
         record['loops']=loops;current=Path(loops['output']);captured=local._capture(current)
         local.verify_seed(current/local.FILES[0],loops,clock=clock,cancel_dir=cancel_dir)
         baseline_raw=local._report_bytes(current);baseline=strict_json(baseline_raw)
-        board,reservations=reservation_bytes(captured[local.FILES[0]],recipe,planes)
+        board=captured[local.FILES[0]]
+        if 'local_plane_returns' in recipe['model']:
+            board,record['ground_ties']=ground.seed(current/local.FILES[0],board,
+                                                   recipe['model']['local_plane_returns'])
+        board,reservations=reservation_bytes(board,recipe,planes)
         record['reservations']=reservations
         trial=destination/'reservation';trial.mkdir()
         expected={**captured,local.FILES[0]:board}
         for name,raw in expected.items():
             if raw is not None:(trial/name).write_bytes(raw)
         verify_reservations(trial/local.FILES[0],reservations)
+        if 'ground_ties' in record:
+            ground.verify(trial/local.FILES[0],record['ground_ties'])
         report,execution=drc(trial/local.FILES[0],trial,clock=clock,cancel_dir=cancel_dir)
         report_sha=local._raw_report(trial,report,execution)
         record['native']=dict(execution=execution,report_sha256=report_sha)
@@ -156,6 +163,8 @@ def produce(candidate_dir,destination,*,expected_inputs,mechanics_binding,planes
             raise JobRefusal('local routing: reservation adoption changed')
         verify_reservations(pending/local.FILES[0],reservations)
         local.verify_seed(pending/local.FILES[0],loops,clock=clock,cancel_dir=cancel_dir)
+        if 'ground_ties' in record:
+            ground.verify(pending/local.FILES[0],record['ground_ties'])
         custody()
         if (local._capture(pending)!=expected or local._capture(trial)!=expected
                 or local._sha(local._report_bytes(pending))!=report_sha
@@ -183,7 +192,16 @@ def verify(board_path,record,*,clock,cancel_dir=None):
         raise JobRefusal('local routing: loop electrical reference differs from captured mechanics')
     loops=local.verify_seed(board_path,record['loops'],clock=clock,cancel_dir=cancel_dir)
     prior=local._capture(Path(record['loops']['output']))
-    expected,reservations=reservation_bytes(prior[local.FILES[0]],record['recipe'],record['planes_raw'].encode('utf-8'))
+    expected=prior[local.FILES[0]];ground_check=None
+    policy=record['recipe']['model'].get('local_plane_returns')
+    if (policy is not None) != ('ground_ties' in record):
+        raise JobRefusal('local routing: ground-tie receipt coverage differs')
+    if policy is not None:
+        expected,replayed=ground.seed(Path(record['loops']['output'])/local.FILES[0],expected,policy)
+        if replayed!=record['ground_ties']:
+            raise JobRefusal('local routing: generated ground-tie provenance changed')
+        ground_check=ground.verify(board_path,record['ground_ties'])
+    expected,reservations=reservation_bytes(expected,record['recipe'],record['planes_raw'].encode('utf-8'))
     if (reservations!=record['reservations']
             or local._identity({**prior,local.FILES[0]:expected})!=record['output_inputs']
             or record['loops']['inputs']!=record['inputs']):
@@ -195,4 +213,5 @@ def verify(board_path,record,*,clock,cancel_dir=None):
             or local._sha(local._report_bytes(source))!=record['native']['report_sha256']):
         raise JobRefusal('local routing: verification custody changed')
     return dict(status='pass',board_sha256=before,record_sha256=local._sha(raw),loops=loops,
-                reservations=native,owned_zone_uuids=[r['uuid'] for r in reservations['areas']],acceptance_assessed=False)
+                reservations=native,owned_zone_uuids=[r['uuid'] for r in reservations['areas']],
+                **({'ground_ties':ground_check} if ground_check is not None else {}),acceptance_assessed=False)

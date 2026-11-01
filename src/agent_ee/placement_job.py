@@ -1624,7 +1624,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                        **({'mechanics_controller': digest(Path(__file__).with_name('acquisition_mechanics.py'))}
                                           if 'mechanics' in normalized else {}),
                                        **({name: digest(Path(__file__).with_name(name+'.py')) for name in
-                                           ('acquisition_local_return','acquisition_local_geometry','acquisition_local_routing')}
+                                           ('acquisition_local_return','acquisition_local_geometry','acquisition_local_routing',
+                                            'acquisition_ground_ties')}
                                           if 'mechanics' in normalized else {}),
                                        **({'acquisition_solver': report['preflight']['acquisition_solver']}
                                           if 'mechanics' in normalized else {}),

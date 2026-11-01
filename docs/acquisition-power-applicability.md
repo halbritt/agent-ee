@@ -303,3 +303,10 @@ combination. The [independent removal investigation](acquisition-removal-bounds.
 now covers all eight low/high capacitor and source-limit cases with the original
 electrical limits. All model predicates pass; a new required replay check and
 fresh candidate-bound acceptance remain necessary.
+
+The package built with that check passed its native checks and all fourteen
+judgments, and its full engineering review failed on one deferred major concern:
+the ADC and filter grounds reached the plane only through the regulator's exposed
+pad. The [local ground return work](acquisition-ground-return.md) adds generated
+plane connections and a required measurement on the saved board. A new candidate
+must still pass fresh judgments and the full review.

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from . import (acquisition_film_analysis, acquisition_film_removal, acquisition_power_analysis, acquisition_power_prepare,
                acquisition_reverse_blocking, cpl_rotation, easyeda_footprint,
-               part_record, parts_manifest, typed_overlay)
+               jlc_stock_capture, part_record, parts_manifest, typed_overlay)
 from .catalog import strict_json
 from .footprint_library import _members
 from .storage import identity, json_bytes
@@ -26,11 +26,14 @@ RECORD = 'film-reference/C3778570.part-record.json'
 MODEL_PATH = 'lib3d/Capacitor_SMD.3dshapes/C_1210_3225Metric.step'
 _GEOMETRY = strict_json((DATA / 'geometry-sources.json').read_bytes())
 _LEGACY_GEOMETRY = strict_json((DATA / 'geometry-sources-r1.json').read_bytes())
+_PREVIOUS_GEOMETRY = strict_json((DATA / 'geometry-sources-r2.json').read_bytes())
 MODEL = _GEOMETRY['model']
 SOURCES = _GEOMETRY['sources']
-MODELS = {MODEL: SOURCES, _LEGACY_GEOMETRY['model']: _LEGACY_GEOMETRY['sources']}
+MODELS = {row['model']:row['sources'] for row in (_GEOMETRY, _PREVIOUS_GEOMETRY, _LEGACY_GEOMETRY)}
+CHECKERS = {row['model']:row['checker'] for row in (_GEOMETRY, _PREVIOUS_GEOMETRY)}
 CHECKER = _GEOMETRY['checker']
 ANALYSIS = 'analysis/film/'
+STOCK = 'film-reference/assembly-stock-refresh/catalog.json'
 
 
 def footprint_bytes(raw):
@@ -145,6 +148,9 @@ def sources(base, selected):
             ('analysis/geometry-model.json', 'geometry-model.json', MODEL),
             ('analysis/geometry_model.py', 'geometry_model.py', CHECKER),
             ('analysis/geometry_contact.py', 'geometry_contact.py', SOURCES['analysis/geometry_contact.py']),
+            ('analysis/ground_reference.py', 'ground_reference.py', SOURCES['analysis/ground_reference.py']),
+            ('analysis/geometry_adapter.py', 'geometry_adapter.py', SOURCES['analysis/geometry_adapter.py']),
+            ('film-reference/ground-return-basis.md', 'ground-return-basis.md', SOURCES['film-reference/ground-return-basis.md']),
             ('film-reference/geometry-path-basis.json', 'geometry-path-basis.json', SOURCES['film-reference/geometry-path-basis.json']),
             ('film-reference/geometry-basis.json', 'geometry-basis.json', SOURCES['film-reference/geometry-basis.json'])]:
         raw = (DATA / fixture).read_bytes()
@@ -230,13 +236,53 @@ def _power(files, run, film_model):
     return measured
 
 
+def _stock_catalog(files, root):
+    """Attach a complete raw-backed observation without rewriting part identities."""
+    root = Path(root)
+    raw = (root/'catalog.json').read_bytes()
+    captured = acquisition_power_prepare._captured(root, {'catalog.json':sha256(raw).hexdigest()})
+    catalog = strict_json(raw)
+    def read_response(path):
+        requests = [row for row in catalog['requests']
+                    if isinstance(row.get('response'),dict) and row['response'].get('path') == path]
+        if len(requests) != 1:
+            raise ValueError('fresh assembly catalog response coverage differs')
+        additions = acquisition_power_prepare._captured(root,
+            {path:requests[0]['response']['sha256']})
+        captured.update(additions)
+        return additions[path]
+    jlc_stock_capture.validate_capture(catalog, read_response)
+    if catalog['source']['endpoint'] != jlc_stock_capture.DEFAULT_ENDPOINT:
+        raise ValueError('fresh assembly catalog requires the public JLC source')
+    parts = strict_json(files['parts.json'])['parts']
+    if set(catalog['parts']) != {part['lcsc'] for part in parts}:
+        raise ValueError('fresh assembly catalog must cover exactly the selected LCSC identities')
+    for part in parts:
+        row = catalog['parts'][part['lcsc']]
+        if any(row.get(key) != part[key] for key in ('lcsc','mpn','package')):
+            raise ValueError('fresh assembly catalog changes selected identity: ' + part['id'])
+    prefix = str(Path(STOCK).parent) + '/'
+    additions = {prefix+path:data for path,data in captured.items()}
+    if set(additions) & set(files):
+        raise ValueError('fresh assembly stock collides with retained source')
+    files.update(additions)
+
+
 def _requirements(files):
     document = strict_json(files['requirement-map.json'])
     pool = typed_overlay._check_pool(document)
     pool['engineering-geometry']['params']['tool']['inputs'].append('analysis/geometry_contact.py')
+    pool['engineering-geometry']['params']['tool']['inputs'].append('analysis/ground_reference.py')
+    for name,limit,unit in [('ground_saved_net_changes',0,'count'),('ground_transition_missing',0,'count'),('ground_corridor_missing',0,'count'),
+                          ('ground_plane_components',1,'count'),('ground_return_path',3,'mm')]:
+        pool['engineering-geometry']['params']['limits'][name]=dict(
+            max=limit,unit=unit,condition='nominal25C-reviewed-acquisition')
+    pool['engineering-geometry']['params']['limits']['ground_plane_components']['min']=1
     catalog = acquisition_power_prepare._catalog(files, (
         'preparation/power-repair/catalog/catalog.json', 'power-reference/u1-stock/catalog.json',
         'power-reference/d1-stock/catalog.json', 'film-reference/catalog/catalog.json'))
+    if STOCK in files:
+        catalog = STOCK
     pool['assembly']['params'].update(catalog=catalog, catalog_sha256=sha256(files[catalog]).hexdigest())
     files['cpl/supplier/C3778570.provenance.json'] = files['film-reference/supplier/C3778570.provenance.json']
     selected = {p['lcsc'] for p in strict_json(files['parts.json'])['parts']}
@@ -267,6 +313,16 @@ def _requirements(files):
                             for p in brief['sources']]
         brief['sources'].append('film-reference/geometry-basis.json')
         brief['sources'].append('film-reference/geometry-path-basis.json')
+        if brief['requirement'] in ('ACQ-ELEC-4-ERROR-EVALUATION','ACQ-ELEC-4-FILTER-SCOPE',
+                                     'ACQ-MECH-3-RETURN-PATHS','ACQ-MECH-3-LIMIT-RATIONALE'):
+            brief['sources'].append('film-reference/ground-return-basis.md')
+            brief['questions'].append(
+                'Evaluate the fresh final-board ground-reference measurements and conditional DC/RF model. '
+                'ADC and filters have generated local plane ties; the check must witness native copper '
+                'corridors to both adjacent J3 grounds. Account for board-ground error explicitly. '
+                'ADS1115 sinks SDA but never SCL; host sink currents return at J2.1. '
+                'Do not turn material/plating assumptions, 25mA stress sensitivity, or selected RF parasitics '
+                'into guaranteed accuracy or attenuation. No original operating condition changes.')
         brief['sources'] += ['film-reference/engineering/' + p for p in (
             'host-extraction-r2/MU.txt', 'technical-note.txt', 'model-cautions.txt',
             'impedance-observation.json', 'import.json')]
@@ -346,7 +402,8 @@ def _loop_evidence(files, root):
         'Fresh candidate-bound engineering judgment remains required.\n').encode()
 
 
-def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None, removal_evidence=None):
+def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None, removal_evidence=None,
+            assembly_catalog=None):
     base, selected, model_run, film_model, out = map(Path, (base, selected, model_run, film_model, out))
     if out.exists() or not out.parent.is_dir():
         raise ValueError('output must be new under an existing parent')
@@ -356,6 +413,8 @@ def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None, r
         roots['loop_evidence'] = Path(loop_evidence).resolve()
     if removal_evidence is not None:
         roots['removal_evidence'] = Path(removal_evidence).resolve()
+    if assembly_catalog is not None:
+        roots['assembly_catalog'] = Path(assembly_catalog).resolve()
     typed_overlay._disjoint('output', out.resolve(), roots)
     files, plan = sources(base, selected)
     measurements = _power(files, model_run, film_model)
@@ -363,6 +422,8 @@ def prepare(base, selected, model_run, film_model, out, *, loop_evidence=None, r
         _loop_evidence(files, Path(loop_evidence))
     if removal_evidence is not None:
         acquisition_film_removal.attach(files, Path(removal_evidence))
+    if assembly_catalog is not None:
+        _stock_catalog(files, Path(assembly_catalog))
     _requirements(files)
     inventory, accounting = acquisition_power_prepare.materialize(files, plan, out, REFERENCE)
     report = dict(schema='agent-ee.acquisition-film-preparation/1', reference=REFERENCE,

@@ -123,6 +123,21 @@ if any(t['width_mm']<.25 for t in rails):raise ValueError('rail narrower than re
 r=model['dc_estimate'];tl=sum(t['length_mm'] for t in rails)
 resistance=r['rho_ohm_m']*(tl*.001/(r['track_width_mm']*.001*r['copper_um']*1e-6)+max(s['length_mm'] for s in strips)*.001/(r['plane_strip_width_mm']*.001*r['copper_um']*1e-6))+r['contact_and_joint_ohm']
 metrics={'body_gap':min(x['gap_mm'] for x in pairs),'placement_gap':min(x['gap_mm'] for x in pairs)-2*model['placement_allowance_mm'],'body_overlap':sum(x['overlap_mm2'] for x in pairs),'body_outside':sum(x['outside_area_mm2'] for x in parts),'access_obstruction':sum(x['obstruction_mm2'] for x in access),'ground_strip_outside':sum(s['outside_area_mm2'] for s in strips),'rail_drop':resistance*r['input_current_a'],**{n:v for n,v in loops.items()}}
+ground_reference=None
+if 'local_plane_returns' in model:
+ from ground_reference import measure
+ from agent_ee.symbol_library import children,parse_sexpr
+ saved_vias=children(parse_sexpr(raw),'via')
+ native_vias={t.m_Uuid.AsString():t.GetNetname() for t in board.GetTracks() if t.GetClass()=='PCB_VIA'}
+ saved_net_changes=0
+ for node in saved_vias:
+  identities=children(node,'uuid');nets=children(node,'net')
+  if len(identities)!=1 or len(nets)!=1 or native_vias.get(identities[0][1])!=nets[0][1]:saved_net_changes+=1
+ if len(saved_vias)!=len(native_vias):saved_net_changes+=1
+ ground_reference=measure(board,adj,model)
+ ground_reference['metrics']['ground_saved_net_changes']=saved_net_changes
+ metrics.update(ground_reference['metrics'])
 if boardpath.read_bytes()!=raw:raise ValueError('native inspection modified board')
 result=dict(board_sha256=hashlib.sha256(raw).hexdigest(),model_sha256=hashlib.sha256((root/'analysis/geometry-model.json').read_bytes()).hexdigest(),parts=parts,closest_pairs=sorted(pairs,key=lambda x:x['gap_mm'])[:12],blocks=blocks,connector_access=access,ground_strips=strips,local_connections=connections,pad_track_contacts=contact_witnesses,rail_trace_length_mm=tl,estimated_rail_return_ohm=resistance,metrics=metrics,limits=model['limits'])
+if ground_reference is not None:result['ground_reference']=ground_reference
 out.write_text(json.dumps(result,indent=2)+'\n')
