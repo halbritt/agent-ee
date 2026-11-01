@@ -43,6 +43,12 @@ def declaration(root):
     return {'schema': SCHEMA, 'sources': sources}
 
 
+def _unverified_model(root):
+    """Read only the custody marker's carrier; load() then authenticates these bytes."""
+    path = root / 'analysis/geometry-model.json'
+    return strict_json(path.read_bytes()) if path.is_file() and not path.is_symlink() else None
+
+
 def _design_files(model):
     """The extra source files a design's own model names, confined to its source root."""
     files = model.get('source_files', []) if isinstance(model, dict) else None
@@ -98,8 +104,7 @@ def load(path):
             or not set(SOURCES) <= set(document['sources'])):
         raise ValueError('unsupported acquisition mechanics recipe')
     known = _model_sources(document['sources']['analysis/geometry-model.json']) is not None
-    if known:
-        _version(document)
+    _version(document, None if known else _unverified_model(path.parent))
     raw = {}
     for rel, expected in document['sources'].items():
         safe_relative(rel)
@@ -111,7 +116,6 @@ def load(path):
             raise ValueError('acquisition mechanics source changed: ' + rel)
     model = strict_json(raw['analysis/geometry-model.json'])
     if not known:
-        _version(document, model)
         _design_model(model, document['sources'])
     requirements = strict_json(raw['requirement-map.json'])
     from .typed_overlay import _check_pool
