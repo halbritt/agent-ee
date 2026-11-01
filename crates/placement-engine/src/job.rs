@@ -563,6 +563,15 @@ const MECHANICS_PH_SOURCES: &[(&str, &str)] = &[
 ];
 
 fn mechanics_sources(model: &str) -> Result<Vec<(&'static str, &'static str)>> {
+    if model == "d451823e8f2d817245cdb4aa3da057ef0b273edf90067e35ae1433ab4d11d0c3" {
+        let mut sources = mechanics_sources("457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4")?;
+        sources.extend_from_slice(&[
+            ("analysis/geometry_adapter.py", "2ded5b6240d1a53f0ef9e9960e4429cb0ec1af3ab4cd2d80496bc3fe35e5f578"),
+            ("analysis/ground_reference.py", "1c37cd92c4fc797ef8c8b8849e359ec78cae62bd75bd1b8f47672e121d2c3bfd"),
+            ("film-reference/ground-return-basis.md", "eea29cc5845ec4785b9e59fad36e61664315b1af59c7a78eab98515314a21620"),
+        ]);
+        return Ok(sources);
+    }
     if model == "457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4" {
         let mut sources = mechanics_sources("486dc5354d351f1bff274d7759a2e8805437be64701d51106cc3ac30e7dfbfd0")?;
         sources.extend_from_slice(&[
@@ -628,9 +637,11 @@ fn acquisition_source_model(m: &Value) -> Result<Value> {
     let model = sources.get("analysis/geometry-model.json").and_then(Value::as_str)
         .context("missing mechanics model hash")?;
     let supplementary = mechanics_sources(model)?;
-    let checker = if model == "457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4" {
-        "bdf1eb99dc911e3380a73f9e6d0eab54033ff8b156d1300e4a32698f341bbbf9"
-    } else { MECHANICS_CHECKER };
+    let checker = match model {
+        "d451823e8f2d817245cdb4aa3da057ef0b273edf90067e35ae1433ab4d11d0c3" => "58a61adf28ca7d29479258ba7cb52373d3faaee4e884e40658ce5be9abce3100",
+        "457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4" => "bdf1eb99dc911e3380a73f9e6d0eab54033ff8b156d1300e4a32698f341bbbf9",
+        _ => MECHANICS_CHECKER,
+    };
     ensure!(sources.get("analysis/geometry_model.py").and_then(Value::as_str) == Some(checker),
             "unsupported mechanics model/checker");
     ensure!(sources.len() == MECHANICS_BASE_SOURCES.len() + supplementary.len()
@@ -3755,7 +3766,8 @@ mod tests {
         let power: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-reverse-blocking/mechanics-test-case.json")).unwrap();
         let film: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-film/mechanics-test-case.json")).unwrap();
         let film_original: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-film/mechanics-test-case-r1.json")).unwrap();
-        for case in cases["cases"].as_array().unwrap().iter().chain([&power, &film_original, &film]) {
+        let film_previous: Value = serde_json::from_str(include_str!("../../../fixtures/acquisition-film/mechanics-test-case-r2.json")).unwrap();
+        for case in cases["cases"].as_array().unwrap().iter().chain([&power, &film_original, &film_previous, &film]) {
             let mut raw = source_mechanics_fixture(true, false);
             raw["mechanics"]["model_raw"] = case["model_raw"].clone();
             raw["mechanics"]["sources"] = case["sources"].clone();
