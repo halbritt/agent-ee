@@ -468,3 +468,29 @@ class DesignCompileTests(unittest.TestCase):
             self.assertEqual(result["files"][0]["status"], "reused")
             with self.assertRaises(ValueError):
                 fetch_stock_references(["../escape.step"], root)
+
+    def test_routing_vias_respect_native_annular_width_without_weakening_fab_minima(
+        self,
+    ):
+        # Real I2C run r1 routed all nets but hit annular_width at the fab's
+        # minimum 0.25/0.15 pair. Preserve the gate and derive larger routing.
+        self.compile()
+        inputs = self.root / "bundle/inputs"
+        project = json.loads((inputs / "project/owned.kicad_pro").read_text())
+        rules = project["board"]["design_settings"]["rules"]
+        routing = project["net_settings"]["classes"][0]
+        from agent_ee.native_geometry_defaults import DEFAULTS
+
+        native = DEFAULTS["board.design_settings.rules.min_via_annular_width"][0]
+        self.assertEqual(rules["min_via_annular_width"], native)
+        self.assertGreaterEqual(
+            (routing["via_diameter"] - routing["via_drill"]) / 2, native
+        )
+        self.assertGreaterEqual(routing["via_diameter"], rules["min_via_diameter"])
+        self.assertGreaterEqual(
+            routing["via_drill"], rules["min_through_hole_diameter"]
+        )
+        derivation = json.loads((inputs / "project-rule-derivation.json").read_text())
+        self.assertEqual(
+            derivation["selected_routing"]["via_diameter"], routing["via_diameter"]
+        )

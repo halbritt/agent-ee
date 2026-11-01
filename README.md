@@ -1,7 +1,5 @@
 # agent-ee
 
-
-For explicit board and circuit decisions, use [design capture and compile](docs/design-compile.md), then [build run](docs/build-workflow.md).
 **agent-ee turns a captured electronics design into a verified, native KiCad
 project and a fabrication package, with tool evidence at every stage.** It is
 being built as the engine of an AI-driven PCB generator: an agent and an
@@ -10,6 +8,8 @@ the schematic, places and routes the board, runs the checks, and exports
 Gerbers, drills, BOM and CPL. The same checks and independent-review machinery
 also review and repair existing KiCad projects, which is where the project
 started.
+
+For explicit board and circuit decisions, use [design capture and compile](docs/design-compile.md), then [build run](docs/build-workflow.md).
 
 The owner's direction since 2026-10-17 is the generator
 ([decisions](docs/decisions.md)); the review workflow is one of its stages,

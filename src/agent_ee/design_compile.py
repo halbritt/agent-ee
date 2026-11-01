@@ -388,11 +388,51 @@ def envelope(design, root):
     _, _, rules, netclass, _ = produced_rules(
         dict(fab_profile="fab-profile.json"), files, root
     )
-    # The profile compiler is the single source of enforced limits and routing defaults.
+    from . import native_geometry_defaults
+
+    # Keep the sourced fab minima, and route at least as conservatively as the
+    # pinned native defaults. A minimum pad/drill pair alone can violate KiCad's
+    # unchanged annular-width default.
+    routing, routing_sources = {}, {}
+    for item in netclass:
+        field = item["setting"].rsplit(".", 1)[1]
+        native_value, citation = native_geometry_defaults.DEFAULTS[item["setting"]]
+        routing[field] = max(item["value"], native_value)
+        routing_sources[field] = dict(
+            fab=item,
+            native_default=native_value,
+            native_citation=citation,
+            selected=routing[field],
+        )
+    annular, annular_citation = native_geometry_defaults.DEFAULTS[
+        "board.design_settings.rules.min_via_annular_width"
+    ]
+    routing["via_diameter"] = max(
+        routing["via_diameter"], round(routing["via_drill"] + 2 * annular, 6)
+    )
+    write_json(
+        root / "project-rule-derivation.json",
+        dict(
+            schema="agent-ee.design-project-rules/1",
+            fab_profile=blob(root, "fab-profile.json"),
+            enforced=rules,
+            routing=routing_sources,
+            native_defaults=dict(
+                version=native_geometry_defaults.VERSION,
+                module_sha256=digest(native_geometry_defaults.__file__),
+                annular_width=annular,
+                citation=annular_citation,
+            ),
+            selected_routing=routing,
+        ),
+    )
     project = dict(
         board=dict(
             design_settings=dict(
-                rules={i["setting"].rsplit(".", 1)[1]: i["value"] for i in rules}
+                rules={
+                    **{i["setting"].rsplit(".", 1)[1]: i["value"] for i in rules},
+                    "min_via_annular_width": annular,
+                }
             )
         ),
         meta=dict(filename=design["name"] + ".kicad_pro", version=1),
@@ -400,7 +440,7 @@ def envelope(design, root):
             classes=[
                 dict(
                     name="Default",
-                    **{i["setting"].rsplit(".", 1)[1]: i["value"] for i in netclass},
+                    **routing,
                 )
             ],
             meta=dict(version=3),

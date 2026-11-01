@@ -115,8 +115,10 @@ expected to reproduce identical bytes across network runs.
 The JLC fab profile and original selected-fact transcription are package data.
 The instantiated profile cites only `fab-sources/selected-facts.txt`; no vendor
 PDF or captured vendor page ships in the repository. Project rule keys and
-values come from `scaffold.produced_rules`, including the native
-`min_copper_edge_clearance` key. CPL rotations come from footprint-local geometry
+minima come from `scaffold.produced_rules`, including the native
+`min_copper_edge_clearance` key. Routing sizes use the larger of the sourced fab
+values and the pinned KiCad 10.0.7 native defaults, preserving its annular-width
+rule. `project-rule-derivation.json` binds both sources and the selected values. CPL rotations come from footprint-local geometry
 and captured supplier pin-1 geometry before a board exists. Supplier preview
 remains a physical delivery obligation.
 

@@ -4415,6 +4415,27 @@
       ],
       "note": "Original finite film-capacitor generation, exact source binding and regression checks. Vendor model/CAD/PDF bytes remain external runtime inputs.",
       "reviewed": "Original KiCad footprint generator syntax and metadata written for agent-ee. It emits factual pad dimensions from an external, hash-pinned supplier capture; no supplier CAD body or vendor simulation model is embedded in this source. Body envelopes are numerical manufacturer facts. All raw captures remain local runtime inputs."
+    },
+    {
+      "paths": [
+        "fixtures/design-examples/555-oscillator.json",
+        "fixtures/design-examples/i2c-sensor.json"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original design decisions for compiler examples: factual part identifiers, connectivity and independent witnesses. No vendor CAD, datasheet or supplier response bytes are included."
+    },
+    {
+      "paths": [
+        "tests/test_design_compile.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic KiCad syntax, EasyEDA fixture geometry and PDF envelope bytes for offline compiler tests; no supplier CAD or vendor document is copied."
     }
   ]
 }
