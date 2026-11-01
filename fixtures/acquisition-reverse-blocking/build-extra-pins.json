@@ -12,7 +12,10 @@
     "analysis/adp7104/executed-application.json": "ed52ac5d3dfde47c1481cc5b5c1a38edc1655e8d9acd3d1122ba63ed76cd429b",
     "analysis/adp7104/model-custody.json": "ac05d44d7bb044c6d693c92708b01c5f4feba8b56370d3849516d13e7c57e20e",
     "power-reference/ADI_LinearRegulators_Release.xlsm": "1c4ea5a78b6f5d7edcb20852a99653de0bfb026f7b2ee168ccfa764ad8c08109",
-    "power-reference/adi-full-table-selected.json": "cbbdd5b8fca6fa03bc2b43c321786820dbf3ce94671ebd1491f3c15db49758bd"
+    "power-reference/adi-full-table-selected.json": "cbbdd5b8fca6fa03bc2b43c321786820dbf3ce94671ebd1491f3c15db49758bd",
+    "power-reference/manufacturer-text/adp7104-revi.txt": "1ddb612457a5aed0aec3a04ee377100120b01a1e61a117584fea58ce53c4c063",
+    "power-reference/manufacturer-text/b0520lw-rev18-2.txt": "59e7e6e6f4fe044a8a768cdbaba2ffe543a86c9f62286754bdba2358959bbc25",
+    "power-reference/manufacturer-text/manifest.json": "1144cac77dd2aeda11e4cac6b3ab34adabae112592898abfca77717ef5413b1b"
   },
   "model_provenance": {
     "source": "Local KiCad installation /usr/share/kicad/3dmodels/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step",

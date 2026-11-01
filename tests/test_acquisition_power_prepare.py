@@ -1,5 +1,6 @@
 """Real source admission and retained-data consumption, not board acceptance."""
 from copy import deepcopy
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -71,6 +72,47 @@ class PowerBuildTests(unittest.TestCase):
             acquisition_power_geometry.revise((BASE / 'analysis/geometry-model.json').read_bytes() + b' ')
         with self.assertRaises(ValueError):
             acquisition_block_source.derive(self.source, plan)  # old TPS endpoint guard remains strict
+
+    def test_replacement_parts_retain_primary_text_usable_by_judgments(self):
+        # The 2026-11-01 ADP review could inspect the new PDFs but could not
+        # cite their electrical/assembly facts through the UTF-8-only contract.
+        from agent_ee.judgment_seats import citation_policy, source_text
+        from agent_ee.source_authority import verified_reference
+        prefix = 'power-reference/manufacturer-text/'
+        self.assertIn(prefix + 'manifest.json', self.report['files'])
+        manifest = json.loads((self.source / prefix / 'manifest.json').read_bytes())
+        self.assertEqual(manifest['status'], 'complete')
+        documents = {d['id']: d for d in manifest['documents']}
+        self.assertEqual(set(documents), {'adp7104-revi', 'b0520lw-rev18-2'})
+        texts = source_text(self.bundle, self.report['files'])
+        excluded = citation_policy(self.report['files'], texts)['excluded_files']
+        for name, count, marker in [('adp7104-revi', 25, 'Capacitor ESR'),
+                                    ('b0520lw-rev18-2', 5, 'Maximum Leakage Current')]:
+            with self.subTest(document=name):
+                document = documents[name]
+                source = document['source']
+                self.assertEqual(self.report['files'][source['path']], source['sha256'])
+                self.assertEqual(self.report['files'][source['manifest_path']], source['manifest_sha256'])
+                text_path = prefix + document['text']['path']
+                self.assertNotIn(text_path, excluded)
+                raw = (self.source / text_path).read_bytes()
+                self.assertEqual(sha256(raw).hexdigest(), document['text']['sha256'])
+                self.assertEqual(len(document['pages']), count)
+                offset = 0
+                for page in document['pages']:
+                    self.assertEqual(page['byte_start'], offset)
+                    end = page['byte_end']
+                    self.assertEqual(raw[page['content_byte_end']:end], b'\f')
+                    self.assertEqual(sha256(raw[offset:end]).hexdigest(), page['sha256'])
+                    offset = end
+                self.assertEqual(offset, len(raw))
+                page = next(p for p in document['pages']
+                            if marker in raw[p['byte_start']:p['content_byte_end']].decode('utf-8'))
+                passage = raw[page['byte_start']:page['content_byte_end']].decode('utf-8')
+                quote = next(line.strip() for line in passage.splitlines() if marker in line)
+                citation = dict(path=text_path, sha256=document['text']['sha256'],
+                    locator=f"PDF {source['sha256']}, physical page {page['physical_page']}", quote=quote)
+                self.assertEqual(verified_reference(citation, texts)['enforcement'], 'verified')
 
     def test_actual_generated_native_cpl_frames_match_new_policy(self):
         report = json.loads((NATIVE / 'build-report.json').read_bytes())

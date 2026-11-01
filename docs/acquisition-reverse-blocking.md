@@ -207,6 +207,15 @@ captured sources without launching a native CAD tool or network request. Input
 hash drift and an existing or overlapping output directory raise `ValueError`;
 failed preparation output remains available for diagnosis.
 
+The extra inputs include UTF-8 text from all 25 pages of the selected ADP7104
+Rev. I data sheet and all five pages of the B0520LW Rev. 18-2 data sheet under
+`power-reference/manufacturer-text/`. Their capture manifest binds the original
+PDFs and acquisition manifests, extraction binaries, and page byte offsets.
+The ordinary judgment citation validator can therefore cite those primary
+passages. PDF presence alone did not provide eligible text citations. Machine
+extraction leaves figures and table interpretation for review; it does not
+establish electrical or assembly applicability.
+
 The specification and authored obligation spans remain unchanged. The distinct
 reference replaces the eight TPS-specific model checks with explicit ADP
 interval calculations and a replay through the existing `measurements` check.
