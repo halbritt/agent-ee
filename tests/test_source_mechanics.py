@@ -93,8 +93,8 @@ class DeclaredMechanicsTests(unittest.TestCase):
         from agent_ee import acquisition_block_source as recipe
         plan = dict(envelope='envelope.json', parts=dict(manifest='parts.json', circuit='circuit.json'),
                     placement=dict(intent='intent.json'))
-        for name in ('groups.json', 'electrical-locality.json', 'envelope.json', 'parts.json', 'circuit.json',
-                     'intent.json', recipe.ENGINEERING_PATH):
+        for name in ('spec.md', 'analysis/geometry_model.py', 'groups.json', 'electrical-locality.json',
+                     'envelope.json', 'parts.json', 'circuit.json', 'intent.json', recipe.ENGINEERING_PATH):
             (self.root / name).parent.mkdir(parents=True, exist_ok=True)
             (self.root / name).write_text('{}')
         with self.assertRaisesRegex(ValueError, 'known mechanics model revision'):
