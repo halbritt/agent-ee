@@ -225,6 +225,11 @@ The legacy `router.budget_s` field is accepted but ignored: routing receives
 the remaining overall time, with no minimum timeout extension. If less than one
 second remains, the integer-second router CLI is not started.
 
+A final board is ineligible when a native silkscreen finding names no field, such as one
+footprint's silk segment over another's. The artwork stage moves only fields, so it could
+never fix that board. The finding appears in `final.silk_graphic_conflicts`, and the job
+tries its next routing candidate.
+
 Optional `router.grid_step_mm` selects the builtin router's search resolution
 in millimetres, including its coupled differential-pair and remaining-net
 passes. For example, `0.025` requests a 25 micrometre search grid. It does not

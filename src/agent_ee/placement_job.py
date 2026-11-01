@@ -1939,6 +1939,13 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     return report
 
 
+def _silk_graphic_conflicts(report):
+    """Silk findings that name no field. Artwork moves only fields, so another placement must fix them."""
+    from .silk_artwork import ARTWORK_CONFLICTS
+    return [violation for violation in report['violations'] if violation['type'] in ARTWORK_CONFLICTS
+            and not any(' field of ' in item['description'] for item in violation['items'])]
+
+
 def _completion_status(routed, incumbent, final):
     """Native rejection or absent checks cannot be overridden by router success."""
     if routed.get('status') != 'routed':
@@ -2226,7 +2233,8 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
         problems.append('final board changed after block contract check')
     if mechanics_result.get('status') != 'not_declared' and mechanics_result.get('board_sha256') != final_board_sha256:
         problems.append('final board changed after acquisition mechanics check')
-    failed = (problems or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
+    silk_conflicts = _silk_graphic_conflicts(report_)
+    failed = (problems or silk_conflicts or any(split.values()) or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared')
               or block_result['status'] not in ('pass', 'info', 'not_declared')
               or mechanics_result['status'] not in ('pass', 'not_declared')
@@ -2242,7 +2250,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
             'integrity': 'violated' if problems else 'preserved',
             'eligibility': 'INELIGIBLE' if failed else 'eligible',
             'identity_problems': problems, 'rule_files': rule_files,
-            'drc': exec_, 'opens': len(report_['unconnected_items']),
+            'drc': exec_, 'opens': len(report_['unconnected_items']), 'silk_graphic_conflicts': silk_conflicts,
             'errors': _error_summary(split), 'warnings': _warnings(report_),
             'physical_checks': 'FAILED' if failed else 'no native errors',
             'edge_intent': edge_intent, 'locality': locality, 'block_contract': block_result, 'mechanics': mechanics_result, 'metrics': metrics,

@@ -1,4 +1,4 @@
-"""The router search grid follows the board when a plan does not choose one."""
+"""Choices a placement job makes from the board when a plan does not state them."""
 import unittest
 
 from agent_ee import placement_job as job
@@ -26,6 +26,18 @@ class RouterGridTests(unittest.TestCase):
         for config, board, trial, expected in cases:
             with self.subTest(expected=expected, trial=trial):
                 self.assertEqual(job.router_grid(config, board, trial), expected)
+
+
+class SilkGraphicConflictTests(unittest.TestCase):
+    def test_only_findings_that_name_no_field_make_a_board_ineligible(self):
+        def finding(kind, *descriptions):
+            return dict(type=kind, items=[dict(description=text) for text in descriptions])
+        graphics = finding('silk_overlap', 'Segment of R1 on F.Silkscreen', 'Polygon of U2 on F.Silkscreen')
+        over_pad = finding('silk_over_copper', 'Segment of R1 on F.Silkscreen', 'Pad 1 [GND] of C3 on F.Cu')
+        movable = finding('silk_overlap', 'Reference field of J2', 'Segment of R1 on F.Silkscreen')
+        other = finding('lib_footprint_issues', 'Footprint U1')
+        report = dict(violations=[graphics, over_pad, movable, other])
+        self.assertEqual(job._silk_graphic_conflicts(report), [graphics, over_pad])
 
 
 class RepeatedPadRefusalTests(unittest.TestCase):
