@@ -492,6 +492,23 @@ def evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance
     return records, applied, unmatched
 
 
+def _same_pads_apart_from_extras(board, supplier):
+    """Equal pad sets, or sets that differ only in a tab or two mounting pads.
+
+    Libraries number those differently. The board repeats a pin number for a tab or uses MP, and
+    the supplier gives each extra pad its own number after the pins. This compares numbering for
+    pin-1 grading. It does not establish the electrical pin map; `land_pattern` grades that.
+    """
+    if len(board) != len(supplier):
+        return False
+    pins, extras = set(board) - {'MP'}, set(supplier) - set(board)
+    if not pins <= set(supplier) or len(extras) > 2 or len(board) - len(pins) != len(extras):
+        return False
+    numeric = lambda number: number.isdigit() and int(number)
+    return not extras or (all(map(numeric, pins | extras))
+                          and min(map(int, extras)) > max(map(int, pins)))
+
+
 def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm, delta, *,
           netlist=None, pad_nets=None, partnumber=None, evidence=None):
     def mode(name, message):
@@ -517,9 +534,7 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
             'package': package['identity']['package']}
     record['pin1'] = pin1
     board_numbers, supplier_numbers = sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)
-    # Libraries number a tab or mounting pad differently: the board repeats a pin number for a tab
-    # or uses MP, and the supplier gives the extra pad its own number. Every other number must match.
-    if len(board_numbers) != len(supplier_numbers) or not set(board_numbers) - {'MP'} <= set(supplier_numbers):
+    if not _same_pads_apart_from_extras(board_numbers, supplier_numbers):
         return mode('pad_set_mismatch', 'board and supplier pad numbers differ: '
                     f'{board_numbers} vs {supplier_numbers}')
     if board_numbers != supplier_numbers:

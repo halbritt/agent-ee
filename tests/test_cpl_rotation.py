@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import json
+import re
 import shutil
 import tempfile
 import time
@@ -15,7 +16,7 @@ from pathlib import Path
 from agent_ee.capabilities import describe_check
 from agent_ee.cpl_rotation import (CYCLES, aggregate, capability, classify_pin1, corrected_rotation,
                                    evaluate, load_policy, match_policy, pin1_offset, read_bom_bindings,
-                                   read_native_cpl, validate_params, _midpoint)
+                                   read_native_cpl, validate_params, _midpoint, _same_pads_apart_from_extras)
 from agent_ee.easyeda_footprint import SupplierError, symbol_pins
 from agent_ee.fab_export import cpl_rows
 from agent_ee.storage import digest, read_json, write_json
@@ -289,13 +290,24 @@ class EvaluateTests(unittest.TestCase):
                 self.assertEqual((record['execution'], record['outcome']), ('ok', 'pass'), record['modes'])
                 self.assertEqual(record['pin1']['pad_numbering_differs']['board'][-1], board_end)
 
-    def test_a_renumbered_electrical_pad_or_different_count_leaves_coverage_unavailable(self):
-        # Review counterexample: pad 2 renamed 99 kept the same count and geometry.
+    def test_real_library_numberings_are_recognized_as_extras(self):
+        for board, supplier in ((['1', '2', '2', '3'], ['1', '2', '3', '4']),
+                                (['1', '2', '3', '4', 'MP', 'MP'], ['1', '2', '3', '4', '5', '6'])):
+            self.assertTrue(_same_pads_apart_from_extras(sorted(board), sorted(supplier)), board)
+
+    def test_renumbered_electrical_pads_or_a_different_count_leave_coverage_unavailable(self):
+        # Review counterexamples: same count and geometry, wrong numbers.
         last = SOIC_PADS.rindex('(pad ')
-        for pads in (SOIC_PADS[:last], SOIC_PADS.replace('(pad "2"', '(pad "99"')):
-            self.assertEqual([m['mode'] for m in self.footprint_pads_case(pads)['modes']], ['pad_set_mismatch'])
-        self.assertEqual([m['mode'] for m in self.footprint_pads_case(SOIC_PADS.replace('(pad "1"', '(pad "MP"'))['modes']],
-                         ['pin1_unclassified'])
+        cases = {
+            'missing pad': SOIC_PADS[:last],
+            'renamed out of the set': SOIC_PADS.replace('(pad "2"', '(pad "99"'),
+            'renamed onto a pin': SOIC_PADS.replace('(pad "2"', '(pad "3"'),
+            'every other pad renamed': re.sub(r'\(pad "[3-8]"', '(pad "2"', SOIC_PADS),
+            'no pad one': SOIC_PADS.replace('(pad "1"', '(pad "MP"'),
+        }
+        for name, pads in cases.items():
+            with self.subTest(name):
+                self.assertEqual([m['mode'] for m in self.footprint_pads_case(pads)['modes']], ['pad_set_mismatch'])
 
     def test_unmatched_footprint_whose_supplier_frame_needs_270_is_a_rotation_conflict(self):
         records, applied, unmatched = self.soic_case(lib='lib:SO8_custom')

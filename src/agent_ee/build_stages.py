@@ -44,7 +44,7 @@ def _step_cause(path):
         return SECRET_TEXT.sub(r'\1 <redacted>', '; '.join(causes[:5]))
     console = path / 'run/console.log'
     text = console.read_text(errors='replace').strip() if console.is_file() else ''
-    return SECRET_TEXT.sub(r'\1 <redacted>', text[-600:]) or 'the step left no findings or console output'
+    return SECRET_TEXT.sub(r'\1 <redacted>', text)[-600:] or 'the step left no findings or console output'
 
 
 def _step(stage_dir, candidate, declaration, index):

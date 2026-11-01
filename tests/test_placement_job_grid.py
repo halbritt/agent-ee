@@ -38,8 +38,10 @@ class SilkGraphicConflictTests(unittest.TestCase):
         other = finding('lib_footprint_issues', 'Footprint U1')
         # Review counterexample: board text whose content happens to read like a field.
         text = finding('silk_over_copper', "PCB Text 'electric field of sensor' on F.Silkscreen", 'Pad 2 [A] of R1 on F.Cu')
-        report = dict(violations=[graphics, over_pad, movable, other, text])
-        self.assertEqual(job._silk_graphic_conflicts(report), [graphics, over_pad, text])
+        footprint_text = finding('silk_overlap', 'Footprint text of U1 (electric field of sensor)', 'Segment of R1 on F.Silkscreen')
+        apostrophe = finding('silk_overlap', "Bob's field of U1 (note)", 'Segment of R1 on F.Silkscreen')
+        report = dict(violations=[graphics, over_pad, movable, other, text, footprint_text, apostrophe])
+        self.assertEqual(job._silk_graphic_conflicts(report), [graphics, over_pad, text, footprint_text])
 
 
 class RepeatedPadRefusalTests(unittest.TestCase):

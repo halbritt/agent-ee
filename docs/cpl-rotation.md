@@ -319,10 +319,11 @@ every row has a midpoint but the outcome is not `pass`, the CPL goes to
 | `duplicate_designator`, `geometry_missing`, `binding_missing`, `supplier_missing`, `pin1_unclassified`, `pin1_frame_mismatch`, `pad_set_mismatch`, `polarity_unknown` | unsupported | Coverage is unavailable for that designator |
 | `anchor_mismatch`, `side_mismatch`, `footprint_mismatch`, `geometry_malformed` | malformed | The sealed sources disagree |
 
-`pad_set_mismatch` means the pad counts differ, or a board pad number other than `MP` is
-absent from the supplier. A SOT-223 tab numbered 2 on the board and 4 by the supplier, or
-`MP` mounting pads numbered 5 and 6 by the supplier, pass this test: the check continues
-from pin 1 and records `pad_numbering_differs`.
+`pad_set_mismatch` means the numbers differ other than by a tab or two mounting pads. A
+SOT-223 tab numbered 2 on the board and 4 by the supplier, or `MP` mounting pads numbered 5
+and 6 by the supplier, continue from pin 1 and record `pad_numbering_differs`: the supplier's
+extra numbers must follow all the pins. This rule compares numbering for pin-1 grading. It
+does not establish the electrical pin map, which `land_pattern` grades.
 
 The aggregate follows `land_pattern`:
 

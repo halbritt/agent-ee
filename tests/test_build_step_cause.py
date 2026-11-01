@@ -33,8 +33,10 @@ class StepCauseTests(unittest.TestCase):
         self.assertEqual(_step_cause(self.path), 'real_cause')
 
     def test_credential_shaped_text_does_not_reach_the_stage_reason(self):
-        (self.path / 'run/console.log').write_text('curl failed: Authorization: Bearer abc123\n')
-        self.assertNotIn('abc123', _step_cause(self.path))
+        for secret in ('abc123', 'z' * 700):  # A long token must not lose its prefix to truncation.
+            with self.subTest(length=len(secret)):
+                (self.path / 'run/console.log').write_text(f'curl failed: Authorization: Bearer {secret}\n')
+                self.assertNotIn(secret[:6], _step_cause(self.path))
 
     def test_a_silent_failure_says_so(self):
         self.assertEqual(_step_cause(self.path), 'the step left no findings or console output')

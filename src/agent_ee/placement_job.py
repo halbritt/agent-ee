@@ -1851,7 +1851,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # search from taking the entire portfolio budget. This is scheduling
         # policy, not an engineering relaxation; the outer deadline still wins.
         budget = clock.remaining() / (len(queue) - number)
-        # A resumed job's retained trials count too: each one failed or it would not resume.
+        # A resumed job's retained trials count too. An interrupted first trial leaves none.
         grid_step, grid_basis = router_grid(config, problem, after_failed_route=bool(number or state.get('routing_trials')))
         trial = {'seed': selected['seed'], 'board_sha256': selected['board_sha256'],
                  'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
@@ -1945,12 +1945,15 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
 def _silk_graphic_conflicts(report):
     """Silk findings that name no field, so moving fields cannot fix them.
 
-    KiCad 10 describes a field as ``Reference field of J2`` and quotes the content of a
-    text item, as in ``PCB Text 'field of view' on F.Silkscreen``.
+    KiCad 10 describes a field as ``Reference field of J2``, and gives a text item's content in
+    ``PCB Text 'field of view' on F.Silkscreen`` or ``Footprint text of U1 (field of view)``.
     """
     from .silk_artwork import ARTWORK_CONFLICTS
+    def names_a_field(description):
+        return (re.match(r'[^(]* field of ', description) is not None
+                and not description.lower().startswith(('pcb text', 'footprint text')))
     return [violation for violation in report['violations'] if violation['type'] in ARTWORK_CONFLICTS
-            and not any(re.match(r"[^']* field of ", item['description']) for item in violation['items'])]
+            and not any(names_a_field(item['description']) for item in violation['items'])]
 
 
 def _completion_status(routed, incumbent, final):
