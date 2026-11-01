@@ -1,10 +1,11 @@
 """Declared body/access mechanics, bound once to original native owners.
 
-Known acquisition recipe revisions keep their exact source custody. Any other model must
-state `"custody": "design-declared"`. It lists its own source files and access owners, and
-every declared source is verified against its captured bytes when loaded. Declaring a
-model does not qualify its numbers; checks and review do that. The acquisition recipe
-itself admits only known revisions.
+Known acquisition recipe revisions keep their exact source custody, checker and stated
+limits. Any other model must state `"custody": "design-declared"`. It needs no checker or
+requirement-map entry: it lists its own source files and access owners, and every declared
+source is verified against its captured bytes when loaded. Declaring a model does not
+qualify its numbers; checks and review do that. The acquisition recipe itself admits only
+known revisions.
 """
 from decimal import Decimal
 from pathlib import Path
@@ -21,6 +22,7 @@ BINDING = 'agent-ee.acquisition-mechanics-binding/1'
 SOURCES = ('spec.md', 'requirement-map.json', 'analysis/geometry-model.json', 'analysis/geometry_model.py')
 MODEL = '0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4'
 CHECKER = 'fb225768d6812abf6b116da31e029b940ca64ccf1427f9c0ef7b04814cf10294'
+MODEL_SOURCE = 'analysis/geometry-model.json'
 CONNECTORS = ('J1', 'J2', 'J3')
 
 
@@ -34,18 +36,16 @@ def access_owners(model):
 
 def declaration(root):
     root = Path(root)
-    sources = {rel: digest(root / rel) for rel in SOURCES}
-    known = _model_sources(sources['analysis/geometry-model.json'])
+    known = _model_sources(digest(root / MODEL_SOURCE))
     if known is None:
-        model = strict_json((root / 'analysis/geometry-model.json').read_bytes())
-        known = {rel: digest(root / rel) for rel in _design_files(model)}
-    sources.update(known)
-    return {'schema': SCHEMA, 'sources': sources}
+        model = strict_json((root / MODEL_SOURCE).read_bytes())
+        return {'schema': SCHEMA, 'sources': {rel: digest(root / rel) for rel in (MODEL_SOURCE, *_design_files(model))}}
+    return {'schema': SCHEMA, 'sources': {**{rel: digest(root / rel) for rel in SOURCES}, **known}}
 
 
 def _unverified_model(root):
     """Read only the custody marker's carrier; load() then authenticates these bytes."""
-    path = root / 'analysis/geometry-model.json'
+    path = root / MODEL_SOURCE
     return strict_json(path.read_bytes()) if path.is_file() and not path.is_symlink() else None
 
 
@@ -59,7 +59,7 @@ def _design_files(model):
 
 def _design_model(model, sources):
     """Refuse a malformed design model here, before any native capture or engine run."""
-    if set(sources) != set(SOURCES) | set(_design_files(model)):
+    if set(sources) != {MODEL_SOURCE, *_design_files(model)}:
         raise ValueError("mechanics declaration differs from its model's source_files")
     if 'access_owners' not in model:
         raise ValueError('a design-declared model must list its access_owners')
@@ -106,9 +106,9 @@ def load(path):
     document = strict_json(path.read_bytes())
     if (not isinstance(document, dict) or set(document) != {'schema', 'sources'}
             or document['schema'] != SCHEMA or not isinstance(document['sources'], dict)
-            or not set(SOURCES) <= set(document['sources'])):
+            or MODEL_SOURCE not in document['sources']):
         raise ValueError('unsupported acquisition mechanics recipe')
-    known = known_revision(document['sources']['analysis/geometry-model.json'])
+    known = known_revision(document['sources'][MODEL_SOURCE])
     _version(document, None if known else _unverified_model(path.parent))
     raw = {}
     for rel, expected in document['sources'].items():
@@ -119,9 +119,10 @@ def load(path):
         raw[rel] = source.read_bytes()
         if hashlib.sha256(raw[rel]).hexdigest() != expected:
             raise ValueError('acquisition mechanics source changed: ' + rel)
-    model = strict_json(raw['analysis/geometry-model.json'])
+    model = strict_json(raw[MODEL_SOURCE])
     if not known:
         _design_model(model, document['sources'])
+        return {'declaration': document, 'model': model, 'model_raw': raw[MODEL_SOURCE].decode('utf-8')}
     requirements = strict_json(raw['requirement-map.json'])
     from .typed_overlay import _check_pool
     try:
@@ -134,11 +135,10 @@ def load(path):
     if (len(limits) != 1 or not isinstance(limits[0], dict) or any(
             not isinstance(limits[0].get(key), dict) or limits[0][key].get(bound) != value
             or limits[0][key].get('unit') != unit
-            or (known and limits[0][key].get('condition') != 'nominal25C-reviewed-acquisition')
+            or limits[0][key].get('condition') != 'nominal25C-reviewed-acquisition'
             for key, bound, value, unit in expected_limits)):
         raise ValueError('acquisition mechanics requirements differ from the captured recipe')
-    return {'declaration': document, 'model': model,
-            'model_raw': raw['analysis/geometry-model.json'].decode('utf-8')}
+    return {'declaration': document, 'model': model, 'model_raw': raw[MODEL_SOURCE].decode('utf-8')}
 
 
 def _identity(binding):
@@ -148,12 +148,12 @@ def _identity(binding):
 def _version(document, parsed=None):
     from . import acquisition_film
     sources = document['sources']
-    model = sources['analysis/geometry-model.json']
+    model = sources[MODEL_SOURCE]
     extra = _model_sources(model)
     if extra is None and isinstance(parsed, dict) and parsed.get('custody') == 'design-declared':
         return
     checker = acquisition_film.CHECKERS.get(model, CHECKER)
-    if (extra is None or sources['analysis/geometry_model.py'] != checker
+    if (extra is None or sources.get('analysis/geometry_model.py') != checker
             or set(sources) != set(SOURCES) | set(extra)
             or any(sources.get(name) != pin for name, pin in extra.items())):
         raise ValueError('unsupported acquisition model/checker revision or source custody')
@@ -162,7 +162,7 @@ def _version(document, parsed=None):
 def _recipe(recipe):
     _version(recipe['declaration'], recipe['model'])
     if (hashlib.sha256(recipe['model_raw'].encode()).hexdigest()
-            != recipe['declaration']['sources']['analysis/geometry-model.json']
+            != recipe['declaration']['sources'][MODEL_SOURCE]
             or strict_json(recipe['model_raw'].encode()) != recipe['model']
             or recipe['declaration']['schema'] != SCHEMA):
         raise ValueError('acquisition mechanics recipe changed')

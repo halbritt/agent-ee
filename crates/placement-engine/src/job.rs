@@ -515,7 +515,6 @@ pub fn aliases(uuids: &[String], supplied: &[Option<String>]) -> Result<Vec<Stri
     Ok(out)
 }
 
-const MECHANICS_BASE_SOURCES: [&str; 4] = ["spec.md", "requirement-map.json", "analysis/geometry-model.json", "analysis/geometry_model.py"];
 const DEFAULT_ACCESS_OWNERS: [&str; 3] = ["J1", "J2", "J3"];
 
 /// Authenticate the declared model bytes before reading geometry. The Python
@@ -527,8 +526,6 @@ fn acquisition_source_model(m: &Value) -> Result<Value> {
     ensure!(text(m, "binding_sha256")?.len() == 64 && text(m, "original_board_sha256")?.len() == 64,
             "missing original mechanics binding");
     let sources = m["sources"].as_object().context("mechanics sources must be an object")?;
-    ensure!(MECHANICS_BASE_SOURCES.iter().all(|key| sources.contains_key(*key)),
-            "mechanics declaration omits a required source");
     for (key, hash) in sources {
         let hash = hash.as_str().context("mechanics source hash must be text")?;
         ensure!(hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
@@ -3491,9 +3488,7 @@ mod tests {
         use sha2::{Digest, Sha256};
         raw["mechanics"] = json!({"schema":"agent-ee.acquisition-mechanics/1", "binding_sha256":"b".repeat(64),
             "original_board_sha256":"c".repeat(64), "model_raw":model, "sources":{
-            "spec.md":"d".repeat(64),"requirement-map.json":"e".repeat(64),
-            "analysis/geometry-model.json":format!("{:x}", Sha256::digest(model.as_bytes())),
-            "analysis/geometry_model.py":"f".repeat(64)}});
+            "analysis/geometry-model.json":format!("{:x}", Sha256::digest(model.as_bytes()))}});
     }
 
     #[test]
@@ -3589,15 +3584,13 @@ mod tests {
     }
 
     #[test]
-    fn declared_mechanics_authenticate_model_bytes_and_required_sources() {
+    fn declared_mechanics_authenticate_model_bytes() {
         use sha2::{Digest, Sha256};
         let raw = source_mechanics_fixture(true, false);
-        for key in MECHANICS_BASE_SOURCES {
-            let mut changed = raw.clone();
-            changed["mechanics"]["sources"].as_object_mut().unwrap().remove(key);
-            assert!(prepare(&changed).is_err(), "missing {key}");
-        }
         let mut changed = raw.clone();
+        changed["mechanics"]["sources"].as_object_mut().unwrap().remove("analysis/geometry-model.json");
+        assert!(prepare(&changed).is_err(), "a declaration without its model hash");
+        changed = raw.clone();
         let altered = format!("{} ", raw["mechanics"]["model_raw"].as_str().unwrap());
         changed["mechanics"]["model_raw"] = json!(altered);
         assert!(prepare(&changed).is_err(), "changed model bytes under the declared hash");

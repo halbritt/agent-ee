@@ -280,13 +280,7 @@ typed input also exercises its frozen judgment directory.
 ## Declared mechanics
 
 A design can declare its package bodies and connector access columns without a code
-change or an engine rebuild. Set `placement.mechanics` to a source-relative
-`placement-mechanics.json`. Its paths resolve from its own directory, so keep it at the
-source root. `acquisition_mechanics.declaration(root)` returns its contents from these
-sources:
-
-- `spec.md`, `requirement-map.json` and `analysis/geometry_model.py`.
-- `analysis/geometry-model.json`, with these fields:
+change or an engine rebuild. Write `analysis/geometry-model.json`:
 
 ```json
 {
@@ -300,28 +294,31 @@ sources:
 }
 ```
 
+Then write `acquisition_mechanics.declaration(root)` to `placement-mechanics.json` at the
+source root, because its paths resolve from its own directory, and set
+`placement.mechanics` to that path.
+
 `packages` must cover every reference on the board, and every owner must be on the
 front at a multiple of 90 degrees. `access_owners` lists the references that keep a
-mating and cable access column, and each must be locked on the board. Each path in
-`source_files` is declared by SHA-256 too. Loading refuses if a declared file differs
-from its captured bytes, if a path leaves the source root, or if the declaration and
-`source_files` differ.
+mating and cable access column, which extends the body by 0.5 mm on each side, and each
+must be locked on the board. Each path in `source_files` is declared by SHA-256 too.
+Loading refuses if a declared file differs from its captured bytes, if a path leaves
+the source root, or if the declaration and `source_files` differ.
 
-The `engineering-geometry` check in `requirement-map.json` must state the limits the
-engine applies: `body_gap` min 0.2 mm, `body_overlap` and `body_outside` max 0 mm2, and
-`access_obstruction` max 1e-8 mm2. The engine holds no model list. It requires the base
-sources to be declared with well-formed digests, authenticates the model bytes, then
-grades the declared bodies. The Python controller verifies each source file.
+The engine applies a 0.2 mm minimum body gap, no body overlap or body outside the board,
+and no access obstruction, as hard placement limits. It holds no model list. It
+authenticates the model bytes and grades the declared bodies; the Python controller
+verifies each source file. The job checks the final board natively.
 
 Declaring a model does not qualify its numbers. Checks and review do that, so cite the
 source of each dimension in the model and in `source_files`. The marker travels in the
 model bytes, so reviewers see that the numbers are the design's own.
 
 Without the `custody` field, a model must be one of the known acquisition revisions,
-which keep exact checker and source custody. An edited recipe model is refused unless
-it states the marker, and marking it gives up those pins: the acquisition block source
-refuses it, and local loop seeding, which knows only that recipe's named connections,
-does not run. Other designs route without that seeding.
+which keep exact checker and source custody and their stated limits. An edited recipe
+model is refused unless it states the marker, and marking it gives up those pins: the
+acquisition block source refuses it, and local loop seeding, which knows only that
+recipe's named connections, does not run. Other designs route without that seeding.
 
 A build with mechanics and no block contract writes its final proof at the artwork
 stage, after a fresh native capture of the sealed original board matches the retained

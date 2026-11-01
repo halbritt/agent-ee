@@ -11,10 +11,6 @@ from agent_ee import placement_job as job, placement_problem as problem_builder
 from agent_ee.storage import digest
 from tests.test_placement_problem import MM, board, footprint
 
-LIMITS = dict(body_gap=dict(min=.2, unit='mm', condition='design bench assembly'),
-              body_overlap=dict(max=0, unit='mm2', condition='design bench assembly'),
-              body_outside=dict(max=0, unit='mm2', condition='design bench assembly'),
-              access_obstruction=dict(max=1e-8, unit='mm2', condition='design bench assembly'))
 PACKAGES = dict(X9=dict(size_mm=[5.9, 4.5, 6], offset_mm=[0, 0]), R1=dict(size_mm=[1.7, .9, .55], offset_mm=[0, 0]))
 
 
@@ -22,17 +18,9 @@ class DeclaredMechanicsTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         (self.root / 'analysis').mkdir()
-        (self.root / 'spec.md').write_text('A different small board.')
-        (self.root / 'analysis/geometry_model.py').write_text('# this design\'s checker\n')
         (self.root / 'analysis/body-source.txt').write_text('body dimensions from a datasheet\n')
-        self.write_limits(LIMITS)
         self.write_model(custody='design-declared', packages=PACKAGES, access_owners=['X9'],
                          source_files=['analysis/body-source.txt'])
-
-    def write_limits(self, limits):
-        check = dict(id='engineering-geometry', params=dict(limits=limits))
-        (self.root / 'requirement-map.json').write_text(json.dumps(
-            dict(requirements=[dict(checks=[check])], prose=[])))
 
     def write_model(self, **model):
         (self.root / 'analysis/geometry-model.json').write_text(json.dumps(model))
@@ -44,8 +32,9 @@ class DeclaredMechanicsTests(unittest.TestCase):
 
     def test_declared_model_loads_with_its_own_source_files_and_owners(self):
         recipe = self.recipe()
-        sources = recipe['declaration']['sources']
-        self.assertEqual(sources['analysis/body-source.txt'], digest(self.root / 'analysis/body-source.txt'))
+        self.assertEqual(recipe['declaration']['sources'], {
+            'analysis/geometry-model.json': digest(self.root / 'analysis/geometry-model.json'),
+            'analysis/body-source.txt': digest(self.root / 'analysis/body-source.txt')})
         self.assertEqual(mechanics.access_owners(recipe['model']), ('X9',))
 
     def test_changed_declared_source_refuses(self):
@@ -86,11 +75,6 @@ class DeclaredMechanicsTests(unittest.TestCase):
         path.write_text(json.dumps(declared))
         with self.assertRaisesRegex(ValueError, 'unsafe'):
             mechanics.load(path)
-
-    def test_limits_the_engine_does_not_apply_refuse(self):
-        self.write_limits({**LIMITS, 'body_gap': dict(LIMITS['body_gap'], min=.1)})
-        with self.assertRaisesRegex(ValueError, 'differ from the captured recipe'):
-            self.recipe()
 
     def test_design_model_skips_recipe_local_loop_seeding(self):
         self.assertFalse(routing.applies(self.recipe()))
