@@ -228,7 +228,8 @@ def _check_fresh_original(out, scope, plan):
             raise ValueError('mechanics fresh original capture failed: ' + str(exc)) from exc
     job = placement.directory / 'placement'
     retained_record, retained_problem = read_json(job / 'capture.json'), read_json(job / 'problem.json')
-    if (any(record.get(key) != retained_record.get(key) for key in ('mechanics', 'facts_sha256', 'board_sha256'))
+    # Facts hashes are not compared: KiCad assigns a new UUID to a field saved without one.
+    if (any(record.get(key) != retained_record.get(key) for key in ('mechanics', 'board_sha256'))
             or any(problem.get(key) != retained_problem.get(key) for key in ('mechanics', 'footprints'))):
         raise ValueError('mechanics retained capture differs from a fresh capture of the original board')
 

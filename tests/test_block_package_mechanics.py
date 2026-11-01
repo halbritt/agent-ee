@@ -278,7 +278,6 @@ class MechanicsPackageTests(unittest.TestCase):
             changed_body=('problem.json',lambda p:(p['footprints'][0].update(source_body_local_nm=[-1,-1,1,1]),problem_identity(p)),'fresh capture'),
             changed_role=('problem.json',lambda p:(p['footprints'][0].update(role='fixed_body'),problem_identity(p)),'fresh capture'),
             changed_pad=('problem.json',lambda p:(p['footprints'][0]['pads'][0].update(number='99'),problem_identity(p)),'fresh capture'),
-            other_facts=('capture.json',lambda c:c.update(facts_sha256='b'*64),'fresh capture'),
             original_board=('capture.json',lambda c:c.update(board_sha256='b'*64),'fresh capture'))
         for case,(name,change,message) in cases.items():
             raw=(job/name).read_bytes();rewrite(name,change)

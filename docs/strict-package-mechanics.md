@@ -21,7 +21,7 @@ board with the original binding. Artwork must then preserve that geometry:
 
 A build that declares mechanics without a block contract has no original block
 binding to reconstruct owners from. Its artwork stage captures the sealed original
-board natively again and requires the retained binding, facts identity, footprint
+board natively again and requires the retained binding, board identity, footprint
 rows and mechanics record to match that fresh capture. The proof then pins the sealed
 recipe, the mechanics declaration, the retained capture and problem digests, and the
 same final job and artwork evidence. Package replays that proof without a native read.
