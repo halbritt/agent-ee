@@ -136,3 +136,61 @@ and its application evidence, current part/assembly qualification, generated
 placement and routing, all native and manufacturing checks, and fresh independent
 judgments and review. The module returns these as pending and always reports
 `accepted:false` and `file_release:not_assessed`.
+
+## Power-model application
+
+The [power analysis producer](../src/agent_ee/acquisition_power_analysis.py)
+accepts the exact generated production circuit, its parts manifest, and the
+captured ADI ADP7104-3.3 model and symbol as bytes. `inputs()` returns a finite
+LTspice deck and a declaration binding their hashes, model pin order and selected
+conditions. It launches no solver. The ordinary parts compiler and native
+netlist checks remain responsible for source qualification and connectivity.
+
+The case uses a non-sinking 20 mA source, a 4.355 V protected-input target and
+25 C. It exercises startup with the host inactive, a loaded interval with both
+I2C lines low, and unloaded discharge. The load and source target fall together
+at 20 ms; the loads reach zero at 20.001 ms. This evaluates the high-impedance
+discharge state, not compliance with the external instruction to release the
+host **before** removing power. There is no automatic sequencing circuit.
+The source then has a zero-volt target, rather than a physically open connection.
+It can clamp a slightly negative input by supplying current. With that source
+law, positive current occurs only at negative input voltage, so it delivers no
+positive electrical power after removal. This termination must remain explicit
+when applying the result to a board.
+
+The declared sensitivity uses R5 = 990 ohm, R6 = 2222 ohm, C1 = 2 uF,
+C2 = 12.65 uF and separate C3 = 0.1265 uF. Each capacitor has a constant
+0.05 ohm series resistance. These are explicit analysis inputs, not certified
+joint capacitance or ESR bounds. The 300 uA ADC allowance plus 1 mA engineering
+reserve applies only during the loaded interval. Zero current after removal
+examines slower discharge; it does not model actual ADC consumption or authorize
+an external J2 load. The protected-input target represents the D1/path drop;
+diode reverse-input leakage needs its separate source-based evaluation.
+
+`measurements(raw_bytes, log_bytes)` reads completed native ASCII output. It
+binds columns by name and unit, checks finite ordered samples, the complete
+80 ms interval and the 2 us maximum step, and hashes the original trace and log
+bytes. It reports sampled rail, source-current and absolute-rating predicates,
+plus the remaining output voltage. No discharge deadline is invented. The
+ADP7104's independent OUT rating applies; its typical 55 mV reverse-blocking
+threshold is not a guaranteed clamp, and the TPS7A20 differential limit is not
+reused. Successful predicates always retain `accepted:false` and
+`file_release:not_assessed`.
+
+The [regression](../tests/test_acquisition_power_analysis.py) uses the actual
+retained model output, including LTspice's device-current column order. It checks
+source drift, wrong purchased parts, truncated/nonfinite output and unsuccessful
+logs. Set `AGENT_EE_POWER_PRODUCTION` to the generated candidate source,
+`AGENT_EE_ADI_MODEL_LIBRARY` to the captured `lib` directory, and
+`AGENT_EE_POWER_REMOVAL_TRACE` to the directory containing the native
+`high-z-removal.raw` and `.log`. The tests replay artifacts; they do not start
+LTspice. Running the model requires a separately admitted, bounded native job
+with captured runtime, command, source hashes and terminal output.
+
+The retained development run completed in 267 seconds. It reached 3.234 V at
+4.325 ms, held about 3.299676 V during the loaded interval and used at most
+10.6664 mA in that interval. The output was 33.908 mV at 80 ms, 60 ms after
+removal began. These are model observations for the declared case, not guaranteed
+startup/discharge times or final-board measurements. Final voltage delivery,
+capacitor applicability, thermal paths and independent engineering acceptance
+remain required.
