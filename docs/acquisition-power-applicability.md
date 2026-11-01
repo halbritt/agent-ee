@@ -3,12 +3,16 @@
 2026-11-01; ADP development reference only. This is an engineering assessment,
 not file release, physical validation, or a replacement of the frozen G4 cases.
 
-The next power candidate is a specific change to C1 and C2: Rubycon
+The generated film candidate replaces C1 and C2 with Rubycon
 25MU225MB23225 / C3778570, 2.2 uF, 25 V, nonpolar PMLCAP film. Retain the
 ADP7104, B0520LW, bleeders, C3, 17 components and 18 placement relationships.
 The original ADP preparer retains the Samsung selection. The separate film
-preparer now generates this replacement from the exact supplier CAD and captured
-part record. Its second native build completed; acceptance remains incomplete.
+preparer generates this replacement from the exact supplier CAD and captured
+part record. Its fresh native suite has 37 passing checks and one informational
+result. Independent review admits 12 of 14 judgments; capacitor ESR
+compatibility remains unresolved. The generator now also corrects the ADC
+supplement binding identified by that review. The revised operating document
+has been checked in generated output, but has not received fresh acceptance.
 
 ## Why this change
 
@@ -250,3 +254,38 @@ The two geometry failures are closed for this generated candidate. Overall
 review status remains incomplete while fresh independent judgments and the
 full release checks are outstanding. These results do not grant nominal power
 applicability or permission to replace the frozen G4 reference.
+
+The first fresh author identified a stale parent-document binding in the ADC
+timing supplement. The film generator now makes the current `OPERATING.md`
+explicitly adopt that supplement by path and exact hash. The historical
+supplement stays unchanged. Its power-up and conversion-readiness corrections
+apply to the current host instructions; no new timing requirement or physical
+host acceptance is introduced. This documentation repair does not alter the
+candidate already under independent review.
+
+The independent verifier subsequently concurred with all 14 author records.
+Twelve judgments were admitted; the two records with unresolved findings were
+refused. The author completed in 810.301 s and the verifier in 937.316 s, with
+no transport retry. The preserved result is `criteria_failed`, not acceptance.
+
+The electrical finding concerns the ADP7104 Rev I recommendations: Table 2
+specifies 0.001–0.2 ohm capacitor ESR, while the output-capacitor discussion on
+page 17 recommends up to 1 ohm. Neither passage states a frequency. The exact
+MU reference model has about 0.55 ohm ESR at 1 kHz. Its favorable retained
+transient does not reconcile those recommendations with the regulator's loop
+response. This is an unresolved compatibility analysis, not an observed
+oscillation or a demand for a universal lifetime or temperature guarantee.
+
+The generated ADC adoption repair passed the 30-test suite with no skips. An
+exact input comparison found only `OPERATING.md` changed; the historical
+supplement, circuit, selected parts and model evidence are unchanged. The new
+operating-document hash is
+`57598ff3b4dc3d76d7f69bdd1aa3a2c65f16a380ff184f580c15fa45c94ec12f`.
+`bundle-r2/`, `regressions-r4/` and `adc-adoption-verification.json` retain that
+verification. The reviewed candidate and its negative judgments remain intact
+under `judgments/`.
+
+Resolve the specific ESR applicability question before another acceptance
+round. The proposed follow-up first establishes whether the captured vendor
+model supports a meaningful loop-response measurement; no such model run has
+been made. Full review, file release and frozen G4 credit remain outstanding.

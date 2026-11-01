@@ -218,6 +218,15 @@ def _power(files, run, film_model):
         'The new model releases the host before disconnecting the source. The host must implement that sequencing. '
         'Reference model values are not product guarantees or physical-validation evidence. '
         'No prior native checks, judgments, source-role qualification or file acceptance apply.\n').encode()
+    supplement = 'operating-supplement/ADS1115-OPERATING.md'
+    files['OPERATING.md'] += (
+        '\n## ADC timing supplement adoption\n\n'
+        f'This current operating contract adopts `{supplement}`, SHA-256 '
+        f'`{sha256(files[supplement]).hexdigest()}`. Its parent operating-document '
+        'digest identifies the historical source, not this generated revision. '
+        'Apply its power-up communication, conversion-readiness and timing '
+        'corrections to the host instructions above. All other operating '
+        'conditions remain in force; no physical host validation is claimed.\n').encode()
     return measured
 
 
