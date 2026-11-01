@@ -30,6 +30,11 @@ def pose_map(diagnostic):
     return result
 
 
+def _obligations(problem):
+    """A design may declare mechanics and no electrical locality."""
+    return problem['locality']['document']['obligations'] if 'locality' in problem else []
+
+
 def active_component(problem, diagnostic):
     """Movable locality-connected participants in the original exact violations."""
     footprints = problem['footprints']
@@ -37,7 +42,7 @@ def active_component(problem, diagnostic):
     if len(by_ref) != len(footprints):
         raise ValueError('acquisition repair requires unique physical references')
     adjacency = {ref: set() for ref in by_ref}
-    for obligation in problem['locality']['document']['obligations']:
+    for obligation in _obligations(problem):
         for role in roles(obligation):
             pair = obligation[role]
             a, b = (pair[key]['reference'] for key in ('from', 'to'))
@@ -309,7 +314,7 @@ def propose(problem, diagnostic, *, max_seconds):
         return uuid, [_sum((1, positions[uuid][axis]),
                           (1, offset(uuid, {q: v[axis]/MM for q, v in offsets.items()}))) for axis in range(2)]
 
-    for obligation in problem['locality']['document']['obligations']:
+    for obligation in _obligations(problem):
         for role in roles(obligation):
             pair = obligation[role]
             a, pa = pad(pair['from'])

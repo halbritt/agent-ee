@@ -15,6 +15,15 @@ def declared(plan):
     return bool({'block_source', 'block_contract'} & plan.get('placement', {}).keys())
 
 
+def mechanics_only(plan):
+    """A design's declared mechanics, with no block contract to carry their final proof."""
+    return 'mechanics' in plan.get('placement', {}) and not declared(plan)
+
+
+def requires_retained_run(plan):
+    return declared(plan) or mechanics_only(plan)
+
+
 def _original_basis(out, scope, plan):
     """Reconstruct original normalization from sealed files, never the routed config path."""
     report = retained_run.snapshot(Path(out))
@@ -138,6 +147,11 @@ def _mechanics_basis(placement, original, scope, normalized, capture, recipe_nam
                     or measured.get('local_nm') != local):
                 raise ValueError('mechanics original problem native pads differ')
     normalized.update(mechanics=recipe, mechanics_binding=bound)
+    return _final_mechanics(placement, job, scope, bound, problem)
+
+
+def _final_mechanics(placement, job, scope, bound, problem):
+    """The completed job's passing mechanics on exactly the board that placement accepted."""
     report_path = job / 'job-report.json'
     report = read_json(report_path)
     config = read_json(placement.directory / 'placement-config.json')
@@ -154,9 +168,43 @@ def _mechanics_basis(placement, original, scope, normalized, capture, recipe_nam
             or checked.get('binding_sha256') != bound['binding_sha256'] or checked.get('board_sha256') != board_sha):
         raise ValueError('mechanics final placement evidence is missing, failed or stale')
     return dict(binding_sha256=bound['binding_sha256'], original_board_sha256=bound['original_board_sha256'],
-        capture_sha256=digest(job/'capture.json'), problem_file_sha256=digest(problem_path),
+        capture_sha256=digest(job/'capture.json'), problem_file_sha256=digest(job/'problem.json'),
         problem_sha256=problem['problem_sha256'], job_report_sha256=digest(report_path),
         final_board=final_path.relative_to(job).as_posix(), final_board_sha256=board_sha)
+
+
+def _mechanics_only_basis(out, scope, plan):
+    """Replay a design's mechanics from sealed sources and its retained placement evidence."""
+    from . import acquisition_mechanics, placement_problem
+    report = retained_run.snapshot(Path(out))
+    schematic = retained_run.completed_stage(Path(out), 'schematic', report)
+    placement = retained_run.completed_stage(Path(out), 'placement-routing', report)
+    if schematic is None or placement is None:
+        raise ValueError('mechanics final proof requires sealed schematic and placement stages')
+    recipe = acquisition_mechanics.load(schematic.candidate / plan['placement']['mechanics'])
+    job = placement.directory / 'placement'
+    bound = read_json(job / 'capture.json').get('mechanics')
+    if (not isinstance(bound, dict) or bound.get('recipe') != recipe
+            or bound.get('binding_sha256') != acquisition_mechanics._identity(bound)):
+        raise ValueError('mechanics binding differs from the sealed sources')
+    problem = read_json(job / 'problem.json')
+    mechanics = problem.get('mechanics', {})
+    if (problem.get('problem_sha256') != placement_problem.identity(problem)
+            or mechanics.get('binding_sha256') != bound['binding_sha256']
+            or mechanics.get('model_raw') != recipe['model_raw']
+            or mechanics.get('sources') != recipe['declaration']['sources']):
+        raise ValueError('mechanics original problem identity differs')
+    return dict(mechanics=_final_mechanics(placement, job, scope, bound, problem),
+                declarations=recipe['declaration']['sources'], policy_sha256=identity(policy_files()))
+
+
+def _mechanics_only_proof(out, candidate, directory, scope, plan):
+    basis = _mechanics_only_basis(out, scope, plan)
+    files = input_inventory(candidate)
+    if any(files.get(name) != pin for name, pin in basis['declarations'].items()):
+        raise ValueError('mechanics source differs in the final candidate')
+    return dict(basis=basis, final_files=files,
+                mechanics_artwork=_mechanics_artwork(out, candidate, directory, scope, basis))
 
 
 def _mechanics_artwork(out, candidate, directory, scope, basis):
@@ -231,6 +279,9 @@ def _validate(proof, normalized, basis, files, board, transition=None):
 
 
 def produce(out, candidate, directory, scope, plan):
+    if mechanics_only(plan):
+        write_json(directory / PROOF, _mechanics_only_proof(out, candidate, directory, scope, plan))
+        return
     if not declared(plan):
         return
     normalized, basis = original_basis(out, scope, plan)
@@ -255,9 +306,8 @@ def produce(out, candidate, directory, scope, plan):
 
 def verify(out, candidate, scope, plan):
     """Replay basis/custody and report identities without trusting an acceptance flag."""
-    if not declared(plan):
+    if not requires_retained_run(plan):
         return None
-    normalized, basis = original_basis(out, scope, plan)
     artwork = retained_run.completed_stage(Path(out), 'artwork')
     if artwork is None:
         raise ValueError('strict package requires completed final artwork proof')
@@ -268,6 +318,13 @@ def verify(out, candidate, scope, plan):
     files = input_inventory(candidate)
     if input_inventory(artwork.candidate) != files:
         raise ValueError('strict package differs from sealed final artwork candidate')
+    if mechanics_only(plan):
+        expected = _mechanics_only_proof(out, candidate, artwork.directory, scope, plan)
+        if proof != expected:
+            raise ValueError('mechanics final proof differs')
+        return dict(proof_sha256=digest(path), basis_sha256=identity(expected['basis']),
+                    board_sha256=files[scope['board']], policy_sha256=expected['basis']['policy_sha256'])
+    normalized, basis = original_basis(out, scope, plan)
     transition = _mechanics_artwork(out, candidate, artwork.directory, scope, basis)
     _validate(proof, normalized, basis, files, scope['board'], transition)
     return dict(proof_sha256=digest(path), report_sha256=proof['report_sha256'],

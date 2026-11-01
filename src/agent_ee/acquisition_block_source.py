@@ -100,6 +100,9 @@ def derive(root, plan, *, reference='acquisition-control'):
              'analysis/geometry-model.json', 'analysis/geometry_model.py',
              ENGINEERING_PATH, plan['placement']['intent'])
     raw = {name: parts_manifest.read_captured(root, name) for name in names}
+    from . import acquisition_mechanics
+    if not acquisition_mechanics.known_revision(sha256(raw['analysis/geometry-model.json']).hexdigest()):
+        raise ValueError('the acquisition recipe admits only a known mechanics model revision')
     groups = strict_json(raw['groups.json'])['groups']
     actual = {}
     refs = []

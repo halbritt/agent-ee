@@ -19,6 +19,11 @@ board with the original binding. Artwork must then preserve that geometry:
   output tree, board bytes and adoption. Only the existing authorized silk-field
   scope is available; a report claiming preservation is insufficient.
 
+A build that declares mechanics without a block contract has no original block
+binding to reconstruct owners from. Its proof replays the sealed recipe, the capture
+binding's own identity, the problem's mechanics identity and the same final job and
+artwork evidence. Native owner facts are read once, at placement capture.
+
 This transfers existing passing mechanics evidence; it adds no second geometry
 predicate, native invocation or source baseline. The existing fresh final block
 capture/report replay and package marker/review identities remain required.

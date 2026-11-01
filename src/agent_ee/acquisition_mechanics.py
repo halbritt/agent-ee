@@ -1,10 +1,10 @@
 """Declared body/access mechanics, bound once to original native owners.
 
 Known acquisition recipe revisions keep their exact source custody. Any other model must
-state `"custody": "design-declared"`, so an edited recipe model cannot pass as one. It
-lists its own source files and access owners, and every declared source is verified
-against its captured bytes when loaded. Declaring a model does not qualify its numbers;
-checks and review do that.
+state `"custody": "design-declared"`. It lists its own source files and access owners, and
+every declared source is verified against its captured bytes when loaded. Declaring a
+model does not qualify its numbers; checks and review do that. The acquisition recipe
+itself admits only known revisions.
 """
 from decimal import Decimal
 from pathlib import Path
@@ -75,6 +75,11 @@ def _design_model(model, sources):
     access_owners(model)
 
 
+def known_revision(model_sha256):
+    """Whether a model is one of the acquisition recipe's exact, source-pinned revisions."""
+    return _model_sources(model_sha256) is not None
+
+
 def _model_sources(model):
     from . import acquisition_film, acquisition_power_geometry
     if model in acquisition_film.MODELS:
@@ -103,7 +108,7 @@ def load(path):
             or document['schema'] != SCHEMA or not isinstance(document['sources'], dict)
             or not set(SOURCES) <= set(document['sources'])):
         raise ValueError('unsupported acquisition mechanics recipe')
-    known = _model_sources(document['sources']['analysis/geometry-model.json']) is not None
+    known = known_revision(document['sources']['analysis/geometry-model.json'])
     _version(document, None if known else _unverified_model(path.parent))
     raw = {}
     for rel, expected in document['sources'].items():

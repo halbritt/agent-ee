@@ -131,7 +131,7 @@ def _compile_scaffold_requirements(plan, candidate, stage_dir):
 
 def _package(plan, candidate, stage_dir, scope, accounting, profile=None, *, out=None):
     from . import block_package
-    if block_package.declared(plan) and out is None:
+    if block_package.requires_retained_run(plan) and out is None:
         raise ValueError('strict block contract package acceptance requires final artwork revalidation from its retained run')
     group_proof = block_package.verify(out, candidate, scope, plan)
     qualification.manufacturing_coverage(plan, scope, accounting)

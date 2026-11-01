@@ -17,7 +17,7 @@ SCHEMA='agent-ee.acquisition-local-routing/1'
 
 def applies(recipe):
     """Local loop seeding knows only the acquisition recipe's named connections."""
-    return mechanics._model_sources(recipe['declaration']['sources']['analysis/geometry-model.json']) is not None
+    return mechanics.known_revision(recipe['declaration']['sources']['analysis/geometry-model.json'])
 
 
 def power_reference(recipe):

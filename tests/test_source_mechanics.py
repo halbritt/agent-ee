@@ -105,6 +105,24 @@ class DeclaredMechanicsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'source custody'):
             mechanics._version(known)
 
+    def test_acquisition_recipe_refuses_a_design_declared_model(self):
+        from agent_ee import acquisition_block_source as recipe
+        plan = dict(envelope='envelope.json', parts=dict(manifest='parts.json', circuit='circuit.json'),
+                    placement=dict(intent='intent.json'))
+        for name in ('groups.json', 'electrical-locality.json', 'envelope.json', 'parts.json', 'circuit.json',
+                     'intent.json', recipe.ENGINEERING_PATH):
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_text('{}')
+        with self.assertRaisesRegex(ValueError, 'known mechanics model revision'):
+            recipe.derive(self.root, plan)
+
+    def test_repair_of_a_design_without_electrical_locality_finds_its_active_parts(self):
+        from agent_ee import acquisition_placement as repair
+        problem = dict(footprints=[dict(native_ref='X9', uuid='fixed', role='fixed_body'),
+                                   dict(native_ref='R1', uuid='moved', role='movable')])
+        diagnostic = dict(violations=[dict(kind='connector_access', ref='X9', blockers=[dict(ref='R1')])])
+        self.assertEqual(repair.active_component(problem, diagnostic), ['moved'])
+
     def evaluate_with_r1_at(self, x, y):
         """Run the actual Python binding, problem builder and compiled engine on a design model."""
         recipe = self.recipe()

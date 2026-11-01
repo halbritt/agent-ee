@@ -232,6 +232,60 @@ class MechanicsPackageTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.produce()
         problem.write_bytes(raw);self.reseal()
 
+    def mechanics_only(self):
+        """The same retained run, as a build that declares mechanics and no block contract."""
+        plan=deepcopy(self.plan);plan['placement'].pop('block_contract')
+        path=self.placement.directory/'placement/capture.json';capture=read_json(path)
+        capture.pop('block_contract');write_json(path,capture);self.reseal()
+        return plan
+
+    def test_mechanics_only_build_proves_final_mechanics_through_package(self):
+        plan=self.mechanics_only()
+        block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,plan)
+        retained_run.record_completion(self.root,self.report,self.artwork,self.candidate);retained_run.write_report(self.root,self.report)
+        binding=block_package.verify(self.root,self.candidate,self.scope,plan)
+        self.assertEqual(binding['board_sha256'],digest(self.candidate/self.scope['board']))
+        proof=read_json(self.artwork.directory/block_package.PROOF)
+        self.assertEqual(proof['basis']['mechanics']['binding_sha256'],self.bound['binding_sha256'])
+        self.assertEqual(proof['mechanics_artwork']['status'],'no_movable_fields')
+
+    def test_mechanics_only_build_refuses_failed_or_substituted_evidence(self):
+        plan=self.mechanics_only()
+        produce=lambda:block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,plan)
+        job=self.placement.directory/'placement'
+        def rewrite(name,change):
+            value=read_json(job/name);change(value);write_json(job/name,value);self.reseal()
+        problem_identity=lambda value:value.update(problem_sha256=placement_problem.identity(value))
+        cases=dict(
+            failed_final=('job-report.json',lambda r:r['final']['mechanics'].update(status='defect'),'missing, failed or stale'),
+            other_board=('job-report.json',lambda r:r['final'].update(board_sha256='b'*64),'missing, failed or stale'),
+            changed_binding=('capture.json',lambda c:c['mechanics'].update(binding_sha256='b'*64),'binding differs'),
+            missing_binding=('capture.json',lambda c:c.pop('mechanics'),'binding differs'),
+            other_problem=('problem.json',lambda p:(p['mechanics'].update(binding_sha256='b'*64),problem_identity(p)),'problem identity differs'),
+            stale_problem=('problem.json',lambda p:p['footprints'][0]['pose'].update(x_nm=1),'problem identity differs'))
+        for case,(name,change,message) in cases.items():
+            raw=(job/name).read_bytes();rewrite(name,change)
+            with self.subTest(case=case),self.assertRaisesRegex(ValueError,message):produce()
+            (job/name).write_bytes(raw);self.reseal()
+        board=self.candidate/self.scope['board'];raw=board.read_bytes();board.write_bytes(raw+b' ')
+        with self.assertRaisesRegex(ValueError,'changed board bytes'):produce()
+        board.write_bytes(raw)
+        (self.candidate/'analysis/geometry_model.py').write_bytes(b'changed checker')
+        with self.assertRaisesRegex(ValueError,'source differs in the final candidate'):produce()
+
+    def test_mechanics_only_package_refuses_a_missing_or_changed_final_proof(self):
+        plan=self.mechanics_only()
+        block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,plan)
+        path=self.artwork.directory/block_package.PROOF;proof=read_json(path)
+        path.unlink()
+        retained_run.record_completion(self.root,self.report,self.artwork,self.candidate);retained_run.write_report(self.root,self.report)
+        with self.assertRaisesRegex(ValueError,'proof is missing'):
+            block_package.verify(self.root,self.candidate,self.scope,plan)
+        proof['basis']['mechanics']['final_board_sha256']='b'*64
+        write_json(path,proof);self.reseal()
+        with self.assertRaisesRegex(ValueError,'proof differs'):
+            block_package.verify(self.root,self.candidate,self.scope,plan)
+
     def test_block_source_proof_is_still_required_before_mechanics_reconstruction(self):
         from agent_ee import block_source_stage
         contract_name=block_source_stage.DIRECTORY+'/contract.json'

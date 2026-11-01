@@ -309,16 +309,25 @@ from its captured bytes, if a path leaves the source root, or if the declaration
 
 The `engineering-geometry` check in `requirement-map.json` must state the limits the
 engine applies: `body_gap` min 0.2 mm, `body_overlap` and `body_outside` max 0 mm2, and
-`access_obstruction` max 1e-8 mm2. The engine holds no model list. It authenticates the
-model bytes and required sources, then grades the declared bodies.
+`access_obstruction` max 1e-8 mm2. The engine holds no model list. It requires the base
+sources to be declared with well-formed digests, authenticates the model bytes, then
+grades the declared bodies. The Python controller verifies each source file.
 
 Declaring a model does not qualify its numbers. Checks and review do that, so cite the
-source of each dimension in the model and in `source_files`.
+source of each dimension in the model and in `source_files`. The marker travels in the
+model bytes, so reviewers see that the numbers are the design's own.
 
 Without the `custody` field, a model must be one of the known acquisition revisions,
-which keep exact checker and source custody, so an edited recipe model cannot pass as
-a design's own. Local loop seeding runs only for those revisions, because it knows
-only that recipe's named connections. Other designs route without it.
+which keep exact checker and source custody. An edited recipe model is refused unless
+it states the marker, and marking it gives up those pins: the acquisition block source
+refuses it, and local loop seeding, which knows only that recipe's named connections,
+does not run. Other designs route without that seeding.
+
+A build with mechanics and no block contract writes its final proof at the artwork
+stage. Package replays it against the sealed sources, the capture binding and the
+completed job's passing result on the accepted board, then checks that artwork
+preserved that board apart from any qualified silk repair. See
+[strict package mechanics](strict-package-mechanics.md).
 
 ## Authored judgments and package records
 
