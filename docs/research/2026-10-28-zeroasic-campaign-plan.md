@@ -9,6 +9,21 @@ This plan turns the research into an ordered campaign with acceptance gates.
 Plane reconciliation and implementation are future execution steps. No Plane
 items were created or live statuses checked while preparing this document.
 
+## Owner direction — 2026-11-01
+
+Direct owner instruction, 2026-11-01: **"I care less about the completed board
+and more about building a tool that can yield a workable design. whatever
+decisions that need to be made for the board are fine. Let's just keep improving
+the tool."**
+
+The priority is now the tool, and the acquisition board is its test case. An
+accepted control package no longer gates tool work, and board-level design choices,
+including the film-capacitor reference, are delegated rather than owner-reserved.
+Money, orders, supplier and project uploads stay owner-reserved. Evidence rules are
+unchanged: failures stay retained and nothing claims acceptance it did not earn.
+The G4 series below remains a useful measurement of the tool, but it is no longer
+the campaign's gate. Dependencies that waited on its freeze no longer wait.
+
 ## Owner scope amendment — 2026-10-29
 
 Direct owner instruction: **"remove the ESP-Prog requirements"**.
