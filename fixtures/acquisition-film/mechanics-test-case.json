@@ -9,7 +9,7 @@
     "analysis/geometry_adapter.py": "2ded5b6240d1a53f0ef9e9960e4429cb0ec1af3ab4cd2d80496bc3fe35e5f578",
     "analysis/geometry_contact.py": "11bcf0cc22bf06a817fb682a9579fb2457c3ef97cb5f53e809f266b3345ffab0",
     "analysis/geometry_model.py": "58a61adf28ca7d29479258ba7cb52373d3faaee4e884e40658ce5be9abce3100",
-    "analysis/ground_reference.py": "9dde5c9290dd2491cc9b47511eb46241d1580eea3cb3f4b837805b185db301fe",
+    "analysis/ground_reference.py": "c61fb840a8e558f7b57f68e2a6e39681f78e1ee3348e614ae2e81831e2c5c2fe",
     "datasheets-connectors-bulk/bb0b7c344f87ea4a2eb01dbf02c4541bd9482608f57c1dc3ca2f5e333a0dd2a4.pdf": "447624f4f2f7d37c58c1eaa7ee314ad757fe7aff48f6186491ef6f69fbc00b96",
     "datasheets-connectors-bulk/manifest.json": "0851bd57b2b559e831d97b583c8218ac3f02ed190c5a362d63f76ad3afe9a685",
     "film-reference/datasheet/487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c.pdf": "487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c",

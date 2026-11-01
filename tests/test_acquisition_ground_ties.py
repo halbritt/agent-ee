@@ -1,5 +1,6 @@
 """Native ground seed custody; clearance and plane performance are separate checks."""
 import copy
+import json
 import re
 from pathlib import Path
 import tempfile
@@ -103,7 +104,7 @@ class GroundTieTests(unittest.TestCase):
         k = self.k
         output, receipt = self.seeded()
         good = output.read_bytes()
-        for fault in ('missing','net','diameter','bottom land','backdrill','drill','position','stub','pad','bar','no bar','hole'):
+        for fault in ('missing','net','diameter','bottom land','backdrill','drill','position','stub','pad','bar','no bar','hole','hole drill'):
             with self.subTest(fault=fault):
                 output.write_bytes(good)
                 board = k.LoadBoard(str(output))
@@ -125,6 +126,11 @@ class GroundTieTests(unittest.TestCase):
                     bar=next(t for t in board.GetTracks() if t.m_Uuid.AsString()==identity)
                     if fault=='bar': bar.SetWidth(600_000)
                     else: board.Remove(bar)
+                elif fault=='hole drill':
+                    # Independent review 2026-11-01: the receipt bound hole positions only.
+                    fp=next(f for f in board.GetFootprints() if f.GetReference()=='U1')
+                    for hole in fp.Pads():
+                        hole.SetDrillSize(k.VECTOR2I(500_000,500_000))
                 else:
                     fp=next(f for f in board.GetFootprints() if f.GetReference()==('U2' if fault=='pad' else 'U1'))
                     pad=next(iter(fp.Pads()))
@@ -172,6 +178,18 @@ class GroundTieTests(unittest.TestCase):
         unrelated=copy.deepcopy(receipt)
         unrelated['connections'][0]['via_uuid']='00000000-0000-0000-0000-000000000000'
         self.assertFalse(_legal(ties.without_pending_plane_warnings(report,unrelated)))
+
+    def test_retained_ground_tie_policy_still_generates_its_original_copper(self):
+        # Independent review 2026-11-01: model d451823e loaded but its policy refused to seed.
+        policy=json.loads((Path(ties.__file__).parents[2]/'fixtures/acquisition-film/mechanics-test-case-r3.json').read_text())
+        policy=json.loads(policy['model_raw'])['local_plane_returns']
+        self.assertEqual(policy['schema'],'agent-ee.acquisition-ground-ties/1')
+        data,receipt=ties.seed(self.path,self.original,policy)
+        output=self.directory/'retained.kicad_pcb'
+        output.write_bytes(data)
+        self.assertEqual(parse_sexpr(data)[:-6],parse_sexpr(self.original))
+        self.assertEqual(receipt['bars'],[])
+        self.assertEqual(ties.verify(output,receipt)['status'],'pass')
 
     def test_exposed_pad_needs_four_plated_ground_holes_in_two_rows(self):
         k=self.k

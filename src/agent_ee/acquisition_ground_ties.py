@@ -20,6 +20,9 @@ POLICY = dict(schema='agent-ee.acquisition-ground-ties/2',
     track_width_mm=.25, via_diameter_mm=.6, via_drill_mm=.3,
     pad_edge_gap_mm=.2, maximum_path_mm=3,
     exposed_pad_bars=dict(reference='U1', pad='9', width_mm=.81))
+# The retained ground-tie model revision generates its original copper, without bars.
+_GROUND_ONLY = {**{key: value for key, value in POLICY.items() if key != 'exposed_pad_bars'},
+                'schema': 'agent-ee.acquisition-ground-ties/1'}
 _NUMBER = re.compile(r'-?\d+(\.\d+)?')
 
 
@@ -52,7 +55,7 @@ def _by_value(node):
 def plan(board, policy):
     """Derive one outward connection per native pad, including vertical length."""
     import pcbnew as k
-    if policy != POLICY or board.GetCopperLayerCount() != 2:
+    if policy not in (POLICY, _GROUND_ONLY) or board.GetCopperLayerCount() != 2:
         raise JobRefusal('ground ties: unsupported policy or copper stack')
     footprints = list(board.GetFootprints())
     refs = [fp.GetReference() for fp in footprints]
@@ -112,7 +115,9 @@ def exposed_pad_bars(board, policy):
     exposed pad. Only B.Cu needs copper to reach the supplier's annular-ring recommendation.
     """
     import pcbnew as k
-    spec = policy['exposed_pad_bars']
+    spec = policy.get('exposed_pad_bars')
+    if spec is None:
+        return []
     footprints = [fp for fp in board.GetFootprints() if fp.GetReference() == spec['reference']]
     if len(footprints) != 1:
         raise JobRefusal('ground ties: exposed-pad footprint is missing or ambiguous')
@@ -127,7 +132,10 @@ def exposed_pad_bars(board, policy):
         pairs = [points[:2], points[2:]]
         if any(a[1] != b[1] for (a, _), (b, _) in pairs):
             raise JobRefusal('ground ties: exposed-pad holes are not an orthogonal pair of rows')
-    return [dict(start_nm=a, end_nm=b, pad_uuids=[first, second])
+    lands = {(pad.GetDrillSize().x, pad.GetDrillSize().y, pad.GetSize(k.B_Cu).x, pad.GetSize(k.B_Cu).y) for pad in holes}
+    if len(lands) != 1:
+        raise JobRefusal('ground ties: exposed-pad holes differ in drill or land')
+    return [dict(start_nm=a, end_nm=b, pad_uuids=[first, second], land_nm=list(next(iter(lands))))
             for (a, first), (b, second) in pairs]
 
 
@@ -167,11 +175,12 @@ def seed(board_path, data, policy):
     end = data.rstrip().rfind(b')')
     result = data[:end] + b''.join(nodes) + data[end:]
     after = parse_sexpr(result)
-    if after[:-8] != tree or [n[0] for n in after[-8:]] != ['segment', 'via']*3 + ['segment']*2:
+    added = 2*len(rows) + len(bars)
+    if after[:-added] != tree or [n[0] for n in after[-added:]] != ['segment', 'via']*len(rows) + ['segment']*len(bars):
         raise JobRefusal('ground ties: generation changed original board nodes')
     if path.read_bytes() != before:
         raise JobRefusal('ground ties: native inspection changed source')
-    return result, dict(schema=POLICY['schema'], policy=strict_json(canonical(policy)), connections=rows, bars=bars,
+    return result, dict(schema=policy['schema'], policy=strict_json(canonical(policy)), connections=rows, bars=bars,
         native_source_sha256=sha256(before).hexdigest(), input_sha256=parent,
         output_sha256=sha256(result).hexdigest(), helper_sha256=digest(Path(__file__)),
         acceptance_assessed=False)
@@ -200,7 +209,7 @@ def verify(board_path, record):
     import pcbnew as k
     path = Path(board_path)
     before = digest(path)
-    if (record.get('schema') != POLICY['schema'] or record.get('policy') != POLICY
+    if (record.get('policy') not in (POLICY, _GROUND_ONLY) or record.get('schema') != record['policy']['schema']
             or record.get('helper_sha256') != digest(Path(__file__))):
         raise JobRefusal('ground ties: policy/helper custody differs')
     tree=parse_sexpr(path.read_bytes())
@@ -218,7 +227,8 @@ def verify(board_path, record):
         raise JobRefusal('ground ties: native verification load failed')
     expected = plan(board, record['policy'])
     bars = exposed_pad_bars(board, record['policy'])
-    if ([{key: row.get(key) for key in bars[0]} for row in record.get('bars', [])] != bars):
+    keys = ('start_nm', 'end_nm', 'pad_uuids', 'land_nm')
+    if [{key: row.get(key) for key in keys} for row in record.get('bars', [])] != bars:
         raise JobRefusal('ground ties: exposed-pad hole frame differs')
     recorded = record.get('connections')
     if not isinstance(recorded, list) or len(recorded) != len(expected):

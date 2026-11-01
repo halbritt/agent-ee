@@ -567,7 +567,7 @@ fn mechanics_sources(model: &str) -> Result<Vec<(&'static str, &'static str)>> {
         let mut sources = mechanics_sources("457f6f4d55b5e4cd0595ae6fb72c7a56304e4d0c769c887f24549b3bf242b4c4")?;
         sources.extend_from_slice(&[
             ("analysis/geometry_adapter.py", "2ded5b6240d1a53f0ef9e9960e4429cb0ec1af3ab4cd2d80496bc3fe35e5f578"),
-            ("analysis/ground_reference.py", "9dde5c9290dd2491cc9b47511eb46241d1580eea3cb3f4b837805b185db301fe"),
+            ("analysis/ground_reference.py", "c61fb840a8e558f7b57f68e2a6e39681f78e1ee3348e614ae2e81831e2c5c2fe"),
             ("film-reference/ground-return-basis.md", "aef3052ed50cdf2421b5577d2c4dab5f71a155464f1c3a5df840cbe06e34f172"),
         ]);
         return Ok(sources);

@@ -146,23 +146,48 @@ def net_copper(board,net,layer):
     return copper
 
 
+def board_drills(board):
+    """Every drilled hole on the board, by item identity."""
+    drills={}
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if pad.HasHole():
+                hole=k.SHAPE_POLY_SET()
+                pad.TransformHoleToPolygon(hole,0,1,k.ERROR_OUTSIDE)
+                drills[pad.m_Uuid.AsString()]=hole
+    for item in board.GetTracks():
+        if item.GetClass()=='PCB_VIA':
+            drills[item.m_Uuid.AsString()]=circle(item.GetPosition(),item.GetDrillValue()/2)
+    return drills
+
+
 def plated_rings(board,ceiling_nm=500_000):
     """Largest ring of unbroken saved copper around each plated pad hole on each outer layer.
 
     A footprint land size misses copper that widens it, so this measures the saved copper.
+    Another drill through that copper breaks the ring, and a stepped drill has no single
+    ring to measure, so it refuses.
     """
-    cached={};rows=[]
+    cached={};rows=[];drills=board_drills(board)
     for fp in board.GetFootprints():
         for pad in fp.Pads():
             if pad.GetAttribute()!=k.PAD_ATTRIB_PTH:continue
             drill=pad.GetDrillSize()
-            if drill.x!=drill.y or pad.GetOffset(k.B_Cu).x or pad.GetOffset(k.B_Cu).y:
+            stepped=(pad.GetSecondaryDrillSize().x or pad.GetTertiaryDrillSize().x
+                     or pad.IsBackdrilledOrPostMachined(k.F_Cu) or pad.IsBackdrilledOrPostMachined(k.B_Cu))
+            if drill.x!=drill.y or pad.GetOffset(k.B_Cu).x or pad.GetOffset(k.B_Cu).y or stepped:
                 raise ValueError('plated ring model needs a centred round drill')
+            others=k.SHAPE_POLY_SET()
+            for identity,hole in drills.items():
+                if identity!=pad.m_Uuid.AsString():others.Append(hole)
+            others.Simplify()
             for layer,name in ((k.F_Cu,'F.Cu'),(k.B_Cu,'B.Cu')):
                 key=(pad.GetNetname(),layer)
                 if key not in cached:cached[key]=net_copper(board,*key)
                 def holds(ring):
                     disc=circle(pad.GetPosition(),drill.x/2+ring)
+                    cut=k.SHAPE_POLY_SET(disc);cut.BooleanIntersection(others);cut.Simplify()
+                    if not (cut.IsEmpty() or cut.Area()==0):return False
                     disc.BooleanSubtract(cached[key]);disc.Simplify()
                     return disc.IsEmpty() or disc.Area()==0
                 low,high=0,ceiling_nm

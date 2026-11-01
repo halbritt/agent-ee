@@ -108,9 +108,14 @@ refuses it. The mask opening stays at the land size, so the copper beyond it is
 covered by mask.
 
 `ground_reference.plated_rings` measures saved copper because a footprint land size
-misses copper that widens it. Without the bars the measurement falls to about
-0.15 mm and fails the limit. The holes remain below the page's recommended 0.5 mm
-plated hole size, and no supplier preview has been performed.
+misses copper that widens it. Another drill through that copper shortens the
+measured ring, and a stepped drill raises an error, so the check cannot pass. Without
+the bars the measurement falls to about 0.15 mm and fails the limit. The holes remain
+below the page's recommended 0.5 mm plated hole size, and no supplier preview has
+been performed.
+
+The retained `d451823e` model keeps its original policy, so it still generates the
+three ground ties without bars.
 
 ## Refreshing assembly stock
 

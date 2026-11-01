@@ -211,6 +211,28 @@ class SeededGroundReferenceTests(unittest.TestCase):
         self.assertGreaterEqual(rings[('U1', '9', 'B.Cu')]['ring_mm'], .25)
         self.assertTrue(rings[('U1', '9', 'F.Cu')]['at_ceiling'])
 
+    def test_another_drill_through_the_copper_breaks_the_measured_ring(self):
+        # Independent review 2026-11-01: other drills were not subtracted from the ring.
+        reference = ground_reference()
+        board = k.LoadBoard(str(self.path))
+        regulator = next(fp for fp in board.GetFootprints() if fp.GetReference() == 'U1')
+        target = next(pad for pad in regulator.Pads() if pad.GetNumber() == '9' and pad.HasHole())
+        ring = lambda: min(r['ring_mm'] for r in reference.plated_rings(board)
+                           if r['reference'] == 'U1' and r['layer'] == 'B.Cu')
+        self.assertGreaterEqual(ring(), .25)
+        hole = k.PAD(regulator)
+        hole.SetNumber('')
+        hole.SetAttribute(k.PAD_ATTRIB_NPTH)
+        hole.SetShape(k.PAD_SHAPE_CIRCLE)
+        hole.SetSize(k.VECTOR2I(200_000, 200_000))
+        hole.SetDrillSize(k.VECTOR2I(200_000, 200_000))
+        hole.SetPosition(target.GetPosition() + k.VECTOR2I(400_000, 0))
+        regulator.Add(hole)
+        self.assertLess(ring(), .15)
+        target.SetSecondaryDrillSize(k.VECTOR2I(700_000, 700_000))
+        with self.assertRaisesRegex(ValueError, 'centred round drill'):
+            reference.plated_rings(board)
+
     def test_supplier_land_alone_falls_below_the_plated_ring_minimum(self):
         # Full review 2026-11-01: 0.1524 mm is below the captured 0.18 mm PTH minimum.
         board = k.LoadBoard(str(self.path))

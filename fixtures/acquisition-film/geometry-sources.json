@@ -5,7 +5,7 @@
   "sources": {
     "analysis/geometry_adapter.py": "2ded5b6240d1a53f0ef9e9960e4429cb0ec1af3ab4cd2d80496bc3fe35e5f578",
     "analysis/geometry_contact.py": "11bcf0cc22bf06a817fb682a9579fb2457c3ef97cb5f53e809f266b3345ffab0",
-    "analysis/ground_reference.py": "9dde5c9290dd2491cc9b47511eb46241d1580eea3cb3f4b837805b185db301fe",
+    "analysis/ground_reference.py": "c61fb840a8e558f7b57f68e2a6e39681f78e1ee3348e614ae2e81831e2c5c2fe",
     "film-reference/datasheet/487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c.pdf": "487dd8afa2f54ec13a4f2be9baf30a29c757423d5ea5b0092b6ecf3e6934fb2c",
     "film-reference/geometry-basis.json": "367dfd536429ee1f1d6728b9b9bb3bddb81e2f3ab157ffddaab05fa6f6bcfae9",
     "film-reference/geometry-path-basis.json": "1463621bfab1b11021fffdc49fb5bc4d16208825651581e7be4e283a00b3eef7",
