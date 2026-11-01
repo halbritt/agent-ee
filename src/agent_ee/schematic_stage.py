@@ -34,7 +34,7 @@ def _sheets(schematic, child_schematics):
 def configuration(source_root, *, board, schematic, intent='generation/connectivity-intent.json',
                   seeds=(), layout='generation/schematic-layout.json', captures='libraries',
                   footprints='generation/footprints.json', footprint_captures=None, regeneration_intent=None,
-                  child_schematics=()):
+                  child_schematics=(), footprint_declarations=None):
     """Scope mutable_inputs and campaign steps for the declared native sheet set.
 
     Seeds are writer context, captured and bound like the intent; they are not
@@ -57,6 +57,9 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
             '--captures', captures, '--footprints', footprints]
     if footprint_captures is not None:
         args += ['--footprint-captures', footprint_captures]
+    if footprint_declarations is not None:
+        _relative(footprint_declarations, 'footprint declarations path')
+        args += ['--footprint-declarations', footprint_declarations]
     for child in child_schematics:
         args += ['--child-schematic', child]
     if regeneration_intent is not None:
@@ -76,7 +79,7 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
         writes = {target: produced}
         if command == 'emit':
             writes.update({child: 'out/project/' + Path(child).name for child in child_schematics})
-        inputs = [intent, *seeds, layout, footprints]
+        inputs = [intent, *seeds, layout, footprints, *([footprint_declarations] if footprint_declarations else [])]
         if regeneration_intent is not None:
             if command == 'emit':
                 writes[regeneration_intent] = 'out/effective-intent.json'
@@ -98,7 +101,8 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
 
 
 def run(command, candidate, out, *, board, schematic, intent, layout, captures, footprints,
-        footprint_captures=None, regeneration_intent=None, child_schematics=(), _execution=None):
+        footprint_captures=None, regeneration_intent=None, child_schematics=(), footprint_declarations=None,
+        _execution=None):
     """Return failure with retained findings; never substitute previous native output."""
     candidate, out = Path(candidate), Path(out)
     footprint_captures = captures if footprint_captures is None else footprint_captures
@@ -148,13 +152,16 @@ def run(command, candidate, out, *, board, schematic, intent, layout, captures, 
     if native['execution'] != 'ok':
         return 1
     manifest = load_document(candidate / footprints)
+    declarations = load_document(candidate / footprint_declarations) if footprint_declarations else None
     plan = forward_annotation.plan(candidate / board, out / 'netlist/design.xml', manifest,
-                                   candidate / footprint_captures, out / 'plan-work', _execution=_execution)
+                                   candidate / footprint_captures, out / 'plan-work', declarations=declarations,
+                                   _execution=_execution)
     write_json(out / 'plan.json', plan)
     if plan['execution'] != 'ok':
         return 1
     result = forward_annotation.apply(plan, candidate / board, out / 'netlist/design.xml', manifest,
-        candidate / footprint_captures, out / 'board.kicad_pcb', out / 'apply-work', _execution=_execution)
+        candidate / footprint_captures, out / 'board.kicad_pcb', out / 'apply-work', declarations=declarations,
+        _execution=_execution)
     write_json(out / 'annotation.json', result)
     return 0 if result['execution'] == 'ok' else 1
 
@@ -165,6 +172,7 @@ def main(argv=None):
     for name in ('board', 'schematic', 'intent', 'layout', 'captures', 'footprints'):
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--footprint-captures')
+    parser.add_argument('--footprint-declarations')
     parser.add_argument('--regeneration-intent')
     parser.add_argument('--child-schematic', action='append', default=[], dest='child_schematics')
     args = vars(parser.parse_args(argv))

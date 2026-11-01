@@ -207,6 +207,38 @@ class ForwardAnnotationTests(unittest.TestCase):
         self.assertEqual(pad['bbox_nm'][2] - pad['bbox_nm'][0], 3000000)
         self.assertEqual(pad['bbox_nm'][3] - pad['bbox_nm'][1], 2000000)
 
+    def test_declared_mechanical_pad_annotates_without_a_symbol_pin_and_stays_netless(self):
+        def add(intent):
+            intent['components'].append(dict(id='c_mech', reference='C2', lib_id='OwnedGen:CAP', value='100n',
+                                             footprint='OwnedFP:CAP_2PAD', units=[1]))
+            for net, pin in (('vout', '1'), ('gnd', '2')):
+                next(n for n in intent['nets'] if n['id'] == net)['terminals'].append(
+                    {'component': 'c_mech', 'pin': {'number': pin}})
+        project, xml = self.project(self.intent(add), 'mechanical')
+        footprint = project / 'lib/OwnedFP.pretty/CAP_2PAD.kicad_mod'
+        text = footprint.read_text().rstrip()
+        footprint.write_text(text[:-1] + '(pad "5" smd rect (at 0 3) (size 1 1) (layers "F.Cu" "F.Paste" "F.Mask")'
+                             ' (uuid "5a1f0000-0000-4000-8000-000000000005")))\n')
+        manifest = copy.deepcopy(self.manifest)
+        member = next(m for lib in manifest['libraries'] for m in lib['members']
+                      if m['path'] == 'lib/OwnedFP.pretty/CAP_2PAD.kicad_mod')
+        member['sha256'] = sha(footprint)
+        declarations = dict(schema='agent-ee.footprint-declarations/1', pinless_symbols=[], footprints=[dict(
+            footprint='OwnedFP:CAP_2PAD', mechanical_pads=['5'], thermal_via_pads=[], custom_pads=[],
+            assembly=None, rationale='Original test fixture: an unconnected retention pad.')])
+        board = project / 'regulator.kicad_pcb'
+        refused = fa.plan(board, xml, manifest, project, self.tmp / 'mechanical-refused')
+        self.assertEqual(refused['findings'][0]['code'], 'pad_pin_mismatch', refused['findings'])
+        planned = fa.plan(board, xml, manifest, project, self.tmp / 'mechanical-plan', declarations=declarations)
+        self.assertEqual(planned['execution'], 'ok', planned['findings'])
+        output = self.tmp / 'mechanical-output.kicad_pcb'
+        result = fa.apply(planned, board, xml, manifest, project, output, self.tmp / 'mechanical-apply',
+                          declarations=declarations)
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        added = next(f for f in fa.board_facts(output, self.tmp / 'mechanical-facts')['footprints']
+                     if f['reference'] == 'C2')
+        self.assertEqual({p['number']: bool(p['net']) for p in added['pads']}, {'1': True, '2': True, '5': False})
+
     def test_fixture_board_is_clean_against_emitted_schematic(self):
         project, _ = self.project(self.intent(), 'baseline')
         report = self.drc(project, 'baseline')

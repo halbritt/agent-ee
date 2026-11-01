@@ -1,5 +1,6 @@
 """The build's stage producers; retained-run owns their retained records."""
 import copy
+import json
 from pathlib import Path
 import shutil
 
@@ -23,12 +24,31 @@ def candidate_scope(scope, candidate):
 
 
 
+def _step_cause(path):
+    """What a failed step reported, so a stage reason names its cause."""
+    causes = []
+    for report in sorted((path / 'run/out').glob('*.json')):
+        try:
+            document = json.loads(report.read_bytes())
+        except ValueError:
+            continue
+        rows = document.get('findings') if isinstance(document, dict) else None
+        if isinstance(rows, list) and document.get('execution') != 'ok':
+            causes += [' '.join(str(row[key]) for key in ('code', 'location', 'message') if key in row)
+                       for row in rows if isinstance(row, dict)]
+    if causes:
+        return '; '.join(causes[:5])
+    console = path / 'run/console.log'
+    text = console.read_text(errors='replace').strip() if console.is_file() else ''
+    return text[-600:] or 'the step left no findings or console output'
+
+
 def _step(stage_dir, candidate, declaration, index):
     path = stage_dir / 'receipts' / str(index)
     receipt = run_step(path, candidate, declaration,
         dict(implementation=1, source_candidate_id=tree_identity(candidate)['sha256'], receipt_index=index))
     if receipt['status'] != 'completed':
-        raise ValueError(f"{declaration['step']}: {receipt['status']}; see {path / 'run/console.log'}")
+        raise ValueError(f"{declaration['step']}: {receipt['status']}: {_step_cause(path)}; see {path / 'run'}")
     adopt(path, receipt, candidate)
     return path, receipt
 
@@ -223,10 +243,11 @@ def execute(attempt, plan, previous, *, diagnostic=False):
         scaffold_dir = retained_run.completed_stage(out, 'scaffold').directory
         receipt = read_json(scaffold_dir / 'product/scaffold-receipt.json')
         sheets = list(receipt['sheets'].values())
+        cad = read_json(candidate / plan['parts']['manifest'])['cad']
         native = schematic_stage.configuration(SOURCE_ROOT, board=scope['board'], schematic=scope['schematic'],
             child_schematics=[path for path in sheets if path != scope['schematic']], intent=GENERATED,
-            layout=plan['parts']['layout'], captures='.',
-            footprints=read_json(candidate / plan['parts']['manifest'])['cad']['manifest']['path'])
+            layout=plan['parts']['layout'], captures='.', footprints=cad['manifest']['path'],
+            footprint_declarations=cad.get('declarations', {}).get('path'))
         content = scaffold.content_step(REPOSITORY, plan['envelope'], plan['parts']['manifest'], scope['board'],
             intent=GENERATED, layout=plan['parts']['layout'])
         for index, step in enumerate([content, *native['implementation_steps']]):

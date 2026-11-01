@@ -104,7 +104,7 @@ def _fields(elements):
     return fields
 
 
-def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints, *, _execution=None):
+def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints, *, declarations=None, _execution=None):
     """Plan from captured bytes; supported custom geometry requires a native child."""
     plan = dict(schema=PLAN_SCHEMA, execution='failed', outcome='unknown', findings=[],
                 inputs=dict(board_sha256=board_sha256, xml_sha256=hashlib.sha256(xml_bytes).hexdigest(),
@@ -148,7 +148,7 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints, *,
             if not inventory['components'][ref]['on_board']:
                 raise AnnotationError('board_exclusion_unsupported',
                                       'native export excludes this symbol from the board', '/components/' + ref)
-        index = index_footprints(manifest, captured_footprints,
+        index = index_footprints(manifest, captured_footprints, declarations,
             _native_geometry=None if _execution is None else _execution.custom_geometry)
         if index['coverage'] != 'complete':
             raise AnnotationError('footprint_library_coverage',
@@ -225,7 +225,8 @@ def _plan(plan, inventory, fields, facts, library, names):
         if fp['fpid'] != comp['footprint']:
             raise AnnotationError('footprint_change_unsupported', 'bound footprint identity differs from the symbol',
                                   '/components/' + ref)
-        numbers = sorted({p['number'] for p in fp['pads'] if p['number']})
+        mechanical = {p['number'] for p in library[comp['footprint']]['pads'] if p.get('declared') == 'mechanical'}
+        numbers = sorted({p['number'] for p in fp['pads'] if p['number']} - mechanical)
         if numbers != sorted(comp['pins']):
             raise AnnotationError('pad_pin_mismatch', 'placed footprint pads differ from the symbol pins',
                                   '/components/' + ref)
@@ -449,7 +450,7 @@ def _failed(schema, code, message, location='/', **fields):
                       findings=[dict(code=code, location=location, message=message)]))
 
 
-def plan(board, xml, manifest, footprint_root, work, *, _execution=None):
+def plan(board, xml, manifest, footprint_root, work, *, declarations=None, _execution=None):
     """Plan for exact current bytes; ``work`` must be a new private directory."""
     work = Path(work)
     work.mkdir(mode=0o700, parents=False, exist_ok=False)
@@ -473,7 +474,7 @@ def plan(board, xml, manifest, footprint_root, work, *, _execution=None):
         return _failed(PLAN_SCHEMA, exc.code, str(exc), exc.location)
     except (ValueError, KeyError, TypeError) as exc:
         return _failed(PLAN_SCHEMA, 'probe_feature_mismatch', str(exc))
-    return build_plan(xml_bytes, board_sha, facts, manifest, captures, _execution=_execution)
+    return build_plan(xml_bytes, board_sha, facts, manifest, captures, declarations=declarations, _execution=_execution)
 
 
 def _verify(plan_record, before, after):
@@ -663,7 +664,8 @@ def _preflight(board, out, backup_dir):
     return in_place
 
 
-def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backup_dir=None, _execution=None):
+def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backup_dir=None, declarations=None,
+          _execution=None):
     """Recompute, compare, apply on a copy, verify, then publish ``out`` atomically.
 
     The supplied plan is a declaration of intent only: it must equal a fresh plan
@@ -678,7 +680,8 @@ def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backu
     try:
         if plan_record.get('execution') != 'ok':
             raise AnnotationError('plan_rejected', 'the plan did not complete')
-        fresh = plan(board, xml, manifest, footprint_root, work / 'replan', _execution=_execution)
+        fresh = plan(board, xml, manifest, footprint_root, work / 'replan', declarations=declarations,
+                     _execution=_execution)
         if _canonical(fresh) != _canonical(plan_record):
             raise AnnotationError('stale_plan', 'plan differs from a fresh plan over the current inputs')
         board, out = Path(board), Path(out)
@@ -750,6 +753,7 @@ def main(argv=None):
         cmd.add_argument('--netlist', required=True, help='native kicad-cli XML export')
         cmd.add_argument('--manifest', required=True, help='agent-ee.footprint-libraries/1 manifest')
         cmd.add_argument('--captures', required=True, help='root of the captured footprint files')
+        cmd.add_argument('--declarations', help='agent-ee.footprint-declarations/1 for declared pads')
         cmd.add_argument('--work', required=True, help='new private scratch directory')
         cmd.add_argument('--record', required=True, help='new plan/result JSON file')
         if name == 'apply':
@@ -758,12 +762,13 @@ def main(argv=None):
             cmd.add_argument('--backup-dir')
     args = parser.parse_args(argv)
     manifest = load_document(args.manifest)
+    declarations = load_document(args.declarations) if args.declarations else None
     try:
         if args.command == 'plan':
-            record = plan(args.board, args.netlist, manifest, args.captures, args.work)
+            record = plan(args.board, args.netlist, manifest, args.captures, args.work, declarations=declarations)
         else:
             record = apply(load_document(args.plan), args.board, args.netlist, manifest, args.captures, args.out,
-                           args.work, backup_dir=args.backup_dir)
+                           args.work, backup_dir=args.backup_dir, declarations=declarations)
     except AnnotationError as exc:
         record = _failed(RESULT_SCHEMA, exc.code, str(exc), exc.location)
     with Path(args.record).open('xb') as stream:
