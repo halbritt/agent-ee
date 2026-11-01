@@ -424,6 +424,15 @@ def validate(design, captures=None, *, cad_only=False):
                 fail(path + "." + key, "select a declared part")
         if not number(d["max_distance_mm"]) or d["max_distance_mm"] <= 0:
             fail(path + ".max_distance_mm", "supply a positive finite distance")
+        else:
+            from decimal import Decimal
+
+            nm = Decimal(str(d["max_distance_mm"])) * 1000000
+            if nm != nm.to_integral_value():
+                fail(
+                    path + ".max_distance_mm",
+                    "supply a distance representable in whole nanometres",
+                )
         for key in ("supply", "return"):
             pair = d[key]
             if not isinstance(pair, list) or len(pair) != 2:

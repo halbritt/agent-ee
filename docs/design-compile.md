@@ -148,6 +148,9 @@ Design refused:
 Correct the named fields and compile again into a new output directory. Missing
 captures, absent symbol pins, symbol/footprint mismatches, duplicate terminal
 assignments, one-terminal nets, and off-edge connector positions are refused.
+Decoupling citations include each stated distance in millimetres. Preflight
+requires the existing source-authority checker to qualify them as hard
+engineering requirements; an advisory citation cannot satisfy a file requirement.
 Producer or native-stage failures retain their own evidence; a successful compile
 does not predict a successful physical design.
 

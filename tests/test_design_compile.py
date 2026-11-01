@@ -548,3 +548,27 @@ class DesignCompileTests(unittest.TestCase):
             self.compile()
         self.assertIn("requirement_prefix", str(caught.exception))
         self.assertFalse((self.root / "bundle").exists())
+
+    def test_decoupling_distance_is_bound_to_an_enforceable_numeric_spec_citation(self):
+        # Timer run r1 had correct geometry but only an advisory generic citation.
+        self.design["decoupling"] = [
+            dict(
+                capacitor="R2",
+                device="R1",
+                supply=["R1.1", "R2.1"],
+                **{"return": ["R1.2", "R2.2"]},
+                max_distance_mm=6,
+            )
+        ]
+        self.compile()
+        root = self.root / "bundle/inputs"
+        locality = json.loads((root / "electrical-locality.json").read_text())
+        from agent_ee.locality_provenance import classify
+
+        for leg in ("supply", "return"):
+            pair = locality["obligations"][0][leg]
+            self.assertEqual(pair["max_distance_nm"], 6000000)
+            self.assertEqual(
+                classify(pair, locality["source_records"])["enforcement"], "hard"
+            )
+            self.assertIn("6 mm", pair["provenance"]["citation"]["quote"])

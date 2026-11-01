@@ -41,6 +41,13 @@ def native_net(design, net):
     return net if net == design["ground"] else "/" + net
 
 
+def decoupling_text(pair):
+    return (
+        f"{pair['capacitor']}-to-{pair['device']} supply and return pad distances "
+        f"shall be at most {pair['max_distance_mm']} mm."
+    )
+
+
 def spec(design):
     sections = {
         "Design intent": [design["intent"]],
@@ -49,7 +56,7 @@ def spec(design):
         "Placement and mechanics": [
             f"The board shall be {design['board']['width_mm']} by {design['board']['height_mm']} mm, two copper layers and nominal {design['board']['thickness_mm']} mm thick.",
             "All declared connectors shall occupy their fixed edge positions.",
-            "Declared decoupling supply and return pads shall meet their maximum distance requirements.",
+            " ".join(decoupling_text(pair) for pair in design["decoupling"]),
             f"Courtyards shall not overlap and components shall fit the outline and {design['board']['max_component_height_mm']} mm height envelope.",
         ],
         "Manufacturing": [
@@ -505,7 +512,7 @@ def placement(design, root):
             net = next(n for n, terms in design["nets"].items() if t in terms)
             return dict(reference=ref, pad=pin, net=native_net(design, net))
 
-        quote = "Declared decoupling supply and return pads shall meet their maximum distance requirements."
+        quote = decoupling_text(d)
         row = dict(id="decoupling-" + str(i + 1), metric="pad-centre-to-centre")
         for key in ("supply", "return"):
             row[key] = dict(
@@ -543,6 +550,17 @@ def placement(design, root):
         obligations=obligations,
     )
     if obligations:
+        from .locality_provenance import classify
+
+        for i, obligation in enumerate(obligations):
+            for leg in ("supply", "return"):
+                qualified = classify(obligation[leg], locality["source_records"])
+                if qualified["enforcement"] != "hard":
+                    raise DesignError(
+                        [
+                            f"decoupling[{i}].max_distance_mm: exact numeric source binding failed: {qualified['reason']}; use a distance representable in whole nanometres"
+                        ]
+                    )
         write_json(root / "electrical-locality.json", locality)
     write_json(
         root / "placement.json",
