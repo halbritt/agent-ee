@@ -287,7 +287,14 @@ component IDs, and a component belongs to at most one group. Implementation:
   label. A run is fanned whole or not at all, under the same collision rules as
   a satellite. The label keeps its UUID and net name; only its position and
   angle change.
-- **Fail closed.** A placement is tried at up to 24 grid steps (2.54 mm) from the
+- **Horizontal global flags.** A centered global flag can overlap the local
+  label above the next pin's wire. Before placing satellites, the generator
+  extends a conflicting flag outward on a straight wire. It starts beyond the
+  conflicting label reservations and tries at most 24 grid positions, checking
+  every other reservation and connection point. A blocked search refuses with
+  `presentation_conflict`. Stacked pins use the first pin at the endpoint as
+  the label owner, matching emission even when their orientations differ.
+- **Fail closed.** A satellite placement is tried at up to 24 grid steps (2.54 mm) from the
   pin. It is refused if its wire would pass through any connection point,
   overlap another wire, or land on an existing point, or if its body, text or
   label would overlap anything already drawn in that cluster. Satellites that
@@ -315,7 +322,8 @@ component IDs, and a component belongs to at most one group. Implementation:
 - **Identity.** Symbol, pin, label and no-connect UUIDs, references, values,
   footprints and embedded symbols are exactly those of the `rows`
   presentation. Wires are `["wire", id, unit, attach pin]`, fan wires
-  `["wire", "fan", id, unit, pin]`, junctions
+  `["wire", "fan", id, unit, pin]`, horizontal global-flag leads
+  `["wire", "fan-global", id, unit, pin]`, junctions
   `["junction", id, unit, attach pin]`, frames `["group_frame", kind, group]` and
   titles `["group_title", kind, group]`, where `kind` distinguishes `explicit`
   from automatic `component` groups. Fallback frames use
@@ -473,7 +481,7 @@ Generation either succeeds completely or writes nothing:
 | `malformed_part_binding` | A binding overrides native identity or flags, violates the ordinary text limit, or has an unsafe, malformed, noncanonical or over-2048-byte `PARAM_Datasheet` value |
 | `power_net_mismatch`, `unsupported_power_symbol` | A `power_in` power symbol's value must equal its net's name; power symbols have one connected pin |
 | `paper_overflow` | The content does not fit on A0 |
-| `presentation_conflict` | The functional arrangement's drawn pins, wires and labels do not reproduce the intent partition exactly, a wire passes through a connection point, or a no-connect pin touches a drawn connection (an internal guard; no output is written) |
+| `presentation_conflict` | The functional arrangement's drawn pins, wires and labels do not reproduce the intent partition exactly, a wire passes through a connection point, a no-connect pin touches a drawn connection, or a conflicting horizontal global flag has no clear placement within the bounded search (no output is written) |
 
 ## Evidence
 
@@ -539,8 +547,8 @@ executor with networking unshared:
   the default. Functional output is byte-identical when repeated and when
   components, nets and terminals are shuffled. Symbol and pin UUIDs, embedded
   symbols and no-connect identities equal the `rows` emission. Exact
-  label counts per net, axis-aligned wires that end only on pins, junctions or
-  other wires, a junction only at a comb tap, an in-line series capacitor and a
+  label counts per net, axis-aligned wires that end only on pins, junctions,
+  other wires or displaced global labels, a junction only at a comb tap, an in-line series capacitor and a
   hanging filter capacitor are asserted, along with three non-overlapping titled
   frames that contain their members. An island with no anchor lands in
   `Unassigned parts`. Ten malformed layouts, a hierarchical intent and stable
@@ -556,7 +564,10 @@ executor with networking unshared:
   Reference above Value; and the chosen frames are never larger than any
   single shared aspect gives. The self-check refuses a drawn short, a split, a
   wire through a pin and a wire onto a no-connect pin. A `python -m` CLI run
-  writes the API bytes. Native: zero ERC violations, the same XML netlist as
+  writes the API bytes. Horizontal global/local label regressions measure
+  actual KiCad SVG ink for connectors facing both directions and compare their
+  native netlists to `rows`. Blocked flag escapes refuse; stacked pins keep
+  the first endpoint owner's label and a single lead. Native: zero ERC violations, the same XML netlist as
   `rows` and the hand-written nets, AGENTEE-41 topology, components and instance
   parity, a byte-identical forced re-save, and a changed native netlist when one
   wire end is moved onto ground.
@@ -605,10 +616,11 @@ executor with networking unshared:
 - The functional presentation is flat-only and opt-in; `rows` stays the default,
   so existing callers, hashes and stable regeneration are unchanged. Its text
   extents are estimates (about 0.9 em per glyph), not measured font metrics.
-  Loose parts and markers keep `rows` label placement. Adjacent labels on an
-  anchor's left or right side (already on separate horizontal rows), and a pin
-  wired to a perpendicular comb in the primary sweep, keep `rows` placement;
-  top and bottom edge runs fan before the in-line fallback. Roles come from reference
+  Loose parts and markers keep `rows` label placement. On an anchor's left or
+  right side, overlapping global flags extend outward before satellite
+  placement; other horizontal labels and pins wired to a perpendicular comb
+  in the primary sweep keep `rows` placement.
+  Top and bottom edge runs fan before the in-line fallback. Roles come from reference
   prefixes and net structure, and group membership from the layout or from
   structure, never from datasheet semantics. It wires only satellites to
   anchor pins or satellite pins; it never routes nets between anchors.

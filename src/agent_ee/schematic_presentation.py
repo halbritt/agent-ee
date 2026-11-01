@@ -18,7 +18,8 @@ connected:
 - Every net keeps at least one label carrying its intent name: the target pin
   keeps its label, only a wired satellite's attach pin drops its own. Runs of
   adjacent labelled pins on an anchor's top or bottom edge fan out to staggered
-  horizontal labels at the end of short wires (AGENTEE-241).
+  horizontal labels at the end of short wires (AGENTEE-241). A global flag on
+  a horizontal pin extends along a short wire when it overlaps another label.
 - Each group gets a dashed frame and a title, packed at its tightest aspect;
   groups flow left to right in layout order and wrap onto the smallest
   landscape paper that holds them.
@@ -155,6 +156,8 @@ class _Cluster:
                 self.label_boxes.setdefault((x, y), []).append(box)
                 self.boxes.append(box)
                 self._target(item, pin['number'], net, (x, y), away, False)
+        # Reserve flag leads before satellites can occupy their escape path.
+        self._fan_horizontal_flags(item)
 
     def _target(self, item, number, net, point, away, owned):
         if not self.is_global(net):  # Global flags straddle the line: never extend a wire through one.
@@ -261,6 +264,53 @@ class _Cluster:
                 if len(run) > 1 and not all(p[3] for p in run):
                     self._fan_run(item, away, y, run)
                 run = [pin]
+
+    def _fan_horizontal_flags(self, item):
+        """Separate centered global flags from text above adjacent pin wires.
+
+        Global pins are never satellite targets, so their labels can move
+        straight outward without moving an attachment or changing a net.
+        Keep every other reservation and connection point during the search.
+        """
+        seen = set()
+        for pin, net, x, y, away in item['labels']:
+            if (x, y) in seen:
+                continue
+            seen.add((x, y))  # Stacked pins share the first pin's label.
+            if net is None or not self.is_global(net) or away not in (0, 180):
+                continue
+            if pin['number'] in self.moved:
+                continue
+            own = self.label_boxes[x, y]
+            other_ids = {id(b) for point, boxes in self.label_boxes.items() if point != (x, y) for b in boxes}
+            overlaps = [b for b in self.boxes if id(b) in other_ids and any(_overlap(a, b) for a in own)]
+            if not overlaps:
+                continue
+            saved = self.boxes
+            drop = {id(b) for b in own}
+            self.boxes = [b for b in self.boxes if id(b) not in drop]
+            ux = DIRS[away][0]
+            # Start beyond the conflicting text, including long net names;
+            # MAX_STEPS bounds candidates, not the permitted name length.
+            distance = max(b[2] - x if ux > 0 else x - b[0] for b in overlaps)
+            first = max(1, -(-distance // GRID))
+            for step in range(first, first + MAX_STEPS):
+                end = (x + ux * step * GRID, y)
+                box = label_box(*end, away, net['name'], True)
+                wire = ((x, y), end)
+                if not self.free([box], wire, [end]):
+                    continue
+                self.boxes += [box, _box(wire)]
+                self.label_boxes[x, y] = [box]
+                self.points.add(end)
+                self.segments.append(wire)
+                self.wires.append((*wire, ('fan-global', item['comp']['id'], item['unit'], pin['number'])))
+                self.moved[pin['number']] = (*end, away)
+                break
+            else:
+                self.boxes = saved
+                raise EmissionError('presentation_conflict', 'no clear global label placement for ' +
+                                    item['comp']['reference'] + '.' + pin['number'])
 
     def _fan_run(self, item, away, y, run):
         saved = list(self.boxes), set(self.points), list(self.segments), list(self.wires)

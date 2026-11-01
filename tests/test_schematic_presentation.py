@@ -109,6 +109,32 @@ class PresentationRulesTests(unittest.TestCase):
             shuffle.shuffle(net['terminals'])
         self.assertEqual(functional(intent=intent), first)
 
+    def test_global_label_refuses_when_every_escape_crosses_a_symbol(self):
+        g = presentation.GRID
+        item = dict(comp=dict(id='blocked', reference='J9'), unit=1,
+                    shapes=[(-2 * g, -g, -g, g)], labels=[
+                        ({'number': '1'}, {'id': 'gnd', 'name': 'GND'}, 0, 0, 180),
+                        ({'number': '2'}, {'id': 'sense', 'name': 'SENSE'}, 0, g, 180)])
+        with self.assertRaisesRegex(EmissionError, 'no clear global label placement for J9.1'):
+            presentation._Cluster(item, 0, lambda net: net['id'] == 'gnd')
+
+    def test_stacked_global_label_lead_belongs_to_first_pin_at_endpoint(self):
+        g = presentation.GRID
+        for directions in ((90, 180), (180, 180)):
+            with self.subTest(directions=directions):
+                item = dict(comp=dict(id='stack', reference='J9'), unit=1, shapes=[], labels=[
+                    ({'number': str(i + 1)}, {'id': 'gnd', 'name': 'GND'}, 0, 0, angle)
+                    for i, angle in enumerate(directions)])
+                item['labels'].append(({'number': '3'}, {'id': 'sense', 'name': 'SENSE'}, 0, g, 180))
+                cluster = presentation._Cluster(item, 0, lambda net: net['id'] == 'gnd')
+                if directions[0] == 90:
+                    self.assertEqual(cluster.moved, {})
+                    self.assertEqual(cluster.wires, [])
+                else:
+                    self.assertEqual(set(cluster.moved), {'1'})
+                    self.assertEqual(len(cluster.wires), 1)
+                    self.assertEqual(cluster.wires[0][:2], ((0, 0), cluster.moved['1'][:2]))
+
     def test_identities_match_the_rows_presentation(self):
         rows = emit('presentation', layout=rows_layout())[1]['presentation.kicad_sch']
         wired = functional()['presentation.kicad_sch']
@@ -130,13 +156,21 @@ class PresentationRulesTests(unittest.TestCase):
         # One label per net name survives at least; wired attach pins drop theirs.
         self.assertEqual({k: len(v) for k, v in names.items()},
                          {'VIN': 3, 'VOUT': 1, 'OUT_F': 2, 'SENSE': 2, 'GND': 9})
-        self.assertEqual(len(wires), 5)
+        self.assertEqual(len(wires), 7)  # Five satellite wires plus two GND label leads.
         for a, b in wires:
             self.assertTrue(a[0] == b[0] or a[1] == b[1], 'wires are axis-aligned')
         ends = [p for w in wires for p in w]
         pins = set(points.values())
         for point in ends:
-            self.assertTrue(point in pins or point in junctions or ends.count(point) > 1)
+            self.assertTrue(point in pins or point in junctions or ends.count(point) > 1 or
+                            point in names['GND'])
+        for ref in ('J1', 'J2'):
+            ground = points[ref, '2']
+            leads = [w for w in wires if ground in w]
+            self.assertEqual(len(leads), 1)
+            end = next(p for p in leads[0] if p != ground)
+            self.assertIn(end, names['GND'])
+            self.assertNotIn(ground, names['GND'])
         for point in junctions:  # A junction marks a comb point: two wires and a pin.
             self.assertEqual(ends.count(point), 2)
             self.assertIn(point, pins)
@@ -191,7 +225,7 @@ class PresentationRulesTests(unittest.TestCase):
         _, symbols, labels, wires, _, frames, titles = sheet(data)
         points = endpoints(intent, data)
         self.assertEqual(symbols['C3']['rotation'], 90)
-        self.assertEqual((len(wires), len(frames), titles), (4, 3, TITLES))
+        self.assertEqual((len(wires), len(frames), titles), (6, 3, TITLES))
         ends = {p for w in wires for p in w}
         for pin in '12':
             self.assertNotIn(points['C3', pin], ends)
@@ -555,11 +589,32 @@ class PresentationNativeTests(unittest.TestCase):
         self.assertEqual(native.replace(b'(generator "eeschema")', b'(generator "agent-ee-schematic-emitter")', 1),
                          files['presentation.kicad_sch'])
 
+    def test_horizontal_global_and_local_labels_have_separate_native_ink(self):
+        """A centered GND flag must not obscure the next pin's local label."""
+        from agent_ee.schematic_text import measured_text, overlap
+        for rotation in (0, 180):
+            with self.subTest(rotation=rotation):
+                transforms = {'j_in': {'rotation': rotation, 'mirror': None},
+                              'j_out': {'rotation': rotation, 'mirror': None}}
+                files = functional(layout=dict(load('presentation.layout.json'), transforms=transforms), **tables())
+                project, work, erc = self.native(files, 'horizontal-' + str(rotation))
+                self.assertEqual([v for s in erc['sheets'] for v in s['violations']], [])
+                run_native(project, work / 'svg', 'kicad-cli', 'sch', 'export', 'svg',
+                           '-o', '/work/', '/candidate/presentation.kicad_sch')
+                texts = measured_text(files['presentation.kicad_sch'], (work / 'svg/presentation.svg').read_bytes())
+                labels = [t for t in texts if t['kind'] == 'label']
+                self.assertEqual([(a['text'], b['text']) for i, a in enumerate(labels)
+                                  for b in labels[i + 1:] if overlap(a['box'], b['box'])], [])
+                rows_files = emit('presentation', layout=dict(rows_layout(), transforms=transforms), **tables())[1]
+                _, rows_work, _ = self.native(rows_files, 'horizontal-rows-' + str(rotation))
+                self.assertEqual(native_netlist(work / 'netlist/design.xml'),
+                                 native_netlist(rows_work / 'netlist/design.xml'))
+
     def test_fanned_labels_keep_native_connectivity_and_resave(self):
         """AGENTEE-241: fan wires and moved labels change nothing native but their drawing."""
         transforms = {'j_in': {'rotation': 90, 'mirror': None}}
         files = functional(layout=dict(load('presentation.layout.json'), transforms=transforms), **tables())
-        self.assertEqual(len(children(parse_sexpr(files['presentation.kicad_sch']), 'wire')), 7)
+        self.assertEqual(len(children(parse_sexpr(files['presentation.kicad_sch']), 'wire')), 8)
         project, work, erc = self.native(files, 'fanned')
         self.assertEqual([v for s in erc['sheets'] for v in s['violations']], [])
         rows_files = emit('presentation', layout=dict(rows_layout(), transforms=transforms), **tables())[1]
@@ -578,12 +633,15 @@ class PresentationNativeTests(unittest.TestCase):
         files = functional(**tables())
         data = files['presentation.kicad_sch'].decode()
         root = parse_sexpr(files['presentation.kicad_sch'])
-        wire = children(root, 'wire')[0]
+        intent = load('presentation.intent.json')
+        points = endpoints(intent, files['presentation.kicad_sch'])
+        # Select the VIN attachment by its electrical endpoint; UUID sorting
+        # can put a GND label lead first, which would not introduce a short.
+        wire = next(w for w in children(root, 'wire')
+                    if tuple(map(nanometres, children(children(w, 'pts')[0], 'xy')[0][1:])) == points['J1', '1'])
         (x0, y0), (x1, y1) = [(xy[1], xy[2]) for xy in children(children(wire, 'pts')[0], 'xy')]
         old = f'(xy {x0} {y0}) (xy {x1} {y1})'
         self.assertEqual(data.count(old), 1)
-        intent = load('presentation.intent.json')
-        points = endpoints(intent, files['presentation.kicad_sch'])
         gnd = points['U1', '2']
         broken = data.replace(old, f'(xy {x0} {y0}) (xy {gnd[0] / 1e6:g} {gnd[1] / 1e6:g})')
         self.native({**files, 'presentation.kicad_sch': broken.encode()}, 'broken')
