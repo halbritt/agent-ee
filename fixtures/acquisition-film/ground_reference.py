@@ -34,9 +34,10 @@ def bottom_copper(board):
                 pad.TransformHoleToPolygon(holes,0,1,k.ERROR_OUTSIDE)
     for item in board.GetTracks():
         if item.GetClass() == 'PCB_VIA':
-            if item.GetNetname() == 'GND':
-                item.TransformShapeToPolygon(copper,k.B_Cu,0,1,k.ERROR_INSIDE)
-            holes.Append(circle(item.GetPosition(),item.GetDrillValue()/2))
+            if item.IsOnLayer(k.B_Cu):
+                if item.GetNetname() == 'GND' and item.FlashLayer(k.B_Cu):
+                    item.TransformShapeToPolygon(copper,k.B_Cu,0,1,k.ERROR_INSIDE)
+                holes.Append(circle(item.GetPosition(),item.GetDrillValue()/2))
         elif item.GetLayer() == k.B_Cu and item.GetNetname() == 'GND':
             item.TransformShapeToPolygon(copper,k.B_Cu,0,1,k.ERROR_INSIDE)
     copper.Simplify()
@@ -110,13 +111,16 @@ def distances(graph,start):
 def annulus_ports(pad):
     """Ports on this pad's own copper, inside the circle inscribed in a round or oval land.
 
-    Copper is the union of plane and pads, so a port off the pad could borrow plane copper.
+    Copper is the union of plane and pads, so a port off the pad could borrow plane
+    copper. The pad must be a plated GND land on B.Cu: otherwise a corridor could end
+    on plane copper under a pad it does not connect to.
     """
     drill=pad.GetDrillSize();size=pad.GetSize(k.B_Cu);offset=pad.GetOffset(k.B_Cu)
     land=min(size.x,size.y)
-    if (drill.x!=drill.y or offset.x or offset.y or land<=drill.x
+    if (pad.GetNetname()!='GND' or pad.GetAttribute()!=k.PAD_ATTRIB_PTH or not pad.HasHole()
+            or not pad.FlashLayer(k.B_Cu) or drill.x!=drill.y or offset.x or offset.y or land<=drill.x
             or pad.GetShape(k.B_Cu) not in (k.PAD_SHAPE_CIRCLE,k.PAD_SHAPE_OVAL)):
-        raise ValueError('ground-reference model needs a centred round drill in a round or oval land')
+        raise ValueError('ground-reference model needs a plated GND land, round or oval, with a centred round drill')
     center=pad.GetPosition();radius=round((drill.x+land)/4)
     return [(center.x+dx*radius,center.y+dy*radius) for dx,dy in ((1,0),(-1,0),(0,1),(0,-1))]
 

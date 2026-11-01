@@ -81,7 +81,7 @@ class GroundTieTests(unittest.TestCase):
         k = self.k
         output, receipt = self.seeded()
         good = output.read_bytes()
-        for fault in ('missing','net','diameter','drill','position','stub','pad'):
+        for fault in ('missing','net','diameter','bottom land','drill','position','stub','pad'):
             with self.subTest(fault=fault):
                 output.write_bytes(good)
                 board = k.LoadBoard(str(output))
@@ -90,6 +90,11 @@ class GroundTieTests(unittest.TestCase):
                 if fault=='missing': board.Remove(via)
                 elif fault=='net': pass  # Persist the mutation below; native save infers GND.
                 elif fault=='diameter': via.SetWidth(700_000)
+                elif fault=='bottom land':
+                    # Independent review 2026-11-01: the receipt checked F.Cu only.
+                    via.Padstack().SetMode(k.PADSTACK.MODE_FRONT_INNER_BACK)
+                    via.Padstack().SetSize(k.VECTOR2I(600_000,600_000),k.F_Cu)
+                    via.Padstack().SetSize(k.VECTOR2I(1_200_000,1_200_000),k.B_Cu)
                 elif fault=='drill': via.SetDrill(400_000)
                 elif fault=='position': via.SetPosition(via.GetPosition()+k.VECTOR2I(1,0))
                 elif fault=='stub': track.SetWidth(200_000)

@@ -24,6 +24,8 @@ It requires one connected copper region and constructs 0.1 mm wide copper
 corridors to both adjacent J3 ground pins. J3.2 and J3.4 are oval lands with a
 round drill, so each corridor ends inside the circle inscribed in the land and
 outside the drill: on that pad's own copper, not on plane copper beside it.
+The checker refuses to measure unless each is a plated GND land on the bottom
+layer, so a corridor cannot end under a pad it does not connect to.
 Every corridor segment must lie inside that saved copper. A bounded search
 failure is a missing witness, not permission to infer a path from the net name. The numerical DC estimate uses
 the retained 17.5 um copper and 0.2 mm effective trace-width assumptions,

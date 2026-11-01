@@ -34,8 +34,8 @@ Generation preserves every existing board node and writes a receipt.
 `acquisition_ground_ties.verify` checks the saved assignments before native
 loading, because KiCad 10.0.7 changed an explicitly foreign net on a via that
 touches ground copper to `GND`, during both save and load. It then checks the
-loaded via, segment and pad frame against the receipt. Native DRC and the final
-measurement are separate obligations.
+loaded via on both layers, the segment and the pad frame against the receipt.
+Native DRC and the final measurement are separate obligations.
 
 The bottom plane is added after routing, so native DRC on the seeded board reports
 each generated via as dangling. `acquisition_ground_ties.without_pending_plane_warnings`
@@ -68,8 +68,10 @@ another tie, and the path limit fails instead.
 A corridor is a 0.25 mm grid path of 0.1 mm wide strips, with every edge proved
 inside the saved copper. It starts on the via annulus and ends on the J3 pad's
 own copper, inside the circle inscribed in the oval land and outside the drill.
-The search visits at most 5,000 nodes per attempt; failure is reported as a
-missing witness, not inferred from the net name.
+The checker raises an error, so the check cannot pass, unless J3.2 and J3.4 are
+plated GND lands on the bottom layer with a centred round drill. Only vias with a
+bottom land count as bottom copper. The search visits at most 5,000 nodes per
+attempt; failure is reported as a missing witness, not inferred from the net name.
 
 The report's `ground_reference` section records each path, its conditional DC
 resistance and an RF sensitivity table for C4 and C5. The DC estimate assumes

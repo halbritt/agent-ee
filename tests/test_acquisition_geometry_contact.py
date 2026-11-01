@@ -20,6 +20,45 @@ spec.loader.exec_module(contact)
 NATIVE = Path(os.environ.get('AGENT_EE_FILM_NATIVE', '/nonexistent/film-native'))
 
 
+def ground_reference():
+    spec = importlib.util.spec_from_file_location('film_ground_reference', SOURCE.parent / 'ground_reference.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class BottomCopperTests(unittest.TestCase):
+    def test_via_without_a_bottom_land_cannot_join_separate_plane_regions(self):
+        # Independent review 2026-11-01: every GND via was projected onto B.Cu.
+        board = k.BOARD()
+        board.SetCopperLayerCount(4)
+        net = k.NETINFO_ITEM(board, 'GND', 1)
+        board.Add(net)
+        for x in (0, 3_000_000):
+            zone = k.ZONE(board)
+            zone.SetLayer(k.B_Cu)
+            zone.SetNet(net)
+            region = k.SHAPE_POLY_SET()
+            region.NewOutline()
+            for u, v in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                region.Append(x + u * 1_000_000, v * 1_000_000)
+            zone.SetFilledPolysList(k.B_Cu, region)
+            board.Add(zone)
+        bridge = k.PCB_VIA(board)
+        bridge.SetPosition(k.VECTOR2I(1_500_000, 0))
+        bridge.SetWidth(2_400_000)
+        bridge.SetDrill(300_000)
+        bridge.SetNet(net)
+        board.Add(bridge)
+        reference = ground_reference()
+        bridge.SetViaType(k.VIATYPE_BLIND)
+        bridge.SetLayerPair(k.F_Cu, k.In1_Cu)
+        self.assertEqual(reference.bottom_copper(board).OutlineCount(), 2)
+        bridge.SetViaType(k.VIATYPE_THROUGH)
+        bridge.SetLayerPair(k.F_Cu, k.B_Cu)
+        self.assertEqual(reference.bottom_copper(board).OutlineCount(), 1)
+
+
 class PadTrackContactTests(unittest.TestCase):
     def setUp(self):
         self.board = k.BOARD()
@@ -181,18 +220,12 @@ class SeededGroundReferenceTests(unittest.TestCase):
             track.SetLayer(k.B_Cu)
             track.TransformShapeToPolygon(strip, k.B_Cu, 0, 1, k.ERROR_OUTSIDE)
         strip.Simplify()
-        strip.BooleanSubtract(self.reference().bottom_copper(board))
+        strip.BooleanSubtract(ground_reference().bottom_copper(board))
         strip.Simplify()
         self.assertTrue(strip.IsEmpty() or strip.Area() == 0, endpoint)
         fp = next(f for f in board.GetFootprints() if f.GetReference() == 'J3')
         pad = next(p for p in fp.Pads() if p.GetNumber() == corridor['connector'][1])
         self.assertTrue(pad.HitTest(points[-1]))
-
-    def reference(self):
-        spec = importlib.util.spec_from_file_location('film_ground_reference', SOURCE.parent / 'ground_reference.py')
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
 
     def test_removed_tie_measures_the_longer_real_path_and_exceeds_the_limit(self):
         board = k.LoadBoard(str(self.path))
@@ -226,23 +259,40 @@ class SeededGroundReferenceTests(unittest.TestCase):
         self.assertEqual(self.measure()['metrics']['ground_saved_net_changes'], 1)
 
     def test_connector_ports_lie_on_the_pad_and_other_lands_refuse(self):
-        reference = self.reference()
+        # Independent review 2026-11-01: a front-only SMD pad at J3 still passed.
+        reference = ground_reference()
         board = k.LoadBoard(str(self.path))
-        pads = {(fp.GetReference(), pad.GetNumber()): pad for fp in board.GetFootprints() for pad in fp.Pads()}
+        connector = next(fp for fp in board.GetFootprints() if fp.GetReference() == 'J3')
+        pads = {pad.GetNumber(): pad for pad in connector.Pads()}
         for number in ('2', '4'):
-            pad = pads[('J3', number)]
+            pad = pads[number]
             center, drill = pad.GetPosition(), pad.GetDrillSize().x
             for x, y in reference.annulus_ports(pad):
                 self.assertTrue(pad.HitTest(k.VECTOR2I(x, y)))
                 self.assertGreater(math.dist((x, y), (center.x, center.y)), drill / 2)
-        pad = pads[('J3', '2')]
-        pad.SetDrillSize(k.VECTOR2I(750_000, 900_000))
-        with self.assertRaisesRegex(ValueError, 'centred round drill'):
-            reference.annulus_ports(pad)
-        pad.SetDrillSize(k.VECTOR2I(750_000, 750_000))
-        pad.SetShape(k.PAD_SHAPE_RECT)
-        with self.assertRaisesRegex(ValueError, 'round or oval land'):
-            reference.annulus_ports(pad)
+
+        def oblong_drill(pad):
+            pad.SetDrillSize(k.VECTOR2I(750_000, 900_000))
+
+        def rectangular_land(pad):
+            pad.SetShape(k.PAD_SHAPE_RECT)
+
+        def foreign_net(pad):
+            pad.SetNet(board.FindNet('/V3V3'))
+
+        def front_only_smd(pad):
+            layers = k.LSET()
+            layers.AddLayer(k.F_Cu)
+            pad.SetAttribute(k.PAD_ATTRIB_SMD)
+            pad.SetLayerSet(layers)
+            pad.SetDrillSize(k.VECTOR2I(0, 0))
+
+        for change in (oblong_drill, rectangular_land, foreign_net, front_only_smd):
+            with self.subTest(change=change.__name__):
+                pad = k.PAD(pads['2'])
+                change(pad)
+                with self.assertRaisesRegex(ValueError, 'plated GND land'):
+                    reference.annulus_ports(pad)
 
 
 if __name__ == '__main__':

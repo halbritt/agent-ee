@@ -175,7 +175,8 @@ def verify(board_path, record):
         if (via is None or via.GetClass() != 'PCB_VIA' or via.GetNetname() != 'GND'
                 or via.GetViaType() != k.VIATYPE_THROUGH
                 or via.TopLayer() != k.F_Cu or via.BottomLayer() != k.B_Cu
-                or via.GetWidth(k.F_Cu) != 600_000 or via.GetDrillValue() != 300_000
+                or via.GetWidth(k.F_Cu) != 600_000 or via.GetWidth(k.B_Cu) != 600_000
+                or via.GetDrillValue() != 300_000
                 or [via.GetPosition().x, via.GetPosition().y] != row['via_nm']):
             raise JobRefusal('ground ties: native via differs')
         if (track is None or track.GetClass() != 'PCB_TRACK' or track.GetNetname() != 'GND'
