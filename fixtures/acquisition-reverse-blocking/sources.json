@@ -72,5 +72,52 @@
     "Source derivation only; no board/file release, source-role qualification or production preparation acceptance.",
     "C2903961 includes four thermal vias. Complete parsing preserves their copper/holes and records pin9 ownership derived from unique rectangular SMD-pad containment. Stencil and assembly qualification remain separate.",
     "Unavailable raw manufacturer captures remain unavailable; web-read facts are attributed engineering inputs, not captured-PDF claims."
+  ],
+  "assembly_guidance": [
+    {
+      "url": "https://jlcpcb.com/blog/solder-paste-layer-how-to-create-and-optimize-it",
+      "raw_capture": true,
+      "raw_sha256": "f7a7172a9f8e0c6de9c64d9b4ea00a30bfc20030c4a134235ab2b228b55c30e4",
+      "raw_size": 434500,
+      "retrieved_at": "2026-11-01T04:54:43.370711+00:00",
+      "usage": "Segment thermal pad paste; keep paste off open vias;50-70 percent coverage guidance.",
+      "custody": "External retained HTML capture; not source-role qualification or an order."
+    },
+    {
+      "url": "https://jlcpcb.com/capabilities/pcb-stencil-manufacturing",
+      "raw_capture": true,
+      "raw_sha256": "88b352baba5fe2e20dbb9139da3391a15c2ec3a82fd787f7045eb5d5cc5098bb",
+      "raw_size": 87382,
+      "retrieved_at": "2026-11-01T04:54:43.371135+00:00",
+      "usage": "Standard0.15mm thickness;0.003mm cutting tolerance.",
+      "custody": "External retained HTML capture; not source-role qualification or an order."
+    },
+    {
+      "url": "https://jlcpcb.com/help/article/opening-process-standard-of-stencil",
+      "raw_capture": true,
+      "raw_sha256": "46a0fd5420881ef9aefe585e8564a6281dc9967ae6d3f0fc244a9dd74a760cfc",
+      "raw_size": 140597,
+      "retrieved_at": "2026-11-01T04:54:43.371625+00:00",
+      "usage": "Default CAM may alter apertures; preserve selected EP apertures.",
+      "custody": "External retained HTML capture; not source-role qualification or an order."
+    },
+    {
+      "url": "https://jlcpcb.com/help/article/pcb-via-covering",
+      "raw_capture": true,
+      "raw_sha256": "c680050ede9f5ef1383d357ec1814490894a56d6440856b628797373c4f4b762",
+      "raw_size": 133765,
+      "retrieved_at": "2026-11-01T04:54:43.371398+00:00",
+      "usage": "Open, tented, plugged and filled/capped vias are distinct processes.",
+      "custody": "External retained HTML capture; not source-role qualification or an order."
+    },
+    {
+      "url": "https://jlcpcb.com/blog/smt-stencil-design-tips-for-improving-solder-paste-deposition",
+      "raw_capture": true,
+      "usage": "Aperture area/(thickness*perimeter) greater than0.66.",
+      "raw_sha256": "af5fc4acab3b615d3c1bee2ff8a03b13a5f93b97e7f5fa6b7f0d5079ab4fc8b4",
+      "raw_size": 198340,
+      "retrieved_at": "2026-11-01T04:59:42.336862+00:00",
+      "custody": "External retained HTML capture; not source-role qualification or an order."
+    }
   ]
 }

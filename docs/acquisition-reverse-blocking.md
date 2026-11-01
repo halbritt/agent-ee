@@ -43,8 +43,29 @@ Native geometry comparison checks both copper surfaces, all drills and pin
 agreement; omitted vias, changed drills and wrong pin numbers fail. The original
 unsupported result remains in the retained development evidence. Geometry
 verification does not qualify the stencil or a via-in-pad assembly process.
-The single exposed-pad paste opening is a draft declaration requiring
-assembly review. No purchase, fabrication or process approval follows from it.
+The exposed pad has nine separate paste apertures, with the four thermal vias
+left open and unfilled. Copper, drills and mask openings retain their source
+geometry. The pattern covers approximately 61.3% of the exposed-pad copper;
+the smallest drawn clearance to a drill is approximately 0.137 mm. This follows
+[JLCPCB's guidance](https://jlcpcb.com/blog/solder-paste-layer-how-to-create-and-optimize-it)
+to divide thermal-pad paste into smaller openings with 50-70% coverage and keep
+paste off open vias. It does not establish a resulting solder-joint or void area.
+
+Generated `power-assembly.json` records the U1 design and a 0.15 mm stencil.
+The smallest aperture area ratio is 0.70, or 0.69 when each edge moves inward by
+the supplier's stated 0.003 mm cutting tolerance. This exceeds the 0.66 guidance
+in [JLCPCB's stencil design notes](https://jlcpcb.com/blog/smt-stencil-design-tips-for-improving-solder-paste-deposition).
+The supplier lists 0.15 mm among its
+[standard stencil thicknesses](https://jlcpcb.com/capabilities/pcb-stencil-manufacturing).
+The final board must also establish suitable apertures for its other parts.
+
+The assembly declaration requires preserving these EP apertures. JLCPCB's
+[default CAM process](https://jlcpcb.com/help/article/opening-process-standard-of-stencil)
+can change apertures, so the supplied geometry alone does not prove what a
+manufacturer will produce. The open vias are not represented as tented, plugged
+or capped; those are distinct
+[fabrication processes](https://jlcpcb.com/help/article/pcb-via-covering).
+No purchase, fabrication or assembler process approval follows from this design.
 
 The [tests](../tests/test_acquisition_reverse_blocking.py) check the independent
 pin mapping, preservation of other topology, source drift refusal, capacitor
@@ -56,6 +77,12 @@ emit the complete schematic, export its native netlist and check ERC. That
 optional fixture can be retained at a new directory using
 `AGENT_EE_REVERSE_BLOCKING_ARTIFACTS`. Native tests require normal workload
 admission and the KiCad toolchain.
+
+The [stencil regression](../tests/test_acquisition_stencil.py) measures real
+KiCad Gerber output for aperture coverage, separation, drill clearance and
+area ratio. Its retained original-draft reproduction has one full-pad opening
+that covers every thermal-via hole. `AGENT_EE_STENCIL_ARTIFACTS` retains the
+native board, Gerbers, drill output and measurements for one test run.
 
 Release still requires complete source-bound preparation, the selected model
 and its application evidence, current part/assembly qualification, generated

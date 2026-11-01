@@ -23,6 +23,16 @@ DIODE_FOOTPRINT = 'D_B0520LW_C155367'
 BASE_SHA256 = '15b8339e27832824914412e274e2efa4c46150502864418c8e0e604510f21da5'
 SUPPLIER_SHA256 = 'a5bb40921bc42f87fc1545b620f6c2d2572d60b1b7deb21898e99e2d23431ca6'
 DIODE_SUPPLIER_SHA256 = 'f7cde338c6cdafdb6406d0aaf6b219edb7eea222bfd86ee59a142cdf83930e9d'
+# Native footprint coordinates, mm. Keep paste off the four open thermal vias.
+# See docs/acquisition-reverse-blocking.md for source guidance and process limits.
+EP_PASTE_WINDOWS = (
+    ('-1.18', '-1.45', '-0.82', '1.45'),
+    ('-0.18', '-1.45', '0.18', '1.45'),
+    ('0.82', '-1.45', '1.18', '1.45'),
+    *((left, bottom, right, top)
+      for left, right in (('-0.71', '-0.29'), ('0.29', '0.71'))
+      for bottom, top in (('-1.45', '-0.8'), ('-0.21', '0.21'), ('0.8', '1.45'))),
+)
 # ADI ADP7104 Rev. L, Table 5 p6; EPAD is represented by native pad/pin 9.
 PINS = (
     ('1', 'VOUT', 'power_out', '10.16', '5.08', '180'),
@@ -150,10 +160,9 @@ def footprint_bytes(supplier):
             p = pad['primitive']
             x, y = rotate(*p['center'])
             w, h = mm(p['size'][1]), mm(p['size'][0])
-            # A single EP opening is a draft stencil declaration, still subject
-            # to assembly qualification. No via-in-pad process is authorized here.
+            layers = '"F.Cu" "F.Mask"' if pad['number'] == '9' else '"F.Cu" "F.Paste" "F.Mask"'
             rows.append(f'(pad "{pad["number"]}" smd {p["shape"]} (at {x} {y}) (size {w} {h}) '
-                        '(layers "F.Cu" "F.Paste" "F.Mask"))')
+                        f'(layers {layers}))')
         elif fields[0] == 'VIA':
             if len(fields) != 8 or fields[4] or fields[7] not in ('', '0', '1'):
                 raise ValueError('selected supplier via declaration changed')
@@ -173,6 +182,9 @@ def footprint_bytes(supplier):
         x, y = rotate(cx, cy)
         rows.append(f'(pad "9" thru_hole circle (at {x} {y}) (size {mm(diameter)} {mm(diameter)}) '
                     f'(drill {mm(2 * radius)}) (layers "*.Cu" "*.Mask") (property pad_prop_heatsink))')
+    for left, bottom, right, top in EP_PASTE_WINDOWS:
+        rows.append(f'(fp_rect (start {left} {bottom}) (end {right} {top}) '
+                    '(stroke (width 0) (type default)) (fill yes) (layer "F.Paste"))')
     return ('\n'.join(rows) + '\n)\n').encode()
 
 
@@ -209,11 +221,26 @@ def diode_footprint_bytes(supplier):
     return ('\n'.join(rows) + '\n)\n').encode()
 
 
+def assembly_design():
+    """Declare the selected U1 stencil design; this is not process acceptance."""
+    return dict(schema='agent-ee.acquisition-power-assembly/1', reference=REFERENCE,
+        component='U1', footprint=LIBRARY + ':' + FOOTPRINT,
+        via_finish='open_unfilled', stencil_thickness_mm='0.15',
+        paste_rectangles_mm=[list(row) for row in EP_PASTE_WINDOWS],
+        minimum_drawn_drill_clearance_mm='0.1', minimum_drawn_aperture_gap_mm='0.1',
+        ep_paste_coverage_range=['0.5', '0.7'], minimum_aperture_area_ratio='0.66',
+        cam_requirement='Preserve the supplied EP apertures; default CAM optimization is not covered.',
+        limits=['U1 design only; final board stencil must also cover all other populated parts.',
+                'Open vias are not tented, filled or capped; solder joint/void fraction is unmeasured.',
+                'No assembler process acceptance, placed order or physical validation.'])
+
+
 def inputs(original, regulator_supplier, diode_supplier):
     """Return deterministic new source files and explicit remaining release gates."""
     files = {'circuit.json': circuit_bytes(original), LIBRARY + '.kicad_sym': symbol_bytes(),
              LIBRARY + '.pretty/' + FOOTPRINT + '.kicad_mod': footprint_bytes(regulator_supplier),
-             LIBRARY + '.pretty/' + DIODE_FOOTPRINT + '.kicad_mod': diode_footprint_bytes(diode_supplier)}
+             LIBRARY + '.pretty/' + DIODE_FOOTPRINT + '.kicad_mod': diode_footprint_bytes(diode_supplier),
+             'power-assembly.json': json_bytes(assembly_design())}
     report = dict(schema='agent-ee.acquisition-reverse-blocking/1', reference=REFERENCE,
         original_circuit_sha256=BASE_SHA256, supplier_sha256=SUPPLIER_SHA256,
         diode_supplier_sha256=DIODE_SUPPLIER_SHA256,
@@ -221,7 +248,7 @@ def inputs(original, regulator_supplier, diode_supplier):
         accepted=False, file_release='not_assessed',
         pending=['Complete source-bound production preparation and model integration',
                  'Manufacturer raw-document custody and source-role qualification',
-                 'Stencil and thermal-via assembly-process qualification',
+                 'Final-board stencil and assembler process qualification against power-assembly.json',
                  'Generated final placement, return paths, rail drops, thermal and capacitor applicability',
                  'Fresh native checks, independent judgments/full review and manufacturing package'])
     return files, report
