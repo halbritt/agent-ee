@@ -22,6 +22,7 @@ artwork) stay FAILED physical checks: such an incumbent is never "clean".
 import argparse
 from collections import Counter
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -792,6 +793,40 @@ def validate_intent(intent, groups):
 
 # ---------------------------------------------------------------- Rust search
 
+def _checkout_engine(root):
+    """The development binary for this checkout, refused when built from other engine sources.
+
+    A stale binary would silently answer for old engine code, and a run would report its result.
+    """
+    from .placement_runtime import PlanningProcessError
+    candidates = [root / 'build/placement-engine/agent-ee-placement']
+    git_dir = root / '.git'
+    if git_dir.is_file():
+        text = git_dir.read_text(errors='replace').strip()
+        if text.startswith('gitdir:'):
+            common = Path(text.split(':', 1)[1].strip()).resolve().parents[2]
+            candidates.append(common / 'build/placement-engine/agent-ee-placement')
+    binary = next((c for c in candidates if c.is_file() and os.access(c, os.X_OK)), None)
+    if binary is None:
+        raise PlanningProcessError('Rust placement planner is not installed; build with '
+                                   'scripts/build_placement_engine.py (see docs/installation.md)')
+    spec = importlib.util.spec_from_file_location('build_placement_engine', root / 'scripts/build_placement_engine.py')
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    try:
+        built_from = json.loads(script.receipt_path(binary).read_bytes())['source_sha256']
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise PlanningProcessError(f'{binary} has no usable build receipt; rebuild it with '
+                                   'scripts/build_placement_engine.py build') from exc
+    current = script.sources(root)
+    if built_from != current:
+        changed = sorted(path for path in built_from.keys() | current.keys() if built_from.get(path) != current.get(path))
+        raise PlanningProcessError(f'{binary} was built from other engine sources ({", ".join(changed[:5])}); '
+                                   'rebuild it with scripts/build_placement_engine.py build '
+                                   'or set AGENT_EE_RUST_PLANNER')
+    return binary.resolve(strict=True)
+
+
 def rust_executable():
     from .placement_runtime import PlanningProcessError
     from .placement_rust_runtime import resolve_executable
@@ -800,18 +835,7 @@ def rust_executable():
     except PlanningProcessError:
         if 'AGENT_EE_RUST_PLANNER' in os.environ:
             raise
-        root = Path(__file__).resolve().parents[2]
-        candidates = [root / 'build/placement-engine/agent-ee-placement']
-        git_dir = root / '.git'
-        if git_dir.is_file():
-            text = git_dir.read_text(errors='replace').strip()
-            if text.startswith('gitdir:'):
-                common = Path(text.split(':', 1)[1].strip()).resolve().parents[2]
-                candidates.append(common / 'build/placement-engine/agent-ee-placement')
-        for candidate in candidates:
-            if candidate.is_file() and os.access(candidate, os.X_OK):
-                return candidate.resolve(strict=True)
-        raise
+        return _checkout_engine(Path(__file__).resolve().parents[2])
 
 
 def solve(problem, search, job_dir, *, deadline_s, executable=None, on_seed=None, clock=None):

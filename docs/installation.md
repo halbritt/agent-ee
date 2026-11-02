@@ -134,7 +134,9 @@ sandbox's `/usr` mount and cleared environment. The link installer does not
 elevate privileges or build software. Use the container directly if the host is
 not a compatible Linux amd64 environment. `AGENT_EE_RUST_PLANNER` can select a
 development executable for direct callers; it is not a substitute for installing
-the binary where sandboxed callers can resolve it.
+the binary where sandboxed callers can resolve it. With neither set, a checkout
+uses its own `build/placement-engine/agent-ee-placement`, or the main checkout's
+from a worktree, and refuses it if its receipt names different engine sources.
 
 [scripts/build_placement_engine.py](../scripts/build_placement_engine.py) separates
 dependency acquisition (`fetch`), offline unit tests and compilation (`build`),
