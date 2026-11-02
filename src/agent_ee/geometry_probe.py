@@ -15,6 +15,7 @@ board thickness and per-layer united copper area. The base report is unchanged.
 
 import argparse
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -463,7 +464,110 @@ def dfm_facts(board, board_path):
             "unfilled_zones": sorted(z.m_Uuid.AsString() for z in zones if not z.IsFilled())}
     facts["copper_area"] = areas
     facts["unfilled_zones"] = unfilled
+    facts["plated_rings"] = plated_rings(board)
     return facts
+
+
+def _circle_shape(center, radius):
+    import pcbnew
+    polygon = pcbnew.SHAPE_POLY_SET()
+    polygon.NewOutline()
+    r = radius / math.cos(math.pi / 64) + 2
+    for i in range(64):
+        angle = 2 * math.pi * i / 64
+        polygon.Append(round(center.x + r * math.cos(angle)), round(center.y + r * math.sin(angle)))
+    return polygon
+
+
+def _net_copper(board, net, layer):
+    import pcbnew
+    copper = pcbnew.SHAPE_POLY_SET()
+    for zone in board.Zones():
+        if not zone.GetIsRuleArea() and zone.GetNetname() == net and zone.HasFilledPolysForLayer(layer):
+            copper.Append(zone.GetFilledPolysList(layer))
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if pad.GetNetname() == net and pad.IsOnLayer(layer) and pad.FlashLayer(layer):
+                pad.TransformShapeToPolygon(copper, layer, 0, 1, pcbnew.ERROR_INSIDE)
+    for item in board.GetTracks():
+        if item.GetNetname() != net:
+            continue
+        if item.GetClass() == 'PCB_VIA':
+            if item.IsOnLayer(layer) and item.FlashLayer(layer):
+                item.TransformShapeToPolygon(copper, layer, 0, 1, pcbnew.ERROR_INSIDE)
+        elif item.GetLayer() == layer:
+            item.TransformShapeToPolygon(copper, layer, 0, 1, pcbnew.ERROR_INSIDE)
+    copper.Simplify()
+    return copper
+
+
+def _board_drills(board):
+    import pcbnew
+    drills = {}
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if pad.HasHole():
+                hole = pcbnew.SHAPE_POLY_SET()
+                pad.TransformHoleToPolygon(hole, 0, 1, pcbnew.ERROR_OUTSIDE)
+                drills[pad.m_Uuid.AsString()] = hole
+    for item in board.GetTracks():
+        if item.GetClass() == 'PCB_VIA':
+            drills[item.m_Uuid.AsString()] = _circle_shape(item.GetPosition(), item.GetDrillValue() / 2)
+    return drills
+
+
+def plated_rings(board, ceiling_nm=500_000):
+    import pcbnew
+    cached, rows = {}, []
+    drills = _board_drills(board)
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if pad.GetAttribute() != pcbnew.PAD_ATTRIB_PTH or not pad.HasHole():
+                continue
+            drill = pad_vec(pad, pad.GetDrillSize)
+            offset = pad_vec(pad, pad.GetOffset)
+            stepped = bool(
+                pad.GetSecondaryDrillSize().x or pad.GetTertiaryDrillSize().x
+                or (hasattr(pad, 'IsBackdrilledOrPostMachined') and
+                    (pad.IsBackdrilledOrPostMachined(pcbnew.F_Cu) or pad.IsBackdrilledOrPostMachined(pcbnew.B_Cu)))
+            )
+            if drill.x != drill.y or drill.x <= 0 or offset.x or offset.y or stepped:
+                continue
+            others = pcbnew.SHAPE_POLY_SET()
+            for identity, hole in drills.items():
+                if identity != pad.m_Uuid.AsString():
+                    others.Append(hole)
+            others.Simplify()
+            for layer, name in ((pcbnew.F_Cu, 'F.Cu'), (pcbnew.B_Cu, 'B.Cu')):
+                key = (pad.GetNetname(), layer)
+                if key not in cached:
+                    cached[key] = _net_copper(board, *key)
+                def holds(ring):
+                    disc = _circle_shape(pad.GetPosition(), drill.x / 2 + ring)
+                    cut = pcbnew.SHAPE_POLY_SET(disc)
+                    cut.BooleanIntersection(others)
+                    cut.Simplify()
+                    if not (cut.IsEmpty() or cut.Area() == 0):
+                        return False
+                    disc.BooleanSubtract(cached[key])
+                    disc.Simplify()
+                    return disc.IsEmpty() or disc.Area() == 0
+                low, high = 0, ceiling_nm
+                if holds(high):
+                    low = high
+                while high - low > 1000:
+                    middle = (low + high) // 2
+                    if holds(middle):
+                        low = middle
+                    else:
+                        high = middle
+                rows.append(dict(
+                    reference=fp.GetReference(), ref=fp.GetReference(), pad=pad.GetNumber(),
+                    layer=name, drill_mm=round(drill.x / 1e6, 6), ring_mm=round(low / 1e6, 6),
+                    outer_ring_mm=round(low / 1e6, 6), at_ceiling=low == ceiling_nm,
+                    position_nm=[int(pad.GetPosition().x), int(pad.GetPosition().y)]
+                ))
+    return rows
 
 
 def routing_facts(board_path, *, board=None):

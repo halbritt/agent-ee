@@ -98,6 +98,14 @@ RULES = {
             'curved pad polygons use pcbnew ERROR_OUTSIDE approximations; custom SMD supports only witnessed hole-free single filled polygon plus rect anchor; other custom geometry and per-layer padstacks are unsupported',
         ),
     ),
+    'plated_hole_ring': (
+        'DFM-014',
+        ('min_ring_mm',),
+        (
+            'outer-layer unbroken saved net copper annular rings minus intersecting drills; blind/buried vias and inner layer rings are not measured',
+            'non-circular drills, stepped drills, and backdrilled holes are unsupported',
+        ),
+    ),
 }
 FALSE_NEGATIVE_CLASSES = {kind: classes for kind, (_, _, classes) in RULES.items()}
 
@@ -114,6 +122,13 @@ def positive(value, label):
     if (isinstance(value, bool) or not isinstance(value, (int, float)) or
             not math.isfinite(value) or value <= 0):
         raise ValueError(f'{label} must be finite positive')
+    return value
+
+
+def non_negative(value, label):
+    if (isinstance(value, bool) or not isinstance(value, (int, float)) or
+            not math.isfinite(value) or value < 0):
+        raise ValueError(f'{label} must be finite non-negative')
     return value
 
 
@@ -143,7 +158,10 @@ def compile_profile(document):
             raise ValueError(f'{rule["id"]}: basis must be nonempty text')
         for field in fields:
             if field != 'pairs':
-                positive(rule[field], f'{rule["id"]} {field}')
+                if kind == 'plated_hole_ring' and field == 'min_ring_mm':
+                    non_negative(rule[field], f'{rule["id"]} {field}')
+                else:
+                    positive(rule[field], f'{rule["id"]} {field}')
         if kind == 'acid_trap' and rule['min_angle_deg'] >= 180:
             raise ValueError('acid_trap min_angle_deg must be below 180')
         if kind == 'copper_balance' and not 0.5 < rule['max_layer_share'] < 1:
@@ -705,10 +723,44 @@ def copper_balance(rule, facts):
                       measured_share=round(share, 6))
 
 
+def plated_hole_ring(rule, facts):
+    limit = rule.spec['min_ring_mm']
+    rings = facts.get('plated_rings', [])
+    for ring in rings:
+        entity = f"plated_ring:{ring.get('ref', '')}:{ring.get('pad', '')}:{ring.get('layer', '')}"
+        ring_mm = ring.get('ring_mm') if 'ring_mm' in ring else ring.get('outer_ring_mm')
+        if ring_mm is None:
+            rule.refuse(entity, 'missing ring measurement in probe facts')
+            continue
+        rule.checked += 1
+        if ring_mm < limit:
+            loc = ring.get('position_nm')
+            center = nm_point(loc) if loc else (0.0, 0.0)
+            rule.find(entity, center,
+                      f"plated hole {ring.get('ref')}:{ring.get('pad')} on {ring.get('layer')} annular ring "
+                      f"{ring_mm} mm below {limit} mm",
+                      refs=[ring['ref']] if 'ref' in ring else [],
+                      pads=[f"{ring.get('ref')}:{ring.get('pad')}"] if 'ref' in ring and 'pad' in ring else [],
+                      drill_mm=ring.get('drill_mm'), measured_mm=ring_mm, layer=ring.get('layer'))
+    return None
+
+
+def check_plated_hole_ring(facts, thresholds):
+    min_ring = thresholds.get('min_ring_mm', 0.0)
+    violations = []
+    for ring in facts.get('plated_rings', []):
+        ring_mm = ring.get('ring_mm') if 'ring_mm' in ring else ring.get('outer_ring_mm')
+        if ring_mm is not None and ring_mm < min_ring:
+            violations.append(dict(ring, code='DFM-014',
+                                   reason=f"annular ring {ring_mm} mm below min_ring_mm {min_ring} mm"))
+    return violations
+
+
 EVALUATORS = {'annular_ring': annular_ring, 'acid_trap': acid_trap,
               'component_spacing': component_spacing, 'via_aspect_ratio': via_aspect_ratio,
               'copper_balance': copper_balance, 'smd_bridge_gap': smd_bridge_gap,
-              'diff_pair_skew': diff_pair_skew, 'smd_via_clearance': smd_via_clearance}
+              'diff_pair_skew': diff_pair_skew, 'smd_via_clearance': smd_via_clearance,
+              'plated_hole_ring': plated_hole_ring}
 FACT_KEYS = ('copper_layers', 'pads', 'courtyards', 'tracks', 'vias', 'copper_area')
 
 

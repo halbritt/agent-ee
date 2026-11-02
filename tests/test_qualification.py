@@ -295,10 +295,33 @@ class RotationEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'requires the ordinary generation done gate'):
             qualification.manufacturing_coverage(dict(schema='agent-ee.build-plan/1'), self.SCOPE, [])
 
-    def test_orientation_gates_a_typed_package_even_when_no_clause_cites_it(self):
+    def test_orientation_and_roundtrip_gate_a_typed_package_even_when_no_clause_cites_it(self):
         rows = [dict(id='cpl', kind='cpl_rotation'), dict(id='trip', kind='fab_roundtrip')]
-        self.assertEqual(qualification._required_package_records(rows, set()), ['orientation'])
+        self.assertEqual(qualification._required_package_records(rows, set()), ['orientation', 'roundtrip'])
         self.assertEqual(qualification._required_package_records(rows, {'trip'}), ['orientation', 'roundtrip'])
+
+    def test_package_records_not_applicable_for_non_smt(self):
+        rows = [
+            {'kind': 'cpl_rotation', 'execution': 'ok', 'outcome': 'not_applicable'},
+            {'kind': 'fab_roundtrip', 'execution': 'ok', 'outcome': 'pass'}
+        ]
+        records = qualification._package_records(rows)
+        self.assertEqual(records['orientation'], 'not_applicable')
+        self.assertEqual(records['roundtrip'], 'pass')
+
+    def test_qualification_summary_includes_package_records(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out = Path(tmp_dir)
+            qual_file = out / "qualification.json"
+            record = {
+                'mode': 'typed',
+                'dimensions': {'file_release': {'status': 'pass'}},
+                'summary': {'required': []},
+                'package_records': {'roundtrip': 'pass', 'orientation': 'pass'}
+            }
+            write_json(qual_file, record)
+            res = qualification.summary(out, record)
+            self.assertEqual(res.get('package_records'), {'roundtrip': 'pass', 'orientation': 'pass'})
 
 
 class BuildQualificationTests(unittest.TestCase):

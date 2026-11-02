@@ -37,11 +37,13 @@ OPERATIONAL_CRITERIA = ('public_build_and_resume',)
 # label. Kinds outside this table are unclassified and cover nothing.
 KIND_CLASS = {
     **dict.fromkeys(('erc', 'drc', 'geometry', 'placement', 'board_envelope', 'fab_profile', 'fab_package',
-                     'fab_export', 'fab_roundtrip', 'assembly_readiness', 'parts_subset', 'cpl_rotation'), 'native'),
+                     'fab_export', 'fab_roundtrip', 'assembly_readiness', 'parts_subset', 'cpl_rotation',
+                     'land_pattern', 'footprint_assignment', 'design_rules', 'routing_rules',
+                     'fab_consistency', 'package_consistency'), 'native'),
     **dict.fromkeys(('netlist', 'netlist_parity', 'topology_rules', 'hardware_interface', 'net_names',
-                     'block_provenance'), 'topology'),
+                     'block_provenance', 'pin_map', 'pin_contracts', 'symbol_pins'), 'topology'),
     **dict.fromkeys(('interval_assertions', 'active_spice', 'rc_transient', 'dc_path'), 'model'),
-    **dict.fromkeys(('measurements', 'dfm_geometry'), 'measurement'),
+    **dict.fromkeys(('measurements', 'dfm_geometry', 'rf_geometry'), 'measurement'),
 }
 STATUS_ORDER = ('failed', 'unknown', 'pending', 'pass', 'not_applicable')
 

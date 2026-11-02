@@ -50,8 +50,12 @@ SOURCE_BRIEF = (
 )
 
 
-def brief(applicable):
-    return SOURCE_BRIEF if applicable is not None else BRIEF
+def brief(applicable=None):
+    if not applicable or applicable == 'not_configured':
+        return ""
+    if isinstance(applicable, dict):
+        return SOURCE_BRIEF
+    return BRIEF
 
 
 def applicability(run, manifest):
@@ -230,9 +234,13 @@ def coverage(reviews):
 
 def record_coverage(result):
     """Record per-role purpose coverage and an explicit limitation for each unassessed role."""
-    result['purpose_coverage'] = coverage(result['reviews'])
-    result['limitations'] += [text for text in coverage_limitations(result['purpose_coverage'])
-                              if text not in result['limitations']]
+    cov = coverage(result['reviews'])
+    if any(r['status'] == 'addressed' for r in cov):
+        result['purpose_coverage'] = cov
+        result['limitations'] += [text for text in coverage_limitations(cov)
+                                  if text not in result['limitations']]
+    else:
+        result['purpose_coverage'] = []
     return result
 
 
@@ -274,12 +282,15 @@ def verify_records(run, result):
     stored = result.get('purpose_coverage')
     # A stored record must match; a complete run must have one. An incomplete run cannot be
     # accepted, and apply_decisions records coverage again before any completion.
-    if stored is not None or (expected and result.get('state') == 'complete'):
+    has_purpose = any(r['status'] == 'addressed' for r in expected)
+    if has_purpose and (stored is not None or result.get('state') == 'complete'):
         if not isinstance(stored, list) or not strict_equal(
                 sorted(stored, key=lambda r: str(r.get('role'))), sorted(expected, key=lambda r: r['role'])):
             raise ValueError('purpose coverage differs from the retained initial reviews')
         if any(text not in result.get('limitations', []) for text in coverage_limitations(expected)):
             raise ValueError('result omits a purpose coverage unknown limitation')
+    elif not has_purpose and stored:
+        raise ValueError('purpose coverage differs from the retained initial reviews')
     granted = {f"{r['role']}/{f['id']}" for r in reviews for f in r.get('findings', [])
                if check_finding(f"{r['role']}/{f['id']}", f, r)}
     findings = result.get('findings', [])

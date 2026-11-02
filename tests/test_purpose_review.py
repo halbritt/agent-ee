@@ -97,11 +97,13 @@ class PurposeReviewTests(unittest.TestCase):
             reviews, records = initial_reviews(self.run_dir, packet, time.monotonic() + 30)
         self.assertEqual(len(reviews), 2, records)
         for prompt in prompts.values():
-            self.assertEqual(json.loads(prompt.split('PACKET:\n', 1)[1]), packet)
+            instructions, packet_json = prompt.split('PACKET:\n', 1)
+            self.assertEqual(json.loads(packet_json), packet)
+            self.assertIn('Only a custom emphasis.', instructions)
             for phrase in ('EVERY declared obstacle', 'EVERY empty field', 'EVERY part',
                            'single change', 'estimated saving', 'assessment=concern',
-                           'card insertion', 'probe access', 'renders', 'Only a custom emphasis.'):
-                self.assertIn(phrase, prompt)
+                           'card insertion', 'probe access', 'renders'):
+                self.assertNotIn(phrase, instructions)
             self.assertNotIn('initial_reviews', prompt)
 
     def test_failed_measurement_without_output_remains_failed_unknown(self):

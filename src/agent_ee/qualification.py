@@ -25,8 +25,8 @@ WITNESS_CHECKS = ('source_citations_resolved', 'applicability_recomputed', 'conc
 STAGES = retained_run.STAGES
 MANDATORY = {'erc', 'drc', 'netlist', 'geometry', 'parts_subset', 'placement',
              'board_envelope', 'fab_profile', 'assembly_readiness', 'fab_package'}
-# A placement file with no rotation evidence is not a software file claim.
-TYPED_MANDATORY = MANDATORY | {'cpl_rotation'}
+# A placement file with no rotation evidence or roundtrip is not a software file claim.
+TYPED_MANDATORY = MANDATORY | {'cpl_rotation', 'fab_roundtrip'}
 _inventory = requirement_map.input_inventory
 
 
@@ -107,6 +107,8 @@ def summary(out, record):
         mode=record['mode'], dimensions={name: row['status'] for name, row in record['dimensions'].items()})
     if 'required' in record['summary']:
         projected['required'] = record['summary']['required']
+    if 'package_records' in record:
+        projected['package_records'] = record['package_records']
     return projected
 
 
@@ -496,12 +498,21 @@ def _package_records(rows):
     records = {}
     for name, kind in (('roundtrip', 'fab_roundtrip'), ('orientation', 'cpl_rotation')):
         found = [row for row in rows if row['kind'] == kind]
-        records[name] = ('pending' if not found else 'pass' if len(found) == 1
-            and found[0]['execution'] == 'ok' and found[0]['outcome'] == 'pass' else 'failed')
+        if not found:
+            records[name] = 'pending'
+        elif len(found) == 1 and found[0]['execution'] == 'ok' and found[0]['outcome'] == 'pass':
+            records[name] = 'pass'
+        elif len(found) == 1 and found[0]['execution'] == 'ok' and found[0]['outcome'] == 'not_applicable':
+            records[name] = 'not_applicable'
+        else:
+            records[name] = 'failed'
     packages = [row for row in rows if row['kind'] == 'fab_package']
     orientation = packages[0].get('details', {}).get('assembly_orientation') if len(packages) == 1 else None
     records['orientation_record'] = copy.deepcopy(orientation)
-    if records['orientation'] == 'pass' and (not isinstance(orientation, dict)
+    if isinstance(orientation, dict) and (orientation.get('software_assessment') == 'not_applicable'
+            or (orientation.get('rows') == [] and orientation.get('software_assessment') in ('complete', 'not_applicable'))):
+        records['orientation'] = 'not_applicable'
+    elif records['orientation'] == 'pass' and (not isinstance(orientation, dict)
             or orientation.get('software_assessment') != 'complete' or orientation.get('unassessed_rows')
             or not orientation.get('profile_sha256')):
         records['orientation'] = 'pending'
@@ -509,9 +520,8 @@ def _package_records(rows):
 
 
 def _required_package_records(rows, bound):
-    """Orientation always gates a typed package; a round trip gates it once a clause cites one."""
-    cited = any(row['kind'] == 'fab_roundtrip' and row['id'] in bound for row in rows)
-    return ['orientation', 'roundtrip'] if cited else ['orientation']
+    """Orientation and roundtrip both gate a typed manufacturing package."""
+    return ['orientation', 'roundtrip']
 
 
 def _methods(root, review):
@@ -652,7 +662,7 @@ def _assess(out, *, persist=True, host=None):
     package_records = _package_records(rows)
     bound = {cid for clause in coverage.values() for span in clause['spans'] for cid in span['bound_ids']}
     required_records = _required_package_records(rows, bound)
-    if typed and any(package_records[name] != 'pass' for name in required_records):
+    if typed and any(package_records[name] not in ('pass', 'not_applicable') for name in required_records):
         blockers.append('Required exact-package evidence is incomplete')
         demonstrated_failure |= any(package_records[name] == 'failed' for name in required_records)
     if package is not None:

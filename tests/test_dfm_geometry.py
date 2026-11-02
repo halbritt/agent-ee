@@ -9,7 +9,7 @@ from pathlib import Path
 
 from toolchain import require_toolchain
 
-from agent_ee import candidate, checks
+from agent_ee import candidate, checks, dfm_geometry
 from agent_ee.baseline import freeze_evidence, validate_witnesses, verify_evidence
 from agent_ee.capabilities import describe_check
 from agent_ee.dfm_geometry import (
@@ -814,3 +814,62 @@ class NativeCustomSmdTests(unittest.TestCase):
         facts=self.probe(path,'hole');self.assertEqual(facts['pads'][0]['custom_copper']['status'],'unsupported',facts['pads'][0])
         self.place_via(path,(25000000,20000000));_,result=self.evaluate_saved(path,'hole-via')
         self.assertEqual(result['execution'],'unsupported',result)
+
+
+class PlatedHoleRingTests(unittest.TestCase):
+    def test_dfm014_rules_entry(self):
+        self.assertIn('plated_hole_ring', dfm_geometry.RULES)
+        code, fields, classes = dfm_geometry.RULES['plated_hole_ring']
+        self.assertEqual(code, 'DFM-014')
+        self.assertEqual(fields, ('min_ring_mm',))
+
+    def test_compile_profile_plated_hole_ring(self):
+        valid = {'schema': dfm_geometry.SCHEMA, 'name': 'ring-prof',
+                 'rules': [{'id': 'r1', 'rule': 'plated_hole_ring', 'min_ring_mm': 0.15}]}
+        compiled = dfm_geometry.compile_profile(valid)
+        self.assertEqual(len(compiled['rules']), 1)
+        # Boundary: zero is accepted
+        zero = {'schema': dfm_geometry.SCHEMA, 'name': 'ring-prof',
+                'rules': [{'id': 'r1', 'rule': 'plated_hole_ring', 'min_ring_mm': 0.0}]}
+        self.assertEqual(dfm_geometry.compile_profile(zero)['rules'][0]['min_ring_mm'], 0.0)
+        # Negative is refused
+        negative = {'schema': dfm_geometry.SCHEMA, 'name': 'ring-prof',
+                    'rules': [{'id': 'r1', 'rule': 'plated_hole_ring', 'min_ring_mm': -0.1}]}
+        with self.assertRaises(ValueError):
+            dfm_geometry.compile_profile(negative)
+
+    def test_check_plated_hole_ring_detection(self):
+        facts = {
+            'plated_rings': [
+                {'ref': 'H1', 'pad': '1', 'drill_mm': 0.8, 'outer_ring_mm': 0.1, 'layer': 'F.Cu'},
+                {'ref': 'H2', 'pad': '1', 'drill_mm': 1.0, 'outer_ring_mm': 0.3, 'layer': 'B.Cu'}
+            ]
+        }
+        violations = dfm_geometry.check_plated_hole_ring(facts, {'min_ring_mm': 0.2})
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0]['ref'], 'H1')
+        self.assertEqual(violations[0]['code'], 'DFM-014')
+
+    def test_evaluate_plated_hole_ring(self):
+        facts = {
+            'copper_layers': ['F.Cu', 'B.Cu'],
+            'pads': [],
+            'courtyards': [],
+            'tracks': [],
+            'vias': [],
+            'copper_area': {'F.Cu': {'area_nm2': 1000}, 'B.Cu': {'area_nm2': 1000}},
+            'plated_rings': [
+                {'ref': 'J1', 'pad': '1', 'drill_mm': 0.8, 'ring_mm': 0.12, 'layer': 'F.Cu'}
+            ]
+        }
+        profile = {
+            'schema': dfm_geometry.SCHEMA,
+            'name': 'test-profile',
+            'rules': [{'id': 'p-ring', 'rule': 'plated_hole_ring', 'min_ring_mm': 0.15}]
+        }
+        report = dfm_geometry.evaluate(facts, profile)
+        rule_rec = report['rules'][0]
+        self.assertEqual(rule_rec['status'], 'defect')
+        self.assertEqual(len(rule_rec['findings']), 1)
+        self.assertEqual(rule_rec['findings'][0]['code'], 'DFM-014')
+

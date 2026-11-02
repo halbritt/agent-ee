@@ -602,6 +602,20 @@ class AdapterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             capability(dict(criteria='criteria.json', extra=1), self.scope, files, self.ws.root, 'lp')
 
+    def test_capability_matches_declaration_source(self):
+        criteria = dict(self.ws.criteria(), declaration_source=dict(path='spec.md', locator='lp-req'))
+        self.ws.write('criteria_decl.json', canonical(criteria))
+        files = dict.fromkeys(self.ws.files, 'hash')
+        scope = dict(baseline=dict(requirements=[dict(id='LP', checks=['lp'],
+                                                       source=dict(path='spec.md', locator='lp-req'))]))
+        result = capability(dict(criteria='criteria_decl.json'), scope, files, self.ws.root, 'lp')
+        self.assertIn('criteria_decl.json', result['immutable_inputs'])
+        # Mismatched declaration_source raises ValueError
+        bad_scope = dict(baseline=dict(requirements=[dict(id='LP', checks=['lp'],
+                                                           source=dict(path='other.md', locator='lp-req'))]))
+        with self.assertRaisesRegex(ValueError, 'baseline requirement'):
+            capability(dict(criteria='criteria_decl.json'), bad_scope, files, self.ws.root, 'lp')
+
     def test_cli_writes_sealed_report_once(self):
         out = self.ws.root / 'out.json'
         self.assertEqual(main([str(self.ws.root / 'criteria.json'), '--captures', str(self.ws.root),

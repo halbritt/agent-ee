@@ -75,8 +75,14 @@ def _decimal_text(value, label, positive=False, nonnegative=False):
 
 def validate_criteria(criteria):
     """Every field is required; unknown fields refuse. Returns referenced paths."""
-    _object(criteria, ('schema', 'threshold', 'pin_tolerance_nm', 'source_tolerance_nm',
-                       'refinement_levels', 'library_manifest', 'requirements'))
+    base_keys = {'schema', 'threshold', 'pin_tolerance_nm', 'source_tolerance_nm',
+                 'refinement_levels', 'library_manifest', 'requirements'}
+    keys = base_keys | ({'declaration_source'} if isinstance(criteria, dict) and 'declaration_source' in criteria else set())
+    _object(criteria, keys)
+    if 'declaration_source' in criteria:
+        ds = criteria['declaration_source']
+        if not isinstance(ds, dict) or not isinstance(ds.get('path'), str):
+            raise ValueError('declaration_source must be an object with path')
     if criteria['schema'] != SCHEMA:
         raise ValueError('unsupported land-pattern criteria schema')
     threshold = _decimal_text(criteria['threshold'], 'threshold', positive=True)
@@ -704,7 +710,16 @@ def capability(params, scope, files, inputs, cid):
         raise ValueError('supplier footprints, provenance and library closure must be captured')
     requirements = scope.get('baseline', {}).get('requirements', [])
     mapped = [r for r in requirements if cid in r['checks']]
-    if len(mapped) != 1 or mapped[0]['source']['path'] != criteria_path:
+    source_match = False
+    if len(mapped) == 1:
+        decl = criteria.get('declaration_source')
+        if isinstance(decl, dict):
+            expected = {k: decl[k] for k in ('path', 'locator') if k in decl}
+            if mapped[0].get('source') == decl or mapped[0].get('source') == expected:
+                source_match = True
+        if mapped[0].get('source', {}).get('path') == criteria_path:
+            source_match = True
+    if not source_match:
         raise ValueError('land-pattern check must map exactly one baseline requirement sourced from its criteria')
     if 'board' in meta['sources']:
         board = scope.get('board')

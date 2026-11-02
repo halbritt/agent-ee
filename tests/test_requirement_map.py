@@ -814,5 +814,41 @@ class BuildAdmissionTests(unittest.TestCase):
                 self.assertEqual(str(error.exception), 'build source occupies generated namespace: ' + namespace)
 
 
+class KindClassCompletenessTests(unittest.TestCase):
+    def test_step06_kind_class_mappings(self):
+        for kind in ('land_pattern', 'footprint_assignment', 'design_rules',
+                     'routing_rules', 'fab_consistency', 'package_consistency'):
+            self.assertEqual(requirement_map.method_class(kind), 'native')
+        for kind in ('pin_map', 'pin_contracts', 'symbol_pins'):
+            self.assertEqual(requirement_map.method_class(kind), 'topology')
+        self.assertEqual(requirement_map.method_class('rf_geometry'), 'measurement')
+
+    def test_all_classified_kinds_are_in_registry(self):
+        from agent_ee.check_registry import registry
+        for kind in requirement_map.KIND_CLASS:
+            self.assertIn(kind, registry)
+
+    def test_land_pattern_coverage_view_yields_native_pass(self):
+        receipt = {
+            'schema': requirement_map.RECEIPT_SCHEMA_2,
+            'requirements': [
+                {
+                    'id': 'LP-1',
+                    'mode': 'checks',
+                    'obligation': 'executable',
+                    'bound_ids': ['lp-check'],
+                    'locator': {'byte_start': 0, 'byte_end': 10}
+                }
+            ]
+        }
+        rows = [
+            {'id': 'lp-check', 'kind': 'land_pattern', 'execution': 'ok', 'outcome': 'pass'}
+        ]
+        view = requirement_map.coverage_view(receipt, rows)
+        self.assertEqual(view['LP-1']['status'], 'pass')
+        self.assertEqual(view['LP-1']['spans'][0]['executed'][0]['class'], 'native')
+
+
 if __name__ == '__main__':
     unittest.main()
+
