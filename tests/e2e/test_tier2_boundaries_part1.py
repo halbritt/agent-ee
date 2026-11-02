@@ -228,17 +228,76 @@ class TestTier2LandPatternBoundaries(unittest.TestCase):
 
     def test_declaration_source_with_special_characters_in_locator(self):
         """declaration_source locator containing slashes, dashes, and colons matches correctly."""
-        decl = {"path": "sub-dir/doc.pdf", "locator": "sec:3.2/p-1"}
-        mapped = {"source": {"path": "sub-dir/doc.pdf", "locator": "sec:3.2/p-1"}}
-        expected = {k: decl[k] for k in ('path', 'locator') if k in decl}
-        self.assertEqual(mapped["source"], expected)
+        from unittest.mock import patch
+        criteria = {
+            "schema": land_pattern.SCHEMA,
+            "declaration_source": {"path": "sub-dir/doc.pdf", "locator": "sec:3.2/p-1"},
+            "threshold": "0.9",
+            "pin_tolerance_nm": "100",
+            "source_tolerance_nm": "100",
+            "refinement_levels": [1, 2],
+            "library_manifest": None,
+            "requirements": [{
+                "reference": "R1",
+                "lcsc": "C1234",
+                "supplier": None,
+                "native": {"source": "board"},
+                "registration": {"translation": [0, 0], "rotation": 0, "mirror": False},
+                "pin_aliases": {}
+            }]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "criteria.json"
+            p.write_text(json.dumps(criteria))
+            scope = {
+                "baseline": {
+                    "requirements": [{
+                        "checks": ["cid-01"],
+                        "source": {"path": "sub-dir/doc.pdf", "locator": "sec:3.2/p-1"}
+                    }]
+                },
+                "board": "board.kicad_pcb"
+            }
+            with patch("agent_ee.land_pattern.dependencies", return_value=([], {"sources": ["board"]})):
+                res = land_pattern.capability({"criteria": "criteria.json"}, scope, ["criteria.json", "board.kicad_pcb"], tmp, "cid-01")
+                self.assertIn("criteria.json", res["immutable_inputs"])
 
     def test_declaration_source_case_sensitivity(self):
         """Path matching between requirement source and declaration_source is exact/case-sensitive."""
-        decl = {"path": "hardware/Spec.json", "locator": "L1"}
-        mapped_lower = {"source": {"path": "hardware/spec.json", "locator": "L1"}}
-        expected = {k: decl[k] for k in ('path', 'locator') if k in decl}
-        self.assertNotEqual(mapped_lower["source"], expected)
+        from unittest.mock import patch
+        criteria = {
+            "schema": land_pattern.SCHEMA,
+            "declaration_source": {"path": "hardware/Spec.json", "locator": "L1"},
+            "threshold": "0.9",
+            "pin_tolerance_nm": "100",
+            "source_tolerance_nm": "100",
+            "refinement_levels": [1, 2],
+            "library_manifest": None,
+            "requirements": [{
+                "reference": "R1",
+                "lcsc": "C1234",
+                "supplier": None,
+                "native": {"source": "board"},
+                "registration": {"translation": [0, 0], "rotation": 0, "mirror": False},
+                "pin_aliases": {}
+            }]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "criteria.json"
+            p.write_text(json.dumps(criteria))
+            scope = {
+                "baseline": {
+                    "requirements": [{
+                        "checks": ["cid-01"],
+                        "source": {"path": "hardware/spec.json", "locator": "L1"}
+                    }]
+                },
+                "board": "board.kicad_pcb"
+            }
+            with patch("agent_ee.land_pattern.dependencies", return_value=([], {"sources": ["board"]})):
+                with self.assertRaises(ValueError) as err:
+                    land_pattern.capability({"criteria": "criteria.json"}, scope, ["criteria.json", "board.kicad_pcb"], tmp, "cid-01")
+                self.assertIn("land-pattern check must map exactly one baseline requirement", str(err.exception))
 
     def test_land_pattern_scope_missing_baseline(self):
         """Scope dictionary lacking baseline key raises descriptive error."""

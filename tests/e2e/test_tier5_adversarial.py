@@ -153,6 +153,28 @@ class TestTier5AdversarialStageExecution(unittest.TestCase):
                 escaped = Path(tmp) / "library-probes" / "escaped.kicad_mod"
                 self.assertFalse(escaped.exists())
 
+    def test_adv_custom_geometry_valid_input_succeeds_without_name_error(self):
+        """custom_geometry initializes member directory and succeeds on valid footprint inputs."""
+        from unittest.mock import patch
+        from agent_ee.stage_execution import StageContext
+
+        sample_report = {"pcbnew_version": "10.0.7", "pads": [{"number": "1", "shape": "rect"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = StageContext(work=tmp)
+
+            def mock_probe(inputs, work, argv, timeout=120):
+                self.assertTrue(Path(inputs).is_dir())
+                self.assertTrue(Path(work).is_dir())
+                mod_file = Path(inputs) / "test_pad.kicad_mod"
+                self.assertTrue(mod_file.is_file())
+                self.assertEqual(mod_file.read_bytes(), b"(footprint test_pad)")
+                (Path(work) / "footprint.json").write_text(json.dumps(sample_report))
+                return {"execution": "ok"}
+
+            with patch.object(ctx, "probe", side_effect=mock_probe):
+                result = ctx.custom_geometry(b"(footprint test_pad)", {"name": "test_pad"})
+            self.assertEqual(result, sample_report)
+
     def test_adv_stage_kicad_project_absolute_or_parent_traversal_refused(self):
         """stage_kicad_project strictly blocks absolute and parent traversal design_rel paths."""
         from agent_ee.stage_execution import stage_kicad_project

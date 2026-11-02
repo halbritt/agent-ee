@@ -93,21 +93,53 @@ class TestTier2PostRouteMilpBoundaries(unittest.TestCase):
 
     def test_milp_shortlist_empty_trials_refused(self):
         """Empty trials list does not trigger post-route repair."""
-        trials = []
-        all_failed = bool(trials) and all(t.get("status") in ("local_search_exhausted", "route_failed") for t in trials)
-        self.assertFalse(all_failed)
+        from agent_ee.placement_job import _repair_shortlist
+        problem = {"mechanics": {"schema": "agent-ee.source-mechanics/1", "custody": "design-declared"}}
+        shortlist = [{"feasible": True, "seed": 1, "cost": 100}]
+        report = {"routing_trials": []}
+        res = _repair_shortlist(problem, shortlist, [], checkout=None, runtime=None,
+                                clock=None, job_dir=None, attempt=1, report=report,
+                                engine_sha256=None, routing_exhausted=True)
+        self.assertEqual(res, [])
+        self.assertNotIn("placement_repair", report)
 
     def test_milp_shortlist_single_exhausted_trial(self):
         """Single local_search_exhausted trial triggers post-route repair."""
-        trials = [{"status": "local_search_exhausted"}]
-        all_failed = all(t.get("status") in ("local_search_exhausted", "route_failed") for t in trials)
-        self.assertTrue(all_failed)
+        from unittest.mock import MagicMock
+        from agent_ee.placement_job import _repair_shortlist
+        problem = {"mechanics": {"schema": "agent-ee.source-mechanics/1", "custody": "design-declared"}}
+        shortlist = [{"feasible": True, "seed": 1, "cost": 100}]
+        diagnostics = [{"seed": 1, "terms": {"hard_count": 0, "hard": 0}, "cost": "10", "poses": {}}]
+        report = {"routing_trials": [{"status": "local_search_exhausted"}]}
+        clock = MagicMock()
+        clock.remaining.return_value = 1.0
+        _repair_shortlist(problem, shortlist, diagnostics, checkout=None, runtime=None,
+                          clock=clock, job_dir=None, attempt=1, report=report,
+                          engine_sha256=None, routing_exhausted=True)
+        self.assertIn("placement_repair", report)
+        self.assertEqual(report["placement_repair"]["trigger"], "feasible_routing_exhausted")
 
     def test_milp_shortlist_single_failed_trial(self):
         """Single route_failed trial triggers post-route repair for design-declared models."""
-        trials = [{"status": "route_failed"}]
-        all_failed = all(t.get("status") in ("local_search_exhausted", "route_failed", "verification_failed") for t in trials)
-        self.assertTrue(all_failed)
+        from unittest.mock import MagicMock
+        from agent_ee.placement_job import _repair_shortlist
+        problem_declared = {"mechanics": {"schema": "agent-ee.source-mechanics/1", "custody": "design-declared"}}
+        shortlist = [{"feasible": True, "seed": 1, "cost": 100}]
+        diagnostics = [{"seed": 1, "terms": {"hard_count": 0, "hard": 0}, "cost": "10", "poses": {}}]
+        report_declared = {"routing_trials": [{"status": "route_failed"}]}
+        clock = MagicMock()
+        clock.remaining.return_value = 1.0
+        _repair_shortlist(problem_declared, shortlist, diagnostics, checkout=None, runtime=None,
+                          clock=clock, job_dir=None, attempt=1, report=report_declared,
+                          engine_sha256=None, routing_exhausted=True)
+        self.assertIn("placement_repair", report_declared)
+
+        problem_non_declared = {"mechanics": {"schema": "custom", "custody": "standard"}}
+        report_non_declared = {"routing_trials": [{"status": "route_failed"}]}
+        _repair_shortlist(problem_non_declared, shortlist, diagnostics, checkout=None, runtime=None,
+                          clock=clock, job_dir=None, attempt=1, report=report_non_declared,
+                          engine_sha256=None, routing_exhausted=True)
+        self.assertNotIn("placement_repair", report_non_declared)
 
     def test_milp_shortlist_unknown_status_blocks_repair(self):
         """Unrecognized status prevents spurious repair triggering."""
@@ -117,10 +149,13 @@ class TestTier2PostRouteMilpBoundaries(unittest.TestCase):
 
     def test_milp_shortlist_max_alternatives_bound(self):
         """Shortlist generation is bounded by finite maximum alternatives (<= 16)."""
-        config = {'search': {'shortlist': 5}}
-        limit = int(config['search'].get('shortlist', 3))
-        self.assertLessEqual(limit, 16)
-        self.assertGreater(limit, 0)
+        raw_candidates = [{"seed": i, "cost": str(100 + i), "poses": {}} for i in range(25)]
+        config = {"search": {"shortlist": 5}}
+        limit = min(16, int(config["search"].get("shortlist", 3)))
+        shortlist = [dict(c, feasible=True) for c in raw_candidates[:limit]]
+        self.assertEqual(len(shortlist), 5)
+        self.assertLessEqual(len(shortlist), 16)
+        self.assertTrue(all(c["feasible"] for c in shortlist))
 
 
 class TestTier2PlacementJobDecouplingBoundaries(unittest.TestCase):
@@ -132,15 +167,33 @@ class TestTier2PlacementJobDecouplingBoundaries(unittest.TestCase):
 
     def test_placement_job_arbitrary_board_names(self):
         """placement_job accepts arbitrary board names without hardcoded naming restrictions."""
-        for name in ("telemetry.kicad_pcb", "custom_board_v2.kicad_pcb", "main.kicad_pcb"):
-            self.assertTrue(name.endswith(".kicad_pcb"))
+        import tempfile, hashlib
+        from agent_ee.placement_job import verified_input
+        with tempfile.TemporaryDirectory() as tmp:
+            test_names = ("telemetry.kicad_pcb", "custom_board_v2.kicad_pcb", "satellite_main.kicad_pcb")
+            for name in test_names:
+                board_file = Path(tmp) / name
+                board_file.write_text("(kicad_pcb)")
+                file_hash = hashlib.sha256(board_file.read_bytes()).hexdigest()
+                path, data = verified_input({"path": str(board_file), "sha256": file_hash}, "board")
+                self.assertEqual(path, board_file)
+                self.assertEqual(path.stem, name.removesuffix(".kicad_pcb"))
+                self.assertTrue(path.name.endswith(".kicad_pcb"))
 
     def test_placement_job_checkpoint_digest_is_sha256(self):
         """Checkpoint identity produces standard 64-character hex digest."""
-        import hashlib
-        sample = hashlib.sha256(b"sample_state").hexdigest()
-        self.assertEqual(len(sample), 64)
-        self.assertTrue(all(c in "0123456789abcdef" for c in sample))
+        import tempfile, hashlib
+        from agent_ee.placement_job import checkpoint, load_checkpoint, CHECKPOINT_SCHEMA
+        with tempfile.TemporaryDirectory() as tmp:
+            test_identity = hashlib.sha256(b"sample_problem_state").hexdigest()
+            state = {"identity": test_identity, "step": "search", "attempt": 1}
+            checkpoint(tmp, state)
+            loaded = load_checkpoint(tmp, test_identity)
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded["identity"], test_identity)
+            self.assertEqual(len(loaded["identity"]), 64)
+            self.assertTrue(all(c in "0123456789abcdef" for c in loaded["identity"]))
+            self.assertEqual(loaded["schema"], CHECKPOINT_SCHEMA)
 
     def test_block_package_verify_returns_boolean_or_dict(self):
         """block_package.verify produces verifiable result."""
@@ -278,8 +331,12 @@ class TestTier2BenchmarkDriverBoundaries(unittest.TestCase):
 
     def test_benchmark_empty_benchmark_list(self):
         """Benchmark handles empty targets list cleanly."""
-        targets = []
-        self.assertEqual(len(targets), 0)
+        from agent_ee.generation_benchmark import split_tasks
+        split = split_tasks([], {"schema": "agent-ee.generation-exclusions/1", "version": "v1", "tasks": {}})
+        self.assertEqual(split["schema"], "agent-ee.generation-split/1")
+        self.assertEqual(split["train"], [])
+        self.assertEqual(split["test"], [])
+        self.assertEqual(split["excluded"], [])
 
     def test_benchmark_output_json_schema(self):
         """Benchmark output adheres to standard performance envelope schema."""
@@ -288,9 +345,23 @@ class TestTier2BenchmarkDriverBoundaries(unittest.TestCase):
 
     def test_benchmark_metrics_nonnegative(self):
         """All recorded timing and duration metrics are nonnegative numbers."""
-        metrics = {"wall_time_s": 1.25, "cpu_time_s": 0.85}
-        for k, v in metrics.items():
-            self.assertGreaterEqual(v, 0.0)
+        from agent_ee.generation_benchmark import score
+        rules = [
+            {"id": "r1", "check": "c1", "deliverables": [], "category": "fab", "weight": 10, "critical": True},
+            {"id": "r2", "check": "c2", "deliverables": [], "category": "elec", "weight": 5, "critical": False}
+        ]
+        checks = [
+            {"id": "c1", "execution": "ok", "outcome": "pass"},
+            {"id": "c2", "execution": "ok", "outcome": "defect"}
+        ]
+        res = score(rules, checks)
+        self.assertGreaterEqual(res["lower"]["numerator"], 0)
+        self.assertGreater(res["lower"]["denominator"], 0)
+        self.assertGreaterEqual(res["upper"]["numerator"], 0)
+        self.assertGreater(res["upper"]["denominator"], 0)
+        for cat, bounds in res["categories"].items():
+            self.assertGreaterEqual(bounds["lower"]["numerator"], 0)
+            self.assertGreaterEqual(bounds["upper"]["numerator"], 0)
 
 
 class TestTier2AcquisitionConsolidationBoundaries(unittest.TestCase):
@@ -381,20 +452,40 @@ class TestTier2StageExecutionBoundaries(unittest.TestCase):
     """Feature 21 Boundaries: Consolidated stage_execution.py."""
 
     def test_stage_context_read_only_candidate_permission(self):
-        """Attempting to write into candidate mount inside StageContext fails with PermissionError."""
+        """Attempting to mutate captured candidate inputs inside StageContext is caught and rejected."""
         import tempfile
+        from pathlib import Path
         from agent_ee.stage_execution import StageContext
+        from agent_ee.checks import CheckError
+        from agent_ee.native_run import Intent
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = StageContext(work=tmp)
-            self.assertEqual(ctx.scratch, Path(tmp).resolve())
+            t = Path(tmp)
+            inputs, work = t / "inputs", t / "work"
+            inputs.mkdir(); work.mkdir()
+            target_file = inputs / "captured_doc.txt"
+            target_file.write_text("immutable_original")
+            ctx = StageContext(work=work)
+            cmd = f'import pathlib; pathlib.Path({str(target_file)!r}).write_text("mutated")'
+            intent = Intent("test_mutate", ["/usr/bin/python3", "-c", cmd], isolation="host")
+            with self.assertRaises(CheckError) as err:
+                ctx.run(intent, inputs=inputs, work=work)
+            self.assertIn("fab child changed its captured inputs", str(err.exception))
 
     def test_stage_context_scratch_cleanup_on_completion(self):
-        """StageContext scratch directories are cleaned up or retained as configured."""
+        """StageContext scratch directories isolate temporary probe workspaces."""
         import tempfile
-        from agent_ee.stage_execution import StageContext
+        from pathlib import Path
+        from agent_ee.stage_execution import StageContext, stage_kicad_project
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = StageContext(work=tmp)
-            self.assertTrue(ctx.scratch.is_dir())
+            t = Path(tmp)
+            inputs, work = t / "inputs", t / "work"
+            inputs.mkdir(); work.mkdir()
+            (inputs / "board.kicad_pcb").write_text("(kicad_pcb)")
+            with stage_kicad_project(inputs, work, "board.kicad_pcb") as proj:
+                self.assertTrue((proj / "board.kicad_pcb").is_file())
+            self.assertTrue((inputs / "board.kicad_pcb").is_file())
+            ctx = StageContext(work=work)
+            self.assertEqual(ctx.scratch, work.resolve())
 
     def test_stage_context_symlink_traversal_refused(self):
         """Symlinks pointing outside the candidate directory are refused by stage execution."""
@@ -471,23 +562,65 @@ class TestTier2CampaignVerificationBoundaries(unittest.TestCase):
 
     def test_e2e_runner_timeout_tolerance(self):
         """E2E test suite executes within predictable campaign timeout limits."""
+        import os, subprocess, sys
+        runner_path = Path("tests/e2e/run_tests.sh")
+        self.assertTrue(runner_path.is_file())
+        self.assertTrue(os.access(runner_path, os.X_OK))
         start = time.monotonic()
+        res = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "tests/e2e/test_tier2_boundaries_part1.py"],
+                             capture_output=True, timeout=15)
         elapsed = time.monotonic() - start
-        self.assertLess(elapsed, 1.0)
+        self.assertEqual(res.returncode, 0)
+        self.assertLess(elapsed, 15.0)
 
     def test_campaign_git_clean_status(self):
         """Working tree state can be cleanly checked via git status."""
-        git_dir = Path(".git")
-        self.assertTrue(git_dir.is_dir() or git_dir.is_file())
+        import subprocess
+        res = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, check=True)
+        self.assertEqual(res.returncode, 0)
+        tracked_changes = [line for line in res.stdout.splitlines() if line.startswith(" M src/") or line.startswith(" M tests/")]
+        self.assertEqual(tracked_changes, [])
 
     def test_plane_issue_sync_format(self):
         """Plane issue format matches AGENTEE-571..577 identifiers."""
-        for num in range(571, 578):
-            self.assertEqual(f"AGENTEE-{num}"[:8], "AGENTEE-")
+        import re
+        campaign_issues = {
+            "AGENTEE-571": "506bdac2-bfd3-4828-95fe-7c5539148c19",
+            "AGENTEE-572": "76b51472-2ed8-4901-86e1-4398cd0fceaa",
+            "AGENTEE-573": "ca509d84-7cb9-409b-853a-57ea726ade92",
+            "AGENTEE-574": "5dd344f7-bb9b-487f-a68d-ddee1bda7ebf",
+            "AGENTEE-575": "6a4a306d-e307-4583-b622-3e014fd45b7d",
+            "AGENTEE-576": "03b4fca0-66cd-45c0-8340-cff66183e190",
+            "AGENTEE-577": "21316826-658e-4805-817f-372e97f68852",
+        }
+        uuid_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+        issue_re = re.compile(r"^AGENTEE-57[1-7]$")
+        self.assertEqual(len(campaign_issues), 7)
+        for issue_id, uuid in campaign_issues.items():
+            self.assertTrue(issue_re.match(issue_id), f"Invalid issue id: {issue_id}")
+            self.assertTrue(uuid_re.match(uuid), f"Invalid issue uuid: {uuid}")
 
     def test_full_pipeline_verification_idempotency(self):
         """Verification passes repeatedly without mutating source tree."""
         from agent_ee import stages
-        first = stages.STAGE_ORDER
-        second = stages.STAGE_ORDER
-        self.assertEqual(first, second)
+        scope = {
+            "schema": "agent-ee.scope/2",
+            "stages": {
+                "schema": "agent-ee.stages/1",
+                "order": ["placement", "routing"],
+                "subjects": {
+                    "placement": {"kind": "footprints", "references": ["U1", "R1"], "path": "board.kicad_pcb"},
+                    "routing": {"kind": "tracks", "minimum": 10, "path": "board.kicad_pcb"}
+                },
+                "finding_retry_limit": 5
+            },
+            "board": "board.kicad_pcb",
+            "checks": [
+                {"cid": "c1", "stage": "placement"},
+                {"cid": "c2", "stage": "routing"}
+            ]
+        }
+        res1 = stages.declaration(scope)
+        res2 = stages.declaration(scope)
+        self.assertEqual(res1, res2)
+        self.assertEqual(res1["order"], ["placement", "routing"])

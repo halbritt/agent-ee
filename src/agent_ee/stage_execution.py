@@ -481,6 +481,9 @@ class StageContext:
         if parent.is_symlink() or parent.resolve() != parent:
             raise ValueError('custom-pad scratch must stay in outer work')
         root = Path(tempfile.mkdtemp(prefix='member-', dir=parent))
+        inputs, work = root / 'inputs', root / 'work'
+        inputs.mkdir(parents=True, exist_ok=True)
+        work.mkdir(parents=True, exist_ok=True)
         name = footprint.get('name') if isinstance(footprint, dict) else None
         if not isinstance(name, str) or not name.strip() or '/' in name or '\\' in name or '..' in name:
             raise FootprintError(f'invalid or unsafe footprint name: {name!r}')
@@ -491,7 +494,7 @@ class StageContext:
         member.chmod(0o400)
         command = ('from agent_ee.footprint_probe import _stage_main; import sys; '
                    '_stage_main(*sys.argv[1:])')
-        result = self.probe(inputs, work, ['-c', command, str(inputs), footprint['name'],
+        result = self.probe(inputs, work, ['-c', command, str(inputs), name,
                                            str(work / 'footprint.json')], 60)
         if result['execution'] != 'ok':
             console = (work / 'console.log').read_text(errors='replace')[-2000:] if (work / 'console.log').is_file() else ''
