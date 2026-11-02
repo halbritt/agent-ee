@@ -579,6 +579,9 @@ class DesignCompileTests(unittest.TestCase):
                     provenance["sha256"] = "0" * 64
                     write_json(provenance_path, provenance)
                 seal_capture(self.captures)
+                from agent_ee.design_capture import validate_supplier_capture
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_supplier_capture(self.captures, "C1")
                 with self.assertRaisesRegex(DesignError, message):
                     self.compile("refused")
                 self.assertFalse((self.root / "refused").exists())
