@@ -36,7 +36,7 @@ Unknown fields are refused.
 | `no_connects` | List of `REF.PIN` strings. Every symbol pin needs one net or a no-connect entry. |
 | `power_flags` | Unique net names that need virtual `PWR_FLAG` symbols. |
 | `ground` | The declared ground net; currently `GND`. A virtual GND symbol supplies its native power name. |
-| `connectors` | List of `{reference, edge, position_mm, inset_mm, rotation_deg, insertion}`. Edges are `top`, `right`, `bottom`, `left`; insertion is `from_top` or `through_edge`. Position is measured along the envelope edge's direction. Rotations are multiples of 90 degrees and are normalized modulo 360. |
+| `connectors` | List of `{reference, edge, position_mm, inset_mm, rotation_deg, insertion}` plus `local_mating_axis` for `through_edge`. Edges are `top`, `right`, `bottom`, `left`; insertion is `from_top` or `through_edge`. Position is measured along the envelope edge's direction. Rotations are multiples of 90 degrees and are normalized modulo 360. |
 | `decoupling` | List of `{capacitor, device, supply, return, max_distance_mm}`. Each pair is `[DEVICE.PIN, CAPACITOR.PIN]`; both endpoints must share a net. |
 | `groups` | List of `{name, anchor, title}`. Members come from the parts' `group` fields. |
 | `plane` | `{net, layer}`; choose a declared net and `F.Cu` or `B.Cu`. |
@@ -76,8 +76,9 @@ element class and value between two distinct nets. It can specify `lib_id` and
 standard `Device` symbol with pins 1 and 2. Supported undirected classes are `resistor`,
 `capacitor`, `inductor`, `ferrite`, and `fuse`. Polarized capacitors, diodes and
 LEDs need a separate `pin_net` witness for each pin; `element_between` cannot
-establish direction. The compiler rejects class mismatches among its standard
-default symbols.
+establish direction. The compiler derives classes from the `Device` R, C, C_Polarized, L, D, LED,
+Fuse and FerriteBead name families, including underscore variants, and refuses
+class contradictions. Polarized variants remain polarized.
 Other explicit classifications are design declarations, not independent
 identification of a symbol's electrical meaning. Rule IDs must be unique across
 the design. The compiler converts label nets to `/NAME` and keeps the GND power-symbol net bare.
@@ -139,10 +140,10 @@ The JLC fab profile and original selected-fact transcription are package data.
 The instantiated profile cites only `fab-sources/selected-facts.txt`; no vendor
 PDF or captured vendor page ships in the repository. Project rule keys and
 minima come from `scaffold.produced_rules`, including the native
-`min_copper_edge_clearance` key. Default clearance and track width use the
-sourced fab floor, including the recorded owner decision on Default clearance.
-Only routing via sizes are raised to meet pinned native drill and annular-width
-rules. `project-rule-derivation.json` binds both sources and the selected values. CPL rotations come from footprint-local geometry
+`min_copper_edge_clearance` key. Default clearance uses the sourced fab floor under the recorded owner decision.
+Default track width is at least the pinned native routing default (0.2 mm);
+routing via sizes also preserve native defaults and meet drill and annular-width rules.
+These routing defaults are not fabrication limits. `project-rule-derivation.json` binds both sources and the selected values. CPL rotations come from footprint-local geometry
 and captured supplier pin-1 geometry before a board exists. Supplier preview
 remains a physical delivery obligation. The compiler reuses the CPL gate's pad-set
 and two-pad polarity rules, refuses reflections and incompatible pad sets, and
@@ -152,6 +153,9 @@ The compiler refuses explicitly marked standard passive size mismatches (such as
 catalog 0603 and `C_0805_2012Metric`). `design-compile-report.json` records measured
 copper/hole overlap at the declared CPL registration. This is diagnostic; no
 universal overlap threshold has been justified, and no new package claim is made.
+Copper overlap below 0.5 produces a part-named warning in the report and on stderr;
+it remains diagnostic, including for the intended BME280 footprint. Size agreement
+is a compile refusal, not a claim established by the bound `parts` check.
 The report also warns about footprints with no model reference, whose height
 cannot be established at package. CAD assignment checks do not prove full land
 pattern suitability.
@@ -189,57 +193,36 @@ These limits are labelled "Agent-selected measurement requirement; not an owner
 or datasheet ruling". Here `hard` means the build enforces the number stated in
 the design; it does not promote that number to an owner or datasheet limit.
 Capacitor and device must differ, supply and return terminals must be distinct,
-and the locality limit must not exceed the board diagonal.
+supply and return nets must differ, and the locality limit must be less than the board diagonal.
 
 A connector's rotated front courtyard must reach within 1 mm of its declared
-edge. The fixed-pose gate checks position, rotation and insertion side. Generic
-courtyard geometry does not identify a connector mouth: through-edge facing and
-physical mating access remain unverified, as the generated clause states.
+edge. The fixed-pose gate checks position, rotation and insertion side. Through-edge
+connectors require `local_mating_axis` (`x+`, `x-`, `y+`, `y-`) in the footprint
+local frame. Compile refuses a rotation that does not face the declared edge; the
+retained predicate also checks facing. The axis is a design declaration checked
+against pose; physical mouth geometry and mating access remain unverified.
+Older envelope records may omit the axis without changing their identity or
+meaning; their generated statements do not claim a mating axis.
 Board width/height follow the profile's 670/600 mm maxima and must be exact to
 one nanometre. The compiler supports height envelopes up to 1000 mm; that bound
-is a compiler support limit, not a manufacturer allowance. Intent must start
-with paragraph text rather than Markdown block syntax.
+is a compiler support limit, not a manufacturer allowance. Intent must parse as a single paragraph in the generated spec. Markdown structure
+is refused with the `intent` field name; plain text such as `1.5 V board` is valid.
 Producer or native-stage failures retain their own evidence; a successful compile
 does not predict a successful physical design.
 
 ## Real-run example and claims
 
 The examples are an I2C sensor board and a NE555 astable oscillator with 10 k
-resistors and 100 nF capacitors. Fix-round measurements on UTC 2026-11-02 used
-fresh captures, the production image, the prescribed router runtime and the
-mechanics-capable placement runtime. The real builds and final native suite ran
-serially under `native-admit`. Earlier
-adjacent host test selections unintentionally included native classes without
-admission and overlapped builds; that process violation is retained in
-`ADMISSION-DEVIATION.md` in the evidence directory. Those suites were rerun
-correctly in the production image.
-
-| Measurement | Result |
-| --- | --- |
-| Offline regressions | 45 pure tests passed; synthetic captures and scripted loopback HTTP, with no external network or retained-capture dependency |
-| Admitted suite | 134 tests passed in the production image, including adjacent native topology/CPL integration and the dangling-track policy regression |
-| Fresh I2C capture / compile / native build | 65.12 / 3.46 / 370.05 s; seven stages, `accepted: true`, `file_release: pass` |
-| Fresh 555 capture / compile / native build | 29.78 / 2.40 / 291.66 s; seven stages, `accepted: true`, `file_release: pass` |
-| I2C with declared mechanics | Compile 3.62 s, build 385.79 s; seven stages, `accepted: true`, final placement mechanics `pass` |
-| Swapped SDA/SCL | Compile 3.65 s, build 364.29 s; reached package and failed only `functional-rules`, naming `j2-sda` and `j2-scl`, with zero unknown rules |
-
-Native build times include admission. Default clearance and track width were
-0.1 mm, with 0.6/0.3 mm routing vias. The example connectors whose 4 mm inset
-left a 1.05 mm courtyard gap were moved to a 3.5 mm inset; the compiler's
-1 mm edge-proximity check was retained.
-
-The first declared-mechanics run refused a compiler-derived midpoint of
-`0.5249999999999999` mm at the native body-resolution check. Deriving body sizes
-and offsets with decimal arithmetic corrected it to `0.525` mm. The failed run,
-the regression against old code, and the corrected build are all retained.
-The mechanics run declared J1/J2 as access owners and used the compiler's
-courtyard-derived measurement stand-ins.
-
-Retained evidence is under
-`~/.local/share/agent-ee/zeroasic-20261029-agent707/design-compile-r1/evidence-r2`.
-Its `REPORT.md`, `FINDINGS.md`, command scripts, capture manifests, timing records
-and build reports identify the exact source exports and each result. No vendor
-PDF or captured vendor page is added to the repository.
+resistors and 100 nF capacitors. Round 2 measurements were invalidated by a router runtime mismatch. Their retained
+logs under `evidence-r2` are historical failures of verification, not current
+router evidence. That round also incorrectly lowered Default track width and
+covered only eight exact Device symbols, rather than their name families.
+Round 3 uses router pin `995891ae8852f6524815d5f06ad3a062f40ed8e0` from
+`track-overshoot-r1/final/router-runtime-r1/checkout`, with native tests and builds
+admitted in the production image. The pin file must not be edited to match a runtime.
+Round 3 evidence is retained under
+`~/.local/share/agent-ee/zeroasic-20261029-agent707/design-compile-r1/evidence-r3`;
+its report records actual outcomes, timings, widths and route attempts.
 
 `accepted` means only the typed software file claim. These runs do not establish
 supplier confirmation, physical operation, full component or land-pattern

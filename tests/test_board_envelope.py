@@ -174,6 +174,38 @@ class EnvelopeValidationTests(unittest.TestCase):
         [j1] = record['fixed_footprints']
         self.assertEqual((j1['anchor_mm'], j1['layer'], j1['mating_axis']), (['100', '100'], 'F.Cu', 'z-'))
 
+    def test_optional_mating_axis_preserves_legacy_record_and_statement_scope(self):
+        from agent_ee.board_envelope import derive_requirements
+        from agent_ee.placement_predicates import envelope_declarations, connector_edge
+        from tests.test_placement_predicates import part, probe, MM
+        value = rc()
+        value['fixed_footprints'][0].update(edge='left', insertion='through_edge',
+                                           position_mm=8, inset_mm=4, rotation_deg=0)
+        legacy = validate(raw(value))
+        fixed = legacy['fixed_footprints'][0]
+        self.assertNotIn('local_mating_axis', fixed)
+        self.assertIsNone(envelope_declarations(legacy)[0]['local_mating_axis'])
+        statement = next(r['statement'] for r in derive_requirements(legacy, 'envelope.json')['requirements']
+                         if r['source']['locator'] == '/fixed_footprints/0')
+        self.assertNotIn('mating axis', statement)
+        self.assertEqual(legacy, validate(raw(value)))
+        self.assertEqual(legacy['envelope_sha256'], hashlib.sha256(raw(value)).hexdigest())
+        value['fixed_footprints'][0]['local_mating_axis'] = 'x-'
+        declared = validate(raw(value))
+        self.assertEqual(envelope_declarations(declared)[0]['local_mating_axis'], 'x-')
+        statement = next(r['statement'] for r in derive_requirements(declared, 'envelope.json')['requirements']
+                         if r['source']['locator'] == '/fixed_footprints/0')
+        self.assertIn('mating axis x-', statement)
+        declaration = envelope_declarations(declared)[0]
+        x, y = declaration['anchor']
+        fp = part(fixed['reference'], x / MM, y / MM, rotation=180)
+        facts = probe([fp], outline=[[96*MM,96*MM],[116*MM,96*MM],[116*MM,108*MM],[96*MM,108*MM]])
+        result = connector_edge(facts, [declaration])
+        self.assertIn('facing', str(result))
+        value['fixed_footprints'][0]['rotation_deg'] = 180
+        with self.assertRaisesRegex(ValueError, 'fixed footprint.*does not face'):
+            validate(raw(value))
+
     def test_reversed_winding_keeps_inward_and_outward_directions(self):
         value = rc()
         edges = value['outline']['edges']

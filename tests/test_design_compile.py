@@ -553,11 +553,35 @@ class DesignCompileTests(unittest.TestCase):
             ],
             span,
         )
-        (self.captures / "supplier/C1.full.json").write_bytes(full + b" ")
-        with self.assertRaises(DesignError) as caught:
-            self.compile("refused")
-        self.assertIn("supplier/C1.full.json", str(caught.exception))
-        self.assertFalse((self.root / "refused").exists())
+        paths = ["supplier/C1.full.json", "supplier/C1.raweasy.json",
+                 "supplier/C1.capture.json", "supplier/C1.provenance.json"]
+        saved = {p: (self.captures / p).read_bytes() for p in paths}
+        for change, message in (("span", "span"), ("offset", "span"),
+                                ("response_hash", "full response"), ("provenance_hash", "provenance")):
+            with self.subTest(change=change):
+                for p, data in saved.items():
+                    (self.captures / p).write_bytes(data)
+                receipt_path = self.captures / "supplier/C1.capture.json"
+                receipt = json.loads(receipt_path.read_bytes())
+                provenance_path = self.captures / "supplier/C1.provenance.json"
+                provenance = json.loads(provenance_path.read_bytes())
+                if change == "span":
+                    changed = raw + b" "
+                    (self.captures / "supplier/C1.raweasy.json").write_bytes(changed)
+                    provenance.update(sha256=hashlib.sha256(changed).hexdigest(), size_bytes=len(changed))
+                    write_json(provenance_path, provenance)
+                elif change == "offset":
+                    receipt["byte_start"] += 1
+                    write_json(receipt_path, receipt)
+                elif change == "response_hash":
+                    (self.captures / "supplier/C1.full.json").write_bytes(full + b" ")
+                else:
+                    provenance["sha256"] = "0" * 64
+                    write_json(provenance_path, provenance)
+                seal_capture(self.captures)
+                with self.assertRaisesRegex(DesignError, message):
+                    self.compile("refused")
+                self.assertFalse((self.root / "refused").exists())
 
     def test_linked_capture_and_invalid_requirement_prefix_are_refused_before_output(
         self,
@@ -603,7 +627,7 @@ class DesignCompileTests(unittest.TestCase):
             )
             self.assertIn("6 mm", pair["provenance"]["citation"]["quote"])
 
-    def test_clearance_and_track_width_use_fab_floor_and_capture_provenance_is_honest(
+    def test_clearance_uses_fab_floor_track_width_uses_native_routing_default(
         self,
     ):
         self.compile()
@@ -611,9 +635,11 @@ class DesignCompileTests(unittest.TestCase):
         pro = json.loads((root / "project/owned.kicad_pro").read_bytes())
         default = pro["net_settings"]["classes"][0]
         self.assertEqual(default["clearance"], 0.1)
-        self.assertEqual(default["track_width"], 0.1)
+        self.assertEqual(default["track_width"], 0.2)
         derivation = json.loads((root / "project-rule-derivation.json").read_bytes())
         self.assertEqual(derivation["routing"]["clearance"]["selected"], 0.1)
+        self.assertIn("routing default", derivation["routing"]["track_width"]["basis"])
+        self.assertEqual(derivation["routing"]["track_width"]["native_default"], 0.2)
         facts = (root / "fab-sources/selected-facts.txt").read_text(encoding="utf-8")
         self.assertIn("https://jlcpcb.com/help/article/jlcpcb-copper-weight", facts)
         self.assertNotIn("https://jlcpcb.com/blog/pcb-copper-weight", facts)
@@ -855,23 +881,105 @@ class DesignCompileTests(unittest.TestCase):
                 )
 
     def test_connector_courtyard_must_reach_edge_after_rotation(self):
-        for angle, inset in ((0, 20), (270, 8), (0, 8)):
+        # Asymmetric courtyard: local +Y extent is 4, -Y extent is 1, X extent is 2.
+        path = self.captures / "cad/Owned.pretty/R2.kicad_mod"
+        path.write_bytes(path.read_bytes().replace(b"(end 2 1)", b"(end 2 4)"))
+        seal_capture(self.captures)
+        for angle, inset, accepted in ((90, 5, True), (270, 5, False),
+                                       (0, 3, True), (0, 3.1, False)):
             d = copy.deepcopy(self.design)
-            d["connectors"] = [
-                dict(
-                    reference="R1",
-                    edge="right",
-                    position_mm=10,
-                    inset_mm=inset,
-                    rotation_deg=angle,
-                    insertion="through_edge",
-                )
-            ]
-            with (
-                self.subTest(angle=angle, inset=inset),
-                self.assertRaisesRegex(DesignError, r"connectors\[0\].inset_mm"),
-            ):
-                compile_design(d, self.captures, self.root / "refused")
+            d["connectors"] = [dict(reference="R1", edge="right", position_mm=10,
+                                    inset_mm=inset, rotation_deg=angle, insertion="from_top")]
+            with self.subTest(angle=angle, inset=inset):
+                out = self.root / f"gap-{angle}-{inset}"
+                if accepted:
+                    compile_design(d, self.captures, out)
+                else:
+                    with self.assertRaisesRegex(DesignError, r"connectors\[0\].inset_mm"):
+                        compile_design(d, self.captures, out)
+
+    def test_through_edge_requires_local_axis_and_refuses_reversed_pose(self):
+        d = copy.deepcopy(self.design)
+        d["connectors"] = [dict(reference="R1", edge="right", position_mm=10,
+                                inset_mm=1, rotation_deg=90, insertion="through_edge")]
+        with self.assertRaisesRegex(DesignError, "R1.*footprint-local"):
+            compile_design(d, self.captures, self.root / "missing")
+        d["connectors"][0]["local_mating_axis"] = "y+"
+        compile_design(d, self.captures, self.root / "facing")
+        root = self.root / "facing/inputs"
+        from agent_ee.board_envelope import validate
+        from agent_ee.placement_predicates import envelope_declarations
+        env = validate((root / "envelope.json").read_bytes())
+        self.assertEqual(envelope_declarations(env)[0]["local_mating_axis"], "y+")
+        d["connectors"][0]["rotation_deg"] = 270
+        with self.assertRaisesRegex(DesignError, "R1: mating axis faces x-"):
+            compile_design(d, self.captures, self.root / "reversed")
+
+    def test_generated_claims_keep_scope_and_measurement_basis(self):
+        self.design["connectors"] = [dict(reference="R1", edge="left", position_mm=10,
+                                        inset_mm=1, rotation_deg=0, insertion="from_top")]
+        self.design["decoupling"] = [dict(capacitor="R2", device="R1", supply=["R1.1", "R2.1"],
+                                          **{"return": ["R1.2", "R2.2"]}, max_distance_mm=5)]
+        self.compile()
+        root = self.root / "bundle/inputs"
+        spec = (root / "spec.md").read_text()
+        self.assertIn("Mouth direction and physical mating access are not established by this check.", spec)
+        self.assertIn("This checks only declared pin assignments and undirected class/value relationships.", spec)
+        self.assertIn("not established by these witnesses", spec)
+        self.assertNotIn("size codes shall agree", spec)
+        placement = json.loads((root / "placement.json").read_bytes())
+        self.assertIn("Agent-selected measurement requirement; not an owner or datasheet ruling; final acceptance required",
+                      json.dumps(placement))
+
+    def test_plain_numeric_intent_compiles_markdown_structure_names_field(self):
+        from agent_ee.design import validate
+        for text in ("1.5 V board", "-5 V input", "#hashtag"):
+            d = copy.deepcopy(self.design)
+            d["intent"] = text
+            compile_design(d, self.captures, self.root / ("plain-" + str(len(text))))
+        for text in ("* x", "```code", "~~~code", "> quote", "1) item"):
+            d = copy.deepcopy(self.design)
+            d["intent"] = text
+            with self.subTest(text=text), self.assertRaisesRegex(DesignError, "intent:"):
+                validate(d)
+
+    def test_same_net_decoupling_and_diagonal_limit_are_refused(self):
+        from agent_ee.design import validate
+        d = copy.deepcopy(self.design)
+        d["board"].update(width_mm=30, height_mm=40)
+        pair = dict(capacitor="R2", device="R1", supply=["R1.1", "R2.1"],
+                    **{"return": ["R1.2", "R2.2"]}, max_distance_mm=50)
+        d["decoupling"] = [pair]
+        with self.assertRaisesRegex(DesignError, "diagonal"):
+            validate(d)
+        pair["max_distance_mm"] = 5
+        d["nets"] = dict(GND=["R1.1", "R2.1", "R1.2", "R2.2"])
+        d["functional"] = [dict(text="All terminals grounded.", witnesses=[dict(id="ground", type="pin_net", terminal="R1.1", net="GND")])]
+        with self.assertRaisesRegex(DesignError, "different nets"):
+            validate(d)
+
+    def test_device_symbol_families_cannot_lie_about_class(self):
+        from agent_ee.design import validate, device_class
+        for family, kind in (("R", "resistor"), ("C", "capacitor"), ("C_Polarized", "polarized_capacitor"),
+                             ("L", "inductor"), ("D", "diode"), ("LED", "led"),
+                             ("Fuse", "fuse"), ("FerriteBead", "ferrite")):
+            for suffix in ("", "_US", "_Small", "_Schottky"):
+                symbol = "Device:" + family + suffix
+                self.assertEqual(device_class(symbol), kind)
+                d = copy.deepcopy(self.design)
+                w = d["functional"][0]["witnesses"][0]
+                w.update(lib_id=symbol, **{"class": "capacitor" if kind == "resistor" else "resistor"})
+                with self.subTest(symbol=symbol), self.assertRaisesRegex(DesignError, "is class"):
+                    validate(d)
+        self.assertIsNone(device_class("Device:Rheostat"))
+
+    def test_fuse_current_value_is_executable(self):
+        from agent_ee.design import validate
+        from agent_ee.topology_rules import quantity, same_quantity
+        d = copy.deepcopy(self.design)
+        d["functional"][0]["witnesses"][0].update(value="500mA", **{"class": "fuse"})
+        validate(d)
+        self.assertTrue(same_quantity(quantity("500mA"), quantity("0.5 A")))
 
     def test_utf8_locality_provenance_and_missing_model_report(self):
         self.design["intent"] = "Résistance and 雪: synthetic UTF-8 design."
@@ -892,7 +1000,7 @@ class DesignCompileTests(unittest.TestCase):
             self.assertIn("Agent-selected measurement requirement", basis)
             self.assertIn("not an owner or datasheet ruling", basis)
         report = json.loads((root / "design-compile-report.json").read_bytes())
-        self.assertEqual(len(report["warnings"]), 2)
+        self.assertEqual(len([w for w in report["warnings"] if "no 3D model" in w]), 2)
         self.assertEqual(len(report["land_patterns"]), 2)
         self.assertIn("F.Cu", report["land_patterns"][0]["copper"])
         import os

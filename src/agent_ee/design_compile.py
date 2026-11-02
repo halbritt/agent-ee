@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .design import (
     CLASS_SYMBOLS,
+    device_class,
     DesignError,
     blob,
     footprint_path,
@@ -34,7 +35,7 @@ NATIVE = [
     "Native ERC shall report no electrical violations after schematic emission.",
     "Final native DRC shall report no errors and no unconnected items after zone refill.",
     "The emitted native netlist shall match the selected circuit topology exactly.",
-    "Every physical component shall match the selected identity, CAD assignment and population declaration; standard passive size codes shall agree with the catalog. Land-pattern overlap is diagnostic only.",
+    "Every physical component shall match the selected identity, CAD assignment and population declaration.",
     "Every populated component shall carry purchasing properties and current JLCPCB stock evidence.",
 ]
 
@@ -424,7 +425,7 @@ def envelope(design, root):
     from . import native_geometry_defaults
 
     # Default clearance stays at the sourced fab floor (owner decision).
-    # Raise only routing via dimensions to meet the unchanged native hole and
+    # Preserve native routing track width and raise via dimensions to meet the unchanged native hole and
     # annular-width checks.
     routing, routing_sources = {}, {}
     for item in netclass:
@@ -432,7 +433,7 @@ def envelope(design, root):
         native_value, citation = native_geometry_defaults.DEFAULTS[item["setting"]]
         routing[field] = (
             max(item["value"], native_value)
-            if field in ("via_diameter", "via_drill")
+            if field in ("via_diameter", "via_drill", "track_width")
             else item["value"]
         )
         routing_sources[field] = dict(
@@ -440,6 +441,7 @@ def envelope(design, root):
             native_default=native_value,
             native_citation=citation,
             selected=routing[field],
+            basis="fabrication clearance floor" if field == "clearance" else "routing default (at least pinned native default)",
         )
     annular, annular_citation = native_geometry_defaults.DEFAULTS[
         "board.design_settings.rules.min_via_annular_width"
@@ -648,7 +650,7 @@ def cpl_policy(design, root):
                     f"parts.{ref}.lcsc: supplier and native pad sets disagree; select matching CAD and part"
                 ]
             )
-        if c.POLARIZED.fullmatch(ref):
+        if c.POLARIZED.fullmatch(ref) or device_class(part["lib_id"]) in ("diode", "led", "polarized_capacitor"):
             from .symbol_library import parse_library, resolve_symbol
 
             lib, symbol = part["lib_id"].split(":")
@@ -657,13 +659,20 @@ def cpl_policy(design, root):
                 parse_library(path.read_bytes()), symbol, lib, digest(path)
             )
             names = {p["name"] for p in inventory if p["number"] == "1"}
-            board_polarity = c.polarity(next(iter(names))) if len(names) == 1 else None
+            board_name = next(iter(names)) if len(names) == 1 else None
+            board_polarity = c.polarity(board_name)
             supplier_pin = c._pad_with_board_polarity(
                 dict(raw=(root / provenance["path"]).read_bytes()),
                 lcsc,
                 supplier_pads,
                 board_polarity,
             )
+            polarity_notes = []
+            c.check_pin_polarity({}, polarity_notes,
+                                 dict(raw=(root / provenance["path"]).read_bytes()),
+                                 lcsc, supplier_pin, board_name)
+            if polarity_notes:
+                raise DesignError([f"parts.{ref}.lcsc: {n['mode']}: {n['message']}" for n in polarity_notes])
             if supplier_pin == "2":
                 supplier_pads = [
                     ({"1": "2", "2": "1"}[n], x, y) for n, x, y in supplier_pads
@@ -727,12 +736,20 @@ def cpl_policy(design, root):
             )
         else:
             rules[name] = offset
+    overlap_warnings = [
+        f"parts.{d['reference']}.footprint: measured copper overlap on {layer} is {metric['presented']['lower']} (below 0.5); inspect land-pattern suitability"
+        for d in diagnostics for layer, metric in d["copper"].items()
+        if Decimal(str(metric["presented"]["lower"])) < Decimal("0.5")
+    ]
+    for warning in overlap_warnings:
+        import warnings
+        warnings.warn(warning, UserWarning, stacklevel=2)
     write_json(
         root / "design-compile-report.json",
         dict(
             schema="agent-ee.design-compile-report/1",
             land_patterns=diagnostics,
-            warnings=[
+            warnings=overlap_warnings + [
                 f"parts.{ref}.footprint: no 3D model reference; component height cannot be established at package"
                 for ref, part in sorted(design["parts"].items())
                 if not children(

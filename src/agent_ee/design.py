@@ -59,6 +59,19 @@ def number(value):
     return type(value) is int or (type(value) is float and math.isfinite(value))
 
 
+def device_class(lib_id):
+    """Known Device two-terminal families; unfamiliar symbols remain declarations."""
+    if not lib_id or not lib_id.startswith("Device:"):
+        return None
+    name = lib_id.split(":", 1)[1]
+    for family, kind in (("C_Polarized", "polarized_capacitor"), ("FerriteBead", "ferrite"),
+                         ("Fuse", "fuse"), ("LED", "led"), ("R", "resistor"),
+                         ("C", "capacitor"), ("L", "inductor"), ("D", "diode")):
+        if name == family or name.startswith(family + "_"):
+            return kind
+    return None
+
+
 def validate(design, captures=None, *, cad_only=False):
     """Validate decisions and captured pin inventories without writing anything."""
     from .design_shape import problems
@@ -156,8 +169,15 @@ def validate(design, captures=None, *, cad_only=False):
             fail(path, "supply one nonempty paragraph on one line")
 
     prose(design["intent"], "intent")
-    if re.match(r"\s*(?:[#|>-]|[0-9]+[.)])", design["intent"]):
-        fail("intent", "start with paragraph text, not Markdown block syntax")
+    from .spec_record import Parser, SpecRefused
+
+    try:
+        parsed = Parser(("# Design intent\n\n" + design["intent"] + "\n").encode()).parse()
+        if (len(parsed.headings) != 1 or parsed.items or len(parsed.prose) != 1
+                or parsed.text(parsed.prose[0]["byte_start"], parsed.prose[0]["byte_end"]) != design["intent"].strip()):
+            fail("intent", "supply plain paragraph text; Markdown structure changes the generated spec")
+    except SpecRefused as exc:
+        fail("intent", f"supply plain paragraph text; {exc}")
     board = design["board"]
     if fields(
         board,
@@ -397,7 +417,7 @@ def validate(design, captures=None, *, cad_only=False):
                 "rotation_deg",
                 "insertion",
             ),
-            (),
+            ("local_mating_axis",),
             path,
         ):
             continue
@@ -453,6 +473,18 @@ def validate(design, captures=None, *, cad_only=False):
                     )
             except ValueError as exc:
                 fail(path + ".reference", str(exc))
+        from .placement_predicates import AXES, board_axis
+
+        axis = c.get("local_mating_axis")
+        if c["insertion"] == "through_edge" and axis is None:
+            fail(path + ".local_mating_axis", f"{ref}: declare the footprint-local mating axis")
+        if axis is not None and axis not in AXES:
+            fail(path + ".local_mating_axis", f"{ref}: choose x+, x-, y+ or y-")
+        elif axis is not None and c["insertion"] == "through_edge" and number(c["rotation_deg"]):
+            outward = {"left": "x-", "right": "x+", "top": "y-", "bottom": "y+"}.get(c["edge"])
+            faces = board_axis(axis, c["rotation_deg"], "F")
+            if faces != outward:
+                fail(path + ".rotation_deg", f"{ref}: mating axis faces {faces}, not declared edge {c['edge']} ({outward})")
         if c["insertion"] not in ("from_top", "through_edge"):
             fail(path + ".insertion", "choose from_top or through_edge")
     if not isinstance(design["decoupling"], list):
@@ -484,11 +516,11 @@ def validate(design, captures=None, *, cad_only=False):
                 and 0 < board["width_mm"] <= 670
                 and 0 < board["height_mm"] <= 600
                 and d["max_distance_mm"]
-                > math.hypot(board["width_mm"], board["height_mm"])
+                >= math.hypot(board["width_mm"], board["height_mm"])
             ):
                 fail(
                     path + ".max_distance_mm",
-                    "distance exceeds the board diagonal; supply a meaningful locality limit",
+                    "distance reaches or exceeds the board diagonal; supply a meaningful locality limit",
                 )
             nm = Decimal(str(d["max_distance_mm"])) * 1000000
             if nm != nm.to_integral_value():
@@ -496,6 +528,10 @@ def validate(design, captures=None, *, cad_only=False):
                     path + ".max_distance_mm",
                     "supply a distance representable in whole nanometres",
                 )
+        leg_nets = [{n for n, ts in nets.items() if set(d[key]) & set(ts)}
+                    for key in ("supply", "return")]
+        if leg_nets[0] & leg_nets[1]:
+            fail(path + ".return", "supply and return must use different nets")
         for key in ("supply", "return"):
             pair = d[key]
             if not isinstance(pair, list) or len(pair) != 2:
@@ -585,9 +621,7 @@ def validate(design, captures=None, *, cad_only=False):
                     if len(class_pins) != 2 or len(set(class_pins)) != 2:
                         fail(wp + ".pins", "supply two distinct pin numbers")
                     class_symbol = w.get("lib_id", CLASS_SYMBOLS.get(w["class"]))
-                    canonical_class = next(
-                        (k for k, v in CLASS_SYMBOLS.items() if v == class_symbol), None
-                    )
+                    canonical_class = device_class(class_symbol)
                     if canonical_class is not None and canonical_class != w["class"]:
                         fail(
                             wp + ".lib_id",

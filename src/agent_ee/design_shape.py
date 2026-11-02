@@ -95,7 +95,7 @@ def problems(design):
                 rotation_deg=None,
                 insertion=str,
             ),
-            {},
+            dict(local_mating_axis=str),
             f"connectors[{i}]",
         )
     for i, d in rows(design["decoupling"], "decoupling"):

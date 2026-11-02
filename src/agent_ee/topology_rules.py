@@ -44,11 +44,11 @@ PREFIX = {'p': Decimal('1e-12'), 'n': Decimal('1e-9'), 'u': Decimal('1e-6'), 'µ
           'μ': Decimal('1e-6'), 'm': Decimal('1e-3'), 'k': Decimal(1000), 'K': Decimal(1000),
           'M': Decimal(1000000), 'meg': Decimal(1000000), 'Meg': Decimal(1000000),
           'MEG': Decimal(1000000), 'G': Decimal(1000000000), 'R': Decimal(1), '': Decimal(1)}
-UNITS = {'Ω': 'ohm', 'ohm': 'ohm', 'ohms': 'ohm', 'Ohm': 'ohm', 'R': 'ohm', 'F': 'F', 'H': 'H', '': None}
+UNITS = {'Ω': 'ohm', 'ohm': 'ohm', 'ohms': 'ohm', 'Ohm': 'ohm', 'R': 'ohm', 'F': 'F', 'H': 'H', 'A': 'A', 'V': 'V', '': None}
 _PREFIXES = 'meg|Meg|MEG|[pnuµμmkKMG]'
 # Written values only: 4.7k, 100nF, 120R, 10 kΩ, 4k7, 4R7. Case is significant: m is milli, M is mega.
-PLAIN = re.compile(rf'(\d+(?:\.\d+)?)\s*({_PREFIXES})?\s*(Ω|ohms?|Ohm|F|H|R)?')
-RKM = re.compile(rf'(\d+)({_PREFIXES}|R)(\d+)\s*(Ω|F|H)?')
+PLAIN = re.compile(rf'(\d+(?:\.\d+)?)\s*({_PREFIXES})?\s*(Ω|ohms?|Ohm|F|H|A|V|R)?')
+RKM = re.compile(rf'(\d+)({_PREFIXES}|R)(\d+)\s*(Ω|F|H|A|V)?')
 
 
 def quantity(value):
@@ -660,7 +660,7 @@ def check_topology_rules(ctx):
         summary=f"Topology rules: {report['outcome']}; {len(report['records'])} rule(s), "
                 f"{len(report['violations'])} violation(s) {report['violations']}, "
                 f"{len(report['unknown'])} unknown {report['unknown']}")
-    ctx.result['limitations'].append('Exported-net structure only, against owner-declared classes and rules. '
+    ctx.result['limitations'].append('Exported-net structure only, against declared classes and rules. '
         'DNP parts are excluded from population-based rules. No prose parsing, electrical adequacy, '
         'tolerance, proximity, routing or geometry; values are compared only for declared equality.')
 

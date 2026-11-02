@@ -152,3 +152,29 @@ class CompileCplTests(unittest.TestCase):
         self.assertIn(
             "no suitability threshold", report["land_patterns"][0]["limitation"]
         )
+
+    def test_any_explicit_imperial_footprint_size_is_checked(self):
+        from agent_ee.design_geometry import passive_size_mismatch
+        for prefix in ("R", "C", "L", "Fuse", "LED", "D", "Other"):
+            with self.subTest(prefix=prefix):
+                self.assertEqual(passive_size_mismatch(dict(footprint=f"Owned:{prefix}_1206_3216Metric"), "0603"), ("1206", "0603"))
+        self.assertIsNone(passive_size_mismatch(dict(footprint="Owned:SOT-23-5"), "0603"))
+
+    def test_low_copper_overlap_warns_in_stderr_and_report(self):
+        with self.assertWarnsRegex(UserWarning, "parts.R1.*below 0.5"):
+            self.policy(chip_kicad(1, 1, 1), component("C1", chip(4, 2, 2)))
+        report = json.loads((self.root / "design-compile-report.json").read_bytes())
+        self.assertTrue(any("parts.R1" in w and "below 0.5" in w for w in report["warnings"]))
+
+    def test_unknown_and_contradictory_supplier_polarity_refuse_at_compile(self):
+        symbol = ('(kicad_symbol_lib (version 20241209) (generator "owned") '
+                  + GEN._definition("R", [(1, [("1", 0, "passive", "K"), ("2", 180, "passive", "A")])]) + ")")
+        original = self.root
+        for index, (name, message) in enumerate((("", "polarity_unknown"), ("A", "polarity_conflict"))):
+            self.root = original / str(index)
+            self.root.mkdir()
+            (self.root / "Owned.kicad_sym").write_text(symbol)
+            for directory in ("supplier", "named", "Owned.pretty"):
+                (self.root / directory).mkdir()
+            with self.subTest(name=name), self.assertRaisesRegex(DesignError, "parts.D1.*" + message):
+                self.policy(DIODE_PADS.format(k="K", a="A"), diode_supplier("C1", name, pin2_name=name), ref="D1")

@@ -883,7 +883,7 @@ def validate_fixed(footprints, vertices, edges):
         ref = footprint['reference']
         fields(footprint, f'fixed footprint {ref}', ['reference', 'side', 'edge', 'position_mm', 'inset_mm',
                                                      'rotation_deg', 'insertion', 'tolerance_mm'],
-               ['courtyard_overhangs'])
+               ['courtyard_overhangs', 'local_mating_axis'])
         if footprint['side'] not in SIDES:
             raise ValueError(f'fixed footprint {ref} side must be front or back')
         if not isinstance(footprint['edge'], str) or footprint['edge'] not in edges:
@@ -905,6 +905,13 @@ def validate_fixed(footprints, vertices, edges):
             raise ValueError(f'fixed footprint {ref} insertion must be one of {list(INSERTIONS)}')
         if (footprint['side'], insertion) in (('front', 'from_bottom'), ('back', 'from_top')):
             raise ValueError(f'fixed footprint {ref} on the {footprint["side"]} side cannot be mated {insertion}')
+        if 'local_mating_axis' in footprint:
+            from .placement_predicates import AXES, board_axis
+            axis = footprint['local_mating_axis']
+            if axis not in AXES:
+                raise ValueError(f'fixed footprint {ref} local_mating_axis must be x+, x-, y+ or y-')
+            if insertion == 'through_edge' and board_axis(axis, rotation, SIDES[footprint['side']]) != edge['outward']:
+                raise ValueError(f'fixed footprint {ref} mating axis does not face edge {edge["name"]}')
         (sx, sy), (ux, uy), (ix, iy) = edge['_start'], edge['_unit'], edge['_inward']
         anchor = (sx + ux * position + ix * inset, sy + uy * position + iy * inset)
         if not inside(anchor, vertices):
@@ -917,6 +924,8 @@ def validate_fixed(footprints, vertices, edges):
                   'mating_axis': edge['outward'] if insertion == 'through_edge' else
                   ('z-' if insertion == 'from_top' else 'z+'),
                   'tolerance_mm': mm(tolerance)}
+        if 'local_mating_axis' in footprint:
+            record['local_mating_axis'] = footprint['local_mating_axis']
         if 'courtyard_overhangs' in footprint:
             record['courtyard_overhangs'] = courtyard_overhangs(footprint['courtyard_overhangs'], ref, edges)
         records.append(record)
@@ -1348,8 +1357,8 @@ def derive_requirements(record, source_path):
                               f"({fixed['layer']}) with its origin {fixed['position_mm']} mm along edge "
                               f"{fixed['edge']} and {fixed['inset_mm']} mm inward, at "
                               f"{point_text(fixed['anchor_mm'])} mm, rotation {fixed['rotation_deg']} deg, "
-                              f"within {fixed['tolerance_mm']} mm; it is mated {fixed['insertion']} "
-                              f"(mating axis {fixed['mating_axis']})." + (
+                              f"within {fixed['tolerance_mm']} mm; it is mated {fixed['insertion']}" +
+                              (f" (mating axis {fixed['mating_axis']})." if 'local_mating_axis' in fixed else ".") + (
                                   ' Its courtyard may extend beyond the outline only by at most ' +
                                   '; '.join(f"{o['max_mm']} mm across edge {o['edge']}"
                                             for o in fixed['courtyard_overhangs']) +

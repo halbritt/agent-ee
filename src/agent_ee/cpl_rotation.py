@@ -586,8 +586,11 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
     # A two-pad polarized part can be numbered oppositely by its supplier. Its orientation is
     # then the position of the board's pin-1 polarity, not of the supplier's pad numbered 1.
     supplier_pin = '1'
-    if POLARIZED.fullmatch(ref):
+    board_name = board_basis = board_note = None
+    if POLARIZED.fullmatch(ref) or board_numbers == ['1', '2']:
         board_name, board_basis, board_note = _board_pin1_name(found, ref, netlist, lcsc, pad_nets, mode)
+    polarized = bool(POLARIZED.fullmatch(ref)) or (board_numbers == ['1', '2'] and polarity(board_name) is not None)
+    if polarized:
         supplier_pin = _pad_with_board_polarity(supplier, lcsc, supplier_pads, polarity(board_name))
         if supplier_pin != '1':
             supplier_pads = [({'1': '2', '2': '1'}[number], x, y) for number, x, y in supplier_pads]
@@ -606,45 +609,55 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
     elif Decimal(offset) != turn(delta):
         mode('rotation_conflict', f'policy rotation {delta} differs from the supplier-to-board pin-1 '
                                   f'offset {offset}')
-    if POLARIZED.fullmatch(ref):
-        try:
-            pins = [p for p in symbol_pins(supplier['raw'], lcsc)['pins'] if p['number'] == supplier_pin]
-        except SupplierError as exc:
-            pins = [{'name': None, 'displayed': f'unreadable: {exc}'}]
-        # One pin whose displayed number agrees; anything else stays unresolved.
-        supplier_name = pins[0]['name'] if len(pins) == 1 and pins[0]['displayed'] == supplier_pin else None
-        supplier_basis, supplier_note, used = SUPPLIER_BASES[0], None, None
-        if evidence is not None:
-            declared = evidence['pin_polarity'].get(supplier_pin)
-            if evidence['supplier_capture_sha256'] != supplier['sha256']:
-                supplier_note = 'polarity evidence is bound to another supplier capture'
-            elif not partnumber:
-                supplier_note = f'export BOM records no Partnumber for {ref}; evidence MPN {evidence["mpn"]!r} cannot bind'
-            elif evidence['mpn'] != partnumber:
-                supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from BOM part {partnumber!r}'
-            elif netlist is not None and netlist.get('mpn') and evidence['mpn'] != netlist['mpn']:
-                supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from netlist part {netlist["mpn"]!r}'
-            elif polarity(supplier_name) is not None and polarity(supplier_name) != declared:
-                mode('polarity_conflict', f'supplier symbol pin {supplier_pin} {supplier_name!r} contradicts '
-                                          f'polarity evidence {declared}')
-            elif polarity(supplier_name) is None:
-                supplier_name, supplier_basis = declared, SUPPLIER_BASES[1]
-                used = {'path': evidence['path'], 'manufacturer_source': evidence['manufacturer_source'],
-                        'package_feature_ids': evidence['package_feature_ids'],
-                        'symbol_feature_ids': evidence['symbol_feature_ids'], 'limitation': evidence['limitation']}
-        sides = {'board': polarity(board_name), 'supplier': polarity(supplier_name)}
-        record['polarity'] = dict(sides, board_pin1_function=board_name, supplier_pin1_name=supplier_name,
-                                  board_basis=board_basis, supplier_basis=supplier_basis, evidence=used)
-        if any(n['mode'] == 'polarity_conflict' for n in notes):
-            pass
-        elif None in sides.values():
-            mode('polarity_unknown', f'pin-1 polarity unresolved: board {board_name!r}'
-                                     + (f' ({board_note})' if board_note else '')
-                                     + f', supplier pin-1 records {pins}'
-                                     + (f' ({supplier_note})' if supplier_note else ''))
-        elif sides['board'] != sides['supplier']:
-            mode('polarity_conflict', f'board pin 1 is {sides["board"]}, supplier pin 1 is {sides["supplier"]}')
+    if polarized:
+        check_pin_polarity(record, notes, supplier, lcsc, supplier_pin, board_name,
+                           board_basis=board_basis, board_note=board_note, evidence=evidence,
+                           partnumber=partnumber, netlist=netlist, ref=ref)
 
+
+def check_pin_polarity(record, notes, supplier, lcsc, supplier_pin, board_name, *,
+                       board_basis=BOARD_BASES[0], board_note=None, evidence=None,
+                       partnumber=None, netlist=None, ref=None):
+    """Shared compile/package polarity gate after supplier pin registration."""
+    def mode(name, message):
+        notes.append({'mode': name, 'message': message})
+    try:
+        pins = [p for p in symbol_pins(supplier['raw'], lcsc)['pins'] if p['number'] == supplier_pin]
+    except SupplierError as exc:
+        pins = [{'name': None, 'displayed': f'unreadable: {exc}'}]
+    # One pin whose displayed number agrees; anything else stays unresolved.
+    supplier_name = pins[0]['name'] if len(pins) == 1 and pins[0]['displayed'] == supplier_pin else None
+    supplier_basis, supplier_note, used = SUPPLIER_BASES[0], None, None
+    if evidence is not None:
+        declared = evidence['pin_polarity'].get(supplier_pin)
+        if evidence['supplier_capture_sha256'] != supplier['sha256']:
+            supplier_note = 'polarity evidence is bound to another supplier capture'
+        elif not partnumber:
+            supplier_note = f'export BOM records no Partnumber for {ref}; evidence MPN {evidence["mpn"]!r} cannot bind'
+        elif evidence['mpn'] != partnumber:
+            supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from BOM part {partnumber!r}'
+        elif netlist is not None and netlist.get('mpn') and evidence['mpn'] != netlist['mpn']:
+            supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from netlist part {netlist["mpn"]!r}'
+        elif polarity(supplier_name) is not None and polarity(supplier_name) != declared:
+            mode('polarity_conflict', f'supplier symbol pin {supplier_pin} {supplier_name!r} contradicts '
+                                      f'polarity evidence {declared}')
+        elif polarity(supplier_name) is None:
+            supplier_name, supplier_basis = declared, SUPPLIER_BASES[1]
+            used = {'path': evidence['path'], 'manufacturer_source': evidence['manufacturer_source'],
+                    'package_feature_ids': evidence['package_feature_ids'],
+                    'symbol_feature_ids': evidence['symbol_feature_ids'], 'limitation': evidence['limitation']}
+    sides = {'board': polarity(board_name), 'supplier': polarity(supplier_name)}
+    record['polarity'] = dict(sides, board_pin1_function=board_name, supplier_pin1_name=supplier_name,
+                              board_basis=board_basis, supplier_basis=supplier_basis, evidence=used)
+    if any(n['mode'] == 'polarity_conflict' for n in notes):
+        pass
+    elif None in sides.values():
+        mode('polarity_unknown', f'pin-1 polarity unresolved: board {board_name!r}'
+                                 + (f' ({board_note})' if board_note else '')
+                                 + f', supplier pin-1 records {pins}'
+                                 + (f' ({supplier_note})' if supplier_note else ''))
+    elif sides['board'] != sides['supplier']:
+        mode('polarity_conflict', f'board pin 1 is {sides["board"]}, supplier pin 1 is {sides["supplier"]}')
 
 def aggregate(records):
     defects = [r for r in records if r['outcome'] == 'defect']

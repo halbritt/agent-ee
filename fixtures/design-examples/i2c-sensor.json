@@ -22,6 +22,7 @@
       "edge": "right",
       "insertion": "through_edge",
       "inset_mm": 3.3,
+      "local_mating_axis": "y+",
       "position_mm": 15,
       "reference": "J2",
       "rotation_deg": 90

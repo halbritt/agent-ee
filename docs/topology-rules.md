@@ -128,7 +128,7 @@ A rule file that does not parse or validate makes execution `malformed`.
 
 ## Limits
 
-These are exported-net structure rules against owner-declared classes. The
+These are exported-net structure rules against declared classes. The
 oracle does not know whether a requirement's prose is fully covered by its
 rules; the owner reviews that mapping. It does not check proximity, routing,
 current capacity, tolerance or ratings.

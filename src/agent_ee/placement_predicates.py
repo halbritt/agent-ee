@@ -441,7 +441,7 @@ def envelope_declarations(validation):
                              'end': _point_nm(edge['end_mm'], 'edge end'), 'outward': edge['outward']},
                     'anchor': _point_nm(fixed['anchor_mm'], 'anchor'), 'inset_nm': inset,
                     'tolerance_nm': tolerance, 'rotation_deg': rotation, 'insertion': fixed['insertion'],
-                    'local_mating_axis': None,
+                    'local_mating_axis': fixed.get('local_mating_axis'),
                     'source': {'envelope_id': validation['envelope_id'],
                                'envelope_sha256': validation['envelope_sha256'],
                                'pointer': f'/fixed_footprints/{index}'}})
