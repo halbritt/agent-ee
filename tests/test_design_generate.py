@@ -1,6 +1,7 @@
 """Scripted subscription boundary; no network, model or native KiCad process."""
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -76,6 +77,15 @@ class GenerateTests(unittest.TestCase):
                 self.assertTrue((root / name).is_file(), name)
             self.assertTrue((root / 'review-attempts/author/0/execution.json').is_file())
         self.assertEqual(json.loads((self.root / 'run/generate-report.json').read_text()), report)
+
+    def test_retained_requirements_and_hash_preserve_original_bytes(self):
+        raw = b'Build a compact divider.\r\nMeasure it on hardware.\r\n'
+        self.requirements.write_bytes(raw)
+        self.responses = [self.response()]
+        report = self.generate()
+        self.assertTrue(report['accepted'])
+        self.assertEqual((self.root / 'run/requirements.md').read_bytes(), raw)
+        self.assertEqual(report['requirements_sha256'], hashlib.sha256(raw).hexdigest())
 
     def test_additional_requirement_traces_accept_existing_fields_only(self):
         response = self.response()

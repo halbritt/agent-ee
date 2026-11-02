@@ -275,7 +275,8 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
     if type(search_retries) is not int or not 0 <= search_retries <= 8:
         raise ValueError('search_retries: must be an integer from 0 to 8')
     requirements_path, out = Path(requirements_path), Path(out).resolve()
-    requirements = requirements_path.read_text(encoding='utf-8')
+    requirements_raw = requirements_path.read_bytes()
+    requirements = requirements_raw.decode('utf-8')
     if not requirements.strip():
         raise ValueError('requirements: supply nonempty text')
     if review_profile is not None:
@@ -285,7 +286,7 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
     root = Path(context_root) if context_root else Path(__file__).resolve().parents[2]
     out.mkdir(parents=True, exist_ok=False)
     prepare_context(root, out / 'context')
-    (out / 'requirements.md').write_text(requirements, encoding='utf-8')
+    (out / 'requirements.md').write_bytes(requirements_raw)
     if review_profile:
         shutil.copyfile(review_profile, out / 'review-profile.json')
         review_profile = out / 'review-profile.json'
