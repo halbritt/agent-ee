@@ -473,8 +473,8 @@ class StageContext:
     def custom_geometry(self, data, footprint):
         """Execute supervised custom-pad probe and parse footprint geometry."""
         from .footprint_library import FootprintError
-        parent = Path('/work/library-probes') if self.scratch == Path('/work/out') else self.scratch / 'library-probes'
-        parent.mkdir(exist_ok=True)
+        parent = self.scratch / 'library-probes'
+        parent.mkdir(parents=True, exist_ok=True)
         if parent.is_symlink() or parent.resolve() != parent:
             raise ValueError('custom-pad scratch must stay in outer work')
         root = Path(tempfile.mkdtemp(prefix='member-', dir=parent))

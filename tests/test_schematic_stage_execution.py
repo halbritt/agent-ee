@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agent_ee import forward_annotation as fa, native_run, schematic_stage
+from agent_ee import forward_annotation as fa, native_run, schematic_stage, stage_execution
 from agent_ee.stage_execution import ConfinementView, StageContext
 from tests.test_custom_pad_index import custom
 
@@ -248,6 +248,36 @@ class StageExecutionTests(unittest.TestCase):
         self.assertTrue(all(Path(c.env['HOME']).parent/'footprint.json' in
                             list((self.root/'library-probes').glob('member-*/work/footprint.json'))
                             for c in geometry))
+
+    def test_default_stage_context_custom_geometry_executes_within_scratch(self):
+        from tests.test_custom_pad_execution import TEXT as CUSTOM_TEXT, REPORT as CUSTOM_REPORT
+        with tempfile.TemporaryDirectory() as tmp:
+            cand = Path(tmp) / 'cand'
+            work = Path(tmp) / 'work'
+            cand.mkdir()
+            work.mkdir()
+            (work / 'out').mkdir()
+            real_path = Path
+            def paths(value):
+                v = str(value)
+                for virtual, actual in (('/candidate', cand), ('/work', work)):
+                    if v == virtual or v.startswith(virtual + '/'):
+                        return actual / v.removeprefix(virtual).lstrip('/')
+                return real_path(value)
+            with patch.object(stage_execution, 'Path', side_effect=paths), \
+                 patch.object(fa, '__file__', '/tool/agent-ee/agent_ee/forward_annotation.py'), \
+                 patch.object(Path, 'read_text', return_value=mount_view()):
+                ctx = StageContext(ConfinementView.STAGE_TOOL)
+                self.assertEqual(ctx.scratch, paths('/work/out'))
+                def native(intent, *, work, **kwargs):
+                    Path(work).mkdir(parents=True, exist_ok=True)
+                    (Path(work) / 'footprint.json').write_text(json.dumps(CUSTOM_REPORT))
+                    return {'execution': 'ok'}
+                with patch.object(native_run, 'run', side_effect=native):
+                    report = ctx.custom_geometry(CUSTOM_TEXT.encode(), {'name': 'OwnedCustom'})
+                self.assertEqual(report, CUSTOM_REPORT)
+                self.assertTrue((work / 'out' / 'library-probes').is_dir())
+                self.assertFalse((work / 'library-probes').exists())
 
     def test_custom_native_refusals_identify_the_member_and_stay_unknown(self):
         self.install_custom(name='Unused')
