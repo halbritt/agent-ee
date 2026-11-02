@@ -156,6 +156,22 @@ def failed_checks(root):
     return failures
 
 
+def placement_findings(root):
+    """Expose the job's concrete rejection rather than only its stage status."""
+    result = []
+    for path in sorted(root.glob('stages/*/placement/job-report.json')):
+        job = design.load(path)
+        result.append(dict(path=str(path), status=job['status'], reason=job.get('reason'),
+            final={k: job.get('final', {}).get(k) for k in
+                   ('opens', 'errors', 'warnings', 'integrity', 'edge_intent', 'locality')},
+            shortlist=[{k: row[k] for k in ('seed', 'error', 'engine_violations', 'errors',
+                'locality', 'edge_intent', 'integrity_problems') if k in row}
+                for row in job.get('shortlist', [])[:8]],
+            routing_trials=[{k: row[k] for k in ('seed', 'status', 'error', 'final') if k in row}
+                for row in job.get('routing_trials', [])[:8]]))
+    return result
+
+
 def execution_error(record, attempt, label):
     directory = attempt / (label + '-execution')
     text = '\n'.join(p.read_text(errors='replace') for p in (directory / 'stderr.log', directory / 'stdout.log') if p.is_file())
@@ -181,7 +197,7 @@ def outline_utilisation(run, statement):
     report = read_optional(run / 'build-report.json')
     if not report or not report.get('candidate'):
         return dict(status='unavailable', reason='No completed native candidate')
-    boards = sorted((run / report['candidate']).glob('*.kicad_pcb'))
+    boards = sorted((run / report['candidate']).rglob('*.kicad_pcb'))
     if len(boards) != 1:
         return dict(status='unavailable', reason='No unique native board in selected candidate')
     node = parse_sexpr(boards[0].read_bytes())
@@ -300,6 +316,7 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                     report['status'] = 'unsupported'
                     break
                 (attempt / 'statement.json').write_text(response['statement_json'], encoding='utf-8')
+                current = response['statement_json']
                 try:
                     current = design.load(attempt / 'statement.json')
                 except ValueError as exc:
@@ -330,7 +347,7 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                     remaining(deadline))
                 build = read_optional(run / 'build-report.json')
                 row.update(bundle=str(bundle), run=str(run), failed_checks=failed_checks(run),
-                    outline_utilisation=outline_utilisation(run, current))
+                    placement_findings=placement_findings(run), outline_utilisation=outline_utilisation(run, current))
                 qualification = read_optional(run / 'qualification.json')
                 file_pass = bool(build and build.get('accepted') is True and qualification
                     and qualification.get('mode') == 'typed'
@@ -381,11 +398,12 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
             except PhaseFailure as exc:
                 row.update(status='failed', failing_stage=exc.stage, reason=str(exc),
                     refusal_classes=refusal_classes(str(exc)))
-                feedback = f'Failing stage: {exc.stage}\nReason: {exc}\nCheck findings: ' + json.dumps(row['failed_checks'])
+                feedback = (f'Failing stage: {exc.stage}\nReason: {exc}\nCheck findings: '
+                    + json.dumps(row['failed_checks']) + '\nPlacement findings: ' + json.dumps(row.get('placement_findings', [])))
                 (attempt / 'refusal.txt').write_text(str(exc), encoding='utf-8')
                 if exc.stage in ('capture', 'compile') and not row['refusal_classes']:
                     row['tool_gap'] = 'Refusal does not name a design field'
-                if exc.stage in ('build', 'placement-routing') and any(s in str(exc) for s in
+                if exc.stage in ('build', 'placement-routing') and any(s in feedback for s in
                         ('is not the pinned', 'kicad-route pin', 'pinned code', 'router checkout')):
                     report['status'] = 'runtime_refused'
                     break
@@ -446,6 +464,8 @@ def benchmark(directory, out, **options):
                 duration_s=generated['duration_s'], report=str(run / 'generate-report.json'),
                 refusal_classes=sorted({c for r in rows for c in r['refusal_classes']}),
                 failed_checks=[dict(attempt=r['number'], checks=r['failed_checks']) for r in rows if r['failed_checks']],
+                placement_findings=[dict(attempt=r['number'], findings=r['placement_findings'])
+                    for r in rows if r.get('placement_findings') and r['status'] != 'accepted'],
                 failing_stages=sorted({r['failing_stage'] for r in rows if 'failing_stage' in r}),
                 outline_utilisation=next((r['outline_utilisation'] for r in reversed(rows) if 'outline_utilisation' in r),
                     dict(status='unavailable', reason='No native build reached'))))

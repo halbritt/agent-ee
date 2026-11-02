@@ -77,6 +77,16 @@ class GenerateTests(unittest.TestCase):
             self.assertTrue((root / 'review-attempts/author/0/execution.json').is_file())
         self.assertEqual(json.loads((self.root / 'run/generate-report.json').read_text()), report)
 
+    def test_invalid_json_is_retained_and_returned_to_author(self):
+        bad = self.response()
+        bad['statement_json'] = '{broken: 1}'
+        self.responses = [bad, self.response()]
+        report = self.generate(max_attempts=2)
+        self.assertTrue(report['accepted'])
+        self.assertIn('{broken: 1}', self.prompts[1])
+        self.assertIn('statement_json', report['attempts'][0]['refusal_classes'])
+        self.assertEqual((self.root / 'run/attempt-001/statement.json').read_text(), '{broken: 1}')
+
     def test_attempt_limit_and_bad_trace_never_launch_capture(self):
         response = self.response()
         response['trace'][0]['quote'] = 'not in the requirements'
@@ -186,7 +196,7 @@ class GenerateTests(unittest.TestCase):
             if calls[0] == 1:
                 path = attempt / 'build/stages/05-placement/placement'
                 path.mkdir(parents=True)
-                write_json(path / 'job-report.json', dict(status='route_failed'))
+                write_json(path / 'job-report.json', dict(status='route_failed', reason='one open', final=dict(opens=1)))
         with patch.object(self, 'build_report', wraps=self.build_report) as report_mock:
             # Preserve the normal report writer while scripting just the build boundary.
             original = self.step
@@ -201,6 +211,7 @@ class GenerateTests(unittest.TestCase):
         self.assertTrue(report['accepted'])
         self.assertEqual(len(self.prompts), 1)
         self.assertEqual(report['attempts'][1]['kind'], 'search_retry')
+        self.assertEqual(report['attempts'][0]['placement_findings'][0]['final']['opens'], 1)
         first = json.loads((self.root / 'run/attempt-001/statement.json').read_text())
         second = json.loads((self.root / 'run/attempt-002/statement.json').read_text())
         self.assertEqual(second.pop('placement')['seeds'], 8)
@@ -233,7 +244,8 @@ class GenerateTests(unittest.TestCase):
         candidate = run / 'stages/package/candidate'
         candidate.mkdir(parents=True)
         write_json(run / 'build-report.json', dict(candidate='stages/package/candidate'))
-        (candidate / 'owned.kicad_pcb').write_text('''(kicad_pcb
+        (candidate / 'project').mkdir()
+        (candidate / 'project/owned.kicad_pcb').write_text('''(kicad_pcb
           (footprint "one" (at 10 20 90)
             (fp_rect (start 0 0) (end 2 4) (layer "F.CrtYd")))
           (footprint "two" (at 12 20)
