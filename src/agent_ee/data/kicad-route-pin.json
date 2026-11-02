@@ -190,7 +190,7 @@
   "src/kicad_route/router/py_router/pack_river.py": "34d54fb0f9ae956ab0507fa818cf604fdc8816a0b54508f23db9c742e7c31dc0",
   "src/kicad_route/router/py_router/paste_apertures.py": "0c7a864b934ae7ec812f0fb091d16385f442b8472fa34885b85f20219e7e6031",
   "src/kicad_route/router/py_router/pcb_io_utils.py": "a128f2dc42e869dc46ac240d739e6523eb31a75ffec85798c396784ab7606892",
-  "src/kicad_route/router/py_router/pcb_modification.py": "d084466b95b1ce5c803a31512ab867fe0061a42b928cff39c3ccf6658a355d0a",
+  "src/kicad_route/router/py_router/pcb_modification.py": "06194399d5c73f38d6ca466905a370b7c4763e6407e274aedd42853ebe664adb",
   "src/kicad_route/router/py_router/phase3_routing.py": "a98915bd729750687ff251a07118e04e510bd4366fa3ac8700cf10455c4ed8f3",
   "src/kicad_route/router/py_router/place_motion.py": "9fa0574956f290e947a1c842f0d6ffe38a7e8ff42b881ecf7b94780e78d00f09",
   "src/kicad_route/router/py_router/plane_blocker_detection.py": "c439b516ff466034902153e29a52969d16002891506ada7d6b61d5f7ca1931d1",
@@ -316,6 +316,6 @@
   "src/kicad_route/stall.py": "095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188",
   "src/kicad_route/statemanifest.py": "40c60f955e643b651128963cd9720c29e6dbbf4dcd25c68c12616fb0a1972322"
  },
- "pin": "60a9bdb04d25518261fc94f864a564d925218c0f",
+ "pin": "4ae1c4a899556f0c1d8df896aaeb93db3bc7e5ec",
  "schema": "agent-ee.kicad-route-pin/1"
 }
