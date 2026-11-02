@@ -492,6 +492,23 @@ def evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance
     return records, applied, unmatched
 
 
+def _board_pin1_polarity(found, reference, netlist):
+    return polarity(_board_pin1_function(found, reference)) or (
+        polarity(netlist['pins'].get('1')) if netlist is not None else None)
+
+
+def _pad_with_board_polarity(supplier, lcsc, pads, board_polarity):
+    """The supplier pad number that carries the board's pin-1 polarity on a two-pad part."""
+    if board_polarity is None or sorted(pad[0] for pad in pads) != ['1', '2']:
+        return '1'
+    try:
+        names = {pin['number']: polarity(pin['name']) for pin in symbol_pins(supplier['raw'], lcsc)['pins']
+                 if pin['displayed'] == pin['number']}
+    except SupplierError:
+        return '1'
+    return '2' if names.get('1') not in (None, board_polarity) and names.get('2') == board_polarity else '1'
+
+
 def _same_pads_apart_from_extras(board, supplier):
     """Equal pad sets, or sets that differ only in a tab or two mounting pads.
 
@@ -533,6 +550,14 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
     pin1 = {'supplier_provenance': supplier['provenance'], 'supplier_sha256': supplier['sha256'],
             'package': package['identity']['package']}
     record['pin1'] = pin1
+    # A two-pad polarized part can be numbered oppositely by its supplier. Its orientation is
+    # then the position of the board's pin-1 polarity, not of the supplier's pad numbered 1.
+    supplier_pin = '1'
+    if POLARIZED.fullmatch(ref):
+        supplier_pin = _pad_with_board_polarity(supplier, lcsc, supplier_pads, _board_pin1_polarity(found, ref, netlist))
+        if supplier_pin != '1':
+            supplier_pads = [({'1': '2', '2': '1'}[number], x, y) for number, x, y in supplier_pads]
+            pin1['supplier_pin_with_board_polarity'] = supplier_pin
     board_numbers, supplier_numbers = sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)
     if not _same_pads_apart_from_extras(board_numbers, supplier_numbers):
         return mode('pad_set_mismatch', 'board and supplier pad numbers differ: '
@@ -577,11 +602,11 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
                 mode('polarity_conflict', f'board pad 1 pinfunction {board_name!r} contradicts sealed netlist '
                                           f'libpart pin 1 {netlist_name!r}')
         try:
-            pins = [p for p in symbol_pins(supplier['raw'], lcsc)['pins'] if p['number'] == '1']
+            pins = [p for p in symbol_pins(supplier['raw'], lcsc)['pins'] if p['number'] == supplier_pin]
         except SupplierError as exc:
             pins = [{'name': None, 'displayed': f'unreadable: {exc}'}]
-        # One pin 1 whose displayed number agrees; anything else stays unresolved.
-        supplier_name = pins[0]['name'] if len(pins) == 1 and pins[0]['displayed'] == '1' else None
+        # One pin whose displayed number agrees; anything else stays unresolved.
+        supplier_name = pins[0]['name'] if len(pins) == 1 and pins[0]['displayed'] == supplier_pin else None
         supplier_basis, supplier_note, used = SUPPLIER_BASES[0], None, None
         if evidence is not None:
             declared = evidence['pin_polarity'].get('1')

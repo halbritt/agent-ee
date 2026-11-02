@@ -235,13 +235,14 @@ def soic_supplier(lcsc='C1', *, flip=False):
     return component(lcsc, shapes)
 
 
-def diode_supplier(lcsc, pin1_name):
-    data = json.loads(component(lcsc, [pad('RECT', 3993.7, 3000, 3.5, 4.7, '1', ident='a'),
-                                       pad('RECT', 4006.3, 3000, 3.5, 4.7, '2', ident='b')]))
+def diode_supplier(lcsc, pin1_name, pin2_name='X', pin1_on_right=False):
+    left, right = ('2', '1') if pin1_on_right else ('1', '2')
+    data = json.loads(component(lcsc, [pad('RECT', 3993.7, 3000, 3.5, 4.7, left, ident='a'),
+                                       pad('RECT', 4006.3, 3000, 3.5, 4.7, right, ident='b')]))
     data['dataStr']['shape'] = [
         f'P~show~0~1~-20~0~180~p1~0^^-20~0^^M -20 0 h 15~#880000^^0~-2~3~0~{pin1_name}~start~~~#0000FF'
         '^^0~-11~-1~0~1~end~~~#0000FF^^0~-8~0^^0~M -5 3',
-        'P~show~0~2~20~0~0~p2~0^^20~0^^M 20 0 h -15~#880000^^0~2~3~0~X~end~~~#0000FF'
+        f'P~show~0~2~20~0~0~p2~0^^20~0^^M 20 0 h -15~#880000^^0~2~3~0~{pin2_name}~end~~~#0000FF'
         '^^0~11~-1~0~2~start~~~#0000FF^^0~8~0^^0~M 5 -3']
     return json.dumps(data, sort_keys=True).encode()
 
@@ -341,13 +342,29 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual([m['mode'] for m in records[0]['modes']], ['reflection'])
         self.assertIsNone(records[0]['pin1']['offset_degrees'])
 
-    def diode_case(self, board_pin1, supplier_pin1):
+    def diode_case(self, board_pin1, supplier_pin1, **supplier_options):
         pads = DIODE_PADS.format(k=board_pin1, a='A' if board_pin1 == 'K' else 'K')
         rows = [['D1', '70.000000', '-40.000000', 'Top', '0.000000']]
         geometry = [probe('D1', 'lib:D_SOD-123', 70000000, 40000000,
                           [[67950000, 39400000, 68850000, 40600000], [71150000, 39400000, 72050000, 40600000]])]
         return self.run_case(rows, geometry, [footprint('lib:D_SOD-123', 'D1', 70, 40, 0, pads)],
-                             {'D1': 'C2'}, {'C2': supplier(diode_supplier('C2', supplier_pin1))})
+                             {'D1': 'C2'}, {'C2': supplier(diode_supplier('C2', supplier_pin1, **supplier_options))})
+
+    def test_diode_numbered_oppositely_is_graded_by_the_position_of_its_cathode(self):
+        # Retained 2026-11-01 C2286: supplier pin 2 is K on the left, pin 1 is A on the right,
+        # and the board's pin 1 is K on the left. This was a false defect, and the physical
+        # orientation is correct.
+        record = self.diode_case('K', 'A', pin2_name='K', pin1_on_right=True)[0][0]
+        self.assertEqual((record['outcome'], record['polarity']['supplier']), ('pass', 'cathode'), record['modes'])
+        self.assertEqual(record['pin1']['supplier_pin_with_board_polarity'], '2')
+        self.assertEqual(record['pin1']['offset_degrees'], 0)
+
+    def test_diode_that_would_be_fitted_backwards_is_a_rotation_conflict(self):
+        # The supplier's cathode is on the right while the board's is on the left.
+        record = self.diode_case('K', 'A', pin2_name='K')[0][0]
+        self.assertEqual(record['outcome'], 'defect')
+        self.assertEqual([m['mode'] for m in record['modes']], ['rotation_conflict'])
+        self.assertEqual(record['pin1']['offset_degrees'], 180)
 
     def test_diode_polarity_agreement_passes_and_anode_versus_cathode_is_a_defect(self):
         records, _, _ = self.diode_case('K', 'K')
