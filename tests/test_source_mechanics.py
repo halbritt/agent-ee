@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 
-from agent_ee import acquisition_local_routing as routing, acquisition_mechanics as mechanics
+from agent_ee.acquisition import local_routing as routing, mechanics
 from agent_ee import placement_job as job, placement_problem as problem_builder
 from agent_ee.storage import digest
 from tests.test_placement_problem import MM, board, footprint
@@ -90,7 +90,7 @@ class DeclaredMechanicsTests(unittest.TestCase):
             mechanics._version(known)
 
     def test_acquisition_recipe_refuses_a_design_declared_model(self):
-        from agent_ee import acquisition_block_source as recipe
+        from agent_ee.acquisition import block_source as recipe
         plan = dict(envelope='envelope.json', parts=dict(manifest='parts.json', circuit='circuit.json'),
                     placement=dict(intent='intent.json'))
         for name in ('spec.md', 'analysis/geometry_model.py', 'groups.json', 'electrical-locality.json',
@@ -101,7 +101,7 @@ class DeclaredMechanicsTests(unittest.TestCase):
             recipe.derive(self.root, plan)
 
     def test_repair_of_a_design_without_electrical_locality_finds_its_active_parts(self):
-        from agent_ee import acquisition_placement as repair
+        from agent_ee.acquisition import placement as repair
         problem = dict(footprints=[dict(native_ref='X9', uuid='fixed', role='fixed_body'),
                                    dict(native_ref='R1', uuid='moved', role='movable')])
         diagnostic = dict(violations=[dict(kind='connector_access', ref='X9', blockers=[dict(ref='R1')])])

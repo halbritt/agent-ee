@@ -140,8 +140,8 @@ def child_argv(checkout):
     interpreter = Path(checkout) / '.venv-krt/bin/python'
     return [str(interpreter), '-I', '-B', '-c',
             'import sys; sys.path.insert(0, sys.argv[1]); '
-            'from agent_ee.acquisition_placement import main; main()',
-            str(Path(__file__).resolve().parent.parent)]
+            'from agent_ee.acquisition.placement import main; main()',
+            str(Path(__file__).resolve().parents[2])]
 
 
 def main():

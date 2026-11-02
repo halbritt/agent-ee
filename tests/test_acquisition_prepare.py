@@ -12,7 +12,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agent_ee import acquisition_prepare, build_workflow, requirement_map, spec_record, storage, interval_assertions
+from agent_ee.acquisition import prepare as acquisition_prepare
+from agent_ee import build_workflow, requirement_map, spec_record, storage, interval_assertions
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = Path(os.environ.get('AGENT_EE_ACQUISITION_INPUTS', ROOT / 'build/acquisition-release/inputs'))
@@ -72,7 +73,8 @@ class FinalOverlayTests(unittest.TestCase):
         # Public calibration 2026-10-29: role rows arrive after the earlier
         # selected-CPL normalization. Exercise real role and typed producers;
         # this authored fixture makes no retained-run qualification claim.
-        from agent_ee import acquisition_roles, typed_overlay
+        from agent_ee.acquisition import roles as acquisition_roles
+        from agent_ee import typed_overlay
         from test_acquisition_roles import authored
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -152,7 +154,7 @@ class AcquisitionPreparationTests(unittest.TestCase):
         self.assertEqual(storage.read_json(inputs / 'engineering-calculations.json')['sources']['analysis/geometry-model.json'],
                          storage.digest(inputs / 'analysis/geometry-model.json'))
         self.assertEqual(report['accounting']['obligations']['judgment'], 14)
-        from agent_ee import acquisition_connector_geometry as connector, acquisition_mechanics as mechanics
+        from agent_ee.acquisition import connector_geometry as connector, mechanics
         recipe = inputs / 'placement-mechanics.json'
         self.assertEqual(mechanics.load(recipe)['model'], model)
         for name in (connector.ORIGINAL, *connector.SOURCES):
@@ -367,7 +369,8 @@ class AcquisitionPreparationTests(unittest.TestCase):
         self.assertFalse((self.root / 'late-review-copy').exists())
 
     def test_final_groups_opt_in_seals_admitted_source_and_mechanics_map(self):
-        from agent_ee import acquisition_mechanics, block_source_stage, placement_contract
+        from agent_ee.acquisition import mechanics as acquisition_mechanics
+        from agent_ee import block_source_stage, placement_contract
         out, report = self.prepare(brief('125'), final_groups=True)
         inputs = out / 'inputs'
         plan = json.loads((out / 'build-plan.json').read_bytes())
@@ -402,7 +405,7 @@ class AcquisitionPreparationTests(unittest.TestCase):
         self.assertIn({'path':path, 'at':path}, declaration['scope']['inputs'])
         self.assertEqual(report['inputs'][path], storage.digest(inputs / path))
         self.assertIn('agent_ee.acquisition_block_source', report['recipe']['helpers'])
-        from agent_ee import acquisition_block_source
+        from agent_ee.acquisition import block_source as acquisition_block_source
         self.assertEqual(report['recipe']['helpers']['agent_ee.acquisition_block_source'],
                          storage.digest(Path(acquisition_block_source.__file__)))
         ledger = json.loads((inputs / 'preparation/edit-ledger.json').read_bytes())
@@ -420,7 +423,7 @@ class AcquisitionPreparationTests(unittest.TestCase):
             self.assertEqual((inputs / name).read_bytes(), (legacy / 'inputs' / name).read_bytes())
 
     def test_final_groups_refuse_owned_source_drift_and_publish_nothing_on_late_copy_drift(self):
-        from agent_ee import acquisition_block_source
+        from agent_ee.acquisition import block_source as acquisition_block_source
         out, _ = self.prepare(brief('100'), final_groups=True)
         plan = json.loads((out / 'build-plan.json').read_bytes())
         mutations = [
@@ -485,7 +488,7 @@ class AcquisitionPreparationTests(unittest.TestCase):
             acquisition_block_source.derive(root, plan)
 
     def test_final_groups_refuse_record_drift_in_the_actual_typed_copy_before_publication(self):
-        from agent_ee import acquisition_block_source
+        from agent_ee.acquisition import block_source as acquisition_block_source
         copytree = shutil.copytree
         def drift_copy(src, dst, *args, **kwargs):
             result = copytree(src, dst, *args, **kwargs)
@@ -503,7 +506,8 @@ class AcquisitionPreparationTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('AGENT_EE_GROUP_FACTS'), 'explicit retained acquisition native facts required')
     def test_all_eighteen_legs_grade_complete_and_original_eight_remain_unknown(self):
         import copy
-        from agent_ee import acquisition_block_source, block_contract, placement_contract, locality_provenance
+        from agent_ee.acquisition import block_source as acquisition_block_source
+        from agent_ee import block_contract, placement_contract, locality_provenance
         out, _ = self.prepare(brief('100'), final_groups=True)
         root = out / 'inputs'
         plan = json.loads((out / 'build-plan.json').read_bytes())
@@ -607,7 +611,7 @@ class AcquisitionPreparationTests(unittest.TestCase):
             original_plan = json.loads(PLAN.read_bytes())
             self.assertEqual(admitted[3]['placement'],
                              {**original_plan['placement'], 'mechanics': 'placement-mechanics.json'})
-            from agent_ee import acquisition_mechanics
+            from agent_ee.acquisition import mechanics as acquisition_mechanics
             mechanics = acquisition_mechanics.load(prepared / 'placement-mechanics.json')
             self.assertEqual(mechanics['declaration']['sources'],
                              acquisition_mechanics.declaration(prepared)['sources'])
@@ -1036,7 +1040,8 @@ class AddrPreparationTests(unittest.TestCase):
         ground, _ = self.prepare('final-group-ground')
         wrong, _ = self.prepare('final-group-wrong', choice='V3V3')
         self.assertEqual(self.compiled(ground, 'final-group-ground')[1], self.compiled(wrong, 'final-group-wrong')[1])
-        from agent_ee import acquisition_block_source, acquisition_mechanics, block_source_stage
+        from agent_ee.acquisition import block_source as acquisition_block_source, mechanics as acquisition_mechanics
+        from agent_ee import block_source_stage
         for out in (ground, wrong):
             plan = json.loads((out / 'build-plan.json').read_bytes())
             inputs = out / 'inputs'
@@ -1275,7 +1280,7 @@ class AddrPreparationTests(unittest.TestCase):
                          ('AGENT_EE_ADDR_620_CONTEXT', 'AGENT_EE_ADDR_620_SOURCE')),
                          'historical 620 ohm context/source required')
     def test_fresh_thermal_source_phase_binds_admitted_text_before_overlay_copy(self):
-        from agent_ee import acquisition_power_repair as repair
+        from agent_ee.acquisition import power_repair as repair
         from datetime import datetime
         self.assertFalse((BASE/'manufacturer-text').exists())
         output620=self.root/'fresh620'

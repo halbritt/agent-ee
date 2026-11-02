@@ -249,7 +249,7 @@ class AcquisitionMechanicsTests(unittest.TestCase):
     """Original unit captures, not native/campaign placement acceptance."""
     def setUp(self):
         import tempfile
-        from agent_ee import acquisition_mechanics as mechanics
+        from agent_ee.acquisition import mechanics
         self.mechanics = mechanics
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)

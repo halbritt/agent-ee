@@ -6,8 +6,9 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from agent_ee import acquisition_film as film
-from agent_ee import acquisition_mechanics, easyeda_footprint, land_pattern, typed_overlay
+from agent_ee.acquisition import film
+from agent_ee.acquisition import mechanics as acquisition_mechanics
+from agent_ee import easyeda_footprint, land_pattern, typed_overlay
 from tests.land_pattern_fixtures import manifest
 
 ROOT = Path(os.environ.get('AGENT_EE_FILM_RUN', '/nonexistent/film-run'))
@@ -128,7 +129,7 @@ class FilmPreparationTests(unittest.TestCase):
     def test_local_routing_uses_the_regulator_pins_in_the_generated_circuit(self):
         # The first film build found exact-feasible placement but the caller
         # defaulted to the original TPS pin5, which is ADP's input-connected EN.
-        from agent_ee import acquisition_local_routing, acquisition_local_return
+        from agent_ee.acquisition import local_routing as acquisition_local_routing, local_return as acquisition_local_return
         recipe = acquisition_mechanics.load(self.inputs / 'placement-mechanics.json')
         reference = acquisition_local_routing.power_reference(recipe)
         self.assertEqual(reference, film.REFERENCE)

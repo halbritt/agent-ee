@@ -5,7 +5,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agent_ee import placement_job as job, acquisition_local_routing as routing
+from agent_ee import placement_job as job
+from agent_ee.acquisition import local_routing as routing
 from agent_ee.storage import digest
 
 

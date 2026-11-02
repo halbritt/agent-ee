@@ -11,7 +11,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agent_ee import acquisition_placement as repair
+from agent_ee.acquisition import placement as repair
 from agent_ee import placement_job as job
 from owner_fixture import owner_bound
 from toolchain import require_kicad_route

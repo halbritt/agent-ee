@@ -9,8 +9,8 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from agent_ee import acquisition_power_parts as producer
-from agent_ee import acquisition_reverse_blocking as variant
+from agent_ee.acquisition import power_parts as producer
+from agent_ee.acquisition import reverse_blocking as variant
 from agent_ee.storage import json_bytes
 
 BASE = Path(os.environ.get('AGENT_EE_ACQUISITION_INPUTS', '/nonexistent/acquisition'))

@@ -7,7 +7,7 @@ import unittest
 import copy
 from decimal import Decimal
 
-from agent_ee import acquisition_power_repair as repair, acquisition_mechanics as mechanics
+from agent_ee.acquisition import power_repair as repair, mechanics
 from agent_ee.storage import json_bytes
 
 
@@ -47,7 +47,7 @@ class PowerRepairTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'placement-mechanics.json'
             sources = dict.fromkeys(mechanics.SOURCES, '0'*64)
-            from agent_ee import acquisition_source_supplement as supplement
+            from agent_ee.acquisition import source_supplement as supplement
             sources.update(supplement.geometry_sources())
             sources.update(repair.geometry_sources())
             sources['analysis/geometry-model.json'] = repair.MODEL
@@ -175,7 +175,7 @@ class Margin470Tests(unittest.TestCase):
                 repair._thermal_sources(root)
 
     def test470_mechanics_requires_its_own_complete_source_pins(self):
-        from agent_ee import acquisition_source_supplement as supplement
+        from agent_ee.acquisition import source_supplement as supplement
         sources=dict.fromkeys(mechanics.SOURCES,'0'*64)
         sources.update(supplement.geometry_sources());sources.update(repair.geometry_sources('470'))
         sources['analysis/geometry-model.json']=repair.MODEL470

@@ -169,7 +169,7 @@ class SeededGroundReferenceTests(unittest.TestCase):
     """
 
     def setUp(self):
-        from agent_ee import acquisition_ground_ties as ties
+        from agent_ee.acquisition import ground_ties as ties
         self.ties = ties
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         shutil.copytree(NATIVE / 'project', self.root / 'project')

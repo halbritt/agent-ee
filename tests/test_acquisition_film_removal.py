@@ -9,7 +9,8 @@ import sys
 import tempfile
 import unittest
 
-from agent_ee import acquisition_film as film, acquisition_film_removal as removal, typed_overlay
+from agent_ee.acquisition import film, film_removal as removal
+from agent_ee import typed_overlay
 
 CAPTURE = Path(os.environ.get('AGENT_EE_FILM_REMOVAL', '/nonexistent/film-removal'))
 LOOP = Path(os.environ.get('AGENT_EE_FILM_LOOP', '/nonexistent/film-loop'))

@@ -9,9 +9,9 @@ import tempfile
 import time
 import unittest
 
-from agent_ee import (acquisition_block_source, acquisition_mechanics, acquisition_power_geometry,
-    acquisition_power_prepare as producer, build_workflow, cpl_rotation, land_pattern,
-    requirement_map, typed_overlay)
+from agent_ee.acquisition import (block_source as acquisition_block_source, mechanics as acquisition_mechanics,
+    power_geometry as acquisition_power_geometry, power_prepare as producer)
+from agent_ee import (build_workflow, cpl_rotation, land_pattern, requirement_map, typed_overlay)
 from agent_ee.storage import identity, write_json
 
 BASE = Path(os.environ.get('AGENT_EE_ACQUISITION_INPUTS', '/nonexistent/base'))
@@ -132,7 +132,7 @@ class PowerBuildTests(unittest.TestCase):
             self.assertEqual(cpl_rotation.pin1_offset(a[0], b[0]), wanted)
 
     def test_actual_native_local_route_endpoints_follow_the_captured_power_reference(self):
-        from agent_ee import acquisition_local_return as local, acquisition_local_routing as routing
+        from agent_ee.acquisition import local_return as local, local_routing as routing
         from agent_ee.placement_job import JobRefusal
         recipe = acquisition_mechanics.load(self.source / 'placement-mechanics.json')
         self.assertEqual(routing.power_reference(recipe), producer.REFERENCE)

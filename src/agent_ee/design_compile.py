@@ -1157,7 +1157,7 @@ def mechanics(design, root):
             packages=packages,
         ),
     )
-    from .acquisition_mechanics import declaration
+    from .source_mechanics import declaration
 
     write_json(root / "placement-mechanics.json", declaration(root))
 

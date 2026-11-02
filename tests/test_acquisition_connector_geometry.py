@@ -5,9 +5,9 @@ import json
 import tempfile
 import unittest
 
-from agent_ee import acquisition_connector_geometry as connector
-from agent_ee import acquisition_power_repair as power, acquisition_resistor as resistor
-from agent_ee import acquisition_source_supplement as supplement
+from agent_ee.acquisition import connector_geometry as connector
+from agent_ee.acquisition import power_repair as power, resistor
+from agent_ee.acquisition import source_supplement as supplement
 from agent_ee.spec_record import sha256
 from agent_ee.storage import json_bytes
 
@@ -33,7 +33,7 @@ def variants():
 
 class ConnectorGeometryTests(unittest.TestCase):
     def test_rust_fixture_uses_the_exact_python_model_bytes_and_source_closure(self):
-        from agent_ee import acquisition_mechanics as mechanics
+        from agent_ee.acquisition import mechanics
         rows = json.loads((ORIGINAL.parent/'mechanics-derived-test-cases.json').read_bytes())['cases']
         expected = {}
         for raw in variants():

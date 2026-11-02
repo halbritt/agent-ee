@@ -13,16 +13,12 @@ from ..candidate import safe_relative
 from ..catalog import exact_fields
 from ..stage_receipts import tree_identity
 from ..storage import digest, read_json, write_json
+from ..build_completion import CompletionUnavailable
 
 CONTEXT = 'agent-ee.acquisition-completion/1'
 PINS = 'agent-ee.acquisition-context-pins/1'
 REQUEST = 'agent-ee.acquisition-request/1'
 RECEIPT = 'agent-ee.acquisition-completion-record/1'
-
-
-class CompletionUnavailable(ValueError):
-    """A required production integration is absent; never substitute testimony."""
-
 
 def context(root, expect_pins):
     from ..generation_benchmark import tree_files
@@ -153,8 +149,23 @@ def admit_public_context(context_root, expect_pins, brief, public_context, expec
 
 from ..build_completion import (
     load_seat_policy, verify_package_binding, complete_typed_build,
-    seat_policy, package_binding, complete_prepared,
+    seat_policy,
 )
+
+package_binding = verify_package_binding
+
+
+def complete_prepared(prepared, build_run, out, *, author, verifier, private_evaluator_pair,
+                      deadline, cancellation, launch_environment, host=None,
+                      package_binding_fn=None, package_verifier=None):
+    """Parent-side composition for the fixed public judgment producer."""
+    fn = package_binding_fn or package_verifier or package_binding
+    return complete_typed_build(
+        prepared, build_run, out,
+        author=author, verifier=verifier, private_evaluator_pair=private_evaluator_pair,
+        deadline=deadline, cancellation=cancellation, launch_environment=launch_environment, host=host,
+        package_binding_fn=fn,
+    )
 
 
 def complete(public, work, production, context_root, expect_pins, *, attempt, deadline, cancel,

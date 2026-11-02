@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent_ee import acquisition_roles as roles, block_adaptation, block_composition, requirement_map, typed_overlay, storage
+from agent_ee.acquisition import roles as roles
+from agent_ee import block_adaptation, block_composition, requirement_map, typed_overlay, storage
 from agent_ee.catalog import strict_json
 from agent_ee.reference_blocks import block_contract
 from agent_ee.schematic_emit import Quoted
@@ -267,7 +268,7 @@ class ConsumerTests(unittest.TestCase):
                 with self.assertRaises(ValueError):roles.read(root/'context',storage.json_bytes(doc),100)
 
     def test_public_role_options_require_complete_pins_before_source_admission(self):
-        from agent_ee.acquisition_prepare import prepare
+        from agent_ee.acquisition.prepare import prepare
         for args in (dict(role_context='missing'),dict(role_source='missing'),dict(role_context_sha256='a'*64)):
             with self.subTest(args=args),self.assertRaisesRegex(ValueError,'source root and exact context'):
                 prepare(None,None,None,added_sources={},**args)
@@ -429,7 +430,7 @@ class ProducerBoundaryTests(unittest.TestCase):
 
     def test_public_parser_decimal_reaches_role_admission_and_preserves_json_strictness(self):
         from decimal import Decimal
-        from agent_ee.acquisition_prepare import ADOPTION, parse_brief
+        from agent_ee.acquisition.prepare import ADOPTION, parse_brief
         helper=CohortTests()
         for spelling,canonical in (('100','100'),('00100.0','100'),('125.50','125.5'),('150.0','150')):
             parsed=parse_brief((ADOPTION+'\nTotal I2C line capacitance shall be at most '+spelling+' pF per line, including board, host and cable.\n').encode())['value']

@@ -9,7 +9,8 @@ import shutil
 import tempfile
 import unittest
 
-from agent_ee import acquisition_reverse_blocking as variant, executor
+from agent_ee.acquisition import reverse_blocking as variant
+from agent_ee import executor
 from tests.test_acquisition_reverse_blocking import CAPTURES, require_captures
 from tests.toolchain import require_toolchain
 

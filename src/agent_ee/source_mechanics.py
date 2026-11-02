@@ -111,24 +111,10 @@ def _model_sources(model):
     if model == MODEL:
         return {}
     try:
-        from . import (acquisition_connector_geometry, acquisition_film,
-                       acquisition_power_geometry, acquisition_power_repair,
-                       acquisition_resistor, acquisition_source_supplement)
-        if model in acquisition_film.MODELS:
-            return {**_model_sources(acquisition_power_geometry.MODEL), **acquisition_film.MODELS[model]}
-        if model == acquisition_power_geometry.MODEL:
-            return {**_model_sources(acquisition_power_geometry.BASE), **acquisition_power_geometry.SOURCES}
-        if model in acquisition_connector_geometry.MODELS:
-            return {**_model_sources(acquisition_connector_geometry.MODELS[model]),
-                    **acquisition_connector_geometry.geometry_sources(model)}
-        if model == acquisition_source_supplement.CORRECTED_MODEL:
-            return acquisition_source_supplement.geometry_sources()
-        if model in (acquisition_power_repair.MODEL, acquisition_power_repair.MODEL470):
-            return {**acquisition_source_supplement.geometry_sources(),
-                    **acquisition_power_repair.geometry_sources('470' if model == acquisition_power_repair.MODEL470 else '620')}
-        if model in acquisition_resistor.MODELS:
-            return acquisition_resistor.geometry_sources(model)
-    except (ImportError, AttributeError):
+        import importlib
+        acq_mechanics = importlib.import_module("agent_ee.acquisition.mechanics")
+        return acq_mechanics._model_sources(model)
+    except (ImportError, ModuleNotFoundError, AttributeError):
         pass
     return None
 
@@ -189,9 +175,10 @@ def _version(document, parsed=None):
         return
     checker = CHECKER
     try:
-        from . import acquisition_film
-        checker = acquisition_film.CHECKERS.get(model, CHECKER)
-    except (ImportError, AttributeError):
+        import importlib
+        acq_film = importlib.import_module("agent_ee.acquisition.film")
+        checker = acq_film.CHECKERS.get(model, CHECKER)
+    except (ImportError, ModuleNotFoundError, AttributeError):
         pass
     if (extra is None or sources.get('analysis/geometry_model.py') != checker
             or set(sources) != set(SOURCES) | set(extra)

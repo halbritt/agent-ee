@@ -138,7 +138,7 @@ def runtime_identity():
 
 def child_argv(checkout):
     """Use only the already qualified checkout's numerical interpreter."""
-    legacy = sys.modules.get('agent_ee.acquisition_placement')
+    legacy = sys.modules.get('agent_ee.acquisition.placement') or sys.modules.get('agent_ee.acquisition_placement')
     if legacy is not None and getattr(legacy, 'child_argv', None) != child_argv and hasattr(legacy, 'child_argv'):
         return legacy.child_argv(checkout)
     interpreter = Path(checkout) / '.venv-krt/bin/python'

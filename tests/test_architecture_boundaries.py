@@ -23,22 +23,25 @@ class TestArchitectureBoundaries(unittest.TestCase):
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        if alias.name == "agent_ee.acquisition" or alias.name.startswith("agent_ee.acquisition."):
+                        if (alias.name == "agent_ee.acquisition" or alias.name.startswith("agent_ee.acquisition.")
+                                or alias.name.startswith("agent_ee.acquisition_")):
                             violations.append((py_path.name, node.lineno, alias.name))
                 elif isinstance(node, ast.ImportFrom):
                     if node.level == 0 and node.module:
-                        if node.module == "agent_ee.acquisition" or node.module.startswith("agent_ee.acquisition."):
+                        if (node.module == "agent_ee.acquisition" or node.module.startswith("agent_ee.acquisition.")
+                                or node.module.startswith("agent_ee.acquisition_")):
                             violations.append((py_path.name, node.lineno, node.module))
                         elif node.module == "agent_ee":
                             for alias in node.names:
-                                if alias.name == "acquisition":
+                                if alias.name == "acquisition" or alias.name.startswith("acquisition_"):
                                     violations.append((py_path.name, node.lineno, f"agent_ee.{alias.name}"))
                     elif node.level == 1:
-                        if node.module and (node.module == "acquisition" or node.module.startswith("acquisition.")):
+                        if node.module and (node.module == "acquisition" or node.module.startswith("acquisition.")
+                                or node.module.startswith("acquisition_")):
                             violations.append((py_path.name, node.lineno, f".{node.module}"))
                         elif not node.module:
                             for alias in node.names:
-                                if alias.name == "acquisition":
+                                if alias.name == "acquisition" or alias.name.startswith("acquisition_"):
                                     violations.append((py_path.name, node.lineno, f".{alias.name}"))
         self.assertEqual(violations, [], f"General modules importing agent_ee.acquisition: {violations}")
 
@@ -79,7 +82,7 @@ class TestArchitectureBoundaries(unittest.TestCase):
             if path.name in ("reviewers.py", "packet_ab.py"):
                 continue
             text = path.read_text()
-            if "reviewers.dispatch" in text or ("dispatch(" in text and "from .reviewers import dispatch" in text):
+            if "reviewers.dispatch" in text or ("dispatch(" in text and ("from .reviewers import dispatch" in text or "from agent_ee.reviewers import dispatch" in text)):
                 violations.append(path.name)
         self.assertEqual(violations, [], f"Unauthorized reviewers.dispatch calls in: {violations}")
 
@@ -100,9 +103,22 @@ class TestArchitectureBoundaries(unittest.TestCase):
                             if a.name == f"agent_ee.{target}" or a.name == target:
                                 graph[m].add(target)
                 elif isinstance(node, ast.ImportFrom):
-                    for target in modules:
-                        if (node.level == 1 and node.module == target) or (node.level == 0 and node.module == f"agent_ee.{target}"):
-                            graph[m].add(target)
+                    if node.level == 1:
+                        if node.module in modules:
+                            graph[m].add(node.module)
+                        elif node.module is None:
+                            for a in node.names:
+                                if a.name in modules:
+                                    graph[m].add(a.name)
+                    elif node.level == 0:
+                        if node.module and node.module.startswith("agent_ee."):
+                            sub = node.module.split(".", 1)[1]
+                            if sub in modules:
+                                graph[m].add(sub)
+                        elif node.module == "agent_ee":
+                            for a in node.names:
+                                if a.name in modules:
+                                    graph[m].add(a.name)
 
         cycles = []
         for m1 in modules:

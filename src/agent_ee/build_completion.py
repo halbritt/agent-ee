@@ -69,8 +69,12 @@ def verify_package_binding(root, deadline=None, cancel=None, *, environment=None
     return binding
 
 
+package_binding = verify_package_binding
+
+
 def complete_typed_build(prepared, build_run, out, *, author, verifier, private_evaluator_pair,
-                         deadline, cancellation, launch_environment, host=None):
+                         deadline, cancellation, launch_environment, host=None,
+                         package_binding_fn=None, package_verifier=None):
     """Parent-side composition for the fixed public judgment producer.
 
     The caller retains the SAME case cancellation object. This function is not
@@ -127,10 +131,22 @@ def complete_typed_build(prepared, build_run, out, *, author, verifier, private_
         native_run.checkpoint(deadline, cancellation)
         if report['status'] != 'accepted':
             raise ValueError('resumed package/full review did not accept')
-        return verify_package_binding(build_run, deadline, cancellation)
+        verifier_fn = package_binding_fn or package_verifier or package_binding
+        return verifier_fn(build_run, deadline, cancellation)
 
 
 # Backwards compatibility aliases
 seat_policy = load_seat_policy
 package_binding = verify_package_binding
-complete_prepared = complete_typed_build
+
+
+def complete_prepared(prepared, build_run, out, *, author, verifier, private_evaluator_pair,
+                      deadline, cancellation, launch_environment, host=None,
+                      package_binding_fn=None, package_verifier=None):
+    fn = package_binding_fn or package_verifier or package_binding
+    return complete_typed_build(
+        prepared, build_run, out,
+        author=author, verifier=verifier, private_evaluator_pair=private_evaluator_pair,
+        deadline=deadline, cancellation=cancellation, launch_environment=launch_environment, host=host,
+        package_binding_fn=fn,
+    )

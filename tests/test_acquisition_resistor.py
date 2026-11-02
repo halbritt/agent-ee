@@ -10,8 +10,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agent_ee import acquisition_prepare, acquisition_resistor as resistor
-from agent_ee import acquisition_selected_cpl, parts_manifest, requirement_map, storage
+from agent_ee.acquisition import prepare as acquisition_prepare, resistor
+from agent_ee.acquisition import selected_cpl as acquisition_selected_cpl
+from agent_ee import parts_manifest, requirement_map, storage
 from tests.test_acquisition_alternative import scoped_guard
 
 CAPTURE = Path(os.environ.get('AGENT_EE_RESISTOR_CAPTURE', '/nonexistent/resistor-capture'))
@@ -327,7 +328,7 @@ class ProducerSourceTests(unittest.TestCase):
             resistor._revise(self.root,self.captures,self.value,self.unit_record,self.as_of,self.policy_blob)
 
     def test_mechanics_accepts_only_exact_body_derivative_and_all_source_custody(self):
-        from agent_ee import acquisition_mechanics
+        from agent_ee.acquisition import mechanics as acquisition_mechanics
         result=resistor._revise(self.root,self.captures,self.value,self.unit_record,self.as_of,self.policy_blob)
         declaration=acquisition_mechanics.declaration(self.root)
         path=self.root/'placement-mechanics.json';storage.write_json(path,declaration)
@@ -393,7 +394,8 @@ class DefaultPreparationTests(unittest.TestCase):
         return acquisition_prepare.prepare(self.brief,self.plan,self.root/name,added_sources=self.sources,**args)
 
     def test_preparation_keeps_selection_within_the_admitted_role_carrier(self):
-        from agent_ee import acquisition_alternative_context, acquisition_roles, jlc_stock_capture
+        from agent_ee.acquisition import alternative_context as acquisition_alternative_context, roles as acquisition_roles
+        from agent_ee import jlc_stock_capture
         # Retained identity inputs with explicitly authored restocked observations.
         # Qualification readers are the test seam; no native/source acceptance or
         # prepared bundle is produced. The real selector emits the observed parts.

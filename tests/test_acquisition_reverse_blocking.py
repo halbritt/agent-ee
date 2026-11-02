@@ -8,7 +8,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from agent_ee import acquisition_reverse_blocking as variant
+from agent_ee.acquisition import reverse_blocking as variant
 from agent_ee import easyeda_footprint
 
 CAPTURES = Path(os.environ.get('AGENT_EE_REVERSE_BLOCKING_SOURCES',

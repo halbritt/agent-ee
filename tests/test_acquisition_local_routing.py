@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from agent_ee import acquisition_local_routing as routing, acquisition_mechanics as mechanics
+from agent_ee.acquisition import local_routing as routing, mechanics
 from agent_ee.placement_job import JobRefusal
 from agent_ee.symbol_library import parse_sexpr
 

@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import unittest
 
-from agent_ee import acquisition_film as film
+from agent_ee.acquisition import film
 from tests.test_acquisition_film import BASE, ROOT
 
 STOCK=Path(os.environ.get('AGENT_EE_FILM_STOCK','/nonexistent/stock'))

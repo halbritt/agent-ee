@@ -4,7 +4,7 @@ import math
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
-from agent_ee import acquisition_local_geometry as geometry
+from agent_ee.acquisition import local_geometry as geometry
 from agent_ee.placement_job import Clock, JobRefusal, JobStopped
 
 

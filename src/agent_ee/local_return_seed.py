@@ -77,17 +77,24 @@ def applies(recipe):
 
 def power_reference(recipe):
     """A validated mechanical source revision selects the electrical recipe."""
-    from . import acquisition_local_return as local
+    import importlib
+    try:
+        local = importlib.import_module("agent_ee.acquisition.local_return")
+        original_ref = local.ORIGINAL_REFERENCE
+    except (ImportError, ModuleNotFoundError, AttributeError):
+        original_ref = "acquisition-control"
     model_sha = recipe.get('declaration', {}).get('sources', {}).get('analysis/geometry-model.json')
     try:
-        from . import acquisition_film, acquisition_power_geometry, acquisition_reverse_blocking
-        if model_sha in acquisition_film.MODELS:
-            return acquisition_film.REFERENCE
-        if model_sha == acquisition_power_geometry.MODEL:
-            return acquisition_reverse_blocking.REFERENCE
-    except (ImportError, AttributeError):
+        film = importlib.import_module("agent_ee.acquisition.film")
+        power_geom = importlib.import_module("agent_ee.acquisition.power_geometry")
+        rev_block = importlib.import_module("agent_ee.acquisition.reverse_blocking")
+        if model_sha in film.MODELS:
+            return film.REFERENCE
+        if model_sha == power_geom.MODEL:
+            return rev_block.REFERENCE
+    except (ImportError, ModuleNotFoundError, AttributeError):
         pass
-    return local.ORIGINAL_REFERENCE
+    return original_ref
 
 
 def rectangles(strips, clearance_mm):
@@ -272,10 +279,14 @@ def _exposed_pad_bars(board, policy):
 def seed_ground_ties(board_path, data, policy):
     """Generate front tie segments, vias, and optional B.Cu thermal bars."""
     import pcbnew as k
-    from . import acquisition_ground_ties as ground
-    # Check if legacy policy matches exact historical constants
-    if policy in (ground.POLICY, ground._GROUND_ONLY):
-        return ground.seed(board_path, data, policy)
+    import importlib
+    try:
+        ground = importlib.import_module("agent_ee.acquisition.ground_ties")
+        # Check if legacy policy matches exact historical constants
+        if policy in (ground.POLICY, ground._GROUND_ONLY):
+            return ground.seed(board_path, data, policy)
+    except (ImportError, ModuleNotFoundError, AttributeError):
+        pass
     path = Path(board_path)
     before = path.read_bytes()
     if data != before:
@@ -332,8 +343,12 @@ def seed_ground_ties(board_path, data, policy):
 
 
 def produce(candidate_dir, destination, *, expected_inputs, mechanics_binding, planes, clock, cancel_dir=None):
-    """Seed local decoupling loops, ground ties, and ground strip reservations."""
-    from . import acquisition_ground_ties as ground, acquisition_local_return as local
+    import importlib
+    try:
+        ground = importlib.import_module("agent_ee.acquisition.ground_ties")
+        local = importlib.import_module("agent_ee.acquisition.local_return")
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise JobRefusal(f'local routing: acquisition modules unavailable: {exc}') from exc
     _check_stop(clock, cancel_dir)
     source = Path(candidate_dir).absolute()
     destination = Path(destination).absolute()
@@ -443,8 +458,18 @@ def produce(candidate_dir, destination, *, expected_inputs, mechanics_binding, p
 
 
 def verify(board_path, record, *, clock, cancel_dir=None):
-    """Verify local routing, ground ties, and ground strip reservations against the final board."""
-    from . import acquisition_ground_ties as ground, acquisition_local_return as local
+    import importlib
+    try:
+        routing = importlib.import_module("agent_ee.acquisition.local_routing")
+        if hasattr(routing, "verify"):
+            return routing.verify(board_path, record, clock=clock, cancel_dir=cancel_dir)
+    except (ImportError, ModuleNotFoundError, AttributeError):
+        pass
+    try:
+        ground = importlib.import_module("agent_ee.acquisition.ground_ties")
+        local = importlib.import_module("agent_ee.acquisition.local_return")
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise JobRefusal(f'local routing: acquisition modules unavailable: {exc}') from exc
     _check_stop(clock, cancel_dir)
     receipt = Path(record['record'])
     raw = receipt.read_bytes()

@@ -385,7 +385,7 @@ class DesignCompileTests(unittest.TestCase):
         model = json.loads((root / "analysis/geometry-model.json").read_text())
         self.assertEqual(model["packages"]["R1"]["size_mm"], [4.0, 2.0, 8])
         self.assertEqual(model["packages"]["R1"]["offset_mm"], [0.0, 0.0])
-        from agent_ee.acquisition_mechanics import load
+        from agent_ee.acquisition.mechanics import load
 
         load(root / "placement-mechanics.json")
 

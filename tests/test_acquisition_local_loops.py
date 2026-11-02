@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 import unittest
 
-from agent_ee import acquisition_local_return as local
+from agent_ee.acquisition import local_return as local
 from agent_ee.placement_job import Clock, JobRefusal, JobStopped
 from tests import test_acquisition_local_return as fixture
 from tests.test_acquisition_local_return import NativePad, NativeTrack, NativeFootprint, native_report

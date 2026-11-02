@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from agent_ee import acquisition_source_supplement as supplement, acquisition_mechanics as mechanics
+from agent_ee.acquisition import source_supplement as supplement, mechanics
 from agent_ee.storage import json_bytes
 
 ROOT = Path(__file__).resolve().parents[1]

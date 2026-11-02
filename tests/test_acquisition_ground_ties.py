@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from agent_ee import acquisition_ground_ties as ties
+from agent_ee.acquisition import ground_ties as ties
 from agent_ee.placement_job import JobRefusal
 from agent_ee.symbol_library import children, parse_sexpr
 
@@ -165,7 +165,7 @@ class GroundTieTests(unittest.TestCase):
     def test_pending_plane_allowance_covers_only_generated_vias_before_the_plane_exists(self):
         # Regression for the first native build on 2026-11-01: the reservation
         # DRC runs before the bottom plane exists, so every generated via dangled.
-        from agent_ee.acquisition_local_return import _legal
+        from agent_ee.acquisition.local_return import _legal
         from agent_ee.placement_job import drc
         output,receipt=self.seeded()
         report,_=drc(output,self.directory)
@@ -180,8 +180,8 @@ class GroundTieTests(unittest.TestCase):
         self.assertFalse(_legal(ties.without_pending_plane_warnings(report,unrelated)))
 
     def test_retained_ground_tie_policy_still_generates_its_original_copper(self):
-        # Independent review 2026-11-01: model d451823e loaded but its policy refused to seed.
-        policy=json.loads((Path(ties.__file__).parents[2]/'fixtures/acquisition-film/mechanics-test-case-r3.json').read_text())
+        repo_root = Path(__file__).resolve().parents[1]
+        policy=json.loads((repo_root/'fixtures/acquisition-film/mechanics-test-case-r3.json').read_text())
         policy=json.loads(policy['model_raw'])['local_plane_returns']
         self.assertEqual(policy['schema'],'agent-ee.acquisition-ground-ties/1')
         data,receipt=ties.seed(self.path,self.original,policy)

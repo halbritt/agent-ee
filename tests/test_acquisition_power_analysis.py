@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import unittest
 
-from agent_ee import acquisition_power_analysis as power
+from agent_ee.acquisition import power_analysis as power
 from agent_ee.storage import json_bytes
 
 SOURCE = Path(os.environ.get('AGENT_EE_POWER_PRODUCTION', '/nonexistent/production'))

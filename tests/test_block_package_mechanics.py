@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agent_ee import (acquisition_mechanics as mechanics, block_package, placement_contract,
+from agent_ee.acquisition import mechanics
+from agent_ee import (block_package, placement_contract,
                       placement_job, placement_problem, retained_run, native_run, routed_artwork)
 from agent_ee.storage import canonical, digest, identity, read_json, write_json
 from tests.test_prepared_block_contract import fixture, FinalArtworkBlockProofTests

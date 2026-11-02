@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agent_ee import acquisition_alternative as alternative
+from agent_ee.acquisition import alternative
 from agent_ee import jlc_stock_capture, part_record, parts_manifest, requirement_map, storage
 from tests.test_jlc_stock_capture import row, search
 from tests.test_native_binding import GEN
@@ -325,7 +325,7 @@ class CapturedContextTests(unittest.TestCase):
         self.enterContext(scoped_guard())
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         authored_fixture(self.root)
-        from agent_ee import acquisition_alternative_context
+        from agent_ee.acquisition import alternative_context as acquisition_alternative_context
         self.context_module = acquisition_alternative_context
         catalog_path = 'preparation/catalog/catalog.json'
         catalog = json.loads((self.root/catalog_path).read_bytes())
@@ -381,7 +381,7 @@ class SelectedCplClosureTests(unittest.TestCase):
         self.enterContext(scoped_guard())
         self.root=Path(self.enterContext(tempfile.TemporaryDirectory()))
         authored_fixture(self.root)
-        from agent_ee import acquisition_selected_cpl as selected_cpl
+        from agent_ee.acquisition import selected_cpl
         from tests.land_pattern_fixtures import component,pad
         self.module=selected_cpl
         self.cpl=self.root/'cpl-source';self.cpl.mkdir()

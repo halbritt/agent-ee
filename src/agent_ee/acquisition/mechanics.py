@@ -228,3 +228,7 @@ def attach(description, binding, capture):
         'model_raw': binding['recipe']['model_raw'],
         'limits': binding['recipe']['model'].get('limits', [])}
     return description
+
+
+from .. import source_mechanics
+source_mechanics.register_revision_resolver(_model_sources)

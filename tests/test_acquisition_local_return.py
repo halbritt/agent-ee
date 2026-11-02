@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agent_ee import acquisition_local_return as local
+from agent_ee.acquisition import local_return as local
 from agent_ee.placement_job import Clock, JobRefusal, JobStopped
 from agent_ee.symbol_library import children, parse_sexpr
 
