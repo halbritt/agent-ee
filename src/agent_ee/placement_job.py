@@ -810,21 +810,16 @@ def _checkout_engine(root):
     if binary is None:
         raise PlanningProcessError('Rust placement planner is not installed; build with '
                                    'scripts/build_placement_engine.py (see docs/installation.md)')
+    binary = binary.resolve(strict=True)
     spec = importlib.util.spec_from_file_location('build_placement_engine', root / 'scripts/build_placement_engine.py')
     script = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(script)
     try:
-        built_from = json.loads(script.receipt_path(binary).read_bytes())['source_sha256']
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise PlanningProcessError(f'{binary} has no usable build receipt; rebuild it with '
-                                   'scripts/build_placement_engine.py build') from exc
-    current = script.sources(root)
-    if built_from != current:
-        changed = sorted(path for path in built_from.keys() | current.keys() if built_from.get(path) != current.get(path))
-        raise PlanningProcessError(f'{binary} was built from other engine sources ({", ".join(changed[:5])}); '
-                                   'rebuild it with scripts/build_placement_engine.py build '
-                                   'or set AGENT_EE_RUST_PLANNER')
-    return binary.resolve(strict=True)
+        script.verify(root, binary)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise PlanningProcessError(f'{binary} does not match this checkout ({exc}); rebuild it with '
+                                   'scripts/build_placement_engine.py build or set AGENT_EE_RUST_PLANNER') from exc
+    return binary
 
 
 def rust_executable():
