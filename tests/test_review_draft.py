@@ -169,3 +169,79 @@ class DraftReviewTests(unittest.TestCase):
             values, records = reviewers.initial_reviews(self.run_dir, self.packet,
                 time.monotonic() + 30, roles={'circuit'})
         self.assertEqual(len(values), 1, records)
+
+    def test_adjudicator_draft_validates_decisions_v2(self):
+        from agent_ee import review_draft
+        finding = dict(self.value['findings'][0], id='circuit/concern-1')
+        schema = copy.deepcopy(reviewers.DECISIONS_SCHEMA)
+        schema['properties']['decisions']['items']['properties']['finding_id']['enum'] = ['circuit/concern-1']
+        reviewers.bind_evidence_schema(schema, 'decisions', self.run_dir, self.packet, 'adjudicator')
+        control = review_draft.prepare(self.run_dir, 'adjudicator', self.packet, schema, findings=[finding])
+        draft = {
+            'schema': 'agent-ee.decisions/2',
+            'candidate_id': self.candidate_id,
+            'run_id': self.run_id,
+            'decisions': [{
+                'finding_id': 'circuit/concern-1',
+                'disposition': 'dismissed',
+                'reason': 'Synthetic rejection rationale supported by schematic citation.',
+                'evidence': [dict(path='inputs/project/rc.kicad_sch', locator='Synthetic symbol', lines=[1, 1])]
+            }]
+        }
+        write_json(self.draft, draft)
+        result = review_draft.check(self.draft, self.run_dir, control)
+        self.assertTrue(result['valid'], result.get('error'))
+        self.assertEqual(result['draft_sha256'], digest(self.draft))
+
+    def test_adjudicator_draft_refuses_mismatched_identity_and_missing_findings(self):
+        from agent_ee import review_draft
+        finding = dict(self.value['findings'][0], id='circuit/concern-1')
+        schema = copy.deepcopy(reviewers.DECISIONS_SCHEMA)
+        schema['properties']['decisions']['items']['properties']['finding_id']['enum'] = ['circuit/concern-1']
+        reviewers.bind_evidence_schema(schema, 'decisions', self.run_dir, self.packet, 'adjudicator')
+        control = review_draft.prepare(self.run_dir, 'adjudicator', self.packet, schema, findings=[finding])
+        base_draft = {
+            'schema': 'agent-ee.decisions/2',
+            'candidate_id': self.candidate_id,
+            'run_id': self.run_id,
+            'decisions': [{
+                'finding_id': 'circuit/concern-1',
+                'disposition': 'dismissed',
+                'reason': 'Valid rationale.',
+                'evidence': [dict(path='inputs/project/rc.kicad_sch', locator='Synthetic symbol', lines=[1, 1])]
+            }]
+        }
+        for change in (
+            {'candidate_id': 'wrong-candidate'},
+            {'run_id': 'wrong-run'},
+            {'schema': 'agent-ee.decisions/1'},
+            {'decisions': []},
+            {'decisions': [dict(base_draft['decisions'][0], finding_id='other/unknown')]},
+        ):
+            draft = {**base_draft, **change}
+            write_json(self.draft, draft)
+            result = review_draft.check(self.draft, self.run_dir, control)
+            self.assertFalse(result['valid'])
+            self.assertIn('error', result)
+
+    def test_adjudicator_draft_citation_paths_validate_adjudication_judgments(self):
+        from agent_ee import review_draft
+        finding = dict(self.value['findings'][0], id='circuit/concern-1')
+        schema = copy.deepcopy(reviewers.DECISIONS_SCHEMA)
+        schema['properties']['decisions']['items']['properties']['finding_id']['enum'] = ['circuit/concern-1']
+        reviewers.bind_evidence_schema(schema, 'decisions', self.run_dir, self.packet, 'adjudicator')
+        control = review_draft.prepare(self.run_dir, 'adjudicator', self.packet, schema, findings=[finding])
+        draft = {
+            'schema': 'agent-ee.decisions/2',
+            'candidate_id': self.candidate_id,
+            'run_id': self.run_id,
+            'decisions': [{
+                'finding_id': 'circuit/concern-1',
+                'disposition': 'dismissed',
+                'reason': 'Precedent citation.',
+                'evidence': [dict(path='adjudication-judgments/missing.json', locator='Missing judgment', pointer='/0')]
+            }]
+        }
+        write_json(self.draft, draft)
+        result = review_draft.check(self.draft, self.run_dir, control)
+        self.assertFalse(result['valid'])

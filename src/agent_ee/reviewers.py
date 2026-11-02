@@ -123,17 +123,18 @@ def review_transport_schema(schema):
     Only the provider copy uses a union. Draft validation, archived schemas and
     replay keep the original contract; returned findings are never rewritten.
     """
-    if '$defs' not in schema and schema.get('properties', {}).get('schema', {}).get('enum') != [REVIEW_VERSION]:
+    if schema.get('properties', {}).get('schema', {}).get('enum') != [REVIEW_VERSION]:
         return schema
     wire = citation_transport_schema(schema)
-    if wire.get('properties', {}).get('schema', {}).get('enum') == [REVIEW_VERSION]:
-        purpose = wire['properties']['findings']['items']
-        ordinary = json.loads(json.dumps(purpose))
-        del ordinary['properties']['dimension']
-        purpose['properties']['assessment']['enum'] = ['concern']
-        purpose['properties']['severity']['enum'] = ['minor', 'info']
-        wire['properties']['findings']['items'] = {'anyOf': [ordinary, purpose]}
-        _check_schema_limits(wire)
+    purpose = wire['properties']['findings']['items']
+    ordinary = json.loads(json.dumps(purpose))
+    del ordinary['properties']['dimension']
+    purpose['properties']['assessment']['enum'] = ['concern']
+    purpose['properties']['severity']['enum'] = ['minor', 'info']
+    if 'dimension' not in purpose.setdefault('required', []):
+        purpose['required'].append('dimension')
+    wire['properties']['findings']['items'] = {'anyOf': [ordinary, purpose]}
+    _check_schema_limits(wire)
     return wire
 
 
@@ -548,7 +549,14 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
 def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None, launch_context=None):
     from .preflight import guard
     _check_schema_limits(schema)
-    if launch_context is None or 'expected' not in launch_context:
+    if label.startswith(('shortlist-', 'extraction-')):
+        from . import native_run
+        active = native_run._active.get()
+        if isinstance(active, native_run.Recorded):
+            record, value = dispatch(run_dir, label, definition, prompt, review_transport_schema(schema), timeout,
+                                     cancellation=cancellation)
+            return record, value
+    if (launch_context is None or 'expected' not in launch_context) and label.startswith(('shortlist-', 'extraction-')):
         import uuid
         from .preflight import capture_expectation
         from .run_record import pinned, policy_files, runtime_files
@@ -577,7 +585,7 @@ def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancel
             'boundary': (launch_context or {}).get('boundary', 'initial'),
             'deadline': deadline,
         }
-    else:
+    elif isinstance(launch_context, dict):
         if 'deadline' in launch_context:
             launch_context = {**launch_context, 'deadline': min(launch_context['deadline'], time.monotonic() + timeout)}
         else:
