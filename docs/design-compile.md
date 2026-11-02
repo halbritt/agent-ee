@@ -76,10 +76,11 @@ element class and value between two distinct nets. It can specify `lib_id` and
 standard `Device` symbol with pins 1 and 2. Supported undirected classes are `resistor`,
 `capacitor`, `inductor`, `ferrite`, and `fuse`. Polarized capacitors, diodes and
 LEDs need a separate `pin_net` witness for each pin; `element_between` cannot
-establish direction. A standard `Device` symbol cannot be relabelled as another
-class. Explicit custom-library classifications are design declarations, not
-independent identification of a symbol's electrical meaning. Rule IDs must be unique across the design. The compiler
-converts label nets to `/NAME` and keeps the GND power-symbol net bare.
+establish direction. The compiler rejects class mismatches among its standard
+default symbols.
+Other explicit classifications are design declarations, not independent
+identification of a symbol's electrical meaning. Rule IDs must be unique across
+the design. The compiler converts label nets to `/NAME` and keeps the GND power-symbol net bare.
 
 Each functional requirement maps to the generated `topology_rules` check. Exact
 netlist parity maps only to the separate native topology requirement. Witness
@@ -203,36 +204,45 @@ does not predict a successful physical design.
 
 ## Real-run example and claims
 
-The I2C example was derived from the retained second-design spike, replacing its
-custom numbered mounting pads with the stock JST SH footprint and matching
-mounting-pin symbol. The second example is a NE555 astable oscillator with
-10 k timing resistors and 100 nF capacitors, designed independently of the spike
-script. Its signed datasheet acquisition failed the complete-PDF check; the
-manufacturer URL supplied by the same JLC row succeeded on the next capture.
-
-The measured results (UTC 2026-11-02) are:
+The examples are an I2C sensor board and a NE555 astable oscillator with 10 k
+resistors and 100 nF capacitors. Fix-round measurements on UTC 2026-11-02 used
+fresh captures, the production image, the prescribed router runtime and the
+mechanics-capable placement runtime. The real builds and final native suite ran
+serially under `native-admit`. Earlier
+adjacent host test selections unintentionally included native classes without
+admission and overlapped builds; that process violation is retained in
+`ADMISSION-DEVIATION.md` in the evidence directory. Those suites were rerun
+correctly in the production image.
 
 | Measurement | Result |
 | --- | --- |
-| Offline tests | 40 passed, including the compiler and adjacent stock/model/placement tests |
-| I2C compile determinism | 94 identical files; 4.63 s and 4.01 s |
-| Fresh 555 capture | 33.30 s; complete |
-| 555 build | Seven stages, 444 s, `accepted: true`, `file_release: pass` |
-| I2C build | Reached package in 815 s; rejected by DRC for one dangling track, zero opens/parity issues; its 17 functional rules, locality, CPL and fab passed |
-| Swapped SDA/SCL build | Reached package in 781 s; rejected only by `functional-rules`, naming `j2-sda` and `j2-scl`; final DRC passed |
+| Offline regressions | 45 pure tests passed; synthetic captures and scripted loopback HTTP, with no external network or retained-capture dependency |
+| Admitted suite | 134 tests passed in the production image, including adjacent native topology/CPL integration and the dangling-track policy regression |
+| Fresh I2C capture / compile / native build | 65.12 / 3.46 / 370.05 s; seven stages, `accepted: true`, `file_release: pass` |
+| Fresh 555 capture / compile / native build | 29.78 / 2.40 / 291.66 s; seven stages, `accepted: true`, `file_release: pass` |
+| I2C with declared mechanics | Compile 3.62 s, build 385.79 s; seven stages, `accepted: true`, final placement mechanics `pass` |
+| Swapped SDA/SCL | Compile 3.65 s, build 364.29 s; reached package and failed only `functional-rules`, naming `j2-sda` and `j2-scl`, with zero unknown rules |
 
-Native build times include admission waiting. The I2C example explicitly uses
-8 placement seeds and a 1200 s budget after four earlier candidates were rejected
-for dangling vias under the pinned router. Its retained run does **not** establish
-file release. That run exposed a placement/package mismatch: placement treated a
-dangling-track warning as advisory, but package DRC rejected it. The subsequent
-build-only candidate-rejection fix is unit-tested; its native rerun remains
-unmeasured. That historical evidence is retained in the r1 evidence directory.
+Native build times include admission. Default clearance and track width were
+0.1 mm, with 0.6/0.3 mm routing vias. The example connectors whose 4 mm inset
+left a 1.05 mm courtyard gap were moved to a 3.5 mm inset; the compiler's
+1 mm edge-proximity check was retained.
 
-The retained evidence root is
-`~/.local/share/agent-ee/zeroasic-20261029-agent707/design-compile-r1/evidence`.
-See its `REPORT.md` for exact commands, runtimes, failures and package outcomes.
-All native jobs use the production image under admission. `accepted` means only
-the typed software file claim. These runs do not measure supplier confirmation,
-physical operation, component suitability, catalog-based part selection, review
-seats, installation, or interrupted-build resume.
+The first declared-mechanics run refused a compiler-derived midpoint of
+`0.5249999999999999` mm at the native body-resolution check. Deriving body sizes
+and offsets with decimal arithmetic corrected it to `0.525` mm. The failed run,
+the regression against old code, and the corrected build are all retained.
+The mechanics run declared J1/J2 as access owners and used the compiler's
+courtyard-derived measurement stand-ins.
+
+Retained evidence is under
+`~/.local/share/agent-ee/zeroasic-20261029-agent707/design-compile-r1/evidence-r2`.
+Its `REPORT.md`, `FINDINGS.md`, command scripts, capture manifests, timing records
+and build reports identify the exact source exports and each result. No vendor
+PDF or captured vendor page is added to the repository.
+
+`accepted` means only the typed software file claim. These runs do not establish
+supplier confirmation, physical operation, full component or land-pattern
+suitability, real body dimensions or mouth direction, independent engineering
+review, installation, or interrupted-build resume. Physical, operational and
+supplier qualification remain pending.
