@@ -288,6 +288,7 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                         lambda supplied: harnesses.native_call(attempt, 'author', definition, supplied, AUTHOR_SCHEMA,
                             min(timeout, remaining(deadline))), validate_response)
                     row['author_execution'] = record['execution']
+                    write_json(attempt / 'response.json', response)
                     if response is None:
                         row.update(status='seat_failed', reason=record.get('error', 'Author returned no valid response'))
                         report['status'] = 'seat_failed'
@@ -335,6 +336,7 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                     and qualification.get('mode') == 'typed'
                     and qualification.get('dimensions', {}).get('file_release', {}).get('status') == 'pass')
                 row['file_release'] = file_pass
+                report['claims']['file_release'] = file_pass
                 if record['execution'] != 'ok' or record.get('exit_code') != 0 or not file_pass:
                     row['failing_stage'] = build['attempts'][-1]['stage'] if build and build.get('attempts') else 'build'
                     if search_failure(build, run) and retries_used < search_retries:
@@ -354,6 +356,7 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                     reviewed = read_optional(attempt / 'review/report.json')
                     dimension = ((reviewed or {}).get('qualification', {}).get('dimensions', {}).get('engineering_review', 'incomplete'))
                     row['engineering_review'] = dimension
+                    report['claims']['engineering_review'] = dimension
                     if record['execution'] != 'ok' or record.get('exit_code') != 0 or dimension != 'pass':
                         result = read_optional(attempt / 'review/review/result.json')
                         row['review_findings'] = (result or {}).get('decisions', (result or {}).get('findings', []))
@@ -386,6 +389,12 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                         ('is not the pinned', 'kicad-route pin', 'pinned code', 'router checkout')):
                     report['status'] = 'runtime_refused'
                     break
+            except KeyboardInterrupt:
+                row.update(status='interrupted', reason='Coordinator interrupted; partial artifacts retained')
+                raise
+            except Exception as exc:
+                row.update(status='error', reason=f'{type(exc).__name__}: {exc}')
+                raise
             finally:
                 row['duration_s'] = time.monotonic() - began
                 # Full feedback is retained. Only the bounded excerpt goes into the next prompt.
@@ -422,7 +431,7 @@ def benchmark(directory, out, **options):
     report = dict(schema='agent-ee.design-benchmark/1', designs=[], status='running')
     start = time.monotonic()
     try:
-        for path in paths:
+        for index, path in enumerate(paths):
             run = out / path.stem
             try:
                 generated = generate(path, run, **options)
@@ -444,9 +453,20 @@ def benchmark(directory, out, **options):
             write_json(out / 'benchmark-report.json', report)
             if generated['status'] in ('seat_failed', 'runtime_refused'):
                 report['status'] = 'stopped_' + generated['status']
+                for pending in paths[index + 1:]:
+                    report['designs'].append(dict(name=pending.stem, requirements_sha256=digest(pending),
+                        status='not_run', reason=report['status'], attempts=0, attempts_to_accepted=None,
+                        duration_s=0, report=None, refusal_classes=[], failed_checks=[], failing_stages=[],
+                        outline_utilisation=dict(status='unavailable', reason='Benchmark stopped before this design')))
                 break
         else:
             report['status'] = 'complete'
+    except KeyboardInterrupt:
+        report['status'] = 'interrupted'
+        raise
+    except Exception as exc:
+        report.update(status='error', error=f'{type(exc).__name__}: {exc}')
+        raise
     finally:
         report['duration_s'] = time.monotonic() - start
         write_json(out / 'benchmark-report.json', report)

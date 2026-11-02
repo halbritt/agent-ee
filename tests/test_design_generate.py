@@ -108,6 +108,45 @@ class GenerateTests(unittest.TestCase):
         self.assertFalse(self.steps)
         self.assertTrue((self.root / 'run/attempt-001/review-attempts/author/0/response.json').is_file())
 
+    def test_no_capture_launch_after_author_spends_deadline(self):
+        clock = [100.0]
+        def seat(*args):
+            clock[0] = 110.0
+            return dict(execution='ok'), self.response()
+        with patch.object(loop.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(loop.harnesses, 'native_call', side_effect=seat):
+            report = self.generate(max_seconds=2)
+        self.assertEqual(report['status'], 'time_exhausted')
+        self.assertEqual(report['attempts'][0]['status'], 'time_exhausted')
+        self.assertFalse(self.steps)
+
+    def test_unexpected_error_is_retained_and_propagated(self):
+        self.responses = [self.response()]
+        with patch.object(loop, 'run_step', side_effect=TypeError('unexpected defect')):
+            with self.assertRaisesRegex(TypeError, 'unexpected defect'):
+                self.generate()
+        report = json.loads((self.root / 'run/generate-report.json').read_text())
+        self.assertEqual(report['status'], 'error')
+        self.assertEqual(report['attempts'][0]['status'], 'error')
+
+    def test_incomplete_review_stops_further_seats(self):
+        self.responses = [self.response()]
+        profile = self.root / 'profile.json'
+        write_json(profile, dict(schema='agent-ee.profile/1'))
+        original = self.step
+        def step(attempt, label, argv, seconds):
+            if label != 'review':
+                return original(attempt, label, argv, seconds)
+            folder = attempt / 'review'
+            folder.mkdir()
+            write_json(folder / 'report.json', dict(qualification=dict(
+                dimensions=dict(engineering_review='not_assessed'))))
+            return dict(execution='failed', exit_code=1)
+        with patch.object(loop, 'run_step', side_effect=step):
+            report = self.generate(max_attempts=3, review_profile=profile)
+        self.assertEqual(report['status'], 'review_incomplete')
+        self.assertEqual(len(self.prompts), 1)
+
     def test_unsupported_is_explicit_and_retained(self):
         self.responses = [dict(status='unsupported', reason='board.copper_layers: four layers unsupported',
             statement_json='', trace=[], agent_selected=[])]
@@ -212,6 +251,18 @@ class GenerateTests(unittest.TestCase):
         path.mkdir(parents=True)
         write_json(path / 'job-report.json', dict(status='refused', reason='pin mismatch'))
         self.assertFalse(loop.search_failure(dict(attempts=[dict(stage='placement-routing')]), run))
+
+    def test_benchmark_lists_unrun_designs_after_subscription_failure(self):
+        directory = self.root / 'requirements'
+        directory.mkdir()
+        for name in ('a', 'b'):
+            (directory / (name + '.md')).write_text(self.requirements.read_text())
+        self.responses = [(dict(execution='failed', error='authentication failed'), None)]
+        report = loop.benchmark(directory, self.root / 'benchmark')
+        self.assertEqual(report['status'], 'stopped_seat_failed')
+        self.assertEqual([r['status'] for r in report['designs']], ['seat_failed', 'not_run'])
+        self.assertEqual(len(self.prompts), 1)
+        self.assertEqual(report['designs'][1]['duration_s'], 0)
 
     def test_benchmark_runs_sorted_and_reports_failures(self):
         directory = self.root / 'requirements'
