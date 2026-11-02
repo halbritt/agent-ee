@@ -254,7 +254,7 @@ class GenerateTests(unittest.TestCase):
         run = self.root / 'native'
         candidate = run / 'stages/package/candidate'
         candidate.mkdir(parents=True)
-        write_json(run / 'build-report.json', dict(candidate='stages/package/candidate'))
+        write_json(run / 'build-report.json', dict(candidate='stages/package/candidate', completed=[dict(stage='placement-routing')]))
         (candidate / 'project').mkdir()
         (candidate / 'project/owned.kicad_pcb').write_text('''(kicad_pcb
           (footprint "one" (at 10 20 90)
@@ -267,6 +267,15 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(result['courtyard_bbox_union_mm2'], 12)
         self.assertEqual(result['fraction'], 12 / 600)
         self.assertEqual(len(result['board_sha256']), 64)
+
+    def test_utilisation_does_not_treat_schematic_positions_as_final_placement(self):
+        run = self.root / 'native'
+        run.mkdir()
+        write_json(run / 'build-report.json', dict(candidate='stages/schematic/candidate',
+            completed=[dict(stage='schematic')]))
+        result = loop.outline_utilisation(run, self.statement)
+        self.assertEqual(result['status'], 'unavailable')
+        self.assertIn('not final placement', result['reason'])
 
     def test_runtime_refusal_is_not_a_search_retry(self):
         run = self.root / 'native'

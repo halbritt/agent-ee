@@ -221,12 +221,15 @@ def outline_utilisation(run, statement):
     report = read_optional(run / 'build-report.json')
     if not report or not report.get('candidate'):
         return dict(status='unavailable', reason='No completed native candidate')
+    if not any(row['stage'] == 'placement-routing' for row in report.get('completed', [])):
+        return dict(status='unavailable', reason='No completed routed candidate; schematic positions are not final placement')
     boards = sorted((run / report['candidate']).rglob('*.kicad_pcb'))
     if len(boards) != 1:
         return dict(status='unavailable', reason='No unique native board in selected candidate')
     node = parse_sexpr(boards[0].read_bytes())
     boxes = []
-    for fp in children(node, 'footprint'):
+    footprints = children(node, 'footprint')
+    for fp in footprints:
         at = children(fp, 'at')[0][1:]
         x, y = map(float, at[:2])
         angle = math.radians(float(at[2]) if len(at) > 2 else 0)
@@ -251,8 +254,10 @@ def outline_utilisation(run, statement):
             end = max(end, high)
         area += (right - left) * height
     outline = statement['board']['width_mm'] * statement['board']['height_mm']
-    return dict(status='measured_proxy', method='union of final-coordinate linear courtyard bounding boxes; sides projected together',
+    return dict(status='measured_proxy' if len(boxes) == len(footprints) else 'partial_proxy',
+        method='union of final-coordinate linear courtyard bounding boxes; sides projected together',
         courtyard_bbox_union_mm2=area, outline_mm2=outline, fraction=area / outline,
+        footprints=len(footprints), footprints_with_linear_courtyard=len(boxes),
         board_path=str(boards[0]), board_sha256=digest(boards[0]),
         limitations=['Not exact polygon area, routing density, thermal utilisation, or proof the outline can shrink.'])
 
