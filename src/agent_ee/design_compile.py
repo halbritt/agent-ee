@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .design import (
     CLASS_SYMBOLS,
-    device_class,
+    device_polarized,
     DesignError,
     blob,
     footprint_path,
@@ -650,7 +650,7 @@ def cpl_policy(design, root):
                     f"parts.{ref}.lcsc: supplier and native pad sets disagree; select matching CAD and part"
                 ]
             )
-        if c.POLARIZED.fullmatch(ref) or device_class(part["lib_id"]) in ("diode", "led", "polarized_capacitor"):
+        if c.POLARIZED.fullmatch(ref) or device_polarized(part["lib_id"]):
             from .symbol_library import parse_library, resolve_symbol
 
             lib, symbol = part["lib_id"].split(":")

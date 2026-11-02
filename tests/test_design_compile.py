@@ -966,7 +966,7 @@ class DesignCompileTests(unittest.TestCase):
         from agent_ee.design import validate, device_class
         for family, kind in (("R", "resistor"), ("C", "capacitor"), ("C_Polarized", "polarized_capacitor"),
                              ("L", "inductor"), ("D", "diode"), ("LED", "led"),
-                             ("Fuse", "fuse"), ("FerriteBead", "ferrite")):
+                             ("Fuse", "fuse"), ("Polyfuse", "fuse"), ("FerriteBead", "ferrite")):
             for suffix in ("", "_US", "_Small", "_Schottky"):
                 symbol = "Device:" + family + suffix
                 self.assertEqual(device_class(symbol), kind)
@@ -976,6 +976,13 @@ class DesignCompileTests(unittest.TestCase):
                 with self.subTest(symbol=symbol), self.assertRaisesRegex(DesignError, "is class"):
                     validate(d)
         self.assertIsNone(device_class("Device:Rheostat"))
+
+    def test_polarized_fuse_family_requires_directed_pin_witnesses(self):
+        from agent_ee.design import validate
+        d = copy.deepcopy(self.design)
+        d["functional"][0]["witnesses"][0].update(lib_id="Device:Fuse_Polarized_Small", **{"class": "fuse"})
+        with self.assertRaisesRegex(DesignError, "is polarized"):
+            validate(d)
 
     def test_fuse_current_value_is_executable(self):
         from agent_ee.design import validate

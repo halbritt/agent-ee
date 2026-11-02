@@ -77,7 +77,7 @@ standard `Device` symbol with pins 1 and 2. Supported undirected classes are `re
 `capacitor`, `inductor`, `ferrite`, and `fuse`. Polarized capacitors, diodes and
 LEDs need a separate `pin_net` witness for each pin; `element_between` cannot
 establish direction. The compiler derives classes from the `Device` R, C, C_Polarized, L, D, LED,
-Fuse and FerriteBead name families, including underscore variants, and refuses
+Fuse, Polyfuse and FerriteBead name families, including underscore variants, and refuses
 class contradictions. Polarized variants remain polarized.
 Other explicit classifications are design declarations, not independent
 identification of a symbol's electrical meaning. Rule IDs must be unique across

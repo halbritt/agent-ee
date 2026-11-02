@@ -41,7 +41,7 @@ def connector_edge_gap(node, connector):
 def passive_size_mismatch(part, package):
     """Compare only explicitly marked standard imperial chip sizes, without guessing IC codes."""
     native = re.search(
-        r"(?:^|_)(01005|0201|0402|0603|0805|1206|1210|1812|2010|2512)_",
+        r"(?:^|_)(01005|0201|0402|0603|0805|1206|1210|1812|2010|2512)(?:_|$)",
         part["footprint"].split(":")[1],
     )
     supplier = re.fullmatch(

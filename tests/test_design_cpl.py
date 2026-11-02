@@ -158,6 +158,7 @@ class CompileCplTests(unittest.TestCase):
         for prefix in ("R", "C", "L", "Fuse", "LED", "D", "Other"):
             with self.subTest(prefix=prefix):
                 self.assertEqual(passive_size_mismatch(dict(footprint=f"Owned:{prefix}_1206_3216Metric"), "0603"), ("1206", "0603"))
+        self.assertEqual(passive_size_mismatch(dict(footprint="Owned:LED_1206"), "0603"), ("1206", "0603"))
         self.assertIsNone(passive_size_mismatch(dict(footprint="Owned:SOT-23-5"), "0603"))
 
     def test_low_copper_overlap_warns_in_stderr_and_report(self):

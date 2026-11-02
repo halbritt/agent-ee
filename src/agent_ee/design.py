@@ -65,11 +65,17 @@ def device_class(lib_id):
         return None
     name = lib_id.split(":", 1)[1]
     for family, kind in (("C_Polarized", "polarized_capacitor"), ("FerriteBead", "ferrite"),
-                         ("Fuse", "fuse"), ("LED", "led"), ("R", "resistor"),
+                         ("Fuse", "fuse"), ("Polyfuse", "fuse"), ("LED", "led"), ("R", "resistor"),
                          ("C", "capacitor"), ("L", "inductor"), ("D", "diode")):
         if name == family or name.startswith(family + "_"):
             return kind
     return None
+
+
+def device_polarized(lib_id):
+    return device_class(lib_id) in ("diode", "led", "polarized_capacitor") or (
+        device_class(lib_id) is not None and "Polarized" in lib_id.split(":", 1)[1].split("_")
+    )
 
 
 def validate(design, captures=None, *, cad_only=False):
@@ -622,6 +628,8 @@ def validate(design, captures=None, *, cad_only=False):
                         fail(wp + ".pins", "supply two distinct pin numbers")
                     class_symbol = w.get("lib_id", CLASS_SYMBOLS.get(w["class"]))
                     canonical_class = device_class(class_symbol)
+                    if device_polarized(class_symbol):
+                        fail(wp + ".lib_id", f"{class_symbol} is polarized; use separate pin_net witnesses for both pins")
                     if canonical_class is not None and canonical_class != w["class"]:
                         fail(
                             wp + ".lib_id",
