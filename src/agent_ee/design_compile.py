@@ -35,7 +35,7 @@ NATIVE = [
     "Native ERC shall report no electrical violations after schematic emission.",
     "Final native DRC shall report no errors and no unconnected items after zone refill.",
     "The emitted native netlist shall match the selected circuit topology exactly.",
-    "Every physical component shall match the selected identity, CAD assignment and population declaration.",
+    "The native component inventory shall match the declared parts membership and multiplicity.",
     "Every populated component shall carry purchasing properties and current JLCPCB stock evidence.",
 ]
 

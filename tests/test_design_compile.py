@@ -930,6 +930,7 @@ class DesignCompileTests(unittest.TestCase):
         self.assertIn("Mouth direction and physical mating access are not established by this check.", spec)
         self.assertIn("This checks only declared pin assignments and undirected class/value relationships.", spec)
         self.assertIn("not established by these witnesses", spec)
+        self.assertIn("The native component inventory shall match the declared parts membership and multiplicity.", spec)
         self.assertNotIn("size codes shall agree", spec)
         placement = json.loads((root / "placement.json").read_bytes())
         self.assertIn("Agent-selected measurement requirement; not an owner or datasheet ruling; final acceptance required",
