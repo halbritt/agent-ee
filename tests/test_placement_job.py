@@ -409,6 +409,7 @@ class CustodyTests(unittest.TestCase):
                                          checkout=self.dir, runtime={}, clock=job.Clock(10),
                                          job_dir=self.dir, attempt=1, report=rep_declared,
                                          engine_sha256='', routing_exhausted=True)
+            self.assertEqual(res2, [])
             self.assertEqual(rep_declared.get('placement_repair', {}).get('trigger'), 'feasible_routing_exhausted')
             self.assertEqual(rep_declared.get('placement_repair', {}).get('status'), 'no_incumbent')
 
