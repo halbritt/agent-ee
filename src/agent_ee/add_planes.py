@@ -169,34 +169,11 @@ def _drc(inputs, board, work, *, _execution=None):
                                                  executable='/usr/bin/kicad-cli'), inputs=inputs, work=work))
     if not inputs.is_relative_to(_execution.scratch) or not work.is_relative_to(_execution.scratch):
         raise ValueError('plane DRC paths must stay in stage scratch')
-    before, other = stage_receipts.file_tree(inputs)
-    if other:
-        raise ValueError('plane DRC inputs must be regular captured files')
-    # KiCad saves .kicad_prl preferences beside the board. Give it a disposable
-    # project, leaving the verified board/project/rules and captured inputs intact.
-    private = work.with_name(work.name+'-project')
-    if not private.is_relative_to(_execution.scratch):
-        raise ValueError('plane DRC project must stay in stage scratch')
-    private.mkdir()
-    original = inputs/board
-    for source in (original, *(original.with_suffix(suffix) for suffix in SIBLINGS)):
-        if source.is_file():
-            shutil.copyfile(source, private/source.name)
-    copied, other = stage_receipts.file_tree(private)
-    if other or any(copied.get(source.name) != before.get(str(source.relative_to(inputs)))
-                    for source in (original, *(original.with_suffix(suffix) for suffix in SIBLINGS))
-                    if source.is_file()):
-        raise ValueError('plane DRC private project copy changed')
-    record = dict(native_run.run(native_run.Intent('drc', native_run.drc_argv(private/original.name, work/'report.json',
-        executable='/usr/bin/kicad-cli'), timeout=180, isolation='host',
-        env=_execution.environment(inputs, work)), work=work))
-    if stage_receipts.file_tree(inputs) != (before, []):
-        raise ValueError('plane DRC child changed its private inputs')
-    after, other = stage_receipts.file_tree(private)
-    preferences = original.with_suffix('.kicad_prl').name
-    if other or ({name: value for name, value in after.items() if name != preferences} !=
-                 {name: value for name, value in copied.items() if name != preferences}):
-        raise ValueError('plane DRC child changed its private project')
+    from .stage_execution import stage_kicad_project
+    with stage_kicad_project(inputs, work, board, SIBLINGS, project_dir=work.with_name(work.name+'-project')) as private:
+        record = dict(native_run.run(native_run.Intent('drc', native_run.drc_argv(private/board, work/'report.json',
+            executable='/usr/bin/kicad-cli'), timeout=180, isolation='host',
+            env=_execution.environment(inputs, work)), work=work))
     return record
 
 
@@ -380,8 +357,12 @@ def generate(candidate, board, plan_path, out, *, phase=None, _execution=None):
 
 def _stage_main(argv=None):
     """Only the captured receipted step may select supervised in-stage children."""
-    from .forward_annotation import _StageExecution
-    execution = _StageExecution()
+    from .stage_execution import ConfinementView, StageContext
+    from .forward_annotation import AnnotationError
+    try:
+        execution = StageContext(ConfinementView.STAGE_TOOL)
+    except Exception as exc:
+        raise AnnotationError('stage_confinement', 'plane stage entrypoint requires the fixed receipted stage sandbox') from exc
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--board', required=True)
     parser.add_argument('--plan', required=True)

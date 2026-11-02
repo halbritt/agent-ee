@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from agent_ee import forward_annotation as fa, native_run, schematic_stage
+from agent_ee.stage_execution import ConfinementView, StageContext
 from tests.test_custom_pad_index import custom
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,7 +43,7 @@ def context(scratch):
     def read(path, *a, **kw):
         return mount_view() if str(path) == '/proc/self/mountinfo' else original(path, *a, **kw)
     with patch.object(Path, 'read_text', read), patch.object(fa, '__file__', '/tool/agent-ee/agent_ee/forward_annotation.py'):
-        execution = fa._StageExecution()
+        execution = StageContext(ConfinementView.STAGE_TOOL, work=scratch)
     execution.scratch = scratch
     return execution
 
@@ -304,10 +305,10 @@ class StageExecutionTests(unittest.TestCase):
                 with self.subTest(accepted=accepted,view=view), patch.object(Path,'read_text',return_value=view), \
                      patch.object(fa,'__file__','/tool/agent-ee/agent_ee/forward_annotation.py'):
                     if accepted:
-                        fa._StageExecution()
+                        StageContext(ConfinementView.STAGE_TOOL)
                     else:
-                        with self.assertRaises(fa.AnnotationError):
-                            fa._StageExecution()
+                        with self.assertRaises(ValueError):
+                            StageContext(ConfinementView.STAGE_TOOL)
 
     def test_stage_entrypoint_refuses_a_host_view_and_incomplete_mount_declarations(self):
         args = ['annotate', '--board','a.kicad_pcb','--schematic','a.kicad_sch',
@@ -321,8 +322,8 @@ class StageExecutionTests(unittest.TestCase):
                 with self.assertRaisesRegex(fa.AnnotationError, 'fixed receipted stage sandbox'):
                     schematic_stage.main(args)
         with patch.object(Path, 'read_text', return_value=mount_view()):
-            with self.assertRaisesRegex(fa.AnnotationError, 'fixed receipted stage sandbox'):
-                fa._StageExecution()  # Actual source checkout is not the fixed captured mount.
+            with self.assertRaises(ValueError):
+                StageContext(ConfinementView.STAGE_TOOL)  # Actual source checkout is not the fixed captured mount.
 
     def test_stage_netlist_paths_and_failure_are_retained_for_flat_and_hierarchy(self):
         import shutil
@@ -499,7 +500,7 @@ class StageExecutionTests(unittest.TestCase):
             self.assertEqual(add_planes._stage_main(argv), 0)
             args, kw = generate.call_args
             self.assertEqual(args, ('/candidate','board.kicad_pcb','planes.json','/work/out'))
-            self.assertIsInstance(kw['_execution'], fa._StageExecution)
+            self.assertIsInstance(kw['_execution'], StageContext)
             for option in ('--inputs', '--out'):
                 generate.reset_mock()
                 with patch('sys.stderr'), self.assertRaises(SystemExit) as refused:

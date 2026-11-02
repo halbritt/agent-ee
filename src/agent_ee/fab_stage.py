@@ -13,6 +13,7 @@ from .fab_export import JLC_TEMPLATE_DIR, inventory, load_verified_manifest
 from .fab_package import ROTATION_STATUSES, preview_obligations
 from .storage import digest, read_json, write_json
 from .run_record import outcome
+from .stage_execution import ConfinementView, StageContext
 
 CPL_ROOT = Path('generation/cpl')
 FAB_CHECKS = frozenset({'fab_export', 'cpl_rotation', 'fab_package'})
@@ -350,114 +351,9 @@ def package(run, target, manifest_path):
     return data
 
 
-class _FabStageExecution:
-    """Native fab checks inside the fixed receipted producer's existing sandbox."""
-
-    def __init__(self):
-        from .forward_annotation import _StageExecution
-        self.stage = _StageExecution(_fab_templates=True)
-
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel,
-            on_line=None, on_launch=None, on_tick=None, **callbacks):
-        from dataclasses import replace
-        from . import native_run
-        from .checks import CheckError
-        from .stage_receipts import file_tree
-        from .executor import SANDBOX_PATH
-        if (intent.isolation != 'sandbox' or intent.network or intent.remount_ro
-                or intent.log_bytes is not None or callbacks
-                or any(v is not None for v in (on_line, on_launch, on_tick))):
-            raise ValueError('unsupported receipted fab child intent')
-        inputs, work = Path(inputs).resolve(), Path(work).resolve()
-        if (not inputs.is_relative_to(self.stage.scratch)
-                or not work.is_relative_to(self.stage.scratch)):
-            raise ValueError('fab child paths must stay in stage scratch')
-        # The only additional check mount is its captured baseline, never a new
-        # host path. Keep it in the immutable before/after observation as well.
-        protected = [inputs]
-        baseline = None
-        for source, target in mounts:
-            source = Path(source).resolve()
-            if (target != native_run.BASELINE_AT or baseline is not None
-                    or not source.is_relative_to(self.stage.scratch)):
-                raise ValueError('unsupported receipted fab child mount')
-            baseline = source
-            protected.append(source)
-        def identity():
-            records = []
-            for path in protected:
-                if path == inputs:
-                    files, other = file_tree(path)
-                    if other:
-                        raise CheckError('malformed', 'fab child inputs must be regular captured files')
-                    records.append(files)
-                else:
-                    records.append(digest(path))
-            return records
-        started = time.monotonic()
-        before = identity()
-        child_inputs, project, copied, preferences = inputs, None, None, None
-        design_suffix = None
-        if intent.argv[:3] == ('kicad-cli', 'pcb', 'export'):
-            design_suffix = '.kicad_pcb'
-        elif (intent.argv[:3] == ('kicad-cli', 'sch', 'export')
-              and intent.argv[3:4] in (('netlist',), ('bom',))):
-            design_suffix = '.kicad_sch'
-        if design_suffix is not None:
-            design = Path(intent.argv[-1].removeprefix('/candidate/'))
-            if (not intent.argv[-1].startswith('/candidate/') or design.suffix != design_suffix
-                    or not (inputs / design).resolve().is_relative_to(inputs)
-                    or design.as_posix() not in before[0]):
-                raise ValueError('fab export must name its captured design file')
-            # KiCad writes project preferences beside the design. Each export
-            # gets fresh captured collateral, never another child's preferences.
-            project = work / 'project'
-            shutil.copytree(inputs, project, symlinks=True)
-            copied, other = file_tree(project)
-            if other or copied != before[0]:
-                raise CheckError('malformed', 'fab private project copy changed')
-            child_inputs = project
-            preferences = design.with_suffix('.kicad_prl').as_posix()
-        def concrete(arg):
-            if arg == native_run.BASELINE_AT:
-                if baseline is None:
-                    raise ValueError('fab child baseline was not captured')
-                return str(baseline)
-            for virtual, actual in (('/candidate', child_inputs), ('/work', work)):
-                if arg == virtual or arg.startswith(virtual + '/'):
-                    path = actual / arg.removeprefix(virtual).lstrip('/')
-                    if not path.resolve().is_relative_to(actual):
-                        raise ValueError('fab child path escapes its private directory')
-                    return str(path)
-            return arg
-        env = self.stage.environment(inputs, work)
-        env.update(PATH=SANDBOX_PATH, LANG='C.UTF-8')
-        child = replace(intent, argv=tuple(concrete(arg) for arg in intent.argv),
-                        isolation='host', env=env, cwd=str(work))
-        try:
-            # Host here means no second namespace: the enclosing receipted
-            # bwrap still owns the readonly source, network and PID boundary.
-            remaining = timeout - (time.monotonic() - started)
-            if remaining <= native_run.LAUNCH_FLOOR_S:
-                raise native_run.DeadlineExhausted('fab child setup exhausted its deadline')
-            return native_run.Host().run(child, inputs=None, work=work, timeout=remaining,
-                                         mounts=(), cancel=cancel)
-        finally:
-            if identity() != before:
-                raise CheckError('malformed', 'fab child changed its captured inputs')
-            if project is not None:
-                after, other = file_tree(project)
-                pref = project / preferences
-                if (other or (pref.exists() and not pref.is_file())
-                        or (preferences in copied and preferences not in after)
-                        or {k: v for k, v in after.items() if k != preferences} !=
-                           {k: v for k, v in copied.items() if k != preferences}):
-                    raise CheckError('malformed', 'fab child changed its private project')
-
-
 def _stage_main(argv=None):
     from . import native_run
-    with native_run.using(_FabStageExecution()):
+    with native_run.using(StageContext(ConfinementView.STAGE_TOOL, _fab_templates=True)):
         return main(argv)
 
 

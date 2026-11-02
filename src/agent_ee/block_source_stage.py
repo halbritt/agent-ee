@@ -226,8 +226,8 @@ def main(argv=None):
     names = vars(parser.parse_args(argv))
     clock = placement_job.Clock(TIMEOUT)
     # The existing exact outer-layout witness refuses standalone host invocation.
-    from .forward_annotation import _StageExecution
-    _StageExecution()
+    from .stage_execution import ConfinementView
+    ConfinementView.STAGE_TOOL.verify()
     produce('/candidate', '/work/out', names, clock=clock)
     return 0
 

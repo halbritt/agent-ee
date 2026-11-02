@@ -178,7 +178,14 @@ def main(argv=None):
     args = vars(parser.parse_args(argv))
     command = args.pop('command')
     # Only this fixed entrypoint selects children that inherit the receipted sandbox.
-    execution = forward_annotation._StageExecution() if command == 'annotate' else None
+    if command == 'annotate':
+        from .stage_execution import ConfinementView, StageContext
+        try:
+            execution = StageContext(ConfinementView.STAGE_TOOL)
+        except Exception as exc:
+            raise forward_annotation.AnnotationError('stage_confinement', 'annotation requires the fixed receipted stage sandbox') from exc
+    else:
+        execution = None
     return run(command, '/candidate', '/work/out', _execution=execution, **args)
 
 

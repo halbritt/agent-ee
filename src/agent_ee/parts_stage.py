@@ -129,11 +129,14 @@ def compile_parts(root, manifest, circuit, layout, *, deviations=None, ratings=N
         if not component['power'] and (sheets[component.get('sheet', 'root')], component['reference']) not in used:
             raise ValueError('physical circuit instance has no selected part: ' + component['reference'])
     from .binding_fill import fill
+    from .stage_execution import ConfinementView, StageContext
+    stage_context = StageContext(ConfinementView.STAGE_TOOL) if ConfinementView.is_confined() else None
     intent, binding_report = fill(root, intent, document,
         dict(schema='agent-ee.part-refs/1', components=refs),
         strict_json(raw[deviations]) if deviations is not None else
         dict(schema='agent-ee.part-deviations/1', deviations=[]), captures='.',
-        ratings=strict_json(raw[ratings]) if ratings is not None else None)
+        ratings=strict_json(raw[ratings]) if ratings is not None else None,
+        _rating_execution=stage_context)
     dependencies.update(binding_report['dependencies'])
     resolved = resolve_intent(intent, libraries)
     if (resolved['execution'], resolved['outcome'], resolved['coverage']) != ('ok', 'pass', 'complete'):

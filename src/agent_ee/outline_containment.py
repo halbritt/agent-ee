@@ -72,7 +72,7 @@ def sandboxed(inputs, board, work, *, _execution=None):
         record = dict(native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/python3', '-B', '-m', 'agent_ee.outline_containment',
             '/candidate/' + str(board), '-o', '/work/copper-containment.json'], timeout=120), inputs=inputs, work=work))
     else:
-        record = _execution._probe(inputs, work, ['-m', 'agent_ee.outline_containment',
+        record = _execution.probe(inputs, work, ['-m', 'agent_ee.outline_containment',
             str(Path(inputs)/board), '-o', str(Path(work)/'copper-containment.json')], 120)
     # Keep the complete receipt while leaving packet excerpt space for later checks.
     (Path(work) / 'execution.json').write_bytes(canonical(record) + b'\n')

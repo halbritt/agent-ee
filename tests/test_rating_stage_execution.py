@@ -10,7 +10,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agent_ee import binding_fill, datasheet_facts, forward_annotation, native_run, passive_ratings
+from agent_ee import binding_fill, datasheet_facts, forward_annotation, native_run, passive_ratings, stage_execution
+from agent_ee.stage_execution import ConfinementView, StageContext
 from agent_ee.storage import digest, read_json, write_json
 import test_passive_ratings as fixtures
 
@@ -48,6 +49,8 @@ class RatingStageTests(unittest.TestCase):
                     return actual / value.removeprefix(virtual).lstrip('/')
             return real_path(value)
         self.enterContext(patch.object(binding_fill, 'Path', side_effect=paths))
+        from agent_ee import stage_execution
+        self.enterContext(patch.object(stage_execution, 'Path', side_effect=paths))
         self.enterContext(patch.object(forward_annotation, '__file__', '/tool/agent-ee/agent_ee/forward_annotation.py'))
         self.view = mounts()
         def text(path, *args, **kwargs):
@@ -128,7 +131,7 @@ class RatingStageTests(unittest.TestCase):
         self.assertFalse((self.work / 'out').exists())
 
     def test_adapter_rejects_other_commands_inputs_paths_and_mounts(self):
-        adapter = binding_fill._RatingStageExecution()
+        adapter = StageContext(ConfinementView.STAGE_TOOL, work=Path('/work/out/rating-citations'))
         base = native_run.Intent('probe', ['/usr/bin/pdftotext', '-v'], timeout=60)
         options = dict(inputs='/candidate', work='/work/out/rating-citations/version', timeout=60, mounts=(), cancel=None)
         cases = [(replace(base, argv=('/usr/bin/true',)), {}), (replace(base, network=True), {}),
@@ -144,16 +147,16 @@ class RatingStageTests(unittest.TestCase):
                     adapter.run(intent, **{**options, **updates})
 
     def test_setup_time_and_cancellation_are_forwarded_without_reset(self):
-        adapter = binding_fill._RatingStageExecution()
+        adapter = StageContext(ConfinementView.STAGE_TOOL, work=Path('/work/out/rating-citations'))
         intent = native_run.Intent('probe', ['/usr/bin/pdftotext', '-v'], timeout=60)
         cancel = native_run.Cancellation()
         kwargs = dict(inputs='/candidate', work='/work/out/rating-citations/version', timeout=9, mounts=(), cancel=cancel)
-        with patch.object(binding_fill.time, 'monotonic', side_effect=[100, 103]), \
+        with patch.object(stage_execution.time, 'monotonic', side_effect=[100, 103]), \
                 patch.object(native_run.Host, 'run', return_value={'execution': 'interrupted'}) as host:
             self.assertEqual(adapter.run(intent, **kwargs)['execution'], 'interrupted')
             self.assertEqual(host.call_args.kwargs['timeout'], 6)
             self.assertIs(host.call_args.kwargs['cancel'], cancel)
-        with patch.object(binding_fill.time, 'monotonic', side_effect=[100, 110]), \
+        with patch.object(stage_execution.time, 'monotonic', side_effect=[100, 110]), \
                 patch.object(native_run.Host, 'run', side_effect=AssertionError('must not launch')), \
                 self.assertRaises(native_run.DeadlineExhausted):
             adapter.run(intent, **kwargs)
@@ -285,7 +288,7 @@ class RatingStageTests(unittest.TestCase):
         self.work = Path(self.enterContext(tempfile.TemporaryDirectory()))
         with patch.object(datasheet_facts, 'digest', side_effect=[self.tool['sha256'], '0' * 64]), \
                 patch.object(native_run.Host, 'run', side_effect=original):
-            with native_run.using(binding_fill._RatingStageExecution()), self.assertRaisesRegex(ValueError, 'extractor|pdftotext hash changed'):
+            with native_run.using(StageContext(ConfinementView.STAGE_TOOL, work=Path('/work/out/rating-citations'))), self.assertRaisesRegex(ValueError, 'extractor|pdftotext hash changed'):
                 passive_ratings.verify_citations(self.root, [self.fact], self.tool, _work=self.work / 'out/rating-citations')
         self.assertTrue((self.work / 'out/rating-citations/version/execution.json').is_file())
 
@@ -332,7 +335,7 @@ class RatingStageTests(unittest.TestCase):
         self.assertEqual(read_json(self.work / 'out/rating-citations/version/execution.json')['exit_code'], 0)
 
     def test_adapter_refuses_symlink_scratch_and_captured_member(self):
-        adapter = binding_fill._RatingStageExecution()
+        adapter = StageContext(ConfinementView.STAGE_TOOL, work=Path('/work/out/rating-citations'))
         intent = native_run.Intent('probe', ['/usr/bin/pdftotext', '-v'])
         (self.work / 'out').mkdir()
         (self.work / 'out/rating-citations').symlink_to(self.root, target_is_directory=True)

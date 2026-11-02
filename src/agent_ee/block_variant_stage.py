@@ -137,7 +137,13 @@ def produce_stage(inputs, work, ctx):
             raise ValueError('block producer output collides with a design or policy input')
     # Use the consumer's own policy composition, including envelope/locality/mechanics.
     plain = {key: value for key, value in declaration.items() if key != 'blocks'}
-    _, _, policy, _, refs = adapter.binding(plain, manifest, inputs, mutable)
+    from .stage_execution import ConfinementView, StageContext
+    if ConfinementView.is_confined():
+        stage_ctx = StageContext(ConfinementView.STAGE_TOOL, work=work / 'scratch' if work == Path('/work') else work)
+        with native_run.using(stage_ctx):
+            _, _, policy, _, refs = adapter.binding(plain, manifest, inputs, mutable)
+    else:
+        _, _, policy, _, refs = adapter.binding(plain, manifest, inputs, mutable)
     policy = adapter.request_policy(policy, refs)
     capture = extract(inputs / bound['board'])
     original_hash = capture['board_sha256']

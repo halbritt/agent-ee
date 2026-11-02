@@ -39,7 +39,7 @@ def produce(board, out, *, skip=False, inputs=None):
         enclosed = footprint_probe._enclosing_sandbox(_placement=True)
         if enclosed:
             source_root = Path(footprint_probe.__file__).resolve().parents[1]
-            if (source_root not in (Path('/app'), Path('/placement-tool'))
+            if (source_root not in (Path('/app'), Path('/placement-tool'), Path('/tool/agent-ee'))
                     or Path(__file__).resolve() != source_root / 'agent_ee/candidate_visuals.py'):
                 raise ValueError('candidate imaging requires its exact captured source')
             from .stage_receipts import file_tree
@@ -88,53 +88,30 @@ def produce(board, out, *, skip=False, inputs=None):
 
 def _enclosed_imaging(board, inputs, out, relative, captured):
     """One supervised imaging child within the verified executor and captured source."""
-    from .stage_receipts import file_tree
+    from .stage_execution import stage_kicad_project
     work = out / 'native'
-    private = work / 'inputs'
-    private.mkdir(parents=True)
-    (work / 'home').mkdir()
-    (work / 'kicad-config').mkdir()
-    copied = None
+    (work / 'home').mkdir(parents=True, exist_ok=True)
+    (work / 'kicad-config').mkdir(parents=True, exist_ok=True)
     try:
-        for rel in captured:
-            target = private / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(inputs / rel, target, follow_symlinks=False)
-        copied, other = file_tree(private)
-        if other or copied != captured or digest(private / relative) != digest(board):
-            raise ValueError('candidate imaging private project copy changed')
-        environment = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1]), HOME=str(work / 'home'),
-                           KICAD_CONFIG_HOME=str(work / 'kicad-config'))
-        _check_imaging_paths(out)
-        command = ('from agent_ee.candidate_visuals import _imaging_main; import sys; '
-                   '_imaging_main(*sys.argv[1:])')
-        execution = native_run.run(native_run.Intent('candidate_visuals',
-            ['/usr/bin/python3', '-B', '-P', '-c', command, str(private / relative), str(work)],
-            timeout=180, stop_grace_s=5, isolation='host', env=environment), work=work)
-        _check_imaging_paths(out)
-        cleanup = work / 'imaging-cleanup.json'
-        if (not cleanup.is_file() or cleanup.is_symlink() or read_json(cleanup) !=
-                {'schema': 'agent-ee.candidate-imaging-cleanup/1', 'status': 'unwound'}):
-            raise ValueError('candidate imaging cleanup is unconfirmed; retain native diagnostics')
-        return execution
+        with stage_kicad_project(inputs, work, relative, target_name='inputs') as private:
+            if digest(private / relative) != digest(board):
+                raise ValueError('candidate imaging private project copy changed')
+            environment = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1]), HOME=str(work / 'home'),
+                               KICAD_CONFIG_HOME=str(work / 'kicad-config'))
+            _check_imaging_paths(out)
+            command = ('from agent_ee.candidate_visuals import _imaging_main; import sys; '
+                       '_imaging_main(*sys.argv[1:])')
+            execution = native_run.run(native_run.Intent('candidate_visuals',
+                ['/usr/bin/python3', '-B', '-P', '-c', command, str(private / relative), str(work)],
+                timeout=180, stop_grace_s=5, isolation='host', env=environment), work=work)
+            _check_imaging_paths(out)
+            cleanup = work / 'imaging-cleanup.json'
+            if (not cleanup.is_file() or cleanup.is_symlink() or read_json(cleanup) !=
+                    {'schema': 'agent-ee.candidate-imaging-cleanup/1', 'status': 'unwound'}):
+                raise ValueError('candidate imaging cleanup is unconfirmed; retain native diagnostics')
+            return execution
     finally:
         _check_imaging_paths(out)
-        after, other = file_tree(inputs)
-        if out.is_relative_to(inputs):
-            owned = out.relative_to(inputs).as_posix() + '/'
-            after = {k: v for k, v in after.items() if not k.startswith(owned)}
-            other = [k for k in other if not k.startswith(owned) and k != owned[:-1]]
-        if other or after != captured:
-            raise ValueError('candidate imaging changed its captured inputs')
-        if copied is not None:
-            after, other = file_tree(private)
-            preferences = str(Path(relative).with_suffix('.kicad_prl'))
-            pref = private / preferences
-            if (other or (pref.exists() and not pref.is_file())
-                    or (preferences in copied and preferences not in after)
-                    or {k: v for k, v in after.items() if k != preferences} !=
-                       {k: v for k, v in copied.items() if k != preferences}):
-                raise ValueError('candidate imaging changed its private project')
 
 
 def _check_imaging_paths(out):

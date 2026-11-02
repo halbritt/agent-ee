@@ -445,8 +445,12 @@ def _constraint_step(plan_dir, scope):
 def run_scaffold(recipe):
     """Only the shared scaffold producer writes native files, in the receipt sandbox."""
     recipe = read_json(recipe)
-    scaffold.scaffold(Path('/candidate') / recipe['envelope'], Path('/candidate') / recipe['parts'],
-                      '/work/scaffold', scope_path='/tool/plan/scope.json')
+    from .stage_execution import ConfinementView, StageContext
+    from . import native_run
+    context = StageContext(ConfinementView.STAGE_TOOL)
+    with native_run.using(context):
+        scaffold.scaffold(Path('/candidate') / recipe['envelope'], Path('/candidate') / recipe['parts'],
+                          '/work/scaffold', scope_path='/tool/plan/scope.json')
 
 
 def build(plan_path, out, *, dry_run=False):

@@ -28,7 +28,7 @@ class FabStageExecutionTests(unittest.TestCase):
             return view if str(path) == '/proc/self/mountinfo' else original(path, *args, **kwargs)
         with patch.object(Path, 'read_text', read), patch.object(
                 fa, '__file__', '/tool/agent-ee/agent_ee/forward_annotation.py'):
-            execution = fab_stage._FabStageExecution()
+            execution = fab_stage.StageContext(fab_stage.ConfinementView.STAGE_TOOL, _fab_templates=True)
         execution.stage.scratch = self.root
         return execution
 
@@ -97,7 +97,7 @@ class FabStageExecutionTests(unittest.TestCase):
         def producer(argv):
             return native_run.run(intent, inputs=self.inputs, work=work,
                                   baseline=self.baseline, deadline=time.monotonic() + 30)
-        with patch.object(fab_stage, '_FabStageExecution', return_value=execution), \
+        with patch.object(fab_stage, 'StageContext', return_value=execution), \
                 patch.object(fab_stage, 'main', producer), \
                 patch.object(native_run.Host, 'run', side_effect=child), \
                 patch.object(native_run.Sandbox, 'run', side_effect=AssertionError('nested sandbox')):

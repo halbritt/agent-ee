@@ -342,61 +342,9 @@ def configuration(source_root, *, intent, manifest, part_refs, deviations, captu
         'adoptable_exits': [0], 'timeout_s': 600 if source_migration else 120})
 
 
-class _RatingStageExecution:
-    """Only pdftotext children of the fixed receipted binding-fill stage."""
-    def __init__(self):
-        from .forward_annotation import _StageExecution
-        self.stage = _StageExecution()
-
-    def run(self, intent, *, inputs, work, timeout, mounts, cancel,
-            on_line=None, on_launch=None, on_tick=None, **callbacks):
-        from dataclasses import replace
-        from . import native_run
-        from .datasheet_facts import EXTRACTOR
-        from .executor import SANDBOX_PATH
-        started = time.monotonic()
-        if (intent.tool != 'probe' or intent.isolation != 'sandbox' or intent.network
-                or intent.stdin is not None or intent.env is not None or intent.cwd is not None
-                or intent.remount_ro or intent.log_bytes is not None or intent.skip_visuals is not None
-                or intent.stop_grace_s is not None or intent.merge_stderr or mounts or callbacks
-                or any(v is not None for v in (on_line, on_launch, on_tick))):
-            raise ValueError('unsupported binding-fill rating child intent')
-        inputs, work = Path(inputs), Path(work)
-        scratch = Path('/work/out/rating-citations')
-        if (inputs != Path('/candidate') or inputs.resolve() != inputs
-                or work.parent != scratch or work.resolve() != work
-                or scratch.resolve() != scratch):
-            raise ValueError('rating child requires fixed candidate and citation scratch')
-        argv = intent.argv
-        captured = None
-        if argv == (EXTRACTOR, '-v') and work.name == 'version':
-            concrete = argv
-        elif (len(argv) == 4 and argv[:2] == (EXTRACTOR, '-layout')
-                and argv[2].startswith('/candidate/') and argv[3] == '/work/document.txt'
-                and re.fullmatch(r'pdf-(0|[1-9][0-9]*)', work.name)):
-            captured = _path(argv[2].removeprefix('/candidate/'))
-            before = hashlib.sha256(read_captured(inputs, captured)).hexdigest()
-            concrete = (EXTRACTOR, '-layout', str(inputs / captured), str(work / 'document.txt'))
-        else:
-            raise ValueError('unsupported binding-fill pdftotext argv or work path')
-        env = self.stage.environment(inputs, work)
-        env.update(PATH=SANDBOX_PATH, LANG='C.UTF-8')
-        try:
-            remaining = timeout - (time.monotonic() - started)
-            if remaining <= native_run.LAUNCH_FLOOR_S:
-                raise native_run.DeadlineExhausted('rating child setup exhausted its deadline')
-            child = replace(intent, argv=concrete, timeout=remaining, isolation='host', env=env, cwd=str(work))
-            # Host here is still inside the verified receipted sandbox; never a
-            # standalone fallback or a new namespace/policy option.
-            return native_run.Host().run(child, inputs=None, work=work, timeout=remaining,
-                                         mounts=(), cancel=cancel)
-        finally:
-            if captured is not None and hashlib.sha256(read_captured(inputs, captured)).hexdigest() != before:
-                raise ValueError('rating child changed its captured PDF')
-
-
 def _stage_main(argv=None):
-    execution = _RatingStageExecution()
+    from .stage_execution import ConfinementView, StageContext
+    execution = StageContext(ConfinementView.STAGE_TOOL, work=Path('/work/out/rating-citations'))
     return main(argv, _rating_work=Path('/work/out/rating-citations'), _rating_execution=execution)
 
 
