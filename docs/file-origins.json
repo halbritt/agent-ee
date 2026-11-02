@@ -4429,7 +4429,9 @@
     },
     {
       "paths": [
-        "tests/test_design_compile.py"
+        "tests/test_design_compile.py",
+        "tests/test_design_capture.py",
+        "tests/test_design_cpl.py"
       ],
       "kind": "owned-source",
       "origins": [
