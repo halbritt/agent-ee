@@ -387,6 +387,31 @@ class CustodyTests(unittest.TestCase):
             job.load_checkpoint(self.dir, 'y')
         self.assertFalse(list(self.dir.glob('.checkpoint*')))
 
+    def test_design_declared_post_route_repair_unlocked(self):
+        diagnostic = {'seed': 1, 'cost': '10', 'terms': {'hard_count': '0', 'hard': '0'}}
+        shortlist = [{'feasible': True, 'seed': 1, 'cost': '10', 'poses': []}]
+
+        # 1. Legacy mechanics model: route_failed blocks repair
+        legacy_prob = {'mechanics': {'schema': 'agent-ee.acquisition-mechanics/1'}}
+        rep_legacy = {'routing_trials': [{'status': 'route_failed'}]}
+        res = job._repair_shortlist(legacy_prob, shortlist, [diagnostic],
+                                    checkout=self.dir, runtime={}, clock=job.Clock(10),
+                                    job_dir=self.dir, attempt=1, report=rep_legacy,
+                                    engine_sha256='', routing_exhausted=True)
+        self.assertEqual(res, [])
+        self.assertNotIn('placement_repair', rep_legacy)
+
+        # 2. Design-declared model: route_failed allows repair attempt
+        declared_prob = {'mechanics': {'schema': 'agent-ee.source-mechanics/1', 'custody': 'design-declared'}}
+        rep_declared = {'routing_trials': [{'status': 'route_failed'}]}
+        with unittest.mock.patch.object(job, '_pose_solver', return_value={'status': 'no_incumbent', 'runtime': {}}):
+            res2 = job._repair_shortlist(declared_prob, shortlist, [diagnostic],
+                                         checkout=self.dir, runtime={}, clock=job.Clock(10),
+                                         job_dir=self.dir, attempt=1, report=rep_declared,
+                                         engine_sha256='', routing_exhausted=True)
+            self.assertEqual(rep_declared.get('placement_repair', {}).get('trigger'), 'feasible_routing_exhausted')
+            self.assertEqual(rep_declared.get('placement_repair', {}).get('status'), 'no_incumbent')
+
 
 class LimitTests(Fixture):
     def test_cancel_stops_the_engine_within_bounds_and_keeps_no_candidate(self):

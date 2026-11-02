@@ -520,7 +520,7 @@ const DEFAULT_ACCESS_OWNERS: [&str; 3] = ["J1", "J2", "J3"];
 /// Authenticate the declared model bytes before reading geometry. The Python
 /// controller verifies every declared source file against its captured bytes and
 /// owns which recipe revisions it admits, so this engine holds no model table.
-fn acquisition_source_model(m: &Value) -> Result<Value> {
+fn source_mechanics_model(m: &Value) -> Result<Value> {
     use sha2::{Digest, Sha256};
     ensure!(m["schema"] == "agent-ee.acquisition-mechanics/1", "unsupported mechanics source");
     ensure!(text(m, "binding_sha256")?.len() == 64 && text(m, "original_board_sha256")?.len() == 64,
@@ -563,7 +563,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     }
     let mechanics = input.get("mechanics");
     let source_model = match mechanics {
-        Some(m) => acquisition_source_model(m)?,
+        Some(m) => source_mechanics_model(m)?,
         None => Value::Null,
     };
     let access_owners: Vec<String> = match source_model.get("access_owners") {

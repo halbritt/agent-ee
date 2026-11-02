@@ -338,8 +338,8 @@ def _call(out, label, definition, prompt, schema, validate):
     from . import reviewers
     from .review_run import structured_call
     return structured_call(out, label, prompt, schema,
-                           lambda supplied: reviewers.dispatch(out, label, definition, supplied, schema,
-                                                               definition['timeout_s']),
+                           lambda supplied: reviewers.reviewer_call(out, label, definition, supplied, schema,
+                                                                   definition['timeout_s']),
                            validate, limit=0)
 
 

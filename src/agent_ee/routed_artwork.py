@@ -587,6 +587,10 @@ def receipt_scope(argv, policy_file=None, source_project=None):
         if canonical_artwork_policy(policy) != rest[1]:
             raise ValueError('artwork receipt policy is not canonical')
         return {'artwork_policy': policy}
+    if rest[:1] == ['--discover-targets']:
+        if len(rest) != 1 or policy_file is not None or source_project is not None:
+            raise ValueError('artwork receipt discover-targets arguments malformed')
+        return {'targets': None}
     if rest[:1] != ['--field-pose']:
         return {'targets': receipt_targets(argv)}
     if len(rest) != 2 or not isinstance(rest[1], str):
@@ -796,7 +800,7 @@ def write_scope(before, after, targets=None, field_poses=None, artwork_policy=No
 
 
 def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, field_poses=None,
-         artwork_policy=None, artwork_policy_file=None, text_sizes=None):
+         artwork_policy=None, artwork_policy_file=None, text_sizes=None, discover_targets=False):
     """Create an immutable source snapshot and an ordinary campaign implementation step.
 
     targets restricts the repair to named (reference, field) pairs, receipted
@@ -811,6 +815,8 @@ def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, 
     _relative(board, 'artwork board')
     targets = normalize_targets(targets)
     artwork_policy = normalize_artwork_policy(artwork_policy)
+    if discover_targets and any(v is not None for v in (targets, field_poses, artwork_policy, artwork_policy_file, text_sizes)):
+        raise ValueError('discover_targets and explicit scopes are exclusive')
     if artwork_policy_file is not None:
         _relative(artwork_policy_file, 'artwork policy file')
         if artwork_policy_file == board:
@@ -825,6 +831,7 @@ def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, 
     if text_sizes is not None and any(v is not None for v in (targets, field_poses, artwork_policy, artwork_policy_file)):
         raise ValueError('text-size and relocation authorities are exclusive')
     scope = (['--text-size', canonical_text_sizes(text_sizes)] if text_sizes is not None else
+             ['--discover-targets'] if discover_targets else
              _target_argv(targets) if targets else
              ['--field-pose', canonical_field_poses(field_poses)] if field_poses is not None else
              ['--artwork-policy', canonical_artwork_policy(artwork_policy)] if artwork_policy is not None else
@@ -1018,7 +1025,7 @@ def via_pad_assessment(board_path):
                              'Native geometry does not establish filled/capped process or assembly support.'])
 
 
-def produce(source, root, targets=None, field_poses=None, artwork_policy=None, policy_file=None, text_sizes=None):
+def produce(source, root, targets=None, field_poses=None, artwork_policy=None, policy_file=None, text_sizes=None, discover_targets=False):
     """Write a disposable candidate, retain native DRC and fail on any new non-silk finding.
 
     With targets only the named footprint fields may move; graphics stay put.
@@ -1030,6 +1037,36 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
     import pcbnew as k
     from .placer_runner import _native_drc
     from .silk_artwork import relocate, ARTWORK_CONFLICTS, containment_witness
+    if discover_targets:
+        if any(v is not None for v in (targets, field_poses, artwork_policy, policy_file, text_sizes)):
+            raise ValueError('discover_targets and explicit authorities are exclusive')
+        from .silk_artwork import DECLARATION, movable_names
+        native = k.LoadBoard(str(source))
+        discovered = []
+        for fp in native.GetFootprints():
+            fields = list(fp.GetFields())
+            decl = next((field.GetText() for field in fields if field.GetName() == DECLARATION), None)
+            movable = movable_names(decl)
+            discovered.extend((fp.GetReference(), field.GetName()) for field in fields
+                              if field.GetName() in movable and field.IsVisible()
+                              and field.GetLayer() in (k.F_SilkS, k.B_SilkS))
+        targets = sorted(discovered)
+        if not targets:
+            root = Path(root)
+            output = root / BOARD
+            output.parent.mkdir(parents=True, exist_ok=True)
+            baseline = output.parent / 'baseline'
+            baseline.mkdir(exist_ok=True)
+            original = baseline / 'candidate.kicad_pcb'
+            shutil.copyfile(source, original)
+            shutil.copyfile(source, output)
+            proof = write_scope(source.read_bytes(), output.read_bytes(), targets=None)
+            report = {'schema': 'agent-ee.placed-candidate/1', 'status': 'no_movable_fields',
+                      'producer': STEP, 'source_sha256': digest(source), 'board_sha256': digest(output),
+                      'targets': [], 'acceptance_ready': False, 'write_scope': proof,
+                      'open_defects': [], 'outcome': 'informational', 'verdict': 'informational'}
+            write_json(root / REPORT, report)
+            return report
     if policy_file is not None:
         if text_sizes is not None:
             raise ValueError('text-size and relocation authorities are exclusive')
@@ -1041,8 +1078,8 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
     artwork_policy = normalize_artwork_policy(artwork_policy)
     text_sizes = normalize_text_sizes(text_sizes)
     project = source.with_suffix('.kicad_pro').read_bytes() if text_sizes is not None else None
-    scope = dict(targets=targets, field_poses=field_poses, artwork_policy=artwork_policy,
-                 text_sizes=text_sizes, source_project=project)
+    scope = dict(targets=None if discover_targets else targets, field_poses=field_poses,
+                 artwork_policy=artwork_policy, text_sizes=text_sizes, source_project=project)
     if text_sizes is not None:
         if any(v is not None for v in (targets, field_poses, artwork_policy)):
             raise ValueError('text-size and relocation authorities are exclusive')
@@ -1090,7 +1127,9 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
     elif field_poses is not None:
         artwork = dict(field_poses=field_poses, moved_fields=_apply_field_poses(k, board, field_poses))
     else:
-        artwork = relocate(board, before['violations'], graphics=targets is None, targets=targets,
+        artwork = relocate(board, before['violations'],
+                           graphics=False if discover_targets else targets is None,
+                           targets=targets,
                            free_groups=artwork_policy['free_groups'] if artwork_policy else (),
                            conflict_types=ARTWORK_CONFLICTS)
     if not k.SaveBoard(str(output), board, True):
@@ -1124,7 +1163,8 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
     comparison['open_defects'] = defects
     artwork.update(schema='agent-ee.placement-silkscreen/1', write_scope=proof)
     write_json(root / ARTWORK, artwork)
-    report = {'schema': 'agent-ee.placed-candidate/1', 'status': 'placed', 'producer': STEP,
+    status = 'unresolved' if defects else 'repaired' if discover_targets else 'placed'
+    report = {'schema': 'agent-ee.placed-candidate/1', 'status': status, 'producer': STEP,
               'authority': 'disposable-unsealed-proposal', 'source_sha256': digest(source),
               'board_sha256': digest(output), 'containment': containment_witness(output),
               'via_pad_assessment': via_pad_assessment(output),
@@ -1132,6 +1172,8 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
               'native_drc_comparison': comparison,
               'outcome': 'defect' if defects else 'informational',
               'verdict': 'defect' if defects else 'informational'}
+    if discover_targets:
+        report['targets'] = [list(t) for t in sorted(targets)]
     write_json(root / REPORT, report)
     return report
 
@@ -1140,6 +1182,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('board', type=Path)
     parser.add_argument('--target', nargs=2, action='append', metavar=('REFERENCE', 'FIELD'))
+    parser.add_argument('--discover-targets', action='store_true',
+                        help='discover visible movable silk fields in candidate board')
     parser.add_argument('--text-size', metavar='JSON', help='canonical source/project-bound silk dimension growth')
     parser.add_argument('--field-pose', metavar='JSON', help='canonical exact field-pose request')
     parser.add_argument('--artwork-policy', metavar='JSON', help='source-bound free rigid groups')
@@ -1154,5 +1198,6 @@ def main():
     produce(args.board, Path('/work'), targets=args.target,
             field_poses=None if args.field_pose is None else decode_field_poses(args.field_pose),
             artwork_policy=None if args.artwork_policy is None else decode_artwork_policy(args.artwork_policy),
-            policy_file=policy_file, text_sizes=None if args.text_size is None else decode_text_sizes(args.text_size))
+            policy_file=policy_file, text_sizes=None if args.text_size is None else decode_text_sizes(args.text_size),
+            discover_targets=args.discover_targets)
     return 0

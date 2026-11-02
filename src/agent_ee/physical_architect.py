@@ -149,18 +149,8 @@ def context(run, bound):
             'captured_records': sorted(manifest['files'])}
 
 
-def _present(value):
-    """Drop the nulls a strict (Codex) schema uses for absent optional properties."""
-    if isinstance(value, dict):
-        return {k: _present(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [_present(v) for v in value]
-    return value
-
-
 def compose(proposal, bound, files):
     """The intent the compiler grades: proposed assertions under coordinator source hashes."""
-    proposal = _present(proposal)
     if not isinstance(proposal, dict) or not set(proposal) <= {*ASSERTIONS, 'records'}:
         raise ValueError(f'architect proposal may contain only {[*ASSERTIONS, "records"]}')
     records = proposal.get('records', [])

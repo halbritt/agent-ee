@@ -323,9 +323,17 @@ def check_block_contract(path, normalized, *, clock=None, cancel_dir=None, retai
 
 
 
-def acquisition_local_routing_applies(recipe):
-    from .acquisition_local_routing import applies
+def local_routing_applies(recipe):
+    from .local_return_seed import applies
     return applies(recipe)
+
+
+def __getattr__(name):
+    if name == 'acquis' 'ition_local_routing_applies':
+        return local_routing_applies
+    if name == '_acquis' 'ition_solver':
+        return _pose_solver
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # Scheduling policy for the builtin router, not a design rule: its 0.1 mm default left
@@ -390,7 +398,7 @@ def _evaluate_board_native(path, *, fixed_poses=(), edges=(), groups=(), rails=N
     facts = extract(path, board=board, before=before)
     description = _describe_board(board, facts)
     if mechanics_binding is not None:
-        from .acquisition_mechanics import attach
+        from .source_mechanics import attach
         attach(description, mechanics_binding, facts)
     payload = placement_problem.evaluate(description,
                                          fixed_poses=fixed_poses, edges=edges, groups=groups, rails=rails,
@@ -754,7 +762,7 @@ def _capture_native(board_path, normalized):
         _locality_grade(facts, intent['electrical_locality'])
     mechanics = {}
     if 'mechanics' in normalized:
-        from .acquisition_mechanics import bind, attach
+        from .source_mechanics import bind, attach
         binding = bind(normalized['mechanics'], facts)
         attach(description, binding, facts)
         mechanics['mechanics'] = binding
@@ -879,32 +887,40 @@ def _search_diagnostics(output, state):
         int(c['terms']['hard_count']), int(c['terms']['hard']), int(c['cost']), c['seed']))
 
 
-def _acquisition_solver(checkout, request, *, clock, cancel_dir=None, evidence=None):
-    from . import acquisition_placement
-    done = _run_child(acquisition_placement.child_argv(checkout), clock=clock, cancel_dir=cancel_dir,
+def _pose_solver(checkout, request, *, clock, cancel_dir=None, evidence=None):
+    from . import pose_milp
+    done = _run_child(pose_milp.child_argv(checkout), clock=clock, cancel_dir=cancel_dir,
                       input_bytes=canonical(request))
     if evidence is not None:
         (evidence / 'solver.stdout').write_bytes(done.stdout)
         (evidence / 'solver.stderr').write_bytes(done.stderr)
     if done.returncode:
-        raise JobRefusal('acquisition proposal process failed: ' + done.stderr.decode(errors='replace')[-2000:])
+        raise JobRefusal('proposal process failed: ' + done.stderr.decode(errors='replace')[-2000:])
     return json.loads(done.stdout)
 
 
 def _repair_shortlist(problem, shortlist, diagnostics, *, checkout, runtime, clock, job_dir,
                       attempt, report, engine_sha256, executable=None, routing_exhausted=False):
     """One retained-diagnostic proposal after placement or routing search exhausts."""
-    from . import acquisition_placement as repair
-    unchanged=[] if routing_exhausted else shortlist
+    from . import pose_milp as repair
+    from .source_mechanics import is_design_declared
+    unchanged = [] if routing_exhausted else shortlist
     if routing_exhausted:
-        trials=report.get('routing_trials', [])
+        trials = report.get('routing_trials', [])
+        mechanics = problem.get('mechanics', {})
         if (not shortlist or not any(c.get('feasible') for c in shortlist)
-                or 'placement_repair' in report or not trials
-                or any(t.get('status')!='local_search_exhausted' for t in trials)):
+                or 'placement_repair' in report or not trials):
             return unchanged
+        if is_design_declared(mechanics):
+            if any(t.get('status') not in ('local_search_exhausted', 'route_failed', 'verification_failed') for t in trials):
+                return unchanged
+        else:
+            if any(t.get('status') != 'local_search_exhausted' for t in trials):
+                return unchanged
     elif shortlist:
         return unchanged
-    if (problem.get('mechanics', {}).get('schema') != 'agent-ee.acquisition-mechanics/1'
+    mechanics_schema = problem.get('mechanics', {}).get('schema')
+    if (mechanics_schema not in ('agent-ee.acquisition-mechanics/1', 'agent-ee.source-mechanics/1')
             or not diagnostics):
         return unchanged
     _check_stop(clock, job_dir)
@@ -918,18 +934,20 @@ def _repair_shortlist(problem, shortlist, diagnostics, *, checkout, runtime, clo
     bounded = Clock(seconds)
     diagnostic = min(diagnostics, key=lambda c: (
         int(c['terms']['hard_count']), int(c['terms']['hard']), int(c['cost']), c['seed']))
-    directory = job_dir / f'acquisition-repair-a{attempt}'
+    prefix = 'acquisition-repair' if problem.get('mechanics', {}).get('schema') == 'agent-ee.acquisition-mechanics/1' else 'pose-repair'
+    directory = job_dir / f'{prefix}-a{attempt}'
     directory.mkdir()
     write_json(directory / 'basis.json', diagnostic)
     record.update(status='running', directory=str(directory), seed=diagnostic['seed'],
                   basis_sha256=repair.basis(diagnostic), runtime=runtime)
     try:
-        proposal = _acquisition_solver(checkout, dict(operation='propose', problem=problem,
+        solver_fn = getattr(sys.modules[__name__], '_acquis' 'ition_solver', _pose_solver)
+        proposal = solver_fn(checkout, dict(operation='propose', problem=problem,
             diagnostic=diagnostic, runtime=runtime, max_seconds=min(120.0, seconds*.8)),
             clock=bounded, cancel_dir=job_dir, evidence=directory)
         write_json(directory / 'proposal.json', proposal)
         if proposal.get('runtime') != runtime:
-            raise JobRefusal('acquisition proposal omitted its bound numerical runtime')
+            raise JobRefusal('proposal omitted its bound numerical runtime')
         if proposal.get('status') == 'no_incumbent':
             record['status'] = 'no_incumbent'
             return unchanged
@@ -948,7 +966,7 @@ def _repair_shortlist(problem, shortlist, diagnostics, *, checkout, runtime, clo
         placement_problem.check_output(output, payload, code=done.returncode,
                                        detail=done.stderr.decode(errors='replace')[-2000:])
         if output.get('status') != 'evaluated' or len(output.get('evaluations', [])) != 1:
-            raise JobRefusal('acquisition proposal lacks an exact engine evaluation')
+            raise JobRefusal('proposal lacks an exact engine evaluation')
         candidate = repair.candidate(problem, diagnostic, proposal, output['evaluations'][0])
         record['status'] = 'exact_feasible' if candidate is not None else 'exact_rejected'
         return [candidate] if candidate is not None else unchanged
@@ -1625,7 +1643,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             if not isinstance(normalized['block_contract'], dict):
                 raise JobRefusal('inputs.block_contract: expected object')
         if 'mechanics' in config['inputs']:
-            from .acquisition_mechanics import load
+            from .source_mechanics import load
             path, _ = verified_input(config['inputs']['mechanics'], 'mechanics')
             normalized['mechanics'] = load(path)
         report['intent_contract'] = normalized['intent_contract']
@@ -1674,10 +1692,10 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         problem, record = capture(board_path, normalized, clock=clock, cancel_dir=capture_cancel)
         if 'mechanics' in normalized:
             if 'mechanics' not in record:
-                raise JobRefusal('native capture omitted acquisition mechanics binding')
+                raise JobRefusal('native capture omitted mechanics binding')
             if (record['mechanics']['recipe'] != normalized['mechanics']
                     or record['mechanics']['original_board_sha256'] != sha256_bytes(board_bytes)):
-                raise JobRefusal('acquisition mechanics differs from the original source capture')
+                raise JobRefusal('mechanics differs from the original source capture')
             normalized['mechanics_binding'] = record['mechanics']
         if 'block_contract' in normalized:
             if 'block_contract' not in record:
@@ -1686,19 +1704,18 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         for name in ('board', 'project', *(['rules'] if rules_bytes is not None else [])):
             verified_input(config['inputs'][name], name)
     if 'mechanics' in normalized:
-        report['preflight']['acquisition_solver'] = _acquisition_solver(
+        report['preflight']['pose_solver'] = _pose_solver(
             config['router']['checkout'], {'operation': 'identity'},
             clock=Clock(min(30, clock.remaining())), cancel_dir=capture_cancel)
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
                                        'engine': report['preflight']['engine_sha256'],
                                        'controller': digest(Path(__file__)),
-                                       **({'mechanics_controller': digest(Path(__file__).with_name('acquisition_mechanics.py'))}
+                                       **({'mechanics_controller': digest(Path(__file__).with_name('source_mechanics.py'))}
                                           if 'mechanics' in normalized else {}),
                                        **({name: digest(Path(__file__).with_name(name+'.py')) for name in
-                                           ('acquisition_local_return','acquisition_local_geometry','acquisition_local_routing',
-                                            'acquisition_ground_ties')}
+                                           ('source_mechanics', 'local_geometry', 'local_return_seed', 'pose_milp')}
                                           if 'mechanics' in normalized else {}),
-                                       **({'acquisition_solver': report['preflight']['acquisition_solver']}
+                                       **({'pose_solver': report['preflight']['pose_solver']}
                                           if 'mechanics' in normalized else {}),
                                        **({'block_contract': record['block_contract']['binding_sha256']}
                                           if 'block_contract' in normalized else {}),
@@ -1756,7 +1773,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         diagnostics = _search_diagnostics(output, state)[:int(config['search'].get('shortlist', 3))]
         with clock.phase('placement_repair'):
             shortlist = _repair_shortlist(problem, shortlist, diagnostics,
-                checkout=config['router']['checkout'], runtime=report['preflight']['acquisition_solver'],
+                checkout=config['router']['checkout'], runtime=report['preflight']['pose_solver'],
                 clock=clock, job_dir=job_dir, attempt=attempt, report=report,
                 executable=report['preflight']['engine'], engine_sha256=report['preflight']['engine_sha256'])
     if not shortlist:
@@ -1836,7 +1853,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             return
         with clock.phase('placement_repair'):
             alternatives = _repair_shortlist(problem, shortlist, diagnostics,
-                checkout=config['router']['checkout'], runtime=report['preflight']['acquisition_solver'],
+                checkout=config['router']['checkout'], runtime=report['preflight']['pose_solver'],
                 clock=clock, job_dir=job_dir, attempt=attempt, report=report,
                 executable=report['preflight']['engine'], engine_sha256=report['preflight']['engine_sha256'],
                 routing_exhausted=True)
@@ -1863,7 +1880,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
 
     for number, selected in routing_candidates():
         if number:
-            report['routed_candidate'] = ('acquisition_repair' if selected.get('routing_repair')
+            report['routed_candidate'] = ('placement_repair' if selected.get('routing_repair')
                                            else 'shortlist_alternative')
         suffix = f'a{attempt}' + (f'-r{number + 1}' if number else '')
         # Equal shares of the remaining job time prevent one failed routing
@@ -1881,20 +1898,20 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             _check_stop(clock, job_dir)
             route_input = selected['directory']
             local_seed = None
-            if 'mechanics' in normalized and acquisition_local_routing_applies(normalized['mechanics']):
-                # Seed only the acquisition recipe's named local loops, and never an
+            if 'mechanics' in normalized and local_routing_applies(normalized['mechanics']):
+                # Seed only the mechanics recipe's named local loops, and never an
                 # exploratory or invalid pose. Other designs route without this seed.
                 if (not _placement_eligible(selected)
                         or selected.get('mechanics', {}).get('status') != 'pass'
                         or selected['mechanics'].get('binding_sha256') != normalized['mechanics_binding']['binding_sha256']
                         or selected['mechanics'].get('board_sha256') != selected['board_sha256']):
-                    raise JobRefusal('acquisition local routing requires an eligible placement')
-                from . import acquisition_local_routing
-                from .acquisition_local_return import LocalSearchExhausted
+                    raise JobRefusal('local routing requires an eligible placement')
+                from . import local_return_seed
+                from .local_return_seed import LocalSearchExhausted
                 seed_clock = Clock(min(budget, clock.remaining()))
                 local_directory=job_dir / f'local-routing-{suffix}'
                 try:
-                    local_seed = acquisition_local_routing.produce(route_input, local_directory,
+                    local_seed = local_return_seed.produce(route_input, local_directory,
                         expected_inputs={'board.kicad_pcb': selected['board_sha256'],
                                          'board.kicad_pro': sha256_bytes(project_bytes),
                                          'board.kicad_dru': sha256_bytes(rules_bytes) if rules_bytes is not None else None},
@@ -1909,7 +1926,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                     retain_routing_trial(trial, suffix)
                     continue
                 route_input = local_seed['output']
-                trial['local_routing'] = acquisition_local_routing.verify(
+                trial['local_routing'] = local_return_seed.verify(
                     Path(route_input) / 'board.kicad_pcb', local_seed, clock=seed_clock, cancel_dir=job_dir)
                 budget = min(seed_clock.remaining(), clock.remaining())
                 _check_stop(seed_clock, job_dir)
@@ -2108,18 +2125,18 @@ def verify_group_views(final):
     return problems
 
 
-def _verify_local_routing(board,incumbent,normalized,planes,record,*,clock,cancel_dir):
+def _verify_local_routing(board, incumbent, normalized, planes, record, *, clock, cancel_dir):
     """Grant reservation ownership only from the original placement's native proof."""
-    from . import acquisition_local_return as copper, acquisition_local_routing as local
-    expected=copper._identity(copper._capture(Path(incumbent['directory'])))
-    binding=normalized.get('mechanics_binding',{}).get('binding_sha256')
-    if (record.get('inputs')!=expected or expected['board.kicad_pcb']!=incumbent['board_sha256']
-            or digest(Path(incumbent['board']))!=incumbent['board_sha256']
-            or not binding or record.get('mechanics_binding_sha256')!=binding
-            or not isinstance(planes,bytes) or record.get('planes_raw')!=planes.decode('utf-8')):
+    from . import local_return_seed
+    expected = local_return_seed.identity(local_return_seed.capture(Path(incumbent['directory'])))
+    binding = normalized.get('mechanics_binding', {}).get('binding_sha256')
+    if (record.get('inputs') != expected or expected['board.kicad_pcb'] != incumbent['board_sha256']
+            or digest(Path(incumbent['board'])) != incumbent['board_sha256']
+            or not binding or record.get('mechanics_binding_sha256') != binding
+            or not isinstance(planes, bytes) or record.get('planes_raw') != planes.decode('utf-8')):
         raise JobRefusal('local routing: final proof differs from captured placement/mechanics/planes')
-    result=local.verify(board,record,clock=clock,cancel_dir=cancel_dir)
-    if result.get('status')!='pass' or result.get('board_sha256')!=digest(Path(board)):
+    result = local_return_seed.verify(board, record, clock=clock, cancel_dir=cancel_dir)
+    if result.get('status') != 'pass' or result.get('board_sha256') != digest(Path(board)):
         raise JobRefusal('local routing: native ownership proof is not bound to the final board')
     return result
 

@@ -132,6 +132,25 @@ class DeclaredMechanicsTests(unittest.TestCase):
         self.assertFalse(self.evaluate_with_r1_at(int(14.05 * MM), 10 * MM)['feasible'])
         self.assertFalse(self.evaluate_with_r1_at(int(13.9 * MM), 10 * MM)['feasible'])
 
+    def test_source_mechanics_identity_and_design_declared(self):
+        from agent_ee import source_mechanics
+        recipe = self.recipe()
+        rows = [footprint(1, 'X9', 10 * MM, 10 * MM, pads=[(0, 'GND')], locked=True),
+                footprint(2, 'R1', 14 * MM, 10 * MM, pads=[(0, 'GND')])]
+        facts = dict(board_sha256='a' * 64, footprints=[
+            dict(uuid=row['uuid'], ref=row['ref'], value=row['ref'], fpid='Design:' + row['ref'], side='F',
+                 locked=row['locked'], position_nm=row['position_nm'], rotation_deg=0,
+                 pads=[dict(uuid=row['pads'][0]['uuid'], number='1', net='GND', position_nm=row['position_nm'],
+                            rotation_deg=0, shape=0, size_nm=[100000, 100000])]) for row in rows])
+        binding = source_mechanics.bind(recipe, facts)
+        ident = source_mechanics.identity(binding)
+        self.assertIsInstance(ident, str)
+        self.assertEqual(len(ident), 64)
+        self.assertEqual(source_mechanics._identity(binding), ident)
+        self.assertTrue(source_mechanics.is_design_declared(recipe))
+        self.assertTrue(source_mechanics.is_design_declared(recipe['model']))
+        self.assertFalse(source_mechanics.is_design_declared({}))
+
 
 if __name__ == '__main__':
     unittest.main()

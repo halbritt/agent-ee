@@ -56,8 +56,24 @@ class BuildArtworkTests(unittest.TestCase):
         self.assertEqual((candidate / board.name).read_bytes(), before)
         report = read_json(self.stage / 'artwork.json')
         self.assertEqual(report['status'], 'no_movable_fields')
-        self.assertFalse((self.stage / 'receipts').exists())
+        self.assertEqual(report['targets'], [])
         self.assertFalse(report['acceptance_ready'])
+        self.assertEqual(report['source_sha256'], report['board_sha256'])
+        receipt = read_json(self.stage / 'receipts/0/receipt.json')
+        self.assertEqual(receipt['status'], 'completed')
+        self.assertFalse(receipt['changed'])
+
+    def test_coordinator_process_does_not_import_pcbnew(self):
+        import subprocess
+        import sys
+        probe = subprocess.run(
+            [sys.executable, '-c',
+             'import sys\n'
+             'from agent_ee import build_stages, build_workflow\n'
+             'assert "pcbnew" not in sys.modules, f"pcbnew was imported into coordinator: {sys.modules.get(\'pcbnew\')}"\n'],
+            capture_output=True, text=True, check=True
+        )
+        self.assertEqual(probe.returncode, 0)
 
     def test_unresolved_labels_fail_without_hiding_or_resizing_them(self):
         import pcbnew as k

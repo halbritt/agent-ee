@@ -246,10 +246,8 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
                     raise RuntimeError('Codex observed model differs from requested model; no fallback attempted')
             if not isinstance(value, dict):
                 raise OutputFormatRefusal('review response must be an object')
-            if harness == 'codex' and isinstance(value.get('decisions'), list):
-                for decision in value['decisions']:
-                    if decision.get('duplicate_of') is None:
-                        decision.pop('duplicate_of', None)
+            if harness == 'codex':
+                value = unstrict_value(value, schema)
             return record, value
         except OutputFormatRefusal as exc:
             record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
@@ -302,6 +300,8 @@ def evidence_mounts(run_dir, label):
         experiments.mkdir(parents=True, exist_ok=True)
         mounts.append((experiments, f'/evidence/review-work/{label}/experiments'))
     if label == 'adjudicator':
+        if (run / 'result.json').is_file():
+            mounts.append((run / 'result.json', '/evidence/result.json'))
         from . import judgment_context
         if judgment_context.read(run) is not None:
             mounts.append((run / judgment_context.DIRECTORY, '/evidence/' + judgment_context.DIRECTORY))
@@ -313,19 +313,166 @@ def strict_schema(schema):
     """Codex requires every object property required; optional values admit null."""
     import copy
     result = copy.deepcopy(schema)
+    seen = set()
+
     def visit(node):
         if not isinstance(node, dict):
             return
-        if node.get('type') == 'object':
-            properties = node.get('properties', {})
+        node_id = id(node)
+        if node_id in seen:
+            return
+        seen.add(node_id)
+        if node.get('type') == 'object' or 'properties' in node:
+            properties = node.setdefault('properties', {}) if node.get('type') == 'object' else node.get('properties', {})
             required = node.get('required', [])
-            for key, value in properties.items():
+            for key, value in list(properties.items()):
                 visit(value)
                 if key not in required:
                     properties[key] = {'anyOf': [value, {'type': 'null'}]}
-            node['required'] = list(properties)
+            node['required'] = list(properties.keys())
             node['additionalProperties'] = False
+        for defs_key in ('$defs', 'definitions'):
+            if defs_key in node and isinstance(node[defs_key], dict):
+                for def_schema in node[defs_key].values():
+                    visit(def_schema)
+        for union_key in ('anyOf', 'oneOf', 'allOf'):
+            if union_key in node and isinstance(node[union_key], list):
+                for branch in node[union_key]:
+                    visit(branch)
         if 'items' in node:
-            visit(node['items'])
+            if isinstance(node['items'], dict):
+                visit(node['items'])
+            elif isinstance(node['items'], list):
+                for item in node['items']:
+                    visit(item)
+        if 'prefixItems' in node and isinstance(node['prefixItems'], list):
+            for item in node['prefixItems']:
+                visit(item)
+
     visit(result)
     return result
+
+
+def unstrict_value(value, original_schema):
+    """Normalize structured outputs by stripping synthetic nulls from optional fields.
+
+    Codex strict schema turns optional non-nullable properties into nullable fields
+    (anyOf [orig, null]) and marks them required. When the model outputs null for
+    these fields, unstrict_value removes them if the original schema did not allow
+    null. If null is explicitly allowed in original_schema, None is preserved.
+    """
+    if original_schema is None or not isinstance(original_schema, dict):
+        return value
+
+    def is_nullable(schema, root):
+        if not isinstance(schema, dict):
+            return False
+        if '$ref' in schema:
+            resolved = resolve_ref(schema['$ref'], root)
+            if resolved is not None and resolved is not schema:
+                return is_nullable(resolved, root)
+        if schema.get('type') == 'null':
+            return True
+        stype = schema.get('type')
+        if isinstance(stype, list) and 'null' in stype:
+            return True
+        if 'enum' in schema and None in schema['enum']:
+            return True
+        if 'const' in schema and schema['const'] is None:
+            return True
+        for key in ('anyOf', 'oneOf'):
+            if key in schema and isinstance(schema[key], list):
+                if any(is_nullable(sub, root) for sub in schema[key]):
+                    return True
+        if 'allOf' in schema and isinstance(schema['allOf'], list):
+            if any(is_nullable(sub, root) for sub in schema['allOf']):
+                return True
+        return False
+
+    def resolve_ref(ref, root):
+        if not isinstance(ref, str) or not ref.startswith('#/'):
+            return None
+        parts = ref[2:].split('/')
+        cur = root
+        for part in parts:
+            if isinstance(cur, dict) and part in cur:
+                cur = cur[part]
+            else:
+                return None
+        return cur
+
+    def find_branch(val, branches, root):
+        if not isinstance(val, dict):
+            return branches[0] if branches else None
+        best_branch = None
+        best_score = -1
+        for branch in branches:
+            if '$ref' in branch:
+                target = resolve_ref(branch['$ref'], root)
+                if target:
+                    branch = target
+            props = branch.get('properties', {})
+            score = len(set(props) & set(val))
+            if score > best_score:
+                best_score = score
+                best_branch = branch
+        return best_branch or (branches[0] if branches else None)
+
+    def walk(val, schema, root):
+        if schema is None or not isinstance(schema, dict):
+            return val
+        if '$ref' in schema:
+            target = resolve_ref(schema['$ref'], root)
+            if target:
+                return walk(val, target, root)
+
+        if isinstance(val, dict):
+            for union_key in ('anyOf', 'oneOf'):
+                if union_key in schema and isinstance(schema[union_key], list):
+                    branch = find_branch(val, schema[union_key], root)
+                    if branch:
+                        schema = branch
+                        break
+
+            properties = dict(schema.get('properties', {}))
+            required = set(schema.get('required', []))
+            if 'allOf' in schema and isinstance(schema['allOf'], list):
+                for sub in schema['allOf']:
+                    if '$ref' in sub:
+                        sub = resolve_ref(sub['$ref'], root) or sub
+                    if isinstance(sub, dict):
+                        properties.update(sub.get('properties', {}))
+                        required.update(sub.get('required', []))
+
+            result = {}
+            for k, v in val.items():
+                if k in properties:
+                    prop_schema = properties[k]
+                    if v is None and k not in required and not is_nullable(prop_schema, root):
+                        continue
+                    result[k] = walk(v, prop_schema, root)
+                else:
+                    add_schema = schema.get('additionalProperties')
+                    if isinstance(add_schema, dict):
+                        result[k] = walk(v, add_schema, root)
+                    else:
+                        result[k] = v
+            return result
+
+        elif isinstance(val, list):
+            item_schema = schema.get('items')
+            prefix_items = schema.get('prefixItems')
+            if isinstance(item_schema, dict):
+                return [walk(item, item_schema, root) for item in val]
+            elif isinstance(item_schema, list):
+                return [walk(item, item_schema[i] if i < len(item_schema) else schema.get('additionalItems', {}), root)
+                        for i, item in enumerate(val)]
+            elif isinstance(prefix_items, list):
+                return [walk(item, prefix_items[i] if i < len(prefix_items) else schema.get('items', {}), root)
+                        for i, item in enumerate(val)]
+            return val
+
+        return val
+
+    return walk(value, original_schema, original_schema)
+

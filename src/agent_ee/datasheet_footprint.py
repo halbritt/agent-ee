@@ -1,7 +1,7 @@
 """Datasheet-derived footprints accepted only on dual independent extraction agreement.
 
 Two isolated agent extractions, separate invocations through the reviewer seam
-``reviewers.dispatch``, each read only one captured datasheet PDF. Each returns
+``reviewers.reviewer_call``, each read only one captured datasheet PDF. Each returns
 a pad table, optionally a typical-application circuit, and page-cited facts in
 the shared ``datasheet_facts`` record format that bind every pad dimension.
 
@@ -854,8 +854,8 @@ def run_extractions(request, pdf_path, run_dir, *, cancellation=None):
     for label in LABELS:
         definition = request['extractors'][label]
         try:
-            call, value = reviewers.dispatch(run, label, definition, _prompt(request, label), EXTRACTION_SCHEMA,
-                                             definition['timeout_s'], cancellation=cancellation)
+            call, value = reviewers.reviewer_call(run, label, definition, _prompt(request, label), EXTRACTION_SCHEMA,
+                                                  definition['timeout_s'], cancellation=cancellation)
         except (OSError, ValueError, RuntimeError) as exc:
             call, value = dict(execution='failed', error=f'{type(exc).__name__}: {exc}'), None
         if call.get('execution') != 'ok':

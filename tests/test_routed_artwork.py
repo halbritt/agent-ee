@@ -848,6 +848,9 @@ class RoutedArtworkTest(unittest.TestCase):
         self.assertEqual(art.receipt_scope(head + ['--field-pose', canonical]),
                          {'field_poses': art.normalize_field_poses(request)})
         self.assertEqual(art.receipt_scope(head), {'targets': None})
+        self.assertEqual(art.receipt_scope(head + ['--discover-targets']), {'targets': None})
+        with self.assertRaisesRegex(ValueError, 'discover-targets'):
+            art.receipt_scope(head + ['--discover-targets', 'extra'])
         self.assertEqual(art.receipt_scope(head + ['--target', 'C1', 'Reference']),
                          {'targets': frozenset({('C1', 'Reference')})})
         reordered = dict(request, fields=request['fields'][::-1])
@@ -953,6 +956,32 @@ class RoutedArtworkTest(unittest.TestCase):
                 art.qualify_receipt(receipt_dir, changed, 'board.kicad_pcb', policy_files())
         with self.assertRaisesRegex(ValueError, 'exclusive'):
             art.step(self.root / 'tool2', 'board.kicad_pcb', field_poses=request, targets=[('C1', 'Reference')])
+
+    def test_produce_discover_targets_finds_movable_fields(self):
+        source = self.board()
+        report = art.produce(source, self.root / 'run-discover', discover_targets=True)
+        self.assertEqual(report['status'], 'repaired')
+        self.assertEqual(report['targets'], [['C1', 'Reference'], ['U1', 'Reference']])
+        self.assertTrue((self.root / 'run-discover' / art.BOARD).exists())
+        self.assertFalse(report['open_defects'])
+
+    def test_produce_discover_targets_with_no_movable_fields(self):
+        source = self.board(graphic=True)
+        before = source.read_bytes()
+        report = art.produce(source, self.root / 'run-no-movable', discover_targets=True)
+        self.assertEqual(report['status'], 'no_movable_fields')
+        self.assertEqual(report['targets'], [])
+        self.assertFalse(report['acceptance_ready'])
+        self.assertEqual((self.root / 'run-no-movable' / art.BOARD).read_bytes(), before)
+
+    def test_discover_targets_step_and_exclusivity(self):
+        spec = art.step(self.root / 'tool', 'b.kicad_pcb', discover_targets=True)
+        self.assertIn('--discover-targets', spec['argv'])
+        self.assertEqual(art.receipt_scope(spec['argv']), {'targets': None})
+        with self.assertRaises(ValueError):
+            art.step(self.root / 'tool', 'b.kicad_pcb', targets=[('U1', 'Reference')], discover_targets=True)
+        with self.assertRaises(ValueError):
+            art.produce(self.board(), self.root / 'run-excl', targets=[('U1', 'Reference')], discover_targets=True)
 
 
 class FieldPoseFixture:

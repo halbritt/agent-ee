@@ -96,7 +96,7 @@ def _original_basis(out, scope, plan):
 
 
 def _mechanics_basis(placement, original, scope, normalized, capture, recipe_name, raw):
-    from . import acquisition_mechanics, placement_problem
+    from . import source_mechanics, placement_problem
     job = placement.directory / 'placement'
     problem_path = job / 'problem.json'
     problem = read_json(problem_path) if problem_path.exists() else {}
@@ -104,7 +104,7 @@ def _mechanics_basis(placement, original, scope, normalized, capture, recipe_nam
         if 'mechanics' in capture or 'mechanics' in problem:
             raise ValueError('undeclared mechanics in sealed placement evidence')
         return None
-    recipe = acquisition_mechanics.load(original / recipe_name)
+    recipe = source_mechanics.load(original / recipe_name)
     if recipe['declaration'] != strict_json(raw['mechanics']):
         raise ValueError('mechanics recipe differs from original captured bytes')
     facts = deepcopy(capture['block_contract']['original_capture'])
@@ -113,12 +113,12 @@ def _mechanics_basis(placement, original, scope, normalized, capture, recipe_nam
             fp['ref'] = fp.pop('native_ref')
     if identity(facts) != capture['facts_sha256']:
         raise ValueError('mechanics original facts differ from placement capture')
-    bound = acquisition_mechanics.bind(recipe, facts)
+    bound = source_mechanics.bind(recipe, facts)
     if bound != capture.get('mechanics'):
         raise ValueError('mechanics binding differs from original native owners')
     description = {'footprints': [dict(uuid=fp['uuid'], ref=fp['ref'], side=fp['side'],
         position_nm=fp['position_nm'], rotation_deg=fp['rotation_deg']) for fp in facts['footprints']]}
-    acquisition_mechanics.attach(description, bound, facts)
+    source_mechanics.attach(description, bound, facts)
     if (problem.get('schema') != placement_problem.INPUT_SCHEMA
             or problem.get('problem_sha256') != placement_problem.identity(problem)
             or problem.get('mechanics') != description['mechanics']):
@@ -177,17 +177,17 @@ def _final_mechanics(placement, job, scope, bound, problem):
 
 def _mechanics_only_basis(out, scope, plan):
     """Replay a design's mechanics from sealed sources and its retained placement evidence."""
-    from . import acquisition_mechanics, placement_problem
+    from . import source_mechanics, placement_problem
     report = retained_run.snapshot(Path(out))
     schematic = retained_run.completed_stage(Path(out), 'schematic', report)
     placement = retained_run.completed_stage(Path(out), 'placement-routing', report)
     if schematic is None or placement is None:
         raise ValueError('mechanics final proof requires sealed schematic and placement stages')
-    recipe = acquisition_mechanics.load(schematic.candidate / plan['placement']['mechanics'])
+    recipe = source_mechanics.load(schematic.candidate / plan['placement']['mechanics'])
     job = placement.directory / 'placement'
     bound = read_json(job / 'capture.json').get('mechanics')
     if (not isinstance(bound, dict) or bound.get('recipe') != recipe
-            or bound.get('binding_sha256') != acquisition_mechanics._identity(bound)):
+            or bound.get('binding_sha256') != source_mechanics.identity(bound)):
         raise ValueError('mechanics binding differs from the sealed sources')
     problem = read_json(job / 'problem.json')
     mechanics = problem.get('mechanics', {})
@@ -204,7 +204,7 @@ def _mechanics_only_basis(out, scope, plan):
 
 def _check_fresh_original(out, scope, plan):
     """Capture the sealed original board natively, so retained evidence is compared, not trusted."""
-    from . import acquisition_mechanics
+    from . import source_mechanics
     schematic = retained_run.completed_stage(Path(out), 'schematic')
     placement = retained_run.completed_stage(Path(out), 'placement-routing')
     original = schematic.candidate
@@ -215,7 +215,7 @@ def _check_fresh_original(out, scope, plan):
         strict_json(read(plan['placement']['intent'])), strict_json(groups),
         locality=strict_json(read(locality)) if locality else None,
         board_sha256=placement_job.sha256_bytes(board), groups_sha256=placement_job.sha256_bytes(groups))
-    normalized['mechanics'] = acquisition_mechanics.load(original / plan['placement']['mechanics'])
+    normalized['mechanics'] = source_mechanics.load(original / plan['placement']['mechanics'])
     with tempfile.TemporaryDirectory() as work:
         for suffix in ('.kicad_pcb', '.kicad_pro', '.kicad_dru'):
             source = (original / scope['board']).with_suffix(suffix)

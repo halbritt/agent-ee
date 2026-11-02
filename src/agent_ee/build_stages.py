@@ -188,33 +188,20 @@ def _package(plan, candidate, stage_dir, scope, accounting, profile=None, *, out
 
 def _artwork(candidate, directory, board):
     """Finish visible field positions using the existing bounded native producer."""
-    import pcbnew as k
     from . import routed_artwork
-    from .silk_artwork import DECLARATION, movable_names
-    native = k.LoadBoard(str(candidate / board))
-    targets = []
-    for footprint in native.GetFootprints():
-        fields = list(footprint.GetFields())
-        declaration = next((field.GetText() for field in fields if field.GetName() == DECLARATION), None)
-        movable = movable_names(declaration)
-        targets.extend((footprint.GetReference(), field.GetName()) for field in fields
-                       if field.GetName() in movable and field.IsVisible()
-                       and field.GetLayer() in (k.F_SilkS, k.B_SilkS))
-    report = dict(board=board, source_sha256=digest(candidate / board),
-                  targets=sorted(targets), acceptance_ready=False)
-    if not targets:
-        # An omitted target list would enable graphic translations. Leave them
-        # intact; the final native release gate still rejects their conflicts.
-        write_json(directory / 'artwork.json', dict(report, status='no_movable_fields'))
-        return
-    declaration = routed_artwork.step(directory / 'tool', board, targets=targets)
+    source_sha = digest(candidate / board)
+    declaration = routed_artwork.step(directory / 'tool', board, discover_targets=True)
     path, receipt = _step(directory, candidate, declaration, 0)
     proof = routed_artwork.qualify_receipt(path, receipt, board, policy_files())
     produced = read_json(path / 'run' / routed_artwork.REPORT)
     conflicts = produced['open_defects']
-    write_json(directory / 'artwork.json', dict(report, board_sha256=digest(candidate / board),
-        status='unresolved' if conflicts else 'repaired', write_scope=proof, open_defects=conflicts,
-        receipt=str(path.relative_to(directory)), receipt_sha256=digest(path / 'receipt.json')))
+    status = produced['status']
+    report = dict(board=board, status='unresolved' if conflicts else status,
+                  targets=produced['targets'], source_sha256=source_sha,
+                  board_sha256=digest(candidate / board), write_scope=proof,
+                  receipt=str(path.relative_to(directory)), receipt_sha256=digest(path / 'receipt.json'),
+                  acceptance_ready=False, open_defects=conflicts)
+    write_json(directory / 'artwork.json', report)
     if conflicts:
         raise ValueError(f'artwork retains {len(conflicts)} native silkscreen conflict(s); see {directory / "artwork.json"}')
 

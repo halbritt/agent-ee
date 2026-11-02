@@ -123,6 +123,8 @@ def review_transport_schema(schema):
     Only the provider copy uses a union. Draft validation, archived schemas and
     replay keep the original contract; returned findings are never rewritten.
     """
+    if '$defs' not in schema and schema.get('properties', {}).get('schema', {}).get('enum') != [REVIEW_VERSION]:
+        return schema
     wire = citation_transport_schema(schema)
     if wire.get('properties', {}).get('schema', {}).get('enum') == [REVIEW_VERSION]:
         purpose = wire['properties']['findings']['items']
@@ -130,11 +132,6 @@ def review_transport_schema(schema):
         del ordinary['properties']['dimension']
         purpose['properties']['assessment']['enum'] = ['concern']
         purpose['properties']['severity']['enum'] = ['minor', 'info']
-        for branch in (ordinary, purpose):
-            # strict_schema does not descend into anyOf. Each member must
-            # already be strict, including any required baseline witnesses.
-            branch['required'] = list(branch['properties'])
-            branch['additionalProperties'] = False
         wire['properties']['findings']['items'] = {'anyOf': [ordinary, purpose]}
         _check_schema_limits(wire)
     return wire
@@ -550,8 +547,41 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
 
 def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None, launch_context=None):
     from .preflight import guard
-    if isinstance(launch_context, dict) and 'deadline' in launch_context:
-        launch_context = {**launch_context, 'deadline': min(launch_context['deadline'], time.monotonic() + timeout)}
+    _check_schema_limits(schema)
+    if launch_context is None or 'expected' not in launch_context:
+        import uuid
+        from .preflight import capture_expectation
+        from .run_record import pinned, policy_files, runtime_files
+        run = Path(run_dir)
+        manifest_path = run / 'candidate.json'
+        if manifest_path.is_file():
+            manifest = read_json(manifest_path)
+        else:
+            manifest = {'candidate_id': f'standalone-{uuid.uuid4()}',
+                        'scope': {'schema': 'agent-ee.scope/1', 'checks': []},
+                        'files': {}}
+        host = (launch_context or {}).get('host')
+        environment = {
+            'run_id': f'standalone-{uuid.uuid4()}',
+            'policy_files': pinned(host, 'policy_files', policy_files),
+            'runtime_files': pinned(host, 'runtime_files', runtime_files),
+        }
+        inputs_dir = run / 'inputs' if (run / 'inputs').is_dir() else None
+        expected = capture_expectation(environment, manifest, [definition], inputs=inputs_dir)
+        deadline = time.monotonic() + timeout
+        if isinstance(launch_context, dict) and 'deadline' in launch_context:
+            deadline = min(deadline, launch_context['deadline'])
+        launch_context = {
+            **(launch_context or {}),
+            'expected': expected,
+            'boundary': (launch_context or {}).get('boundary', 'initial'),
+            'deadline': deadline,
+        }
+    else:
+        if 'deadline' in launch_context:
+            launch_context = {**launch_context, 'deadline': min(launch_context['deadline'], time.monotonic() + timeout)}
+        else:
+            launch_context = {**launch_context, 'deadline': time.monotonic() + timeout}
     try:
         receipt, link, executable = guard(run_dir, label, definition, launch_context, cancellation)
         if receipt['result'] != 'ok':
@@ -884,6 +914,10 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline, *, launch_con
         schema["properties"]["decisions"]["items"]["properties"]["finding_id"]["enum"] = [f["id"] for f in findings]
     bind_evidence_schema(schema, 'decisions', run_dir, packet, 'adjudicator')
     prompt = workspace_instructions("adjudicator") + CITATION_INSTRUCTIONS + (brief(purpose) if purpose is not None else '') + prompt
+    if definition['tool_mode'] == 'investigate':
+        from .review_draft import INSTRUCTIONS, prepare
+        prepare(run_dir, 'adjudicator', packet, schema, findings=findings)
+        prompt = INSTRUCTIONS + prompt
     from .findings import adjudicate
     from .review_run import structured_call
     def validate(value):

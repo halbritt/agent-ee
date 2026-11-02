@@ -18,7 +18,8 @@ from .retained_run import retained_path as _retained_path
 from .catalog import strict_json
 from .stage_receipts import tree_identity
 from .storage import digest, identity, write_json
-from .run_record import pcbnew_extension, policy_files
+from .run_record import policy_files
+from . import run_record
 
 SCHEMA = build_plan.SCHEMA
 TYPED_SCHEMA = build_plan.TYPED_SCHEMA
@@ -31,7 +32,6 @@ _inventory = requirement_map.input_inventory
 
 
 def _runtime():
-    import pcbnew
     cli = shutil.which('kicad-cli')
     if cli is None:
         raise ValueError('kicad-cli is unavailable')
@@ -40,11 +40,18 @@ def _runtime():
     )
     version = native_run.completed(execution, text=True)
     version.check_returncode()
-    extension, diagnostic = pcbnew_extension()
+    extension, diagnostic = run_record.pcbnew_extension()
     if extension is None:
         raise ValueError('pcbnew native extension unavailable: ' + str(diagnostic))
+    probe = native_run.run(
+        native_run.Intent('probe', [sys.executable, '-c', 'import importlib; print(importlib.import_module("pcbnew").Version())'],
+                          timeout=15, isolation='host'), work=None
+    )
+    pcbnew_result = native_run.completed(probe, text=True)
+    if pcbnew_result.returncode != 0:
+        raise ValueError('pcbnew version probe failed: ' + pcbnew_result.stderr.strip())
     return dict(source=policy_files(), python=digest(sys.executable), kicad_cli=digest(cli),
-                kicad_version=version.stdout.strip(), pcbnew_version=pcbnew.Version(), pcbnew_sha256=digest(extension))
+                kicad_version=version.stdout.strip(), pcbnew_version=pcbnew_result.stdout.strip(), pcbnew_sha256=digest(extension))
 
 
 def review_build(run, out, *, max_seconds=900, profile=None):
