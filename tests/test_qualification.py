@@ -175,6 +175,12 @@ class QualificationTests(unittest.TestCase):
         self.report.update(status='assessing', accepted=False, candidate=self.report['completed'][-1]['candidate'])
         self.save()
 
+    def test_typed_package_with_no_rotation_evidence_is_held_for_it(self):
+        self.complete_control(typed=True)
+        file_release = qualification.assess(self.root)['dimensions']['file_release']
+        self.assertEqual(file_release['status'], 'pending')
+        self.assertIn('Required exact-package evidence is incomplete', file_release['reason'])
+
     def test_seven_sealed_directories_and_valid_package_json_cannot_grant_release(self):
         self.complete_control()
         result = qualification.assess(self.root)
@@ -285,10 +291,9 @@ class RotationEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'manufacturing coverage missing: cpl_rotation'):
             qualification.manufacturing_coverage(dict(schema=build.TYPED_SCHEMA), self.SCOPE, [])
 
-    def test_untyped_plan_keeps_its_existing_coverage(self):
-        with self.assertRaises(ValueError) as refused:
+    def test_untyped_plan_reaches_its_next_coverage_check(self):
+        with self.assertRaisesRegex(ValueError, 'requires the ordinary generation done gate'):
             qualification.manufacturing_coverage(dict(schema='agent-ee.build-plan/1'), self.SCOPE, [])
-        self.assertNotIn('coverage missing', str(refused.exception))
 
     def test_orientation_gates_a_typed_package_even_when_no_clause_cites_it(self):
         rows = [dict(id='cpl', kind='cpl_rotation'), dict(id='trip', kind='fab_roundtrip')]
