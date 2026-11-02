@@ -184,6 +184,18 @@ def placement_findings(root):
     return result
 
 
+def review_feedback(result):
+    from .run_record import finding_status
+    from .purpose_review import advisory_deferral
+
+    rows = [row for row in result.get('findings', []) if not advisory_deferral(row)
+            and finding_status(row) in ('accepted', 'unresolved', 'deferred')]
+    fields = ('id', 'title', 'assessment', 'severity', 'condition', 'failure_mechanism',
+              'recommendation', 'disposition', 'disposition_reason')
+    return [{key: row[key][:1200] if isinstance(row[key], str) else row[key]
+             for key in fields if key in row} for row in rows]
+
+
 def execution_error(record, attempt, label):
     directory = attempt / (label + '-execution')
     text = '\n'.join(p.read_text(errors='replace') for p in (directory / 'stderr.log', directory / 'stdout.log') if p.is_file())
@@ -388,7 +400,7 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                     report['claims']['engineering_review'] = dimension
                     if record['execution'] != 'ok' or record.get('exit_code') != 0 or dimension != 'pass':
                         result = read_optional(attempt / 'review/review/result.json')
-                        row['review_findings'] = (result or {}).get('decisions', (result or {}).get('findings', []))
+                        row['review_findings'] = review_feedback(result or {})
                         if dimension not in ('pass', 'failed'):
                             row.update(status='review_incomplete', reason='Engineering review did not complete; inspect retained execution records. No further seat called.')
                             report['status'] = 'review_incomplete'

@@ -42,6 +42,16 @@ class ToolTests(unittest.TestCase):
                 tools.search_parts('timer', self.root / 'search')
         self.assertEqual((self.root / 'search/response.json').read_bytes(), raw)
 
+    def test_custom_pad_inventory_refuses_without_starting_native_geometry(self):
+        footprints = self.root / 'footprints/Owned.pretty'
+        footprints.mkdir(parents=True)
+        (footprints / 'Custom.kicad_mod').write_text(
+            '(footprint "Custom" (layer "F.Cu") (pad "1" smd custom (at 0 0)))')
+        with patch('agent_ee.footprint_library.index_footprints') as native_capable_reader:
+            with self.assertRaisesRegex(ValueError, 'custom pads'):
+                tools.inspect_footprint('Owned:Custom', self.root)
+        native_capable_reader.assert_not_called()
+
     def test_local_inventory_exposes_actual_pin_and_pad_numbers(self):
         symbols = self.root / 'symbols'
         symbols.mkdir()

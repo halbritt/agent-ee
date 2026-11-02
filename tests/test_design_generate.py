@@ -242,7 +242,7 @@ class GenerateTests(unittest.TestCase):
             write_json(folder / 'report.json', dict(outcome='defects_or_unresolved',
                 qualification=dict(dimensions=dict(engineering_review='failed'))))
             (folder / 'review').mkdir()
-            write_json(folder / 'review/result.json', dict(decisions=[dict(id='supply', reason='Wrong supply pin')]))
+            write_json(folder / 'review/result.json', dict(findings=[dict(id='supply', title='Wrong supply pin', disposition='accepted')]))
             return dict(execution='failed', exit_code=1)
         with patch.object(loop, 'run_step', side_effect=step):
             report = self.generate(max_attempts=2, review_profile=profile)
@@ -274,6 +274,15 @@ class GenerateTests(unittest.TestCase):
         path.mkdir(parents=True)
         write_json(path / 'job-report.json', dict(status='refused', reason='pin mismatch'))
         self.assertFalse(loop.search_failure(dict(attempts=[dict(stage='placement-routing')]), run))
+
+    def test_review_feedback_prioritises_blockers_over_long_closed_advisories(self):
+        result = dict(findings=[
+            dict(id='area', title='Large board', disposition='noted', disposition_reason='x' * 20000),
+            dict(id='supply', title='Wrong supply pin', disposition='accepted',
+                 condition='Supply connected to output', disposition_reason='y' * 20000)])
+        feedback = loop.review_feedback(result)
+        self.assertEqual([f['id'] for f in feedback], ['supply'])
+        self.assertEqual(len(feedback[0]['disposition_reason']), 1200)
 
     def test_benchmark_lists_unrun_designs_after_subscription_failure(self):
         directory = self.root / 'requirements'
