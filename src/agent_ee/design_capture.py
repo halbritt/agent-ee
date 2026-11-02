@@ -83,18 +83,22 @@ def validate_supplier_capture(root, lcsc):
         raise ValueError("supplier footprint bytes differ from provenance")
     parse_package(raw, lcsc, 200)
     receipt_path = root / f"supplier/{lcsc}.capture.json"
-    if receipt_path.is_file():
-        receipt = load(receipt_path)
-        from .candidate import safe_relative
+    if not receipt_path.is_file():
+        raise ValueError(
+            "supplier response capture receipt is missing; recapture the part"
+        )
 
-        full = (root / safe_relative(receipt["path"])).read_bytes()
-        if hashlib.sha256(full).hexdigest() != receipt["sha256"]:
-            raise ValueError("supplier full response differs from capture receipt")
-        span, (start, end) = result_span(full)
-        if (start, end) != (receipt["byte_start"], receipt["byte_end"]) or span != raw:
-            raise ValueError(
-                "supplier component is not the exact recorded result byte span"
-            )
+    receipt = load(receipt_path)
+    from .candidate import safe_relative
+
+    full = (root / safe_relative(receipt["path"])).read_bytes()
+    if hashlib.sha256(full).hexdigest() != receipt["sha256"]:
+        raise ValueError("supplier full response differs from capture receipt")
+    span, (start, end) = result_span(full)
+    if (start, end) != (receipt["byte_start"], receipt["byte_end"]) or span != raw:
+        raise ValueError(
+            "supplier component is not the exact recorded result byte span"
+        )
     return provenance
 
 
@@ -139,10 +143,15 @@ def model_references(cad):
     return sorted(refs)
 
 
-def capture_supplier(lcsc, out):
+SUPPLIER_ENDPOINT = (
+    "https://easyeda.com/api/products/{lcsc}/components?version=6.4.19.5"
+)
+
+
+def capture_supplier(lcsc, out, *, endpoint=SUPPLIER_ENDPOINT):
     from .datasheet_capture import run_owned_child
 
-    url = f"https://easyeda.com/api/products/{lcsc}/components?version=6.4.19.5"
+    url = endpoint.format(lcsc=lcsc)
     raw = run_owned_child([sys.executable, "-m", __name__, "--fetch", url], 40)
     if raw is None:
         raise ValueError(
@@ -182,7 +191,7 @@ def capture_supplier(lcsc, out):
     )
 
 
-def capture_design(design, out, *, kicad_root=Path("/usr/share/kicad")):
+def _capture_design(design, out, *, kicad_root, stock_endpoint, supplier_endpoint):
     """Download only. Partial captures remain inspectable after failure."""
     validate(design)
     if out.exists() or out.is_symlink():
@@ -199,6 +208,7 @@ def capture_design(design, out, *, kicad_root=Path("/usr/share/kicad")):
         sorted({p["lcsc"] for p in design["parts"].values()}),
         out / "stock",
         allow_network=True,
+        **({"endpoint": stock_endpoint} if stock_endpoint is not None else {}),
     )
     failed = [
         r["lcsc"] + ": " + r["status"]
@@ -255,7 +265,7 @@ def capture_design(design, out, *, kicad_root=Path("/usr/share/kicad")):
             ]
         )
     for lcsc in sorted(catalog["parts"]):
-        capture_supplier(lcsc, out / "supplier")
+        capture_supplier(lcsc, out / "supplier", endpoint=supplier_endpoint)
     from .models3d import fetch_stock_references
 
     report = fetch_stock_references(model_references(out / "cad"), out / "lib3d")
@@ -266,7 +276,6 @@ def capture_design(design, out, *, kicad_root=Path("/usr/share/kicad")):
                 "parts.footprint: some stock models were not found at pinned revisions; choose a supported footprint; see models-report.json"
             ]
         )
-    validate(design, out)
     write_json(
         out / "capture.json",
         dict(
@@ -277,6 +286,81 @@ def capture_design(design, out, *, kicad_root=Path("/usr/share/kicad")):
                 if p.is_file()
             },
         ),
+    )
+    validate(design, out)
+
+
+def capture_design(
+    design,
+    out,
+    *,
+    kicad_root=Path("/usr/share/kicad"),
+    stock_endpoint=None,
+    supplier_endpoint=SUPPLIER_ENDPOINT,
+):
+    try:
+        return _capture_design(
+            design,
+            out,
+            kicad_root=kicad_root,
+            stock_endpoint=stock_endpoint,
+            supplier_endpoint=supplier_endpoint,
+        )
+    except DesignError:
+        raise
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError, IndexError) as exc:
+        raise DesignError(
+            [
+                f"captures: acquisition failed: {exc}; inspect retained partial files and retry into a new directory"
+            ]
+        ) from exc
+
+
+def validate_capture_manifest(root):
+    """Detect missing, changed and added files, before interpreting captured inputs."""
+    from .design import load
+    from .requirement_map import input_inventory
+
+    manifest = load(root / "capture.json")
+    if (
+        not isinstance(manifest, dict)
+        or set(manifest) != {"schema", "files"}
+        or manifest["schema"] != "agent-ee.design-capture/1"
+        or not isinstance(manifest["files"], dict)
+    ):
+        raise ValueError("expected agent-ee.design-capture/1 with a files hash map")
+    actual = input_inventory(root)
+    actual.pop("capture.json", None)
+    if actual != manifest["files"]:
+        changed = sorted(
+            k
+            for k in set(actual) | set(manifest["files"])
+            if actual.get(k) != manifest["files"].get(k)
+        )
+        raise ValueError("capture files missing or changed: " + ", ".join(changed))
+
+
+def stock_freshness(root):
+    """Warn at compilation without putting a wall-clock-dependent value in the bundle."""
+    from .design import load
+    import warnings
+
+    catalog = load(root / "stock/catalog.json")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    stamps = [catalog["as_of"], catalog["completed_at"]]
+    stamps += [r["fetched_at"] for r in catalog["requests"]]
+    stamps += [p["last_seen"] for p in catalog["parts"].values()]
+    times = [datetime.datetime.fromisoformat(t.replace("Z", "+00:00")) for t in stamps]
+    if any(t.tzinfo is None for t in times):
+        raise ValueError("stock times need a UTC offset; recapture stock")
+    if any(t > now for t in times):
+        raise ValueError(
+            "stock capture time is in the future; recapture stock with a correct clock"
+        )
+    left = 24 - (now - min(times)).total_seconds() / 3600
+    warnings.warn(
+        f"stock evidence has {left:.2f} hours left under the 24-hour package policy; recapture before building if stale",
+        UserWarning,
     )
 
 

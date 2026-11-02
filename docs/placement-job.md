@@ -231,6 +231,12 @@ as one footprint's silk segment over another's. With a true top-level
 routing candidate. A build sets it, because its artwork stage moves only fields and could
 never fix that board.
 
+The top-level `reject_track_dangling` flag likewise makes native `track_dangling`
+warnings ineligible. Builds set both rejection flags and try the next candidate;
+artwork cannot remove dangling copper. Other warnings retain their existing
+policy. The router may replace a one-layer joining via with track inside copper;
+this flag still rejects the remaining dangling-track case.
+
 Optional `router.grid_step_mm` selects the builtin router's search resolution
 in millimetres, including its coupled differential-pair and remaining-net
 passes. For example, `0.025` requests a 25 micrometre search grid. It does not

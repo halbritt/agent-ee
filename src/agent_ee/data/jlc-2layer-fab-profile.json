@@ -8,7 +8,7 @@
       "page": 1,
       "path": "fab-sources/selected-facts.txt",
       "quote": "nominal >= 1.0 mm / finished thickness: +/-10 %",
-      "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
     }
   },
@@ -21,7 +21,7 @@
         "page": 1,
         "path": "fab-sources/selected-facts.txt",
         "quote": "1 and 2-layer / 1 oz / trace / spacing: 0.10 / 0.10 mm",
-        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
       },
       "tier": "minimum",
@@ -36,7 +36,7 @@
         "page": 1,
         "path": "fab-sources/selected-facts.txt",
         "quote": "1 and 2-layer / 1 oz / trace / spacing: 0.10 / 0.10 mm",
-        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
       },
       "tier": "minimum",
@@ -51,7 +51,7 @@
         "page": 1,
         "path": "fab-sources/selected-facts.txt",
         "quote": "2-layer / via / drill / diameter: 0.15 / 0.25 mm",
-        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
       },
       "tier": "minimum",
@@ -66,7 +66,7 @@
         "page": 1,
         "path": "fab-sources/selected-facts.txt",
         "quote": "2-layer / via / drill / diameter: 0.15 / 0.25 mm",
-        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
       },
       "tier": "minimum",
@@ -81,7 +81,7 @@
         "page": 1,
         "path": "fab-sources/selected-facts.txt",
         "quote": "routed / copper / edge: 0.2 mm",
-        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
       },
       "tier": "minimum",
@@ -96,7 +96,7 @@
         "page": 1,
         "path": "fab-sources/selected-facts.txt",
         "quote": "pad / hole / hole: 0.45 mm",
-        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
       },
       "tier": "minimum",
@@ -111,7 +111,7 @@
         "page": 1,
         "path": "fab-sources/selected-facts.txt",
         "quote": "layers selected: 2",
-        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
       },
       "tier": "minimum",
@@ -126,7 +126,7 @@
         "page": 1,
         "path": "fab-sources/selected-facts.txt",
         "quote": "FR4 / 2-layer / maximum: 670 / 600 mm",
-        "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
       },
       "tier": "minimum",
@@ -168,7 +168,7 @@
       "page": 1,
       "path": "fab-sources/selected-facts.txt",
       "quote": "nominal 1.2 mm / finished thickness: 1.08 to 1.32 mm (calculated from published +/-10 % tolerance)\nPublished FR4 nominal thickness choices include 1.2 mm\n2-layer / finished outer copper: 1 / 2 / 2.5 / 3.5 / 4.5 oz\n1 oz / nominal copper thickness: 35 um\nSelected 2-layer stack: 2 x 1 oz outer copper with FR-4 dielectric. No core thickness is published.",
-      "sha256": "2cbc0e739f3120c974d448a76626c40a9c34a8569ee779d4f3f33008d743a3f1",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "source": "Engineering transcription of JLCPCB published capabilities; selected-facts.txt"
     },
     "thickness_mm": null

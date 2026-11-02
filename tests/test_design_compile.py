@@ -22,6 +22,20 @@ from tests.land_pattern_fixtures import (
 )
 
 
+def seal_capture(root):
+    write_json(
+        root / "capture.json",
+        dict(
+            schema="agent-ee.design-capture/1",
+            files={
+                str(p.relative_to(root)): digest(p)
+                for p in sorted(root.rglob("*"))
+                if p.is_file() and p.name != "capture.json"
+            },
+        ),
+    )
+
+
 def design_fixture(root):
     d = dict(
         schema="agent-ee.design/1",
@@ -181,6 +195,21 @@ def design_fixture(root):
         "lib3d/.agent-ee-models.json",
         dict(schema="agent-ee.stock-models/1", repository=STOCK_REPOSITORY, files={}),
     )
+    from agent_ee.design_capture import result_span
+
+    full = b'{"success":true,"result":' + raw + b"}"
+    span, (start, end) = result_span(full)
+    put("supplier/C1.full.json", full)
+    put(
+        "supplier/C1.capture.json",
+        dict(
+            path="supplier/C1.full.json",
+            sha256=hashlib.sha256(full).hexdigest(),
+            byte_start=start,
+            byte_end=end,
+        ),
+    )
+    seal_capture(root)
     return d
 
 
@@ -418,6 +447,7 @@ class DesignCompileTests(unittest.TestCase):
             + '(pad "1" smd rect (at 3 0) (size 1 1) (layers "F.Cu" "F.Mask")))\n'
         )
         path.write_text(raw)
+        seal_capture(self.captures)
         self.design["decoupling"] = [
             dict(
                 capacitor="R2",
@@ -526,7 +556,7 @@ class DesignCompileTests(unittest.TestCase):
         (self.captures / "supplier/C1.full.json").write_bytes(full + b" ")
         with self.assertRaises(DesignError) as caught:
             self.compile("refused")
-        self.assertIn("supplier full response", str(caught.exception))
+        self.assertIn("supplier/C1.full.json", str(caught.exception))
         self.assertFalse((self.root / "refused").exists())
 
     def test_linked_capture_and_invalid_requirement_prefix_are_refused_before_output(
@@ -572,3 +602,353 @@ class DesignCompileTests(unittest.TestCase):
                 classify(pair, locality["source_records"])["enforcement"], "hard"
             )
             self.assertIn("6 mm", pair["provenance"]["citation"]["quote"])
+
+    def test_clearance_and_track_width_use_fab_floor_and_capture_provenance_is_honest(
+        self,
+    ):
+        self.compile()
+        root = self.root / "bundle/inputs"
+        pro = json.loads((root / "project/owned.kicad_pro").read_bytes())
+        default = pro["net_settings"]["classes"][0]
+        self.assertEqual(default["clearance"], 0.1)
+        self.assertEqual(default["track_width"], 0.1)
+        derivation = json.loads((root / "project-rule-derivation.json").read_bytes())
+        self.assertEqual(derivation["routing"]["clearance"]["selected"], 0.1)
+        facts = (root / "fab-sources/selected-facts.txt").read_text(encoding="utf-8")
+        self.assertIn("https://jlcpcb.com/help/article/jlcpcb-copper-weight", facts)
+        self.assertNotIn("https://jlcpcb.com/blog/pcb-copper-weight", facts)
+        source = json.loads(
+            (
+                Path(__file__).resolve().parents[1]
+                / "fixtures/board-envelope/jlc-2layer/source-capture.json"
+            ).read_bytes()
+        )
+        for capture in source["raw_captures"]:
+            if capture["file"] in ("jlc-capabilities.html", "jlc-copper-weight.html"):
+                self.assertIn(capture["sha256"], facts)
+                self.assertIn(capture["captured_at"], facts)
+
+    def test_gate_policy_pins_stock_age_connector_tolerance_values_and_native_ground(
+        self,
+    ):
+        self.design["connectors"] = [
+            dict(
+                reference="R1",
+                edge="left",
+                position_mm=10,
+                inset_mm=2,
+                rotation_deg=0,
+                insertion="from_top",
+            )
+        ]
+        self.compile()
+        root = self.root / "bundle/inputs"
+        m = json.loads((root / "requirement-map.json").read_bytes())
+        checks = {c["id"]: c for r in m["requirements"] for c in r.get("checks", [])}
+        self.assertEqual(checks["assembly"]["params"]["max_age_hours"], 24)
+        env = json.loads((root / "envelope.json").read_bytes())
+        self.assertEqual(env["fixed_footprints"][0]["tolerance_mm"], 0)
+        rules = json.loads((root / "topology-rules.json").read_bytes())["rules"]
+        resistance = next(r for r in rules if r["id"] == "resistance")
+        self.assertEqual(resistance["value"], "10k")
+        self.assertEqual(resistance["nets"], ["/SIGNAL", "GND"])
+        plane = json.loads((root / "planes.json").read_bytes())
+        self.assertEqual(plane["zones"][0]["net"], "GND")
+
+    def test_pin_only_requirements_compile_and_bench_claims_stay_physical(self):
+        self.design["functional"][0]["witnesses"] = [
+            self.design["functional"][0]["witnesses"][1]
+        ]
+        self.design["bench"] = [
+            "Measure 1 kHz at 0.1 percent accuracy and survival of 100 V surges."
+        ]
+        self.compile()
+        root = self.root / "bundle/inputs"
+        rules = json.loads((root / "topology-rules.json").read_bytes())
+        self.assertEqual(rules["classes"], {})
+        self.assertEqual(len(rules["rules"]), 1)
+        spec = (root / "spec.md").read_text(encoding="utf-8")
+        self.assertIn("not established by these witnesses", spec)
+        record = json.loads((root / "spec-record.json").read_bytes())
+        func = next(r for r in record["requirements"] if r["id"] == "TEST-FUNC-1")
+        span = func["locator"]
+        clause = (
+            (root / "spec.md")
+            .read_bytes()[span["byte_start"] : span["byte_end"]]
+            .decode()
+        )
+        self.assertNotIn(self.design["functional"][0]["text"], clause)
+        self.assertTrue(
+            any(r["section"] == "Functional purpose" for r in record["prose"])
+        )
+        obligations = json.loads((root / "obligations.json").read_bytes())
+        row = next(r for r in obligations["clauses"] if r["id"] == "TEST-BENCH-1")
+        self.assertEqual({s["obligation"] for s in row["spans"]}, {"physical"})
+        m = json.loads((root / "requirement-map.json").read_bytes())
+        bench = next(r for r in m["requirements"] if r["id"] == "TEST-BENCH-1")
+        self.assertIn("bench", bench)
+        self.assertNotIn("checks", bench)
+
+    def test_polarized_elements_and_standard_symbol_class_lies_are_refused(self):
+        for cls, lib in (
+            ("diode", "Device:D"),
+            ("led", "Device:LED"),
+            ("polarized_capacitor", "Device:C_Polarized"),
+            ("capacitor", "Device:R"),
+        ):
+            with self.subTest(cls=cls):
+                d = copy.deepcopy(self.design)
+                d["functional"][0]["witnesses"][0].update({"class": cls, "lib_id": lib})
+                with self.assertRaisesRegex(
+                    DesignError, "undirected|is class resistor"
+                ):
+                    compile_design(d, self.captures, self.root / "refused")
+
+    def test_manifest_custody_detects_missing_changed_and_unlisted_files(self):
+        target = self.captures / "cad/Owned.kicad_sym"
+        original = target.read_bytes()
+        manifest = self.captures / "capture.json"
+        saved = manifest.read_bytes()
+        for change in (
+            "symbol pin name",
+            "deleted manifest",
+            "malformed manifest",
+            "deleted receipt",
+            "unlisted file",
+        ):
+            with self.subTest(change=change):
+                target.write_bytes(original)
+                manifest.write_bytes(saved)
+                receipt = self.captures / "supplier/C1.capture.json"
+                receipt_raw = receipt.read_bytes()
+                if change == "symbol pin name":
+                    target.write_bytes(original.replace(b'"~"', b'"changed"'))
+                    if target.read_bytes() == original:
+                        target.write_bytes(original + b" ")
+                elif change == "deleted manifest":
+                    manifest.unlink()
+                elif change == "malformed manifest":
+                    manifest.write_bytes(b"[]")
+                elif change == "deleted receipt":
+                    receipt.unlink()
+                else:
+                    (self.captures / "extra").write_bytes(b"accidental file")
+                with self.assertRaisesRegex(DesignError, "captures.capture.json"):
+                    self.compile("refused")
+                receipt.write_bytes(receipt_raw)
+                (self.captures / "extra").unlink(missing_ok=True)
+        target.write_bytes(original)
+        manifest.write_bytes(saved)
+
+    def test_even_resealed_supplier_without_response_receipt_is_refused(self):
+        (self.captures / "supplier/C1.capture.json").unlink()
+        seal_capture(self.captures)
+        with self.assertRaisesRegex(
+            DesignError, "supplier response capture receipt is missing"
+        ):
+            self.compile()
+
+    def test_future_stock_refuses_and_stale_stock_warns_with_time_left(self):
+        path = self.captures / "stock/catalog.json"
+        original = json.loads(path.read_bytes())
+        for stamp in ("2030-01-01T00:00:00+00:00", "2020-01-01T00:00:00+00:00"):
+            with self.subTest(stamp=stamp):
+                catalog = copy.deepcopy(original)
+                catalog["as_of"] = catalog["completed_at"] = stamp
+                catalog["requests"][0]["fetched_at"] = stamp
+                catalog["parts"]["C1"]["last_seen"] = stamp
+                write_json(path, catalog)
+                seal_capture(self.captures)
+                if stamp.startswith("2030"):
+                    with self.assertRaisesRegex(DesignError, "future"):
+                        self.compile("future")
+                else:
+                    with self.assertWarnsRegex(UserWarning, "hours left.*24-hour"):
+                        self.compile("stale")
+
+    def test_unsupported_dimensions_markdown_intent_and_vacuous_locality_are_actionable(
+        self,
+    ):
+        pair = dict(
+            capacitor="R2",
+            device="R1",
+            supply=["R1.1", "R2.1"],
+            **{"return": ["R1.2", "R2.2"]},
+            max_distance_mm=5,
+        )
+        for field, value in (
+            ("width_mm", 1000),
+            ("width_mm", 10**400),
+            ("max_component_height_mm", 100000),
+        ):
+            with self.subTest(field=field, value=str(value)[:12]):
+                d = copy.deepcopy(self.design)
+                d["board"][field] = value
+                with self.assertRaisesRegex(DesignError, "board." + field):
+                    compile_design(d, self.captures, self.root / "refused")
+        for text in ("# Intent", "- Intent", "1. Intent", "| Intent"):
+            d = copy.deepcopy(self.design)
+            d["intent"] = text
+            with self.subTest(text=text), self.assertRaisesRegex(DesignError, "intent"):
+                compile_design(d, self.captures, self.root / "refused")
+        for change in (
+            dict(capacitor="R1"),
+            {"return": pair["supply"]},
+            dict(max_distance_mm=100000),
+        ):
+            d = copy.deepcopy(self.design)
+            d["decoupling"] = [dict(pair, **change)]
+            with (
+                self.subTest(change=change),
+                self.assertRaisesRegex(DesignError, r"decoupling\[0\]"),
+            ):
+                compile_design(d, self.captures, self.root / "refused")
+
+    def test_decimal_outlines_and_equivalent_quarter_turns_compile(self):
+        for width, angle in ((66.04, 360), (8.04, 450), (30, -90)):
+            with self.subTest(width=width, angle=angle):
+                d = copy.deepcopy(self.design)
+                d["board"]["width_mm"] = width
+                d["connectors"] = [
+                    dict(
+                        reference="R1",
+                        edge="left",
+                        position_mm=10,
+                        inset_mm=1,
+                        rotation_deg=angle,
+                        insertion="from_top",
+                    )
+                ]
+                compile_design(d, self.captures, self.root / str(angle))
+                env = json.loads(
+                    (self.root / str(angle) / "inputs/envelope.json").read_bytes()
+                )
+                self.assertEqual(
+                    env["fixed_footprints"][0]["rotation_deg"], angle % 360
+                )
+
+    def test_connector_courtyard_must_reach_edge_after_rotation(self):
+        for angle, inset in ((0, 20), (270, 8), (0, 8)):
+            d = copy.deepcopy(self.design)
+            d["connectors"] = [
+                dict(
+                    reference="R1",
+                    edge="right",
+                    position_mm=10,
+                    inset_mm=inset,
+                    rotation_deg=angle,
+                    insertion="through_edge",
+                )
+            ]
+            with (
+                self.subTest(angle=angle, inset=inset),
+                self.assertRaisesRegex(DesignError, r"connectors\[0\].inset_mm"),
+            ):
+                compile_design(d, self.captures, self.root / "refused")
+
+    def test_utf8_locality_provenance_and_missing_model_report(self):
+        self.design["intent"] = "Résistance and 雪: synthetic UTF-8 design."
+        self.design["decoupling"] = [
+            dict(
+                capacitor="R2",
+                device="R1",
+                supply=["R1.1", "R2.1"],
+                **{"return": ["R1.2", "R2.2"]},
+                max_distance_mm=5,
+            )
+        ]
+        self.compile()
+        root = self.root / "bundle/inputs"
+        locality = json.loads((root / "electrical-locality.json").read_bytes())
+        for leg in ("supply", "return"):
+            basis = locality["obligations"][0][leg]["provenance"]["basis"]
+            self.assertIn("Agent-selected measurement requirement", basis)
+            self.assertIn("not an owner or datasheet ruling", basis)
+        report = json.loads((root / "design-compile-report.json").read_bytes())
+        self.assertEqual(len(report["warnings"]), 2)
+        self.assertEqual(len(report["land_patterns"]), 2)
+        self.assertIn("F.Cu", report["land_patterns"][0]["copper"])
+        import os
+        import subprocess
+        import sys
+
+        design_path = self.root / "utf8.json"
+        write_json(design_path, self.design)
+        env = dict(os.environ, LC_ALL="C", PYTHONUTF8="0", PYTHONCOERCECLOCALE="0")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "agent_ee.cli",
+                "design",
+                "compile",
+                str(design_path),
+                "--captures",
+                str(self.captures),
+                "--out",
+                str(self.root / "locale"),
+            ],
+            env=env,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            (root / "electrical-locality.json").read_bytes(),
+            (self.root / "locale/inputs/electrical-locality.json").read_bytes(),
+        )
+
+    def test_ferrite_default_names_the_installed_standard_symbol(self):
+        from agent_ee.design_compile import topology_rules
+
+        self.design["functional"][0]["witnesses"][0].update({"class": "ferrite"})
+        self.design["functional"][0]["witnesses"][0].pop("lib_id")
+        target = self.root / "rules"
+        target.mkdir()
+        topology_rules(self.design, target)
+        rules = json.loads((target / "topology-rules.json").read_bytes())
+        self.assertIn("Device:FerriteBead", rules["classes"])
+
+    def test_cli_compile_dispatch_and_refusal_exit_codes(self):
+        import subprocess
+        import sys
+
+        source = self.root / "design.json"
+        write_json(source, self.design)
+        command = [
+            sys.executable,
+            "-m",
+            "agent_ee.cli",
+            "design",
+            "compile",
+            str(source),
+            "--captures",
+            str(self.captures),
+            "--out",
+            str(self.root / "cli"),
+        ]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / "cli/build-plan.json").exists())
+        self.design["board"]["width_mm"] = 10**400
+        write_json(source, self.design)
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("board.width_mm", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "agent_ee.cli",
+                "design",
+                "capture",
+                str(source),
+                "--out",
+                str(self.root / "cli-capture"),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("board.width_mm", result.stderr)
+        self.assertFalse((self.root / "cli-capture").exists())

@@ -39,7 +39,9 @@ refuses it. Each rule publishes one predicate, `topology-rule:<rule id>`.
 `agent-ee.topology-rules/1` has exactly `schema`, `classes` and `rules`.
 Duplicate JSON keys and non-finite numbers are refused.
 
-`classes` maps exact `library:symbol` IDs to `{class, terminals}`.
+`classes` maps exact `library:symbol` IDs to `{class, terminals}`. It may be empty
+for rules such as `pin_net` that need no component classification; rules that
+name a class still require its exact symbol declaration.
 `terminals` maps terminal names to distinct physical pin numbers. The class
 set is closed:
 

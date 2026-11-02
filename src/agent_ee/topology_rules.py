@@ -217,8 +217,8 @@ def validate_rules(document):
     if document['schema'] != SCHEMA:
         raise ValueError('unsupported topology rule schema')
     classes = document['classes']
-    if not isinstance(classes, dict) or not classes:
-        raise ValueError('expected nonempty exact library:symbol class map')
+    if not isinstance(classes, dict):
+        raise ValueError('expected exact library:symbol class map')
     for symbol, declaration in classes.items():
         validate_class(symbol, declaration)
     if not isinstance(document['rules'], list) or not document['rules']:

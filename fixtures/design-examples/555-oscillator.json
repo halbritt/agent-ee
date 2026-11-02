@@ -13,7 +13,7 @@
     {
       "edge": "left",
       "insertion": "from_top",
-      "inset_mm": 4,
+      "inset_mm": 3.5,
       "position_mm": 15,
       "reference": "J1",
       "rotation_deg": 0
@@ -21,7 +21,7 @@
     {
       "edge": "right",
       "insertion": "from_top",
-      "inset_mm": 4,
+      "inset_mm": 3.5,
       "position_mm": 15,
       "reference": "J2",
       "rotation_deg": 180

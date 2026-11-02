@@ -220,6 +220,32 @@ def _artwork(candidate, directory, board):
 
 
 
+def placement_configuration(placement, scope, candidate):
+    """Bind build placement inputs and the unchanged package rejection policy."""
+    from . import placement_job
+    # Artwork moves only fields; it cannot fix graphic conflicts or dangling copper
+    # that this build's final package DRC rejects.
+    config = dict(schema=placement_job.CONFIG_SCHEMA, reject_silk_graphic_conflicts=True,
+        reject_track_dangling=True,
+        **{key: placement[key] for key in ('budget_s', 'search', 'router')}, inputs={})
+    for key, name in dict(board=scope['board'], project=str(Path(scope['board']).with_suffix('.kicad_pro')),
+                          intent=placement['intent'], groups=placement['groups']).items():
+        config['inputs'][key] = dict(path=str(candidate / name), sha256=digest(candidate / name))
+    rules = (candidate / scope['board']).with_suffix('.kicad_dru')
+    if rules.exists():
+        config['inputs']['rules'] = dict(path=str(rules), sha256=digest(rules))
+    for name in ('planes', 'block_contract', 'mechanics'):
+        if name in placement:
+            path = candidate / placement[name]
+            config['inputs'][name] = dict(path=str(path), sha256=digest(path))
+    from .block_source_stage import locality_path
+    locality = locality_path(scope, candidate)
+    if locality:
+        path = candidate / locality
+        config['inputs']['locality'] = dict(path=str(path), sha256=digest(path))
+    return config
+
+
 def execute(attempt, plan, previous, *, diagnostic=False):
     stage, directory, out = attempt.name, attempt.directory, attempt.root
     scope_record = retained_run.scope(out)
@@ -275,26 +301,7 @@ def execute(attempt, plan, previous, *, diagnostic=False):
             coverage = dict(status='declared')
         write_json(directory / 'manufacturing-coverage.json', coverage)
         placement = plan['placement']
-        # Artwork moves only fields; it cannot fix graphic conflicts or dangling copper
-        # that this build's final package DRC rejects.
-        config = dict(schema=placement_job.CONFIG_SCHEMA, reject_silk_graphic_conflicts=True,
-            reject_track_dangling=True,
-            **{key: placement[key] for key in ('budget_s', 'search', 'router')}, inputs={})
-        for key, name in dict(board=scope['board'], project=str(Path(scope['board']).with_suffix('.kicad_pro')),
-                              intent=placement['intent'], groups=placement['groups']).items():
-            config['inputs'][key] = dict(path=str(candidate / name), sha256=digest(candidate / name))
-        rules = (candidate / scope['board']).with_suffix('.kicad_dru')
-        if rules.exists():
-            config['inputs']['rules'] = dict(path=str(rules), sha256=digest(rules))
-        for name in ('planes', 'block_contract', 'mechanics'):
-            if name in placement:
-                path = candidate / placement[name]
-                config['inputs'][name] = dict(path=str(path), sha256=digest(path))
-        from .block_source_stage import locality_path
-        locality = locality_path(scope, candidate)
-        if locality:
-            path = candidate / locality
-            config['inputs']['locality'] = dict(path=str(path), sha256=digest(path))
+        config = placement_configuration(placement, scope, candidate)
         write_json(directory / 'placement-config.json', config)
         if 'block_source' in placement:
             from . import block_source_stage

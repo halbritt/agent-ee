@@ -5,6 +5,7 @@ import json
 import shutil
 import tempfile
 import uuid
+from decimal import Decimal
 from pathlib import Path
 
 from .design import (
@@ -24,6 +25,7 @@ CODES = {
     "Design intent": "INTENT",
     "Native verification": "NATIVE",
     "Electrical function": "FUNC",
+    "Functional purpose": "PURPOSE",
     "Placement and mechanics": "MECH",
     "Manufacturing": "DELIV",
     "Physical follow-up": "BENCH",
@@ -32,7 +34,7 @@ NATIVE = [
     "Native ERC shall report no electrical violations after schematic emission.",
     "Final native DRC shall report no errors and no unconnected items after zone refill.",
     "The emitted native netlist shall match the selected circuit topology exactly.",
-    "Every physical component shall match the selected part, symbol, footprint and population declaration.",
+    "Every physical component shall match the selected identity, CAD assignment and population declaration; standard passive size codes shall agree with the catalog. Land-pattern overlap is diagnostic only.",
     "Every populated component shall carry purchasing properties and current JLCPCB stock evidence.",
 ]
 
@@ -52,10 +54,19 @@ def spec(design):
     sections = {
         "Design intent": [design["intent"]],
         "Native verification": NATIVE,
-        "Electrical function": [f["text"] for f in design["functional"]],
+        "Electrical function": [
+            "The declared topology witnesses "
+            + ", ".join(w["id"] for w in f["witnesses"])
+            + " shall hold. This checks only declared pin assignments and undirected class/value relationships."
+            for f in design["functional"]
+        ],
+        "Functional purpose": [
+            f"Design-stated purpose for functional item {i} (not established by these witnesses): {f['text']}"
+            for i, f in enumerate(design["functional"], 1)
+        ],
         "Placement and mechanics": [
             f"The board shall be {design['board']['width_mm']} by {design['board']['height_mm']} mm, two copper layers and nominal {design['board']['thickness_mm']} mm thick.",
-            "All declared connectors shall occupy their fixed edge positions.",
+            "All declared connectors shall occupy their fixed edge positions and rotations. Mouth direction and physical mating access are not established by this check.",
             " ".join(decoupling_text(pair) for pair in design["decoupling"]),
             f"Courtyards shall not overlap and components shall fit the outline and {design['board']['max_component_height_mm']} mm height envelope.",
         ],
@@ -79,7 +90,7 @@ def spec(design):
         + "\n\n"
         + (
             "\n\n".join(rows)
-            if title == "Design intent"
+            if title in ("Design intent", "Functional purpose")
             else "\n".join("- " + r for r in rows)
         )
         + "\n\n"
@@ -343,6 +354,8 @@ def envelope(design, root):
     b = design["board"]
     x, y = 100, 100
     w, h = b["width_mm"], b["height_mm"]
+    right = float(Decimal(x) + Decimal(str(w)))
+    bottom = float(Decimal(y) + Decimal(str(h)))
     write_json(
         root / "envelope.json",
         dict(
@@ -359,10 +372,10 @@ def envelope(design, root):
                 edges=[
                     dict(name=n, start=a, end=z)
                     for n, a, z in [
-                        ("top", [x, y], [x + w, y]),
-                        ("right", [x + w, y], [x + w, y + h]),
-                        ("bottom", [x + w, y + h], [x, y + h]),
-                        ("left", [x, y + h], [x, y]),
+                        ("top", [x, y], [right, y]),
+                        ("right", [right, y], [right, bottom]),
+                        ("bottom", [right, bottom], [x, bottom]),
+                        ("left", [x, bottom], [x, y]),
                     ]
                 ]
             ),
@@ -390,7 +403,13 @@ def envelope(design, root):
                 ],
             ),
             fixed_footprints=[
-                dict(c, side="front", tolerance_mm=0) for c in design["connectors"]
+                dict(
+                    c,
+                    rotation_deg=c["rotation_deg"] % 360,
+                    side="front",
+                    tolerance_mm=0,
+                )
+                for c in design["connectors"]
             ],
         ),
     )
@@ -404,14 +423,18 @@ def envelope(design, root):
     )
     from . import native_geometry_defaults
 
-    # Keep the sourced fab minima, and route at least as conservatively as the
-    # pinned native defaults. A minimum pad/drill pair alone can violate KiCad's
-    # unchanged annular-width default.
+    # Default clearance stays at the sourced fab floor (owner decision).
+    # Raise only routing via dimensions to meet the unchanged native hole and
+    # annular-width checks.
     routing, routing_sources = {}, {}
     for item in netclass:
         field = item["setting"].rsplit(".", 1)[1]
         native_value, citation = native_geometry_defaults.DEFAULTS[item["setting"]]
-        routing[field] = max(item["value"], native_value)
+        routing[field] = (
+            max(item["value"], native_value)
+            if field in ("via_diameter", "via_drill")
+            else item["value"]
+        )
         routing_sources[field] = dict(
             fab=item,
             native_default=native_value,
@@ -504,7 +527,7 @@ def placement(design, root):
         ),
     )
     obligations, proximity = [], []
-    text = (root / "spec.md").read_text()
+    text = (root / "spec.md").read_text(encoding="utf-8")
     for i, d in enumerate(design["decoupling"]):
 
         def endpoint(t):
@@ -519,7 +542,7 @@ def placement(design, root):
                 citation=quote,
                 max_distance_nm=round(d["max_distance_mm"] * 1000000),
                 provenance=dict(
-                    basis="Design-declared measurement requirement",
+                    basis="Agent-selected measurement requirement; not an owner or datasheet ruling",
                     **{"class": "engineering"},
                     citation=dict(
                         kind="captured_source",
@@ -541,7 +564,7 @@ def placement(design, root):
                     d["device"]: [d["supply"][0].split(".", 1)[1]],
                     d["capacitor"]: [d["supply"][1].split(".", 1)[1]],
                 },
-                basis="Design-declared supply pad distance; final acceptance required",
+                basis="Agent-selected measurement requirement; not an owner or datasheet ruling; final acceptance required",
             )
         )
     locality = dict(
@@ -595,7 +618,7 @@ def cpl_policy(design, root):
         for lib in cad["libraries"]
         for m in lib["members"]
     }
-    rules, suppliers = {}, []
+    rules, suppliers, overrides, diagnostics = {}, [], [], []
     (root / "cpl").mkdir()
     shutil.copytree(root / "supplier", root / "cpl/supplier")
     shutil.rmtree(root / "supplier")
@@ -613,23 +636,111 @@ def cpl_policy(design, root):
         suppliers.append(f"cpl/supplier/{lcsc}.provenance.json")
         native = library_footprint(cad, captures, part["footprint"])
         supplier = parse_package((root / provenance["path"]).read_bytes(), lcsc, 200)
-        board_side, _, why = c.classify_pin1(c._top_view(native["pattern"]))
-        supplier_side, _, swhy = c.classify_pin1(c._top_view(supplier["pattern"]))
-        if not board_side or not supplier_side:
+        board_pads, supplier_pads = (
+            c._top_view(native["pattern"]),
+            c._top_view(supplier["pattern"]),
+        )
+        if not c._same_pads_apart_from_extras(
+            sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)
+        ):
             raise DesignError(
                 [
-                    f"parts.{ref}.footprint: cannot derive CPL pin-1 orientation ({why}; {swhy}); choose CAD with an unambiguous pin-1 side"
+                    f"parts.{ref}.lcsc: supplier and native pad sets disagree; select matching CAD and part"
+                ]
+            )
+        if c.POLARIZED.fullmatch(ref):
+            from .symbol_library import parse_library, resolve_symbol
+
+            lib, symbol = part["lib_id"].split(":")
+            path = root / (lib + ".kicad_sym")
+            inventory, _, _ = resolve_symbol(
+                parse_library(path.read_bytes()), symbol, lib, digest(path)
+            )
+            names = {p["name"] for p in inventory if p["number"] == "1"}
+            board_polarity = c.polarity(next(iter(names))) if len(names) == 1 else None
+            supplier_pin = c._pad_with_board_polarity(
+                dict(raw=(root / provenance["path"]).read_bytes()),
+                lcsc,
+                supplier_pads,
+                board_polarity,
+            )
+            if supplier_pin == "2":
+                supplier_pads = [
+                    ({"1": "2", "2": "1"}[n], x, y) for n, x, y in supplier_pads
+                ]
+        board_side, board_frame, why = c.classify_pin1(board_pads)
+        supplier_side, supplier_frame, swhy = c.classify_pin1(supplier_pads)
+        if not board_side or not supplier_side or board_frame != supplier_frame:
+            raise DesignError(
+                [
+                    f"parts.{ref}.footprint: cannot derive CPL pin-1 orientation ({why}; {swhy}); choose CAD with an unambiguous matching pin-1 frame"
                 ]
             )
         offset = c.pin1_offset(supplier_side, board_side)
-        name = part["footprint"].split(":")[1]
-        if name in rules and rules[name] != offset:
+        if offset is None:
             raise DesignError(
                 [
-                    f"parts.{ref}.footprint: supplier records disagree on CPL rotation for {name}; use distinct footprint names"
+                    f"parts.{ref}.footprint: supplier pin-1 pattern is reflected; select matching CAD rather than a rotation"
                 ]
             )
-        rules[name] = offset
+        from .design_geometry import passive_size_mismatch
+
+        package = load(root / f"named/{ref}.json")["package"]
+        mismatch = passive_size_mismatch(part, package)
+        if mismatch:
+            raise DesignError(
+                [
+                    f"parts.{ref}.footprint: native passive size {mismatch[0]} differs from catalog {mismatch[1]}; select the matching standard size"
+                ]
+            )
+        from .land_pattern import compare
+
+        diagnostic = compare(
+            native,
+            supplier,
+            dict(
+                registration=dict(
+                    translation="copper_bbox_center", rotation=str(offset), mirror=False
+                ),
+                pin_aliases=None,
+            ),
+            dict(
+                threshold="0.5",
+                pin_tolerance_nm="100000",
+                refinement_levels=[2, 4, 8, 16],
+            ),
+        )
+        diagnostics.append(
+            dict(
+                reference=ref,
+                footprint=part["footprint"],
+                catalog_package=package,
+                copper=diagnostic["copper"],
+                holes=diagnostic["holes"],
+                limitation="Diagnostic overlap at declared CPL registration; no suitability threshold is enforced.",
+            )
+        )
+        name = part["footprint"].split(":")[1]
+        if name in rules and rules[name] != offset:
+            overrides.append(
+                dict(id="override-" + ref, designator=ref, rotation_degrees=offset)
+            )
+        else:
+            rules[name] = offset
+    write_json(
+        root / "design-compile-report.json",
+        dict(
+            schema="agent-ee.design-compile-report/1",
+            land_patterns=diagnostics,
+            warnings=[
+                f"parts.{ref}.footprint: no 3D model reference; component height cannot be established at package"
+                for ref, part in sorted(design["parts"].items())
+                if not children(
+                    parse_sexpr((root / footprint_path(part)).read_bytes()), "model"
+                )
+            ],
+        ),
+    )
     policy = dict(
         schema_version=1,
         policy_id="design-jlc-cpl-v1",
@@ -640,7 +751,7 @@ def cpl_policy(design, root):
                 sorted(rules.items(), key=lambda row: (-len(row[0]), row[0]))
             )
         ],
-        component_overrides=[],
+        component_overrides=overrides,
     )
     write_json(root / "cpl/jlc-cpl-policy.json", policy)
     write_json(
@@ -929,7 +1040,12 @@ def requirements(design, root, record, suppliers):
             scope=scope,
             requirements=rows,
             prose=[
-                dict(id=r["id"], context=dict(reason="Design intent context."))
+                dict(
+                    id=r["id"],
+                    context=dict(
+                        reason="Design-stated context; not executable evidence."
+                    ),
+                )
                 for r in record["prose"]
             ],
         ),
@@ -1084,7 +1200,7 @@ def qualify_bundle(root, work):
     )
 
 
-def compile_design(design, captures, out):
+def _compile_design(design, captures, out):
     """Refuse before output publication; identical decisions/captures yield identical bytes."""
     assemblies = validate(design, captures)
     if out.exists() or out.is_symlink():
@@ -1157,3 +1273,16 @@ def compile_design(design, captures, out):
         qualify_bundle(root, Path(temporary) / "preflight")
         bundle.rename(out)
     return out / "build-plan.json"
+
+
+def compile_design(design, captures, out):
+    try:
+        return _compile_design(design, Path(captures), Path(out))
+    except DesignError:
+        raise
+    except (ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
+        raise DesignError(
+            [
+                f"design/captures: {exc}; correct the declared field or recapture its inputs"
+            ]
+        ) from exc

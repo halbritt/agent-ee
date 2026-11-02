@@ -57,3 +57,19 @@ class BuildPlanTests(unittest.TestCase):
             (root / 'inputs/link').symlink_to('input.txt')
             with self.assertRaisesRegex(ValueError, 'build inputs contain links or special files'):
                 build_plan.admit_source(root / 'plan.json', root / 'run')
+
+
+class BuildPlacementPolicyTests(unittest.TestCase):
+    def test_build_job_rejects_copper_and_silk_that_artwork_cannot_repair(self):
+        from agent_ee.build_stages import placement_configuration
+        from agent_ee.storage import digest
+        with tempfile.TemporaryDirectory() as tmp:
+            candidate = Path(tmp)
+            for name in ('board.kicad_pcb', 'board.kicad_pro', 'intent.json', 'groups.json'):
+                (candidate / name).write_bytes(b'{}\n')
+            placement = declaration()['placement']
+            scope = dict(board='board.kicad_pcb', baseline=dict(requirements=[]), checks=[])
+            config = placement_configuration(placement, scope, candidate)
+            self.assertIs(config['reject_track_dangling'], True)
+            self.assertIs(config['reject_silk_graphic_conflicts'], True)
+            self.assertEqual(config['inputs']['board']['sha256'], digest(candidate / 'board.kicad_pcb'))

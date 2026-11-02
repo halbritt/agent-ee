@@ -13,7 +13,7 @@ CLASS_SYMBOLS = dict(
     resistor="Device:R",
     capacitor="Device:C",
     inductor="Device:L",
-    ferrite="Device:Ferrite_Bead",
+    ferrite="Device:FerriteBead",
     fuse="Device:Fuse",
     diode="Device:D",
     led="Device:LED",
@@ -56,7 +56,7 @@ def footprint_path(part):
 
 
 def number(value):
-    return type(value) in (int, float) and math.isfinite(value)
+    return type(value) is int or (type(value) is float and math.isfinite(value))
 
 
 def validate(design, captures=None, *, cad_only=False):
@@ -81,6 +81,15 @@ def validate(design, captures=None, *, cad_only=False):
                 ]
             ) from exc
     errors = []
+    if captures is not None and not cad_only:
+        from .design_capture import validate_capture_manifest
+
+        try:
+            validate_capture_manifest(Path(captures))
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise DesignError(
+                [f"captures.capture.json: run design capture again; {exc}"]
+            ) from exc
 
     def fail(path, why):
         errors.append(f"{path}: {why}")
@@ -147,6 +156,8 @@ def validate(design, captures=None, *, cad_only=False):
             fail(path, "supply one nonempty paragraph on one line")
 
     prose(design["intent"], "intent")
+    if re.match(r"\s*(?:[#|>-]|[0-9]+[.)])", design["intent"]):
+        fail("intent", "start with paragraph text, not Markdown block syntax")
     board = design["board"]
     if fields(
         board,
@@ -163,6 +174,23 @@ def validate(design, captures=None, *, cad_only=False):
         for k in ("width_mm", "height_mm", "thickness_mm", "max_component_height_mm"):
             if not number(board[k]) or board[k] <= 0:
                 fail("board." + k, "supply a positive finite dimension in mm")
+        for k, maximum in (
+            ("width_mm", 670),
+            ("height_mm", 600),
+            ("max_component_height_mm", 1000),
+        ):
+            if number(board[k]) and board[k] > maximum:
+                fail(
+                    "board." + k,
+                    f"supported maximum is {maximum} mm; reduce the dimension",
+                )
+        from decimal import Decimal
+
+        for k in ("width_mm", "height_mm"):
+            if number(board[k]) and abs(board[k]) <= 1000:
+                nm = Decimal(str(board[k])) * 1000000
+                if nm != nm.to_integral_value():
+                    fail("board." + k, "use whole nanometres")
         if board["copper_layers"] != 2 or type(board["copper_layers"]) is not int:
             fail("board.copper_layers", "only two copper layers are supported; set 2")
         if board["thickness_mm"] != 1.2:
@@ -195,7 +223,7 @@ def validate(design, captures=None, *, cad_only=False):
             ):
                 fail(f"groups[{i}].anchor", "select a part in this group")
             prose(g["title"], f"groups[{i}].title")
-    pins, pads, assemblies = {}, {}, {}
+    pins, pads, assemblies, footprints = {}, {}, {}, {}
     cad = Path(captures) / "cad" if captures is not None else None
     for ref, p in parts.items():
         path = "parts." + ref
@@ -252,6 +280,7 @@ def validate(design, captures=None, *, cad_only=False):
                 )
             try:
                 node = parse_sexpr((cad / footprint_path(p)).read_bytes())
+                footprints[ref] = node
                 pads[ref] = [n[1] for n in children(node, "pad") if n[1]]
                 if any(n[3] == "custom" for n in children(node, "pad")):
                     fail(
@@ -406,6 +435,24 @@ def validate(design, captures=None, *, cad_only=False):
             fail(path + ".inset_mm", "supply a nonnegative inward distance")
         if not number(c["rotation_deg"]) or c["rotation_deg"] % 90:
             fail(path + ".rotation_deg", "use a multiple of 90 degrees")
+        if (
+            ref in footprints
+            and c["edge"] in ("left", "right", "top", "bottom")
+            and number(c["rotation_deg"])
+            and not c["rotation_deg"] % 90
+            and number(c["inset_mm"])
+        ):
+            from .design_geometry import connector_edge_gap
+
+            try:
+                gap = connector_edge_gap(footprints[ref], c)
+                if gap > 1:
+                    fail(
+                        path + ".inset_mm",
+                        f"rotated courtyard is {gap:g} mm from the edge; bring it within 1 mm",
+                    )
+            except ValueError as exc:
+                fail(path + ".reference", str(exc))
         if c["insertion"] not in ("from_top", "through_edge"):
             fail(path + ".insertion", "choose from_top or through_edge")
     if not isinstance(design["decoupling"], list):
@@ -422,11 +469,27 @@ def validate(design, captures=None, *, cad_only=False):
         for key in ("capacitor", "device"):
             if d[key] not in parts:
                 fail(path + "." + key, "select a declared part")
+        if d["capacitor"] == d["device"]:
+            fail(path + ".capacitor", "capacitor and device must be different parts")
+        if d["supply"] == d["return"] or set(d["supply"]) & set(d["return"]):
+            fail(path + ".return", "supply and return must use different terminals")
         if not number(d["max_distance_mm"]) or d["max_distance_mm"] <= 0:
             fail(path + ".max_distance_mm", "supply a positive finite distance")
         else:
             from decimal import Decimal
 
+            if (
+                number(board["width_mm"])
+                and number(board["height_mm"])
+                and 0 < board["width_mm"] <= 670
+                and 0 < board["height_mm"] <= 600
+                and d["max_distance_mm"]
+                > math.hypot(board["width_mm"], board["height_mm"])
+            ):
+                fail(
+                    path + ".max_distance_mm",
+                    "distance exceeds the board diagonal; supply a meaningful locality limit",
+                )
             nm = Decimal(str(d["max_distance_mm"])) * 1000000
             if nm != nm.to_integral_value():
                 fail(
@@ -485,6 +548,11 @@ def validate(design, captures=None, *, cad_only=False):
                 if fields(
                     w, ("id", "type", "class", "nets", "value"), ("lib_id", "pins"), wp
                 ):
+                    if w["class"] in ("diode", "led", "polarized_capacitor"):
+                        fail(
+                            wp + ".class",
+                            "element_between is undirected; use separate pin_net witnesses for both polarized pins",
+                        )
                     if w["class"] not in (
                         "resistor",
                         "capacitor",
@@ -517,6 +585,14 @@ def validate(design, captures=None, *, cad_only=False):
                     if len(class_pins) != 2 or len(set(class_pins)) != 2:
                         fail(wp + ".pins", "supply two distinct pin numbers")
                     class_symbol = w.get("lib_id", CLASS_SYMBOLS.get(w["class"]))
+                    canonical_class = next(
+                        (k for k, v in CLASS_SYMBOLS.items() if v == class_symbol), None
+                    )
+                    if canonical_class is not None and canonical_class != w["class"]:
+                        fail(
+                            wp + ".lib_id",
+                            f"{class_symbol} is class {canonical_class}, not {w['class']}",
+                        )
                     matches = [
                         r for r, p in parts.items() if p["lib_id"] == class_symbol
                     ]
@@ -610,7 +686,7 @@ def validate(design, captures=None, *, cad_only=False):
                 from .design_capture import validate_supplier_capture
 
                 validate_supplier_capture(root, p["lcsc"])
-            except (OSError, ValueError, KeyError) as exc:
+            except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
                 fail(
                     "parts." + ref + ".lcsc", f"run design capture for this part: {exc}"
                 )
@@ -639,6 +715,13 @@ def validate(design, captures=None, *, cad_only=False):
                 "parts.footprint",
                 f"run design capture to retain the stock-model receipt: {exc}",
             )
+    if captures is not None and not cad_only:
+        from .design_capture import stock_freshness
+
+        try:
+            stock_freshness(Path(captures))
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            fail("captures.stock.catalog", str(exc))
     if errors:
         raise DesignError(errors)
     return assemblies
