@@ -167,6 +167,31 @@ class IdentityBoundaryTests(unittest.TestCase):
                 self.assertEqual(modes, ['polarity_unknown'])
                 self.assertIn('BOM binding' if not binding else 'the BOM to', notes[0]['message'])
 
+    def oppositely_numbered_supplier(self):
+        """C910020 with its symbol's polarity names exchanged: pin 1 anode, pin 2 cathode."""
+        raw = json.loads(self.suppliers['C910020']['raw'])
+        raw['dataStr']['shape'] = [shape.replace('~K~', '~@~').replace('~A~', '~K~').replace('~@~', '~A~')
+                                   if shape.startswith('P~') else shape for shape in raw['dataStr']['shape']]
+        data = json.dumps(raw, sort_keys=True).encode()
+        return {'C910020': dict(self.suppliers['C910020'], raw=data, sha256=hashlib.sha256(data).hexdigest())}
+
+    def test_opposite_numbering_needs_a_validated_board_polarity(self):
+        # Review counterexample: a netlist bound to another part must not select the supplier pin.
+        polarity, modes, _ = self.pin1(netlist_lcsc='C999999', suppliers=self.oppositely_numbered_supplier())
+        self.assertIsNone(polarity['board'])
+        self.assertEqual(modes, ['polarity_unknown'])
+
+    def test_opposite_numbering_reads_polarity_evidence_for_the_selected_pin(self):
+        # Review counterexample: the evidence map was read at pin 1 after pin 2 was selected.
+        suppliers = self.oppositely_numbered_supplier()
+        base = dict(supplier_capture_sha256=suppliers['C910020']['sha256'], mpn='OFW-D1', path='design/p.json',
+                    manufacturer_source=dict(path='m.pdf'), package_feature_ids=[], symbol_feature_ids=[],
+                    limitation='fixture')
+        _, modes, _ = self.pin1(suppliers=suppliers, evidence=dict(base, pin_polarity={'1': 'anode', '2': 'cathode'}))
+        self.assertNotIn('polarity_conflict', modes)
+        _, modes, _ = self.pin1(suppliers=suppliers, evidence=dict(base, pin_polarity={'1': 'cathode', '2': 'anode'}))
+        self.assertIn('polarity_conflict', modes)
+
     def test_evidence_needs_a_present_equal_bom_partnumber(self):
         raw = json.loads(self.suppliers['C910020']['raw'])
         unnamed = {**self.suppliers, 'C910020': {**self.suppliers['C910020']}}

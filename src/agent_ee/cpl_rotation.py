@@ -492,21 +492,48 @@ def evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance
     return records, applied, unmatched
 
 
-def _board_pin1_polarity(found, reference, netlist):
-    return polarity(_board_pin1_function(found, reference)) or (
-        polarity(netlist['pins'].get('1')) if netlist is not None else None)
+def _board_pin1_name(found, ref, netlist, lcsc, pad_nets, mode):
+    """The board's pin-1 function, and its source, with the sealed netlist as a guarded fallback."""
+    board_name = _board_pin1_function(found, ref)
+    board_basis, board_note = BOARD_BASES[0], None
+    if netlist is not None:
+        netlist_name = netlist['pins'].get('1')
+        if board_name is None:
+            # Sealed-netlist fallback: only with the same part binding and the same pin-1 net.
+            if not netlist.get('lcsc'):
+                board_note = f'sealed netlist records no LCSC binding for {ref}; fallback needs the BOM binding {lcsc}'
+            elif netlist['lcsc'] != lcsc:
+                board_note = f'sealed netlist binds {ref} to {netlist["lcsc"]}, the BOM to {lcsc}'
+            elif '1' not in netlist['nets'] or not pad_nets.get('1'):
+                board_note = 'sealed netlist or probe lacks the pin-1 net'
+            elif netlist['nets']['1'] != pad_nets['1']:
+                mode('polarity_conflict', f'board pad 1 net {pad_nets["1"]!r} differs from sealed netlist '
+                                          f'pin 1 net {netlist["nets"]["1"]!r}')
+            elif polarity(netlist_name) is None:
+                board_note = f'sealed netlist libpart pin 1 name {netlist_name!r} names no polarity'
+            else:
+                board_name, board_basis = netlist_name, BOARD_BASES[1]
+        elif polarity(board_name) and polarity(netlist_name) and polarity(board_name) != polarity(netlist_name):
+            mode('polarity_conflict', f'board pad 1 pinfunction {board_name!r} contradicts sealed netlist '
+                                      f'libpart pin 1 {netlist_name!r}')
+    return board_name, board_basis, board_note
 
 
 def _pad_with_board_polarity(supplier, lcsc, pads, board_polarity):
-    """The supplier pad number that carries the board's pin-1 polarity on a two-pad part."""
+    """The supplier pad number that carries the board's pin-1 polarity on a two-pad part.
+
+    Opposite numbering needs exactly one unambiguous symbol record for each pin.
+    """
     if board_polarity is None or sorted(pad[0] for pad in pads) != ['1', '2']:
         return '1'
     try:
-        names = {pin['number']: polarity(pin['name']) for pin in symbol_pins(supplier['raw'], lcsc)['pins']
-                 if pin['displayed'] == pin['number']}
+        pins = symbol_pins(supplier['raw'], lcsc)['pins']
     except SupplierError:
         return '1'
-    return '2' if names.get('1') not in (None, board_polarity) and names.get('2') == board_polarity else '1'
+    if sorted(pin['number'] for pin in pins) != ['1', '2'] or any(pin['displayed'] != pin['number'] for pin in pins):
+        return '1'
+    names = {pin['number']: polarity(pin['name']) for pin in pins}
+    return '2' if names['1'] not in (None, board_polarity) and names['2'] == board_polarity else '1'
 
 
 def _same_pads_apart_from_extras(board, supplier):
@@ -550,20 +577,21 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
     pin1 = {'supplier_provenance': supplier['provenance'], 'supplier_sha256': supplier['sha256'],
             'package': package['identity']['package']}
     record['pin1'] = pin1
-    # A two-pad polarized part can be numbered oppositely by its supplier. Its orientation is
-    # then the position of the board's pin-1 polarity, not of the supplier's pad numbered 1.
-    supplier_pin = '1'
-    if POLARIZED.fullmatch(ref):
-        supplier_pin = _pad_with_board_polarity(supplier, lcsc, supplier_pads, _board_pin1_polarity(found, ref, netlist))
-        if supplier_pin != '1':
-            supplier_pads = [({'1': '2', '2': '1'}[number], x, y) for number, x, y in supplier_pads]
-            pin1['supplier_pin_with_board_polarity'] = supplier_pin
     board_numbers, supplier_numbers = sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)
     if not _same_pads_apart_from_extras(board_numbers, supplier_numbers):
         return mode('pad_set_mismatch', 'board and supplier pad numbers differ: '
                     f'{board_numbers} vs {supplier_numbers}')
     if board_numbers != supplier_numbers:
         pin1['pad_numbering_differs'] = dict(board=board_numbers, supplier=supplier_numbers)
+    # A two-pad polarized part can be numbered oppositely by its supplier. Its orientation is
+    # then the position of the board's pin-1 polarity, not of the supplier's pad numbered 1.
+    supplier_pin = '1'
+    if POLARIZED.fullmatch(ref):
+        board_name, board_basis, board_note = _board_pin1_name(found, ref, netlist, lcsc, pad_nets, mode)
+        supplier_pin = _pad_with_board_polarity(supplier, lcsc, supplier_pads, polarity(board_name))
+        if supplier_pin != '1':
+            supplier_pads = [({'1': '2', '2': '1'}[number], x, y) for number, x, y in supplier_pads]
+            pin1['supplier_pin_with_board_polarity'] = supplier_pin
     board, board_frame, why_board = classify_pin1(board_pads)
     found_supplier, supplier_frame, why_supplier = classify_pin1(supplier_pads)
     pin1.update(board=board, supplier=found_supplier, frame=board_frame)
@@ -579,28 +607,6 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
         mode('rotation_conflict', f'policy rotation {delta} differs from the supplier-to-board pin-1 '
                                   f'offset {offset}')
     if POLARIZED.fullmatch(ref):
-        board_name = _board_pin1_function(found, ref)
-        board_basis, board_note = BOARD_BASES[0], None
-        if netlist is not None:
-            netlist_name = netlist['pins'].get('1')
-            if board_name is None:
-                # Sealed-netlist fallback: only with the same part binding and the same pin-1 net.
-                if not netlist.get('lcsc'):
-                    board_note = f'sealed netlist records no LCSC binding for {ref}; fallback needs the BOM binding {lcsc}'
-                elif netlist['lcsc'] != lcsc:
-                    board_note = f'sealed netlist binds {ref} to {netlist["lcsc"]}, the BOM to {lcsc}'
-                elif '1' not in netlist['nets'] or not pad_nets.get('1'):
-                    board_note = 'sealed netlist or probe lacks the pin-1 net'
-                elif netlist['nets']['1'] != pad_nets['1']:
-                    mode('polarity_conflict', f'board pad 1 net {pad_nets["1"]!r} differs from sealed netlist '
-                                              f'pin 1 net {netlist["nets"]["1"]!r}')
-                elif polarity(netlist_name) is None:
-                    board_note = f'sealed netlist libpart pin 1 name {netlist_name!r} names no polarity'
-                else:
-                    board_name, board_basis = netlist_name, BOARD_BASES[1]
-            elif polarity(board_name) and polarity(netlist_name) and polarity(board_name) != polarity(netlist_name):
-                mode('polarity_conflict', f'board pad 1 pinfunction {board_name!r} contradicts sealed netlist '
-                                          f'libpart pin 1 {netlist_name!r}')
         try:
             pins = [p for p in symbol_pins(supplier['raw'], lcsc)['pins'] if p['number'] == supplier_pin]
         except SupplierError as exc:
@@ -609,7 +615,7 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
         supplier_name = pins[0]['name'] if len(pins) == 1 and pins[0]['displayed'] == supplier_pin else None
         supplier_basis, supplier_note, used = SUPPLIER_BASES[0], None, None
         if evidence is not None:
-            declared = evidence['pin_polarity'].get('1')
+            declared = evidence['pin_polarity'].get(supplier_pin)
             if evidence['supplier_capture_sha256'] != supplier['sha256']:
                 supplier_note = 'polarity evidence is bound to another supplier capture'
             elif not partnumber:
@@ -619,8 +625,8 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
             elif netlist is not None and netlist.get('mpn') and evidence['mpn'] != netlist['mpn']:
                 supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from netlist part {netlist["mpn"]!r}'
             elif polarity(supplier_name) is not None and polarity(supplier_name) != declared:
-                mode('polarity_conflict', f'supplier symbol pin 1 {supplier_name!r} contradicts polarity evidence '
-                                          f'{declared}')
+                mode('polarity_conflict', f'supplier symbol pin {supplier_pin} {supplier_name!r} contradicts '
+                                          f'polarity evidence {declared}')
             elif polarity(supplier_name) is None:
                 supplier_name, supplier_basis = declared, SUPPLIER_BASES[1]
                 used = {'path': evidence['path'], 'manufacturer_source': evidence['manufacturer_source'],

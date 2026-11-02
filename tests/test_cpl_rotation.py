@@ -16,7 +16,7 @@ from pathlib import Path
 from agent_ee.capabilities import describe_check
 from agent_ee.cpl_rotation import (CYCLES, aggregate, capability, classify_pin1, corrected_rotation,
                                    evaluate, load_policy, match_policy, pin1_offset, read_bom_bindings,
-                                   read_native_cpl, validate_params, _midpoint, _same_pads_apart_from_extras)
+                                   read_native_cpl, validate_params, _midpoint, _same_pads_apart_from_extras, _pad_with_board_polarity)
 from agent_ee.easyeda_footprint import SupplierError, symbol_pins
 from agent_ee.fab_export import cpl_rows
 from agent_ee.storage import digest, read_json, write_json
@@ -358,6 +358,13 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual((record['outcome'], record['polarity']['supplier']), ('pass', 'cathode'), record['modes'])
         self.assertEqual(record['pin1']['supplier_pin_with_board_polarity'], '2')
         self.assertEqual(record['pin1']['offset_degrees'], 0)
+
+    def test_contradictory_symbol_records_are_not_read_as_opposite_numbering(self):
+        # Review counterexample: a second pin-1 record must not overwrite the first.
+        raw = json.loads(diode_supplier('C2', 'K', pin2_name='K', pin1_on_right=True))
+        raw['dataStr']['shape'].insert(1, raw['dataStr']['shape'][0].replace('~0~K~start', '~0~A~start'))
+        pads = [('1', 0, 0), ('2', 1, 0)]
+        self.assertEqual(_pad_with_board_polarity(supplier(json.dumps(raw, sort_keys=True).encode()), 'C2', pads, 'cathode'), '1')
 
     def test_diode_that_would_be_fitted_backwards_is_a_rotation_conflict(self):
         # The supplier's cathode is on the right while the board's is on the left.

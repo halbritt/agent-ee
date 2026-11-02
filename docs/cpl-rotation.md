@@ -258,10 +258,12 @@ A disagreement is a `polarity_conflict` defect. An unresolved side is
 `polarity_unknown`. The supplier pin record must also show the same displayed
 number. `easyeda_footprint.symbol_pins` reads the symbol `P` records verbatim.
 
-Suppliers number some two-pad parts oppositely. When the supplier's pin 1 has the other
-polarity and its pin 2 has the board's pin-1 polarity, the check grades orientation from
-that pin 2 and records `supplier_pin_with_board_polarity`. Cathode then aligns with
-cathode, so a part that would be fitted backwards is a `rotation_conflict`.
+Suppliers number some two-pad parts oppositely. When the supplier's symbol has exactly one
+record for each pin, pin 1 has the other polarity and pin 2 has the board's pin-1 polarity,
+the check grades orientation from that pin 2 and records
+`supplier_pin_with_board_polarity`. Cathode then aligns with cathode, so a part that would be
+fitted backwards is a `rotation_conflict`. The sections below say pin 1 for the supplier; in
+this case they mean that selected pin, including in a `polarity_evidence` map.
 
 The classifier was also run locally on captured EasyEDA components and stock
 KiCad 10.0.7 footprints, without committing those bytes. SOIC-8 supplier
