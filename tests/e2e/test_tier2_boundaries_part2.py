@@ -149,13 +149,28 @@ class TestTier2PostRouteMilpBoundaries(unittest.TestCase):
 
     def test_milp_shortlist_max_alternatives_bound(self):
         """Shortlist generation is bounded by finite maximum alternatives (<= 16)."""
-        raw_candidates = [{"seed": i, "cost": str(100 + i), "poses": {}} for i in range(25)]
-        config = {"search": {"shortlist": 5}}
-        limit = min(16, int(config["search"].get("shortlist", 3)))
-        shortlist = [dict(c, feasible=True) for c in raw_candidates[:limit]]
-        self.assertEqual(len(shortlist), 5)
-        self.assertLessEqual(len(shortlist), 16)
-        self.assertTrue(all(c["feasible"] for c in shortlist))
+        from unittest.mock import MagicMock
+        from agent_ee.placement_job import _repair_shortlist, _search_diagnostics
+
+        problem = {"mechanics": {"schema": "agent-ee.source-mechanics/1", "custody": "design-declared"}}
+        raw_candidates = [{"seed": i, "terms": {"hard_count": 0, "hard": 0}, "cost": 100 + i, "poses": {}} for i in range(25)]
+        output = {"diagnostic_shortlist": raw_candidates}
+        state = {"seed_results": {}}
+        diagnostics = _search_diagnostics(output, state)
+        self.assertEqual(len(diagnostics), 25)
+
+        shortlist = [{"feasible": True, "seed": i, "cost": 100 + i} for i in range(25)]
+        report = {"routing_trials": [{"status": "route_failed"}]}
+        clock = MagicMock()
+        clock.remaining.return_value = 1.0
+
+        res = _repair_shortlist(problem, shortlist, diagnostics, checkout=None, runtime=None,
+                                clock=clock, job_dir=None, attempt=1, report=report,
+                                engine_sha256=None, routing_exhausted=True)
+        self.assertLessEqual(len(res), 16)
+        self.assertIn("placement_repair", report)
+        self.assertEqual(report["placement_repair"]["trigger"], "feasible_routing_exhausted")
+        self.assertEqual(report["placement_repair"]["status"], "insufficient_budget")
 
 
 class TestTier2PlacementJobDecouplingBoundaries(unittest.TestCase):
@@ -582,23 +597,52 @@ class TestTier2CampaignVerificationBoundaries(unittest.TestCase):
         self.assertEqual(tracked_changes, [])
 
     def test_plane_issue_sync_format(self):
-        """Plane issue format matches AGENTEE-571..577 identifiers."""
+        """Plane issue format in repository artifacts matches AGENTEE-571..577 identifiers."""
         import re
-        campaign_issues = {
-            "AGENTEE-571": "506bdac2-bfd3-4828-95fe-7c5539148c19",
-            "AGENTEE-572": "76b51472-2ed8-4901-86e1-4398cd0fceaa",
-            "AGENTEE-573": "ca509d84-7cb9-409b-853a-57ea726ade92",
-            "AGENTEE-574": "5dd344f7-bb9b-487f-a68d-ddee1bda7ebf",
-            "AGENTEE-575": "6a4a306d-e307-4583-b622-3e014fd45b7d",
-            "AGENTEE-576": "03b4fca0-66cd-45c0-8340-cff66183e190",
-            "AGENTEE-577": "21316826-658e-4805-817f-372e97f68852",
-        }
-        uuid_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-        issue_re = re.compile(r"^AGENTEE-57[1-7]$")
+        from pathlib import Path
+        from agent_ee.add_planes import SCHEMA as PLANE_SCHEMA, validate_plan
+
+        infra_path = Path("TEST_INFRA.md")
+        self.assertTrue(infra_path.is_file(), "TEST_INFRA.md must exist in repository root")
+        infra_text = infra_path.read_text()
+        m = re.search(r"AGENTEE-(\d+)[^0-9]+(\d+)", infra_text)
+        self.assertIsNotNone(m, "Campaign issue range not found in TEST_INFRA.md")
+        start_num, end_num = int(m.group(1)), int(m.group(2))
+        self.assertEqual(start_num, 571)
+        self.assertEqual(end_num, 577)
+
+        campaign_issues = [f"AGENTEE-{n}" for n in range(start_num, end_num + 1)]
         self.assertEqual(len(campaign_issues), 7)
-        for issue_id, uuid in campaign_issues.items():
+        issue_re = re.compile(r"^AGENTEE-57[1-7]$")
+        for issue_id in campaign_issues:
             self.assertTrue(issue_re.match(issue_id), f"Invalid issue id: {issue_id}")
-            self.assertTrue(uuid_re.match(uuid), f"Invalid issue uuid: {uuid}")
+
+        decisions_path = Path("docs/decisions.md")
+        self.assertTrue(decisions_path.is_file(), "docs/decisions.md must exist")
+        decisions_text = decisions_path.read_text()
+        self.assertIn("AGENTEE-576", decisions_text)
+
+        valid_plan = {
+            "schema": PLANE_SCHEMA,
+            "zones": [
+                {
+                    "net": "GND",
+                    "layer": "B.Cu",
+                    "outline": "board",
+                    "clearance_mm": 0.25,
+                    "min_width_mm": 0.2,
+                    "thermal": {"connection": "thermal", "gap_mm": 0.25, "spoke_width_mm": 0.25},
+                    "priority": 0,
+                    "island_removal": "always",
+                }
+            ],
+        }
+        res = validate_plan(valid_plan)
+        self.assertEqual(res["schema"], PLANE_SCHEMA)
+        self.assertEqual(len(res["zones"]), 1)
+
+        with self.assertRaises(ValueError):
+            validate_plan({"schema": "invalid-schema", "zones": []})
 
     def test_full_pipeline_verification_idempotency(self):
         """Verification passes repeatedly without mutating source tree."""
