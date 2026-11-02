@@ -59,7 +59,7 @@ class CopperGraph:
                     island = len(self.islands)
                     self.islands.append((layer, poly))
                     for key, item in self.items.items():
-                        if not item.IsOnLayer(layer) or not item.FlashLayer(layer):
+                        if not item.IsOnLayer(layer) or (item.GetClass() in ('PAD', 'PCB_VIA') and not item.FlashLayer(layer)):
                             continue
                         shape = item.GetEffectiveShape(layer)
                         if not native.Collide(shape):
@@ -126,7 +126,8 @@ class CopperGraph:
         start, end = self.terminal(first), self.terminal(second)
         blocked_nodes = [node for tag, node in self.tags.items() if tag[0] in blocked]
         best = geo.shortest(self.adj, start, end, blocked_nodes)
-        record = None if best is None else dict(length_mm=best[0] / 1e6, plane_hop_mm=0., plane_path_nm=None)
+        record = None if best is None else dict(length_mm=best[0] / 1e6, plane_hop_mm=0., plane_path_nm=None,
+                                                copper_path=self.describe_path(best[1]))
         if plane:
             # Only enter and leave the SAME native filled island. Never join
             # separate islands just because KiCad assigned the same net name.
@@ -149,8 +150,15 @@ class CopperGraph:
                     hop = sum(math.dist(p, q) for p, q in zip(path, path[1:]))
                     length = (left[0] + hop + right[0]) / 1e6
                     if record is None or length < record['length_mm']:
-                        record = dict(length_mm=length, plane_hop_mm=hop / 1e6, plane_path_nm=path)
+                        record = dict(length_mm=length, plane_hop_mm=hop / 1e6, plane_path_nm=path,
+                                      copper_path=self.describe_path(left[1]) + self.describe_path(right[1]))
         return record
+
+    def describe_path(self, nodes):
+        tags = {node: tag for tag, node in self.tags.items()}
+        return [dict(uuid=tags[node][0], layer=self.board.GetLayerName(tags[node][1]),
+                     contact_nm=tags[node][2] if isinstance(tags[node][2], tuple) else 'plane contact')
+                for node in nodes]
 
     def bypass(self, first, second):
         blocked = {node for tag, node in self.tags.items() if tag[0] == second.m_Uuid.AsString()}
@@ -198,7 +206,7 @@ def measure(board_path, document):
                 if row[leg]['path'] is None:
                     row['reasons'].append(leg + ': no native-connected copper path')
             row['loop_length_mm'] = (sum(row[leg]['path']['length_mm'] for leg in ('supply', 'return'))
-                                     if not row['reasons'] else None)
+                                     if all(row[leg]['path'] is not None for leg in ('supply', 'return')) else None)
             if 'max_loop_mm' in relation:
                 row.update(max_loop_mm=relation['max_loop_mm'], basis=relation['basis'], outcome='pass')
                 if row['loop_length_mm'] is not None and row['loop_length_mm'] > relation['max_loop_mm']:
@@ -222,7 +230,7 @@ def measure(board_path, document):
                       for net in sorted({p['net'] for p in document['planes']})},
                 metric='native-connected centreline paths, pad-centre projections, full via barrels and filled-island plane paths',
                 limitations=['Geometric path length, not impedance, inductance or current distribution.',
-                             'Arcs and plane visibility over 512 vertices refuse measurement rather than approximate a pass.'])
+                             'Arcs and plane visibility over 512 vertices or 50000 edges refuse measurement rather than approximate a pass.'])
 
 
 def digest_document(document):

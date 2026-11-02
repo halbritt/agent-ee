@@ -19,6 +19,10 @@ the plane layer. The device return leg therefore leads to the capacitor's
 plane entry. Shared return pins can still bypass one capacitor through another;
 the final check reports this topology. Optional other-pad ties give remaining
 surface pads on plane nets their own short track and via where one fits.
+The compiler leaves `tie_other_pads` false: the example controls completed with
+and without them, and the additional ties increased routing time. Required
+capacitor plane entries remain enabled. Explicit local contracts can select
+the optional policy for a separately measured workload.
 
 The local search uses effective native net-class routing sizes and clearance,
 bounded visibility paths around foreign copper, and radial via escapes outside
@@ -33,6 +37,10 @@ Custom rules, board edges and rule areas remain subject to native DRC.
 Generated tracks and vias are locked. The router receives `--protect locked`
 for a track-free source seeded by this operation. Final validation checks each
 generated item's UUID, geometry, net and lock state after native refill/save.
+It also measures the final loops and rejects a candidate with broken copper,
+an unknown measurement or an exceeded declared loop limit. The package check
+repeats the measurement on its saved board. Seeding and its DRC share the
+candidate's routing time allocation; a local deadline can advance the portfolio.
 The acquisition recipe retains its original producer and evidence identity.
 
 The check loads the final saved board and uses native KiCad
@@ -64,3 +72,5 @@ legs. Missing or ambiguous endpoints, unsupported arcs, unfilled planes and
 plane searches exceeding 512 polygon vertices refuse measurement instead of
 approximating a pass. These are geometric measurements, not an inductance,
 impedance, EMC, physical-operation or fabrication-readiness claim.
+Plane visibility uses lazy A* with at most 50000 tested edges; exhaustion is
+an unknown measurement and cannot pass a requirement.

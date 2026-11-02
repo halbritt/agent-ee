@@ -84,8 +84,10 @@ def _rules(board, terminal):
 
 
 def _obstacles(board, net, layer, margin):
-    items = [p for fp in board.GetFootprints() for p in fp.Pads()] + list(board.GetTracks())
-    return [_box(item, margin) for item in items if item.IsOnLayer(layer) and item.GetNetCode() != net]
+    items = ([p for fp in board.GetFootprints() for p in fp.Pads()]
+             + list(board.GetTracks()) + list(board.GetDrawings()))
+    return [_box(item, margin) for item in items if item.IsOnLayer(layer)
+            and (not hasattr(item, 'GetNetCode') or item.GetNetCode() != net)]
 
 
 def _surface(board, terminal):

@@ -723,6 +723,7 @@ class DesignCompileTests(unittest.TestCase):
         plan = json.loads((self.root / 'bundle/build-plan.json').read_text())
         self.assertEqual(plan['placement']['local_decoupling'], 'local-decoupling.json')
         doc = json.loads((root / 'local-decoupling.json').read_text())
+        self.assertFalse(doc['tie_other_pads'])
         self.assertEqual(doc['relations'][0]['supply'][0], dict(reference='R1', pad='1', net='/SIGNAL'))
         self.assertEqual(doc['relations'][0]['max_loop_mm'], 9)
         self.assertEqual(doc['relations'][0]['basis'], 'Agent-selected measurement requirement; not an owner or datasheet ruling')

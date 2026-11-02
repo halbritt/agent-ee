@@ -114,11 +114,30 @@ def plane_path(a, b, polygon):
     points = sorted({tuple(a), tuple(b), *(tuple(p) for ring in [polygon['outline'], *polygon['holes']] for p in ring)})
     if len(points) > 512:
         raise ValueError('filled-plane visibility exceeds 512 vertices')
-    graph = {i: {} for i in range(len(points))}
-    for i, p in enumerate(points):
-        for j in range(i):
-            q = points[j]
-            if inside_segment(p, q, polygon):
-                graph[i][j] = graph[j][i] = math.dist(p, q)
-    found = shortest(graph, points.index(tuple(a)), points.index(tuple(b)))
-    return [points[i] for i in found[1]] if found else None
+    start, end = points.index(tuple(a)), points.index(tuple(b))
+    best, previous = {start: 0.}, {}
+    queue = [(math.dist(a, b), 0., start)]
+    visibility, work = {}, 0
+    while queue:
+        _, length, node = heapq.heappop(queue)
+        if best[node] != length:
+            continue
+        if node == end:
+            path = [node]
+            while path[-1] != start:
+                path.append(previous[path[-1]])
+            return [points[i] for i in reversed(path)]
+        for other, point in enumerate(points):
+            candidate = length + math.dist(points[node], point)
+            if other == node or candidate >= best.get(other, math.inf):
+                continue
+            key = tuple(sorted((node, other)))
+            if key not in visibility:
+                work += 1
+                if work > 50_000:
+                    raise ValueError('filled-plane visibility exceeds 50000 edge evaluations')
+                visibility[key] = inside_segment(points[node], point, polygon)
+            if visibility[key]:
+                best[other], previous[other] = candidate, node
+                heapq.heappush(queue, (candidate + math.dist(point, b), candidate, other))
+    return None

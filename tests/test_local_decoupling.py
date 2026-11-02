@@ -125,6 +125,27 @@ class LocalCopperTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'defect', result)
         self.assertEqual(result['records'][0]['basis'], local.BASIS)
 
+    def test_final_candidate_validation_rejects_a_preserved_loop_over_its_limit(self):
+        from unittest.mock import patch
+        from agent_ee import placement_job as job
+        from agent_ee.storage import digest, write_json
+        self.path.with_suffix('.kicad_pro').write_text('{}')
+        doc = contract(5)
+        receipt = self.seed(doc)
+        self.filled()
+        native = self.k.LoadBoard(str(self.path))
+        incumbent = dict(board=str(self.path), directory=str(self.root), board_sha256=digest(self.path))
+        write_json(self.root / 'native-drc.json', dict(violations=[], unconnected_items=[]))
+        normalized = job.normalize_intent(dict(fixed_poses=[], edge_connectors=[]),
+            dict(groups=[dict(name='cell', anchor='IC', refs=['IC', 'BYP', 'OTHER'])]))
+        with patch.object(job, 'drc', return_value=(dict(violations=[], unconnected_items=[]), {})), \
+                patch.object(job, '_group_views', return_value={'status': 'rendered'}):
+            final = job.final_checks(dict(status='routed', board=str(self.path), local_decoupling=receipt),
+                incumbent, job._owners(native), set(), self.root / 'final', normalized)
+        self.assertEqual(final['integrity'], 'preserved', final)
+        self.assertEqual(final['eligibility'], 'INELIGIBLE', final)
+        self.assertEqual(final['decoupling_loops']['outcome'], 'defect')
+
     def test_removed_locked_item_is_rejected(self):
         receipt = self.seed()
         board = self.k.LoadBoard(str(self.path))
@@ -186,6 +207,21 @@ class LocalCopperTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'info', result)
         self.assertGreater(result['records'][0]['supply']['path']['length_mm'], 3)
 
+    def test_copper_graphic_is_an_obstacle_to_the_local_search(self):
+        line = self.k.PCB_SHAPE(self.board)
+        line.SetShape(self.k.SHAPE_T_SEGMENT)
+        line.SetLayer(self.k.F_Cu)
+        line.SetStart(self.k.VECTOR2I(31_500_000, 28_500_000))
+        line.SetEnd(self.k.VECTOR2I(31_500_000, 29_500_000))
+        line.SetWidth(400_000)
+        self.board.Add(line)
+        self.save()
+        self.seed()
+        self.filled()
+        result = measure(self.path, contract())
+        self.assertEqual(result['outcome'], 'info', result)
+        self.assertGreater(result['records'][0]['supply']['path']['length_mm'], 3)
+
     def test_plane_hop_pays_two_barrels_and_lateral_copper(self):
         # Replace the direct return with separate native ties and a real plane.
         doc = contract()
@@ -205,6 +241,43 @@ class LocalCopperTests(unittest.TestCase):
         self.assertGreater(row['return']['path']['length_mm'], 3 + 2 * 1.2)
         self.assertGreater(row['return']['path']['plane_hop_mm'], 0)
         self.assertTrue(row['return']['pin_bypasses_capacitor'])
+
+    def test_saved_back_copper_is_measured_with_the_plane(self):
+        self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        via = next(t for t in board.GetTracks() if t.GetClass() == 'PCB_VIA')
+        x, y = local.position(via)
+        local._track(board, [(x, y), (x + 2_000_000, y)], via.GetNetCode(), self.k.B_Cu, 400_000)
+        self.k.SaveBoard(str(self.path), board)
+        self.filled()
+        result = measure(self.path, contract())
+        self.assertEqual(result['outcome'], 'info', result)
+
+    def test_same_net_disconnected_plane_islands_do_not_complete_a_loop(self):
+        self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        for track in list(board.GetTracks()):
+            if track.GetNetname() == '/return':
+                board.Remove(track)
+        for zone in list(board.Zones()):
+            board.Remove(zone)
+        for endpoint in contract()['relations'][0]['return']:
+            local._tie(board, local.pad(board, endpoint), self.k.B_Cu, clock=Clock(60), cancel_dir=None)
+        for left, right in [(20, 31.7), (32.3, 45)]:
+            zone = self.k.ZONE(board)
+            zone.SetLayer(self.k.B_Cu)
+            zone.SetNet(board.FindNet('/return'))
+            zone.SetPadConnection(self.k.ZONE_CONNECTION_FULL)
+            polygon = zone.Outline()
+            polygon.NewOutline()
+            for x, y in [(left, 20), (right, 20), (right, 40), (left, 40)]:
+                polygon.Append(round(x * 1e6), round(y * 1e6))
+            board.Add(zone)
+        self.k.SaveBoard(str(self.path), board)
+        self.filled()
+        result = measure(self.path, contract())
+        self.assertEqual(result['outcome'], 'defect', result)
+        self.assertIn('return: no native-connected copper path', result['records'][0]['reasons'])
 
 
 class ContractTests(unittest.TestCase):

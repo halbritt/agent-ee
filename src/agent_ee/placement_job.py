@@ -1453,18 +1453,19 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     local_record = None
     if local_decoupling is not None:
         from . import local_decoupling as local
+        seed_clock = Clock(min(route_clock.remaining(), clock.remaining()))
         local_dir = route_dir / 'local-decoupling'
         local_dir.mkdir()
         (local_dir / 'before').mkdir()
         (local_dir / 'after').mkdir()
         try:
             baseline, _ = drc(staged / 'board.kicad_pcb', local_dir / 'before',
-                              clock=clock, cancel_dir=cancel_dir)
+                              clock=seed_clock, cancel_dir=cancel_dir)
             local_record = local.seed(staged / 'board.kicad_pcb', local_decoupling,
-                                      clock=clock, cancel_dir=cancel_dir)
+                                      clock=seed_clock, cancel_dir=cancel_dir)
             write_json(local_dir / 'seed.json', local_record)
             seeded, _ = drc(staged / 'board.kicad_pcb', local_dir / 'after', refill=True,
-                            clock=clock, cancel_dir=cancel_dir)
+                            clock=seed_clock, cancel_dir=cancel_dir)
             existing = {_key(v) for v in baseline['violations'] if v.get('severity') == 'error'}
             errors = [v for v in seeded['violations'] if v.get('severity') == 'error' and _key(v) not in existing]
             if errors:
@@ -1474,6 +1475,14 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         except JobRefusal as exc:
             write_json(local_dir / 'failure.json', {'reason': str(exc)})
             return {'status': 'local_copper_failed', 'preflight': check, 'reason': str(exc),
+                    'elapsed_s': time.monotonic() - started}
+        except JobStopped as exc:
+            if exc.status != 'deadline' or clock.remaining() <= 0:
+                raise
+            names = ', '.join(row['id'] for row in local_decoupling['relations']) or 'plane ties'
+            reason = 'local decoupling ' + names + ': candidate time share exhausted'
+            write_json(local_dir / 'failure.json', {'reason': reason})
+            return {'status': 'local_copper_failed', 'preflight': check, 'reason': reason,
                     'elapsed_s': time.monotonic() - started}
     _check_stop(clock, cancel_dir)
     # The CLI accepts integral seconds. Refuse sub-second remainder rather than
@@ -2342,12 +2351,16 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
                                          clock=clock,cancel_dir=cancel_dir)
     final_board_sha256 = digest(board)
     general_local_check = None
+    general_loops = None
     if routed.get('local_decoupling') is not None:
         from .local_decoupling import verify as verify_local
+        from .decoupling_loops import measure as measure_loops
         try:
             general_local_check = verify_local(board, routed['local_decoupling'])
         except JobRefusal as exc:
             problems.append(str(exc))
+        general_loops = measure_loops(board, routed['local_decoupling']['contract'])
+        write_json(final_dir / 'decoupling-loops.json', general_loops)
     if block_result['status'] != 'not_declared' and block_result['board_sha256'] != final_board_sha256:
         problems.append('final board changed after block contract check')
     if mechanics_result.get('status') != 'not_declared' and mechanics_result.get('board_sha256') != final_board_sha256:
@@ -2355,6 +2368,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     silk_conflicts = _silk_graphic_conflicts(report_)
     track_conflicts = _unrepairable_track_warnings(report_, reject_track_dangling=reject_track_dangling)
     failed = (problems or (reject_silk_graphics and silk_conflicts) or track_conflicts or any(split.values())
+              or general_loops is not None and general_loops['outcome'] not in ('pass', 'info')
               or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared')
               or block_result['status'] not in ('pass', 'info', 'not_declared')
@@ -2364,6 +2378,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
               or ac_result is not None and ac_result.get('status') != 'PASS')
     return {'status': 'checked', 'board': str(board), 'board_sha256': final_board_sha256,
             **({'local_decoupling': general_local_check} if general_local_check is not None else {}),
+            **({'decoupling_loops': general_loops} if general_loops is not None else {}),
             **({'local_routing':local_check} if local_check is not None else {}),
             **({'planes': plane_result, 'plane_fill': plane_fill} if planes is not None else {}),
             **({'impedance': impedance_result} if impedance_result is not None else {}),

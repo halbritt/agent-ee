@@ -521,7 +521,7 @@ def placement(design, root):
             row.update(max_loop_mm=pair['max_loop_mm'], basis=BASIS)
         relations.append(row)
     write_json(root / 'local-decoupling.json', validate_local(dict(
-        schema=SCHEMA, relations=relations, tie_other_pads=True,
+        schema=SCHEMA, relations=relations, tie_other_pads=False,
         planes=[dict(net=native_net(design, design['plane']['net']), layer=design['plane']['layer'])])))
     write_json(
         root / "planes.json",

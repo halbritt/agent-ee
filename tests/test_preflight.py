@@ -153,6 +153,12 @@ class PreflightTests(unittest.TestCase):
         self.assertIn('pcbnew', self.expected['required_runtime'])
         self.assert_refused('missing_binary:pcbnew')
 
+    def test_decoupling_loops_requires_pcbnew_before_dispatch(self):
+        self.runtime['pcbnew'] = {'path': None, 'sha256': None}
+        self.optional_expectation([{'kind': 'decoupling_loops', 'params': {'contract': 'loops.json'}}])
+        self.assertIn('pcbnew', self.expected['required_runtime'])
+        self.assert_refused('missing_binary:pcbnew')
+
     def test_routing_requires_both_native_interfaces_before_dispatch(self):
         self.runtime['kicad-cli'] = self.runtime['/usr/bin/python3']
         self.runtime['pcbnew'] = {'path': None, 'sha256': None}
