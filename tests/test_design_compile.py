@@ -623,6 +623,15 @@ class DesignCompileTests(unittest.TestCase):
                 / "fixtures/board-envelope/jlc-2layer/source-capture.json"
             ).read_bytes()
         )
+        from agent_ee.design_compile import DATA
+
+        template = json.loads((DATA / "jlc-2layer-fab-profile.json").read_bytes())
+        for item in [
+            template["stackup"],
+            template["finished_thickness_tolerance"],
+            *template["limits"],
+        ]:
+            self.assertEqual(item["source"]["sha256"], "0" * 64)
         for capture in source["raw_captures"]:
             if capture["file"] in ("jlc-capabilities.html", "jlc-copper-weight.html"):
                 self.assertIn(capture["sha256"], facts)
@@ -667,6 +676,24 @@ class DesignCompileTests(unittest.TestCase):
         rules = json.loads((root / "topology-rules.json").read_bytes())
         self.assertEqual(rules["classes"], {})
         self.assertEqual(len(rules["rules"]), 1)
+        from agent_ee.topology_rules import validate_rules
+
+        classified = dict(
+            schema="agent-ee.topology-rules/1",
+            classes={},
+            rules=[
+                dict(
+                    id="missing-class",
+                    requirement="TEST-FUNC-1",
+                    type="element_between",
+                    **{"class": "resistor"},
+                    nets=["/SIGNAL", "GND"],
+                    value="10k",
+                )
+            ],
+        )
+        with self.assertRaisesRegex(ValueError, "no declared symbol"):
+            validate_rules(classified)
         spec = (root / "spec.md").read_text(encoding="utf-8")
         self.assertIn("not established by these witnesses", spec)
         record = json.loads((root / "spec-record.json").read_bytes())
@@ -952,3 +979,27 @@ class DesignCompileTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("board.width_mm", result.stderr)
         self.assertFalse((self.root / "cli-capture").exists())
+
+    def test_asymmetric_mechanics_courtyard_has_exact_native_body_bounds(self):
+        from decimal import Decimal
+
+        path = self.captures / "cad/Owned.pretty/R2.kicad_mod"
+        raw = path.read_bytes().replace(
+            b"(start -2 -1) (end 2 1)", b"(start -2 -2.85) (end 2 3.9)"
+        )
+        path.write_bytes(raw)
+        seal_capture(self.captures)
+        self.design["mechanics"] = dict(access_owners=[])
+        self.compile()
+        model = json.loads(
+            (self.root / "bundle/inputs/analysis/geometry-model.json").read_bytes()
+        )
+        for body in model["packages"].values():
+            self.assertEqual(body["offset_mm"], [0.0, 0.525])
+            self.assertEqual(body["size_mm"], [4.0, 6.75, 8])
+            for size, offset in zip(body["size_mm"], body["offset_mm"]):
+                for sign in (-1, 1):
+                    bound_nm = (
+                        Decimal(str(offset)) + sign * Decimal(str(size)) / 2
+                    ) * 1000000
+                    self.assertEqual(bound_nm, bound_nm.to_integral_value())

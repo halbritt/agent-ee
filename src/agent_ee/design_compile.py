@@ -1110,7 +1110,7 @@ def mechanics(design, root):
                 )
             for key in ("start", "end"):
                 points.extend(
-                    [[float(n[1]), float(n[2])] for n in children(graphic, key)]
+                    [[Decimal(n[1]), Decimal(n[2])] for n in children(graphic, key)]
                 )
         if not points:
             raise DesignError(
@@ -1121,11 +1121,11 @@ def mechanics(design, root):
         xs, ys = zip(*points)
         packages[ref] = dict(
             size_mm=[
-                max(xs) - min(xs),
-                max(ys) - min(ys),
+                float(max(xs) - min(xs)),
+                float(max(ys) - min(ys)),
                 design["board"]["max_component_height_mm"],
             ],
-            offset_mm=[(max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2],
+            offset_mm=[float((max(xs) + min(xs)) / 2), float((max(ys) + min(ys)) / 2)],
         )
     (root / "analysis").mkdir()
     (root / "analysis/body-basis.txt").write_text(
