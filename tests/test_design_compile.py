@@ -881,17 +881,18 @@ class DesignCompileTests(unittest.TestCase):
                 )
 
     def test_connector_courtyard_must_reach_edge_after_rotation(self):
-        # Asymmetric courtyard: local +Y extent is 4, -Y extent is 1, X extent is 2.
+        # Asymmetric courtyard: local +Y extent is 4, -Y extent is 1, +X is 2, -X is 3.
         path = self.captures / "cad/Owned.pretty/R2.kicad_mod"
-        path.write_bytes(path.read_bytes().replace(b"(end 2 1)", b"(end 2 4)"))
+        path.write_bytes(path.read_bytes().replace(b"(end 2 1)", b"(end 2 4)").replace(b"(start -2 -1)", b"(start -3 -1)"))
         seal_capture(self.captures)
-        for angle, inset, accepted in ((90, 5, True), (270, 5, False),
-                                       (0, 3, True), (0, 3.1, False)):
+        for edge, angle, inset, accepted in (("right", 90, 5, True), ("right", 270, 5, False),
+                                             ("right", 0, 3, True), ("right", 0, 3.1, False),
+                                             ("top", 270, 4, True), ("top", 90, 4, False)):
             d = copy.deepcopy(self.design)
-            d["connectors"] = [dict(reference="R1", edge="right", position_mm=10,
+            d["connectors"] = [dict(reference="R1", edge=edge, position_mm=10,
                                     inset_mm=inset, rotation_deg=angle, insertion="from_top")]
-            with self.subTest(angle=angle, inset=inset):
-                out = self.root / f"gap-{angle}-{inset}"
+            with self.subTest(edge=edge, angle=angle, inset=inset):
+                out = self.root / f"gap-{edge}-{angle}-{inset}"
                 if accepted:
                     compile_design(d, self.captures, out)
                 else:
