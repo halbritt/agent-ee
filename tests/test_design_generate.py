@@ -143,11 +143,11 @@ class GenerateTests(unittest.TestCase):
         calls = [0]
         def build(attempt):
             calls[0] += 1
-            self.build_report(attempt, accepted=calls[0] > 1, stage='placement')
+            self.build_report(attempt, accepted=calls[0] > 1, stage='placement-routing')
             if calls[0] == 1:
                 path = attempt / 'build/stages/05-placement/placement'
                 path.mkdir(parents=True)
-                write_json(path / 'job-report.json', dict(status='failed'))
+                write_json(path / 'job-report.json', dict(status='route_failed'))
         with patch.object(self, 'build_report', wraps=self.build_report) as report_mock:
             # Preserve the normal report writer while scripting just the build boundary.
             original = self.step
@@ -188,6 +188,30 @@ class GenerateTests(unittest.TestCase):
         self.assertFalse(report['accepted'])
         self.assertIn('Wrong supply pin', self.prompts[1])
         self.assertEqual(report['attempts'][0]['engineering_review'], 'failed')
+
+    def test_utilisation_uses_final_positions_rotation_and_union(self):
+        run = self.root / 'native'
+        candidate = run / 'stages/package/candidate'
+        candidate.mkdir(parents=True)
+        write_json(run / 'build-report.json', dict(candidate='stages/package/candidate'))
+        (candidate / 'owned.kicad_pcb').write_text('''(kicad_pcb
+          (footprint "one" (at 10 20 90)
+            (fp_rect (start 0 0) (end 2 4) (layer "F.CrtYd")))
+          (footprint "two" (at 12 20)
+            (fp_rect (start 0 -2) (end 4 0) (layer "F.CrtYd"))))''')
+        result = loop.outline_utilisation(run, self.statement)
+        # First rotated box: x=10..14, y=18..20. Second: x=12..16,
+        # y=18..20. Union is 12, not their summed area of 16.
+        self.assertEqual(result['courtyard_bbox_union_mm2'], 12)
+        self.assertEqual(result['fraction'], 12 / 600)
+        self.assertEqual(len(result['board_sha256']), 64)
+
+    def test_runtime_refusal_is_not_a_search_retry(self):
+        run = self.root / 'native'
+        path = run / 'stages/placement/placement'
+        path.mkdir(parents=True)
+        write_json(path / 'job-report.json', dict(status='refused', reason='pin mismatch'))
+        self.assertFalse(loop.search_failure(dict(attempts=[dict(stage='placement-routing')]), run))
 
     def test_benchmark_runs_sorted_and_reports_failures(self):
         directory = self.root / 'requirements'

@@ -129,6 +129,13 @@ EXACT PREVIOUS REFUSAL OR SHORT FAILURE FEEDBACK:
 '''
 
 
+def remaining(deadline):
+    seconds = deadline - time.monotonic()
+    if seconds < 1:
+        raise native_run.DeadlineExhausted('Design generation deadline exhausted before the next phase')
+    return seconds
+
+
 def run_step(attempt, label, argv, seconds):
     """An owned process tree with a hard remaining-time bound and retained logs."""
     return native_run.run(native_run.Intent('design-' + label, argv, timeout=seconds,
@@ -161,10 +168,11 @@ def refusal_classes(text):
 
 
 def search_failure(build, run):
-    if not build or not build.get('attempts') or build['attempts'][-1].get('stage') != 'placement':
+    if not build or not build.get('attempts') or build['attempts'][-1].get('stage') != 'placement-routing':
         return False
     jobs = list(run.glob('stages/*/placement/job-report.json'))
-    return bool(jobs) and any(design.load(p).get('status') != 'accepted' for p in jobs)
+    return bool(jobs) and any(design.load(p).get('status') in
+        ('route_failed', 'placement_failed', 'no_checked_candidate', 'verification_failed') for p in jobs)
 
 
 def outline_utilisation(run, statement):
@@ -275,10 +283,10 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                     retry_capture = None
                 else:
                     shutil.copytree(out / 'context', attempt / 'inputs')
-                    timeout = min(author_seconds, deadline - time.monotonic())
+                    timeout = min(author_seconds, remaining(deadline))
                     record, response = review_run.structured_call(attempt, 'author', prompt, AUTHOR_SCHEMA,
                         lambda supplied: harnesses.native_call(attempt, 'author', definition, supplied, AUTHOR_SCHEMA,
-                            min(timeout, max(0.01, deadline - time.monotonic()))), validate_response)
+                            min(timeout, remaining(deadline))), validate_response)
                     row['author_execution'] = record['execution']
                     if response is None:
                         row.update(status='seat_failed', reason=record.get('error', 'Author returned no valid response'))
@@ -306,19 +314,19 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                 if not capture.exists():
                     record = run_step(attempt, 'capture', [sys.executable, '-B', '-m', 'agent_ee.cli',
                         'design', 'capture', str(attempt / 'statement.json'), '--out', str(capture),
-                        '--kicad-root', str(kicad_root)], max(0.01, deadline - time.monotonic()))
+                        '--kicad-root', str(kicad_root)], remaining(deadline))
                     if record['execution'] != 'ok' or record.get('exit_code') != 0:
                         raise PhaseFailure('capture', execution_error(record, attempt, 'capture'), record)
                 bundle = attempt / 'bundle'
                 record = run_step(attempt, 'compile', [sys.executable, '-B', '-m', 'agent_ee.cli',
                     'design', 'compile', str(attempt / 'statement.json'), '--captures', str(capture),
-                    '--out', str(bundle)], max(0.01, deadline - time.monotonic()))
+                    '--out', str(bundle)], remaining(deadline))
                 if record['execution'] != 'ok' or record.get('exit_code') != 0:
                     raise PhaseFailure('compile', execution_error(record, attempt, 'compile'), record)
                 run = attempt / 'build'
                 record = run_step(attempt, 'build', [sys.executable, '-B', '-m', 'agent_ee.cli',
                     'build', 'run', str(bundle / 'build-plan.json'), '--out', str(run), '--through', 'package'],
-                    max(0.01, deadline - time.monotonic()))
+                    remaining(deadline))
                 build = read_optional(run / 'build-report.json')
                 row.update(bundle=str(bundle), run=str(run), failed_checks=failed_checks(run),
                     outline_utilisation=outline_utilisation(run, current))
@@ -342,7 +350,7 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                     record = run_step(attempt, 'review', [sys.executable, '-B', '-m', 'agent_ee.cli',
                         'build', 'review', str(run), '--out', str(attempt / 'review'),
                         '--profile', str(review_profile), '--max-seconds', str(max(1, int(deadline - time.monotonic())))],
-                        max(0.01, deadline - time.monotonic()))
+                        remaining(deadline))
                     reviewed = read_optional(attempt / 'review/report.json')
                     dimension = ((reviewed or {}).get('qualification', {}).get('dimensions', {}).get('engineering_review', 'incomplete'))
                     row['engineering_review'] = dimension
@@ -359,6 +367,10 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                 report.update(status='accepted', accepted=True, selected_attempt=number)
                 report['claims'].update(file_release=True, engineering_review=row['engineering_review'])
                 break
+            except native_run.DeadlineExhausted as exc:
+                row.update(status='time_exhausted', reason=str(exc))
+                report['status'] = 'time_exhausted'
+                break
             except design.DesignError as exc:
                 feedback = str(exc)
                 row.update(status='refused', reason=feedback, refusal_classes=refusal_classes(feedback))
@@ -370,7 +382,8 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                 (attempt / 'refusal.txt').write_text(str(exc), encoding='utf-8')
                 if exc.stage in ('capture', 'compile') and not row['refusal_classes']:
                     row['tool_gap'] = 'Refusal does not name a design field'
-                if 'pin' in str(exc).lower() and any(s in str(exc).lower() for s in ('checkout', 'revision', 'toolchain', 'mismatch')):
+                if exc.stage in ('build', 'placement-routing') and any(s in str(exc) for s in
+                        ('is not the pinned', 'kicad-route pin', 'pinned code', 'router checkout')):
                     report['status'] = 'runtime_refused'
                     break
             finally:
