@@ -67,8 +67,8 @@ def trace_problems(response, statement, requirements):
     needed = {'intent'} | {f'functional[{i}].text' for i in range(len(statement['functional']))}
     seen, problems = set(), []
     for row in response['trace']:
-        if row['field'] not in needed:
-            problems.append('trace.' + row['field'] + ': cite intent or an existing functional[i].text')
+        if not trace_field_exists(statement, row['field']):
+            problems.append('trace.' + row['field'] + ': cite an existing design field')
         elif not row['quote'].strip() or row['quote'] not in requirements:
             problems.append(row['field'] + ': trace.quote must be an exact nonempty span of REQUIREMENTS.md')
         else:
@@ -77,6 +77,18 @@ def trace_problems(response, statement, requirements):
     if not response['agent_selected']:
         problems.append('agent_selected: label the choices you made, separately from requirement and datasheet facts')
     return problems
+
+
+def trace_field_exists(statement, path):
+    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]*(?:\[\d+\]|\.[A-Za-z_][A-Za-z0-9_-]*)*', path):
+        return False
+    value = statement
+    for key, index in re.findall(r'([A-Za-z_][A-Za-z0-9_-]*)|\[(\d+)\]', path):
+        try:
+            value = value[key] if key else value[int(index)]
+        except (KeyError, IndexError, TypeError):
+            return False
+    return True
 
 
 def prepare_context(root, out):

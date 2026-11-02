@@ -77,6 +77,17 @@ class GenerateTests(unittest.TestCase):
             self.assertTrue((root / 'review-attempts/author/0/execution.json').is_file())
         self.assertEqual(json.loads((self.root / 'run/generate-report.json').read_text()), report)
 
+    def test_additional_requirement_traces_accept_existing_fields_only(self):
+        response = self.response()
+        response['trace'] += [dict(field=f, quote='compact divider') for f in ('board', 'bench', 'parts.R1.value')]
+        self.assertEqual(loop.trace_problems(response, self.statement, self.requirements.read_text()), [])
+        response['trace'].append(dict(field='functional[9].text', quote='compact divider'))
+        self.assertIn('existing design field', loop.trace_problems(response, self.statement,
+            self.requirements.read_text())[0])
+        response = self.response()
+        response['trace'].pop(0)
+        self.assertIn('intent:', loop.trace_problems(response, self.statement, self.requirements.read_text())[0])
+
     def test_invalid_json_is_retained_and_returned_to_author(self):
         bad = self.response()
         bad['statement_json'] = '{broken: 1}'
