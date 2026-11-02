@@ -1,0 +1,1292 @@
+{
+  "schema": "agent-ee.pcbschemagen-tier1-manifest/1",
+  "suite": "PCBSchemaGen-Tier1",
+  "version": "1.0.0",
+  "description": "Tier-1 25-task discrete-IC benchmark suite for PCBSchemaGen dual-gate evaluation",
+  "total_tasks": 25,
+  "counts": {
+    "pcbbench": 18,
+    "open_schematics": 7
+  },
+  "wrapper_spec": {
+    "header_pitch_mm": 2.54,
+    "footprint_pattern": "Connector_PinHeader_2.54mm:PinHeader_1x..._P2.54mm_Vertical",
+    "symbol_pattern": "Connector_Generic:Conn_01x...",
+    "edge_rule": "Edge-mounted along outline perimeter (within 1 mm of board edge)",
+    "text": "### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.\n"
+  },
+  "tasks": [
+    {
+      "id": "104",
+      "dataset": "open_schematics",
+      "sub_module_name": "USB_DATA_LOGGER",
+      "level": "Hard",
+      "type": "DataAcquisition",
+      "primary_ic": "CH32V003JxMx + AP2112K",
+      "package": "SOP-8 + SOT-23-5",
+      "input_nodes": [
+        "VBUS",
+        "GND"
+      ],
+      "output_nodes": [
+        "SWIO",
+        "JP1",
+        "JP2",
+        "JP3"
+      ],
+      "input_voltage": "5",
+      "output_voltage": "3.3",
+      "components": "1x CH32V003JxMx, 1x AP2112K-3.3, 1x USB_A, 2x C_Small, 1x R, 3x TestPoint, 3x Jumper_2_Open",
+      "task_prompt": "Design a USB-powered data logger using 1x CH32V003JxMx RISC-V microcontroller, 1x AP2112K-3.3 LDO voltage regulator, 1x USB_A connector, 2x C_Small decoupling capacitors, 1x R resistor, 3x TestPoint debug pads, and 3x Jumper_2_Open configuration jumpers. The USB_A provides 5V VBUS power, regulated to 3.3V by the AP2112K-3.3 for the CH32V003. The SWIO debug interface is accessible via test points. Configuration jumpers allow selectable options. Include decoupling capacitors on VBUS_3V3 and the USB data lines (USB_D+, USB_D-).",
+      "wrapped_prompt": "Design a USB-powered data logger using 1x CH32V003JxMx RISC-V microcontroller, 1x AP2112K-3.3 LDO voltage regulator, 1x USB_A connector, 2x C_Small decoupling capacitors, 1x R resistor, 3x TestPoint debug pads, and 3x Jumper_2_Open configuration jumpers. The USB_A provides 5V VBUS power, regulated to 3.3V by the AP2112K-3.3 for the CH32V003. The SWIO debug interface is accessible via test points. Configuration jumpers allow selectable options. Include decoupling capacitors on VBUS_3V3 and the USB data lines (USB_D+, USB_D-).\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "VBUS",
+            "GND"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x04",
+          "edge": "right",
+          "pin_count": 4,
+          "nets": [
+            "SWIO",
+            "JP1",
+            "JP2",
+            "JP3"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "146",
+      "dataset": "open_schematics",
+      "sub_module_name": "LDO_5V_LED_SUPPLY",
+      "level": "Easy",
+      "type": "AuxPower",
+      "primary_ic": "LM1117MP-5.0",
+      "package": "SOT-223",
+      "input_nodes": [
+        "VBUS",
+        "GND"
+      ],
+      "output_nodes": [
+        "+5V",
+        "VCC"
+      ],
+      "input_voltage": "5",
+      "output_voltage": "5",
+      "components": {
+        "C_Small": 2,
+        "LM1117MP-5.0": 1,
+        "LED_Small": 1,
+        "R_Small": 1,
+        "D_Small": 1
+      },
+      "task_prompt": "Design a simple 5V LDO voltage regulator circuit using LM1117MP-5.0 to convert battery/USB VBUS input to a regulated 5V rail for driving an LED. Use 1 LM1117MP-5.0 regulator, 1 D_Small reverse polarity protection diode, 1 LED_Small indicator, 1 R_Small current limiting resistor, and 2 C_Small decoupling capacitors.",
+      "wrapped_prompt": "Design a simple 5V LDO voltage regulator circuit using LM1117MP-5.0 to convert battery/USB VBUS input to a regulated 5V rail for driving an LED. Use 1 LM1117MP-5.0 regulator, 1 D_Small reverse polarity protection diode, 1 LED_Small indicator, 1 R_Small current limiting resistor, and 2 C_Small decoupling capacitors.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "VBUS",
+            "GND"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "+5V",
+            "VCC"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "176",
+      "dataset": "open_schematics",
+      "sub_module_name": "EXT_BITCART_NODE",
+      "level": "Medium",
+      "type": "IoT-System",
+      "primary_ic": "MAX40200AUK_T",
+      "package": "SOT-23-5",
+      "input_nodes": [
+        "USB_VBUS",
+        "GND"
+      ],
+      "output_nodes": [
+        "+3.3V",
+        "I2C1_SCL",
+        "I2C1_SDA",
+        "I2C3_SCL",
+        "I2C3_SDA"
+      ],
+      "input_voltage": "5",
+      "output_voltage": "3.3",
+      "components": "15x C, 6x R_US, 4x MountingHole, 2x MAX40200AUK_T, 2x LED, 2x PTS645SM43SMTR92_LFS, 1x Crystal_GND24, 1x XB24CZ7PIT-004, 1x SSD1306, 1x PHR-2, 1x STM32U545VETx, 1x INA260, 1x MS8607, 1x Conn_01x05_Pin, 1x SW_SPDT, 1x USB_B_Micro, 1x MIC5219-3.3YMM, 1x DS18B20",
+      "task_prompt": "Design an STM32U545VETx-based IoT sensor node with I2C sensors, XBee wireless, OLED display, and USB interface. Include 1 STM32U545VETx ARM Cortex-M33 microcontroller, 1 Crystal_GND24 for the HSE clock, 1 MIC5219-3.3YMM 3.3V LDO regulator, 1 INA260 I2C current/voltage/power monitor, 1 MS8607 combined pressure/humidity/temperature sensor (I2C), 1 DS18B20 1-Wire digital temperature sensor, 1 SSD1306 OLED display controller (I2C), 1 XB24CZ7PIT-004 XBee wireless module, 2 MAX40200AUK_T ideal diode ICs for power OR-ing, 1 USB_B_Micro USB connector, 1 SW_SPDT mode selection switch, 2 PTS645SM43SMTR92_LFS tactile push buttons (one for BOOT0), 1 PHR-2 2-pin JST connector, 1 Conn_01x05_Pin 5-pin header, 2 LEDs for status, 15 capacitors (C), 6 resistors (R_US), and 4 MountingHoles.",
+      "wrapped_prompt": "Design an STM32U545VETx-based IoT sensor node with I2C sensors, XBee wireless, OLED display, and USB interface. Include 1 STM32U545VETx ARM Cortex-M33 microcontroller, 1 Crystal_GND24 for the HSE clock, 1 MIC5219-3.3YMM 3.3V LDO regulator, 1 INA260 I2C current/voltage/power monitor, 1 MS8607 combined pressure/humidity/temperature sensor (I2C), 1 DS18B20 1-Wire digital temperature sensor, 1 SSD1306 OLED display controller (I2C), 1 XB24CZ7PIT-004 XBee wireless module, 2 MAX40200AUK_T ideal diode ICs for power OR-ing, 1 USB_B_Micro USB connector, 1 SW_SPDT mode selection switch, 2 PTS645SM43SMTR92_LFS tactile push buttons (one for BOOT0), 1 PHR-2 2-pin JST connector, 1 Conn_01x05_Pin 5-pin header, 2 LEDs for status, 15 capacitors (C), 6 resistors (R_US), and 4 MountingHoles.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "USB_VBUS",
+            "GND"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x05",
+          "edge": "right",
+          "pin_count": 5,
+          "nets": [
+            "+3.3V",
+            "I2C1_SCL",
+            "I2C1_SDA",
+            "I2C3_SCL",
+            "I2C3_SDA"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "181",
+      "dataset": "open_schematics",
+      "sub_module_name": "EXT_TF2SENTRYEE",
+      "level": "Hard",
+      "type": "IoT-System",
+      "primary_ic": "AP63203WU",
+      "package": "TSOT-26",
+      "input_nodes": [
+        "VIN",
+        "GND"
+      ],
+      "output_nodes": [
+        "MOTOR",
+        "LED1",
+        "LED2",
+        "LED3",
+        "LED4",
+        "LED5"
+      ],
+      "input_voltage": "12",
+      "output_voltage": "3.3",
+      "components": "13x R, 6x C, 5x LED, 2x MountingHole, 1x Conn_02x03_Odd_Even, 1x AP63203WU, 1x Conn_01x05_Male, 1x L, 1x Conn_02x02_Odd_Even, 1x ESP32-C3-MINI-1, 1x AO3400A, 1x SW_Push",
+      "task_prompt": "Design an ESP32-C3-based turret controller board with motor drive and LED status indicators. The system uses 1x ESP32-C3-MINI-1 as the main MCU, 1x AP63203WU buck converter with 1x inductor (L) to generate a 3.3V rail from 12V input, and 1x AO3400A N-channel MOSFET for motor switching. Include 5x LEDs for status indication (with series resistors), 1x push button (SW_Push) for user input, 13x resistors (R) for biasing/current-limiting/pull-ups, 6x capacitors (C) for decoupling and filtering, 2x MountingHoles for mechanical mounting, 1x Conn_02x03_Odd_Even for programming/debug header, 1x Conn_01x05_Male for motor/sensor interface, and 1x Conn_02x02_Odd_Even for power input. Power rails: +12V input, +5V intermediate, +3.3V logic supply. Key signals include MOTOR_IO, MOTOR_TEMP, GPIO0, and GPIO9.",
+      "wrapped_prompt": "Design an ESP32-C3-based turret controller board with motor drive and LED status indicators. The system uses 1x ESP32-C3-MINI-1 as the main MCU, 1x AP63203WU buck converter with 1x inductor (L) to generate a 3.3V rail from 12V input, and 1x AO3400A N-channel MOSFET for motor switching. Include 5x LEDs for status indication (with series resistors), 1x push button (SW_Push) for user input, 13x resistors (R) for biasing/current-limiting/pull-ups, 6x capacitors (C) for decoupling and filtering, 2x MountingHoles for mechanical mounting, 1x Conn_02x03_Odd_Even for programming/debug header, 1x Conn_01x05_Male for motor/sensor interface, and 1x Conn_02x02_Odd_Even for power input. Power rails: +12V input, +5V intermediate, +3.3V logic supply. Key signals include MOTOR_IO, MOTOR_TEMP, GPIO0, and GPIO9.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "VIN",
+            "GND"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x06",
+          "edge": "right",
+          "pin_count": 6,
+          "nets": [
+            "MOTOR",
+            "LED1",
+            "LED2",
+            "LED3",
+            "LED4",
+            "LED5"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "208",
+      "dataset": "open_schematics",
+      "sub_module_name": "CURRENT_SENSOR",
+      "level": "Easy",
+      "type": "Sensing",
+      "primary_ic": "ACS711xEXLT",
+      "package": "SOIC-8",
+      "input_nodes": [
+        "VCC",
+        "GND"
+      ],
+      "output_nodes": [
+        "OUT"
+      ],
+      "input_voltage": "5",
+      "output_voltage": "5",
+      "components": "2x C_Small, 3x Conn_01x02, 4x MountingHole, 1x ACS711xEXLT-15AB, 1x Conn_01x04, 1x LED, 4x R_Small",
+      "task_prompt": "Design a hall-effect current sensor breakout board using exactly 1x ACS711xEXLT-15AB bidirectional current sensor, 2x C_Small decoupling capacitors, 3x Conn_01x02 2-pin connectors, 4x MountingHole mechanical mounting holes, 1x Conn_01x04 4-pin signal connector, 1x LED status indicator, and 4x R_Small resistors. The ACS711 senses up to 15A bidirectional current and outputs a proportional analog voltage. The 2-pin connectors carry the high-current sense path, the 4-pin connector provides VCC, GND, and the analog output signal. Resistors bias the output and limit LED current.",
+      "wrapped_prompt": "Design a hall-effect current sensor breakout board using exactly 1x ACS711xEXLT-15AB bidirectional current sensor, 2x C_Small decoupling capacitors, 3x Conn_01x02 2-pin connectors, 4x MountingHole mechanical mounting holes, 1x Conn_01x04 4-pin signal connector, 1x LED status indicator, and 4x R_Small resistors. The ACS711 senses up to 15A bidirectional current and outputs a proportional analog voltage. The 2-pin connectors carry the high-current sense path, the 4-pin connector provides VCC, GND, and the analog output signal. Resistors bias the output and limit LED current.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "VCC",
+            "GND"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "OUT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "218",
+      "dataset": "open_schematics",
+      "sub_module_name": "IOT12_SUPERVISOR",
+      "level": "Easy",
+      "type": "Sensing",
+      "primary_ic": "TPS3839DBZ",
+      "package": "SOT-23-3",
+      "input_nodes": [
+        "+24V",
+        "GND"
+      ],
+      "output_nodes": [
+        "ESP32_~{RESET}",
+        "SAMD21_~{RESET}",
+        "24V_ON"
+      ],
+      "input_voltage": "24",
+      "output_voltage": "3.3",
+      "components": "1x TPS3839DBZ, 2x BAV99, 6x R, 1x Conn_01x04_Pin",
+      "task_prompt": "Design a dual-microcontroller reset supervisor circuit using exactly 1x TPS3839DBZ voltage supervisor, 2x BAV99 dual-series switching diodes, 6x R resistors, and 1x Conn_01x04_Pin 4-pin connector. The TPS3839 monitors the 24V input rail (via voltage divider) and generates reset signals for both ESP32 and SAMD21 microcontrollers. The BAV99 diodes provide OR-wired reset logic so either the supervisor or manual reset can trigger a controller restart. The connector provides external reset access.",
+      "wrapped_prompt": "Design a dual-microcontroller reset supervisor circuit using exactly 1x TPS3839DBZ voltage supervisor, 2x BAV99 dual-series switching diodes, 6x R resistors, and 1x Conn_01x04_Pin 4-pin connector. The TPS3839 monitors the 24V input rail (via voltage divider) and generates reset signals for both ESP32 and SAMD21 microcontrollers. The BAV99 diodes provide OR-wired reset logic so either the supervisor or manual reset can trigger a controller restart. The connector provides external reset access.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "+24V",
+            "GND"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x03",
+          "edge": "right",
+          "pin_count": 3,
+          "nets": [
+            "ESP32_~{RESET}",
+            "SAMD21_~{RESET}",
+            "24V_ON"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "246",
+      "dataset": "open_schematics",
+      "sub_module_name": "USB_C_INTERFACE",
+      "level": "Medium",
+      "type": "Communication",
+      "primary_ic": "AP2171W",
+      "package": "SOT-23-5",
+      "input_nodes": [
+        "VBUS",
+        "GND"
+      ],
+      "output_nodes": [
+        "CC1",
+        "CC2",
+        "USB_SEL"
+      ],
+      "input_voltage": "5",
+      "output_voltage": "3.3",
+      "components": "1x FerriteBead_Small, 3x R, 1x AP2171W, 2x C, 1x D_Schottky_Small, 1x USBLC6-2P6, 1x PI3USB4000AZM",
+      "task_prompt": "Design a USB-C interface circuit with ESD protection and signal multiplexing using exactly 1x PI3USB4000AZM USB 2.0 signal mux/demux, 1x USBLC6-2P6 ESD protection IC, 1x AP2171W USB power switch, 1x FerriteBead_Small EMI filter, 1x D_Schottky_Small Schottky diode, 3x R resistors, and 2x C capacitors. The PI3USB4000AZM multiplexes USB data lines based on the USB_SEL signal for CC orientation detection. The USBLC6-2P6 protects D+/D- from ESD. The AP2171W controls VBUS power delivery with overcurrent protection.",
+      "wrapped_prompt": "Design a USB-C interface circuit with ESD protection and signal multiplexing using exactly 1x PI3USB4000AZM USB 2.0 signal mux/demux, 1x USBLC6-2P6 ESD protection IC, 1x AP2171W USB power switch, 1x FerriteBead_Small EMI filter, 1x D_Schottky_Small Schottky diode, 3x R resistors, and 2x C capacitors. The PI3USB4000AZM multiplexes USB data lines based on the USB_SEL signal for CC orientation detection. The USBLC6-2P6 protects D+/D- from ESD. The AP2171W controls VBUS power delivery with overcurrent protection.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "VBUS",
+            "GND"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x03",
+          "edge": "right",
+          "pin_count": 3,
+          "nets": [
+            "CC1",
+            "CC2",
+            "USB_SEL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "dataset": "pcbbench",
+      "sub_module_name": "DIFF2SE_VREF",
+      "level": "Easy",
+      "type": "Sensing",
+      "primary_ic": "OPA328",
+      "package": "SOT-23-5",
+      "input_nodes": [
+        "VINP",
+        "VINN",
+        "VREF"
+      ],
+      "output_nodes": [
+        "VOUT"
+      ],
+      "input_voltage": "2",
+      "output_voltage": "3",
+      "components": "OPA328",
+      "task_prompt": "Design a differential-to-single-ended amplifier using one op-amp with a VREF offset. Assume VREF=1.65 V and differential input VINP-VINN = +/-2.0 V. Use a standard differential amplifier with matched pairs R1=R3 and R2=R4, and choose the gain so that VOUT stays within 0 to 3.0 V.",
+      "wrapped_prompt": "Design a differential-to-single-ended amplifier using one op-amp with a VREF offset. Assume VREF=1.65 V and differential input VINP-VINN = +/-2.0 V. Use a standard differential amplifier with matched pairs R1=R3 and R2=R4, and choose the gain so that VOUT stays within 0 to 3.0 V.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x03",
+          "edge": "left",
+          "pin_count": 3,
+          "nets": [
+            "VINP",
+            "VINN",
+            "VREF"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "VOUT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "5",
+      "dataset": "pcbbench",
+      "sub_module_name": "LDO_AUX_LOGIC",
+      "level": "Easy",
+      "type": "AuxPower",
+      "primary_ic": "TLV1117-33",
+      "package": "SOT-223",
+      "input_nodes": [
+        "VIN"
+      ],
+      "output_nodes": [
+        "VOUT"
+      ],
+      "input_voltage": "12",
+      "output_voltage": "3.3",
+      "components": "TLV1117-33",
+      "task_prompt": "Design an LDO-based supply that converts a DC input into a regulated low-voltage rail.",
+      "wrapped_prompt": "Design an LDO-based supply that converts a DC input into a regulated low-voltage rail.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "VIN"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "VOUT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "6",
+      "dataset": "pcbbench",
+      "sub_module_name": "BUCK_AUX_LOGIC",
+      "level": "Easy",
+      "type": "AuxPower",
+      "primary_ic": "TPS54302",
+      "package": "SOT-23-6",
+      "input_nodes": [
+        "VIN"
+      ],
+      "output_nodes": [
+        "VOUT"
+      ],
+      "input_voltage": "12",
+      "output_voltage": "3.3",
+      "components": "TPS54302",
+      "task_prompt": "Design a low voltage auxilary buck regulator using chip that converts a DC input into a regulated low-voltage rail. if EN is left floating it defaults to enabled,please connect EN to NC.",
+      "wrapped_prompt": "Design a low voltage auxilary buck regulator using chip that converts a DC input into a regulated low-voltage rail. if EN is left floating it defaults to enabled,please connect EN to NC.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "VIN"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "VOUT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "13",
+      "dataset": "pcbbench",
+      "sub_module_name": "DRV_LOW_SIDE",
+      "level": "Medium",
+      "type": "Driver",
+      "primary_ic": "UCC27511",
+      "package": "SOT-23-6",
+      "input_nodes": [
+        "PWM",
+        "VCC"
+      ],
+      "output_nodes": [
+        "GATE"
+      ],
+      "input_voltage": "48.0, 9.0",
+      "output_voltage": "12",
+      "components": "UCC27511",
+      "task_prompt": "Design a low-side gate driver that drives a MOSFET gate from a logic-level PWM signal, do not include power MOSFET,please include gate resistor.",
+      "wrapped_prompt": "Design a low-side gate driver that drives a MOSFET gate from a logic-level PWM signal, do not include power MOSFET,please include gate resistor.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "PWM",
+            "VCC"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "GATE"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "14",
+      "dataset": "pcbbench",
+      "sub_module_name": "DRV_BOOTSTRAP_HB",
+      "level": "Medium",
+      "type": "Driver",
+      "primary_ic": "UCC27211",
+      "package": "SOIC-8",
+      "input_nodes": [
+        "PWM_H",
+        "PWM_L",
+        "VCC"
+      ],
+      "output_nodes": [
+        "HO",
+        "LO",
+        "VB",
+        "VS"
+      ],
+      "input_voltage": "12",
+      "output_voltage": "12",
+      "components": "UCC27211",
+      "task_prompt": "Design a bootstrap high-side/low-side half-bridge gate driver that generates HO/LO outputs from logic PWM inputs, noted that the bootstrap freewheeling diode is integrated in the driver, do not add bootstrap diode again, do not include power MOSFET,please include gate resistor",
+      "wrapped_prompt": "Design a bootstrap high-side/low-side half-bridge gate driver that generates HO/LO outputs from logic PWM inputs, noted that the bootstrap freewheeling diode is integrated in the driver, do not add bootstrap diode again, do not include power MOSFET,please include gate resistor\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x03",
+          "edge": "left",
+          "pin_count": 3,
+          "nets": [
+            "PWM_H",
+            "PWM_L",
+            "VCC"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x04",
+          "edge": "right",
+          "pin_count": 4,
+          "nets": [
+            "HO",
+            "LO",
+            "VB",
+            "VS"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "25",
+      "dataset": "pcbbench",
+      "sub_module_name": "FILTER_AA_SALLENKEY",
+      "level": "Easy",
+      "type": "Filter",
+      "primary_ic": "OPA328",
+      "package": "SOT-23-5",
+      "input_nodes": [
+        "VIN",
+        "VDD",
+        "GND",
+        "VREF"
+      ],
+      "output_nodes": [
+        "VOUT"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "OPA328",
+      "task_prompt": "Design a second-order Sallen-Key antialiasing low-pass filter for ADC front-end using OPA328. Include VREF biasing for single-supply operation.",
+      "wrapped_prompt": "Design a second-order Sallen-Key antialiasing low-pass filter for ADC front-end using OPA328. Include VREF biasing for single-supply operation.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x04",
+          "edge": "left",
+          "pin_count": 4,
+          "nets": [
+            "VIN",
+            "VDD",
+            "GND",
+            "VREF"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "VOUT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "27",
+      "dataset": "pcbbench",
+      "sub_module_name": "ISENSE_SHUNT_INA240",
+      "level": "Easy",
+      "type": "Sensing",
+      "primary_ic": "INA240A1",
+      "package": "TSSOP-8",
+      "input_nodes": [
+        "IP+",
+        "IP-",
+        "VDD",
+        "GND",
+        "VREF"
+      ],
+      "output_nodes": [
+        "ISENSE"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "INA240A1",
+      "task_prompt": "Design a bidirectional shunt current sense amplifier using INA240A1. Include input filtering and VREF biasing.",
+      "wrapped_prompt": "Design a bidirectional shunt current sense amplifier using INA240A1. Include input filtering and VREF biasing.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x05",
+          "edge": "left",
+          "pin_count": 5,
+          "nets": [
+            "IP+",
+            "IP-",
+            "VDD",
+            "GND",
+            "VREF"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "ISENSE"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "28",
+      "dataset": "pcbbench",
+      "sub_module_name": "SENSE_BRIDGE_INA333",
+      "level": "Easy",
+      "type": "Sensing",
+      "primary_ic": "INA333",
+      "package": "MSOP-8",
+      "input_nodes": [
+        "VINP",
+        "VINN",
+        "VREF",
+        "VDD",
+        "GND"
+      ],
+      "output_nodes": [
+        "VOUT"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "INA333",
+      "task_prompt": "Design a bridge signal instrumentation amplifier using INA333 for strain gauge or load cell measurement. Include gain-setting resistor and VREF biasing.",
+      "wrapped_prompt": "Design a bridge signal instrumentation amplifier using INA333 for strain gauge or load cell measurement. Include gain-setting resistor and VREF biasing.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x05",
+          "edge": "left",
+          "pin_count": 5,
+          "nets": [
+            "VINP",
+            "VINN",
+            "VREF",
+            "VDD",
+            "GND"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "VOUT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "29",
+      "dataset": "pcbbench",
+      "sub_module_name": "SENSE_RTD_MAX31865",
+      "level": "Easy",
+      "type": "Sensing",
+      "primary_ic": "MAX31865",
+      "package": "SSOP-20",
+      "input_nodes": [
+        "RTDIN+",
+        "RTDIN-",
+        "VDD",
+        "GND",
+        "SCLK",
+        "MOSI",
+        "CS"
+      ],
+      "output_nodes": [
+        "MISO"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "MAX31865",
+      "task_prompt": "Design a PT100 RTD digital temperature converter using MAX31865 with SPI output interface. Include reference resistor and filtering.",
+      "wrapped_prompt": "Design a PT100 RTD digital temperature converter using MAX31865 with SPI output interface. Include reference resistor and filtering.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x07",
+          "edge": "left",
+          "pin_count": 7,
+          "nets": [
+            "RTDIN+",
+            "RTDIN-",
+            "VDD",
+            "GND",
+            "SCLK",
+            "MOSI",
+            "CS"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "MISO"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "30",
+      "dataset": "pcbbench",
+      "sub_module_name": "SENSE_THERMOCOUPLE_AD8495",
+      "level": "Easy",
+      "type": "Sensing",
+      "primary_ic": "AD8495",
+      "package": "MSOP-8",
+      "input_nodes": [
+        "TC+",
+        "TC-",
+        "VDD",
+        "GND"
+      ],
+      "output_nodes": [
+        "VOUT"
+      ],
+      "input_voltage": "5",
+      "output_voltage": "5",
+      "components": "AD8495",
+      "task_prompt": "Design a K-type thermocouple analog amplifier using AD8495 with built-in cold junction compensation.",
+      "wrapped_prompt": "Design a K-type thermocouple analog amplifier using AD8495 with built-in cold junction compensation.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x04",
+          "edge": "left",
+          "pin_count": 4,
+          "nets": [
+            "TC+",
+            "TC-",
+            "VDD",
+            "GND"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "VOUT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "31",
+      "dataset": "pcbbench",
+      "sub_module_name": "SPI_ADC_ADS7042",
+      "level": "Easy",
+      "type": "DataConv",
+      "primary_ic": "ADS7042",
+      "package": "VSSOP-8",
+      "input_nodes": [
+        "AIN",
+        "VDD",
+        "GND",
+        "SCLK",
+        "CS"
+      ],
+      "output_nodes": [
+        "MISO"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "ADS7042",
+      "task_prompt": "Design a 12-bit SPI ADC circuit using ADS7042 with input RC antialiasing filter and reference decoupling.",
+      "wrapped_prompt": "Design a 12-bit SPI ADC circuit using ADS7042 with input RC antialiasing filter and reference decoupling.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x05",
+          "edge": "left",
+          "pin_count": 5,
+          "nets": [
+            "AIN",
+            "VDD",
+            "GND",
+            "SCLK",
+            "CS"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "MISO"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "32",
+      "dataset": "pcbbench",
+      "sub_module_name": "SPI_DAC_MCP4921_BUF",
+      "level": "Easy",
+      "type": "DataConv",
+      "primary_ic": "MCP4921 + OPA328",
+      "package": "SOIC-8 + SOT-23-5",
+      "input_nodes": [
+        "VDD",
+        "GND",
+        "SCLK",
+        "MOSI",
+        "CS",
+        "VREF"
+      ],
+      "output_nodes": [
+        "VOUT"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "MCP4921, OPA328",
+      "task_prompt": "Design a 12-bit SPI DAC with output buffer using MCP4921 and OPA328. Include RC output filtering.",
+      "wrapped_prompt": "Design a 12-bit SPI DAC with output buffer using MCP4921 and OPA328. Include RC output filtering.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x06",
+          "edge": "left",
+          "pin_count": 6,
+          "nets": [
+            "VDD",
+            "GND",
+            "SCLK",
+            "MOSI",
+            "CS",
+            "VREF"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "VOUT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "33",
+      "dataset": "pcbbench",
+      "sub_module_name": "VREF_PRECISION_REF3033",
+      "level": "Easy",
+      "type": "DataConv",
+      "primary_ic": "REF3033",
+      "package": "SOT-23-3",
+      "input_nodes": [
+        "VIN",
+        "GND"
+      ],
+      "output_nodes": [
+        "VREF"
+      ],
+      "input_voltage": "5",
+      "output_voltage": "3.3",
+      "components": "REF3033",
+      "task_prompt": "Design a precision 3.3V voltage reference using REF3033 with input and output decoupling filtering.",
+      "wrapped_prompt": "Design a precision 3.3V voltage reference using REF3033 with input and output decoupling filtering.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "VIN",
+            "GND"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "VREF"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "37",
+      "dataset": "pcbbench",
+      "sub_module_name": "CAN_TRANSCEIVER",
+      "level": "Easy",
+      "type": "Comm",
+      "primary_ic": "SN65HVD230",
+      "package": "SOIC-8",
+      "input_nodes": [
+        "TXD",
+        "RXD"
+      ],
+      "output_nodes": [
+        "CANH",
+        "CANL"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "SN65HVD230",
+      "task_prompt": "Design a non-isolated CAN bus transceiver circuit using SN65HVD230. Include a 120 ohm termination resistor between CANH and CANL, and a 100nF decoupling capacitor on VCC. The RS pin should be connected to GND for high-speed mode. Connect TXD and RXD to the MCU side.",
+      "wrapped_prompt": "Design a non-isolated CAN bus transceiver circuit using SN65HVD230. Include a 120 ohm termination resistor between CANH and CANL, and a 100nF decoupling capacitor on VCC. The RS pin should be connected to GND for high-speed mode. Connect TXD and RXD to the MCU side.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "left",
+          "pin_count": 2,
+          "nets": [
+            "TXD",
+            "RXD"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "CANH",
+            "CANL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "38",
+      "dataset": "pcbbench",
+      "sub_module_name": "RS485_HALF_DUPLEX",
+      "level": "Medium",
+      "type": "Comm",
+      "primary_ic": "SP3485",
+      "package": "SOIC-8",
+      "input_nodes": [
+        "VDD3V3",
+        "GND",
+        "TXD",
+        "RXD",
+        "DE_RE"
+      ],
+      "output_nodes": [
+        "A",
+        "B"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "SP3485",
+      "task_prompt": "Design an RS485 half-duplex transceiver circuit using SP3485. Include termination resistor, bus biasing resistors, and ESD protection.",
+      "wrapped_prompt": "Design an RS485 half-duplex transceiver circuit using SP3485. Include termination resistor, bus biasing resistors, and ESD protection.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x05",
+          "edge": "left",
+          "pin_count": 5,
+          "nets": [
+            "VDD3V3",
+            "GND",
+            "TXD",
+            "RXD",
+            "DE_RE"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "A",
+            "B"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "42",
+      "dataset": "pcbbench",
+      "sub_module_name": "SPI_FLASH_W25Q64",
+      "level": "Medium",
+      "type": "Storage",
+      "primary_ic": "W25Q64JV",
+      "package": "SOIC-8",
+      "input_nodes": [
+        "VDD",
+        "GND",
+        "SCLK",
+        "MOSI",
+        "CS"
+      ],
+      "output_nodes": [
+        "MISO"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "W25Q64JV",
+      "task_prompt": "Design a SPI NOR Flash circuit using W25Q64JV. Include decoupling, CS pull-up, and HOLD/WP pin handling.",
+      "wrapped_prompt": "Design a SPI NOR Flash circuit using W25Q64JV. Include decoupling, CS pull-up, and HOLD/WP pin handling.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x05",
+          "edge": "left",
+          "pin_count": 5,
+          "nets": [
+            "VDD",
+            "GND",
+            "SCLK",
+            "MOSI",
+            "CS"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "MISO"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "43",
+      "dataset": "pcbbench",
+      "sub_module_name": "I2C_EEPROM_AT24C256",
+      "level": "Medium",
+      "type": "Storage",
+      "primary_ic": "AT24C256",
+      "package": "SOIC-8",
+      "input_nodes": [
+        "VDD",
+        "GND",
+        "SDA",
+        "SCL",
+        "WP"
+      ],
+      "output_nodes": [
+        "SDA",
+        "SCL"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "AT24C256",
+      "task_prompt": "Design an I2C EEPROM circuit using AT24C256. Include address configuration, write protect, and I2C pull-up resistors.",
+      "wrapped_prompt": "Design an I2C EEPROM circuit using AT24C256. Include address configuration, write protect, and I2C pull-up resistors.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x05",
+          "edge": "left",
+          "pin_count": 5,
+          "nets": [
+            "VDD",
+            "GND",
+            "SDA",
+            "SCL",
+            "WP"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "SDA",
+            "SCL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "44",
+      "dataset": "pcbbench",
+      "sub_module_name": "PWR_MONITOR_INA226",
+      "level": "Medium",
+      "type": "PowerMgmt",
+      "primary_ic": "INA226",
+      "package": "VSSOP-10",
+      "input_nodes": [
+        "VDD",
+        "GND",
+        "VBUS+",
+        "VBUS-",
+        "SDA",
+        "SCL"
+      ],
+      "output_nodes": [
+        "ALERT"
+      ],
+      "input_voltage": "3.3",
+      "output_voltage": "3.3",
+      "components": "INA226",
+      "task_prompt": "Design an I2C power monitor circuit using INA226 with high-side shunt resistor and bus voltage filtering.",
+      "wrapped_prompt": "Design an I2C power monitor circuit using INA226 with high-side shunt resistor and bus voltage filtering.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+      "authorized_headers": [
+        {
+          "ref": "J1",
+          "description": "External input/power interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x06",
+          "edge": "left",
+          "pin_count": 6,
+          "nets": [
+            "VDD",
+            "GND",
+            "VBUS+",
+            "VBUS-",
+            "SDA",
+            "SCL"
+          ]
+        },
+        {
+          "ref": "J2",
+          "description": "External output/signal interface",
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+          "lib_id": "Connector_Generic:Conn_01x02",
+          "edge": "right",
+          "pin_count": 2,
+          "nets": [
+            "ALERT"
+          ]
+        }
+      ]
+    }
+  ]
+}

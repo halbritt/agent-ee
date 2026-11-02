@@ -1,0 +1,56 @@
+{
+  "id": "181",
+  "dataset": "open_schematics",
+  "sub_module_name": "EXT_TF2SENTRYEE",
+  "level": "Hard",
+  "type": "IoT-System",
+  "primary_ic": "AP63203WU",
+  "package": "TSOT-26",
+  "input_nodes": [
+    "VIN",
+    "GND"
+  ],
+  "output_nodes": [
+    "MOTOR",
+    "LED1",
+    "LED2",
+    "LED3",
+    "LED4",
+    "LED5"
+  ],
+  "input_voltage": "12",
+  "output_voltage": "3.3",
+  "components": "13x R, 6x C, 5x LED, 2x MountingHole, 1x Conn_02x03_Odd_Even, 1x AP63203WU, 1x Conn_01x05_Male, 1x L, 1x Conn_02x02_Odd_Even, 1x ESP32-C3-MINI-1, 1x AO3400A, 1x SW_Push",
+  "task_prompt": "Design an ESP32-C3-based turret controller board with motor drive and LED status indicators. The system uses 1x ESP32-C3-MINI-1 as the main MCU, 1x AP63203WU buck converter with 1x inductor (L) to generate a 3.3V rail from 12V input, and 1x AO3400A N-channel MOSFET for motor switching. Include 5x LEDs for status indication (with series resistors), 1x push button (SW_Push) for user input, 13x resistors (R) for biasing/current-limiting/pull-ups, 6x capacitors (C) for decoupling and filtering, 2x MountingHoles for mechanical mounting, 1x Conn_02x03_Odd_Even for programming/debug header, 1x Conn_01x05_Male for motor/sensor interface, and 1x Conn_02x02_Odd_Even for power input. Power rails: +12V input, +5V intermediate, +3.3V logic supply. Key signals include MOTOR_IO, MOTOR_TEMP, GPIO0, and GPIO9.",
+  "wrapped_prompt": "Design an ESP32-C3-based turret controller board with motor drive and LED status indicators. The system uses 1x ESP32-C3-MINI-1 as the main MCU, 1x AP63203WU buck converter with 1x inductor (L) to generate a 3.3V rail from 12V input, and 1x AO3400A N-channel MOSFET for motor switching. Include 5x LEDs for status indication (with series resistors), 1x push button (SW_Push) for user input, 13x resistors (R) for biasing/current-limiting/pull-ups, 6x capacitors (C) for decoupling and filtering, 2x MountingHoles for mechanical mounting, 1x Conn_02x03_Odd_Even for programming/debug header, 1x Conn_01x05_Male for motor/sensor interface, and 1x Conn_02x02_Odd_Even for power input. Power rails: +12V input, +5V intermediate, +3.3V logic supply. Key signals include MOTOR_IO, MOTOR_TEMP, GPIO0, and GPIO9.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+  "authorized_headers": [
+    {
+      "ref": "J1",
+      "description": "External input/power interface",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+      "lib_id": "Connector_Generic:Conn_01x02",
+      "edge": "left",
+      "pin_count": 2,
+      "nets": [
+        "VIN",
+        "GND"
+      ]
+    },
+    {
+      "ref": "J2",
+      "description": "External output/signal interface",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
+      "lib_id": "Connector_Generic:Conn_01x06",
+      "edge": "right",
+      "pin_count": 6,
+      "nets": [
+        "MOTOR",
+        "LED1",
+        "LED2",
+        "LED3",
+        "LED4",
+        "LED5"
+      ]
+    }
+  ]
+}

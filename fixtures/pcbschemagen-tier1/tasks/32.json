@@ -1,0 +1,54 @@
+{
+  "id": "32",
+  "dataset": "pcbbench",
+  "sub_module_name": "SPI_DAC_MCP4921_BUF",
+  "level": "Easy",
+  "type": "DataConv",
+  "primary_ic": "MCP4921 + OPA328",
+  "package": "SOIC-8 + SOT-23-5",
+  "input_nodes": [
+    "VDD",
+    "GND",
+    "SCLK",
+    "MOSI",
+    "CS",
+    "VREF"
+  ],
+  "output_nodes": [
+    "VOUT"
+  ],
+  "input_voltage": "3.3",
+  "output_voltage": "3.3",
+  "components": "MCP4921, OPA328",
+  "task_prompt": "Design a 12-bit SPI DAC with output buffer using MCP4921 and OPA328. Include RC output filtering.",
+  "wrapped_prompt": "Design a 12-bit SPI DAC with output buffer using MCP4921 and OPA328. Include RC output filtering.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+  "authorized_headers": [
+    {
+      "ref": "J1",
+      "description": "External input/power interface",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
+      "lib_id": "Connector_Generic:Conn_01x06",
+      "edge": "left",
+      "pin_count": 6,
+      "nets": [
+        "VDD",
+        "GND",
+        "SCLK",
+        "MOSI",
+        "CS",
+        "VREF"
+      ]
+    },
+    {
+      "ref": "J2",
+      "description": "External output/signal interface",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+      "lib_id": "Connector_Generic:Conn_01x02",
+      "edge": "right",
+      "pin_count": 2,
+      "nets": [
+        "VOUT"
+      ]
+    }
+  ]
+}

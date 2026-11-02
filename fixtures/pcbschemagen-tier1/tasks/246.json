@@ -1,0 +1,50 @@
+{
+  "id": "246",
+  "dataset": "open_schematics",
+  "sub_module_name": "USB_C_INTERFACE",
+  "level": "Medium",
+  "type": "Communication",
+  "primary_ic": "AP2171W",
+  "package": "SOT-23-5",
+  "input_nodes": [
+    "VBUS",
+    "GND"
+  ],
+  "output_nodes": [
+    "CC1",
+    "CC2",
+    "USB_SEL"
+  ],
+  "input_voltage": "5",
+  "output_voltage": "3.3",
+  "components": "1x FerriteBead_Small, 3x R, 1x AP2171W, 2x C, 1x D_Schottky_Small, 1x USBLC6-2P6, 1x PI3USB4000AZM",
+  "task_prompt": "Design a USB-C interface circuit with ESD protection and signal multiplexing using exactly 1x PI3USB4000AZM USB 2.0 signal mux/demux, 1x USBLC6-2P6 ESD protection IC, 1x AP2171W USB power switch, 1x FerriteBead_Small EMI filter, 1x D_Schottky_Small Schottky diode, 3x R resistors, and 2x C capacitors. The PI3USB4000AZM multiplexes USB data lines based on the USB_SEL signal for CC orientation detection. The USBLC6-2P6 protects D+/D- from ESD. The AP2171W controls VBUS power delivery with overcurrent protection.",
+  "wrapped_prompt": "Design a USB-C interface circuit with ESD protection and signal multiplexing using exactly 1x PI3USB4000AZM USB 2.0 signal mux/demux, 1x USBLC6-2P6 ESD protection IC, 1x AP2171W USB power switch, 1x FerriteBead_Small EMI filter, 1x D_Schottky_Small Schottky diode, 3x R resistors, and 2x C capacitors. The PI3USB4000AZM multiplexes USB data lines based on the USB_SEL signal for CC orientation detection. The USBLC6-2P6 protects D+/D- from ESD. The AP2171W controls VBUS power delivery with overcurrent protection.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+  "authorized_headers": [
+    {
+      "ref": "J1",
+      "description": "External input/power interface",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+      "lib_id": "Connector_Generic:Conn_01x02",
+      "edge": "left",
+      "pin_count": 2,
+      "nets": [
+        "VBUS",
+        "GND"
+      ]
+    },
+    {
+      "ref": "J2",
+      "description": "External output/signal interface",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+      "lib_id": "Connector_Generic:Conn_01x03",
+      "edge": "right",
+      "pin_count": 3,
+      "nets": [
+        "CC1",
+        "CC2",
+        "USB_SEL"
+      ]
+    }
+  ]
+}

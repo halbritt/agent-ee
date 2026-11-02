@@ -1,0 +1,54 @@
+{
+  "id": "176",
+  "dataset": "open_schematics",
+  "sub_module_name": "EXT_BITCART_NODE",
+  "level": "Medium",
+  "type": "IoT-System",
+  "primary_ic": "MAX40200AUK_T",
+  "package": "SOT-23-5",
+  "input_nodes": [
+    "USB_VBUS",
+    "GND"
+  ],
+  "output_nodes": [
+    "+3.3V",
+    "I2C1_SCL",
+    "I2C1_SDA",
+    "I2C3_SCL",
+    "I2C3_SDA"
+  ],
+  "input_voltage": "5",
+  "output_voltage": "3.3",
+  "components": "15x C, 6x R_US, 4x MountingHole, 2x MAX40200AUK_T, 2x LED, 2x PTS645SM43SMTR92_LFS, 1x Crystal_GND24, 1x XB24CZ7PIT-004, 1x SSD1306, 1x PHR-2, 1x STM32U545VETx, 1x INA260, 1x MS8607, 1x Conn_01x05_Pin, 1x SW_SPDT, 1x USB_B_Micro, 1x MIC5219-3.3YMM, 1x DS18B20",
+  "task_prompt": "Design an STM32U545VETx-based IoT sensor node with I2C sensors, XBee wireless, OLED display, and USB interface. Include 1 STM32U545VETx ARM Cortex-M33 microcontroller, 1 Crystal_GND24 for the HSE clock, 1 MIC5219-3.3YMM 3.3V LDO regulator, 1 INA260 I2C current/voltage/power monitor, 1 MS8607 combined pressure/humidity/temperature sensor (I2C), 1 DS18B20 1-Wire digital temperature sensor, 1 SSD1306 OLED display controller (I2C), 1 XB24CZ7PIT-004 XBee wireless module, 2 MAX40200AUK_T ideal diode ICs for power OR-ing, 1 USB_B_Micro USB connector, 1 SW_SPDT mode selection switch, 2 PTS645SM43SMTR92_LFS tactile push buttons (one for BOOT0), 1 PHR-2 2-pin JST connector, 1 Conn_01x05_Pin 5-pin header, 2 LEDs for status, 15 capacitors (C), 6 resistors (R_US), and 4 MountingHoles.",
+  "wrapped_prompt": "Design an STM32U545VETx-based IoT sensor node with I2C sensors, XBee wireless, OLED display, and USB interface. Include 1 STM32U545VETx ARM Cortex-M33 microcontroller, 1 Crystal_GND24 for the HSE clock, 1 MIC5219-3.3YMM 3.3V LDO regulator, 1 INA260 I2C current/voltage/power monitor, 1 MS8607 combined pressure/humidity/temperature sensor (I2C), 1 DS18B20 1-Wire digital temperature sensor, 1 SSD1306 OLED display controller (I2C), 1 XB24CZ7PIT-004 XBee wireless module, 2 MAX40200AUK_T ideal diode ICs for power OR-ing, 1 USB_B_Micro USB connector, 1 SW_SPDT mode selection switch, 2 PTS645SM43SMTR92_LFS tactile push buttons (one for BOOT0), 1 PHR-2 2-pin JST connector, 1 Conn_01x05_Pin 5-pin header, 2 LEDs for status, 15 capacitors (C), 6 resistors (R_US), and 4 MountingHoles.\n\n### Interface Authorization Wrapper (2.54 mm Pin Headers)\nFor all external signals, bus connections, and power rails (including VIN, VOUT, GND, logic controls, and communication lines):\n1. **Connector Footprints**: Terminate all external nets at standard 2.54 mm pitch vertical through-hole or SMT pin headers (KiCad library: `Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical`, `PinHeader_1x03_P2.54mm_Vertical`, `PinHeader_1x04_P2.54mm_Vertical`, etc.).\n2. **Physical Edge Placement**: Declare all connectors in the `connectors` array, positioning them along the board outline edges (`top`, `bottom`, `left`, `right`) with courtyard boundaries within 1 mm of the board perimeter.\n3. **Standard Pin Ordering**:\n   - Power interfaces: `[VIN, GND]` or `[VCC, GND]`\n   - Analog / Sense: `[IN+, IN-, GND]` or `[VSENSE, GND]`\n   - Serial UART: `[VCC, GND, TX, RX]`\n   - I2C bus: `[GND, VCC, SDA, SCL]`\n   - CAN bus: `[CANH, CANL, GND]`\n   - RS-485 bus: `[A, B, GND]`\n   - SPI bus: `[VCC, GND, SCK, MOSI, MISO, CS]`\n4. **Stock & Assembly**: Use standard JLCPCB SMT/THT stock part numbers (e.g. C22548, C2897383) or equivalent generic 2.54 mm header pins.",
+  "authorized_headers": [
+    {
+      "ref": "J1",
+      "description": "External input/power interface",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+      "lib_id": "Connector_Generic:Conn_01x02",
+      "edge": "left",
+      "pin_count": 2,
+      "nets": [
+        "USB_VBUS",
+        "GND"
+      ]
+    },
+    {
+      "ref": "J2",
+      "description": "External output/signal interface",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+      "lib_id": "Connector_Generic:Conn_01x05",
+      "edge": "right",
+      "pin_count": 5,
+      "nets": [
+        "+3.3V",
+        "I2C1_SCL",
+        "I2C1_SDA",
+        "I2C3_SCL",
+        "I2C3_SDA"
+      ]
+    }
+  ]
+}
