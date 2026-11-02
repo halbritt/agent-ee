@@ -335,6 +335,11 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                     row['author_execution'] = record['execution']
                     write_json(attempt / 'response.json', response)
                     if response is None:
+                        if record['execution'] == 'malformed' and record.get('refusal_kind') == 'structured_output':
+                            raw = read_optional(attempt / 'review-attempts/author/0/response.json')
+                            if isinstance(raw, dict) and isinstance(raw.get('statement_json'), str):
+                                current = raw['statement_json']
+                            raise design.DesignError(['author_response: ' + record.get('error', 'Malformed structured output')])
                         row.update(status='seat_failed', reason=record.get('error', 'Author returned no valid response'))
                         report['status'] = 'seat_failed'
                         break  # Auth/quota/transport failures never trigger a fallback or another seat.

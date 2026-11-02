@@ -121,6 +121,17 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(len(report['attempts']), 1)
         self.assertFalse(self.steps)
 
+    def test_malformed_envelope_is_a_bounded_refusal_not_a_subscription_failure(self):
+        bad = self.response()
+        del bad['agent_selected']
+        self.responses = [bad, self.response()]
+        report = self.generate(max_attempts=2)
+        self.assertTrue(report['accepted'])
+        self.assertEqual(report['attempts'][0]['status'], 'refused')
+        self.assertIn('author_response', report['attempts'][0]['refusal_classes'])
+        self.assertIn('supply all documented envelope fields', self.prompts[1])
+        self.assertEqual(json.loads((self.root / 'run/attempt-001/review-attempts/author/0/response.json').read_text()), bad)
+
     def test_subscription_failure_stops_without_retry(self):
         self.responses = [(dict(execution='failed', error='quota exhausted; no fallback'), None)]
         report = self.generate(max_attempts=4)
