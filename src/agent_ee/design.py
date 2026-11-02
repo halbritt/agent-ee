@@ -775,6 +775,9 @@ def blob(root, rel):
 
 def configure_parser(parser):
     sub = parser.add_subparsers(dest="design_command", required=True)
+    from .design_generate import configure_parser as configure_generate
+
+    configure_generate(sub)
     for command in ("compile", "capture"):
         p = sub.add_parser(command)
         p.add_argument("design")
@@ -790,6 +793,10 @@ def configure_parser(parser):
 
 
 def execute(args):
+    if args.design_command in ("generate", "benchmark"):
+        from .design_generate import execute as generate_execute
+
+        return generate_execute(args)
     design = load(args.design)
     if args.design_command == "compile":
         from .design_compile import compile_design
