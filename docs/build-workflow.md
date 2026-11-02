@@ -10,9 +10,9 @@ inputs consumed here; preparation does not supply native or engineering evidence
 schematic, placement/routing, artwork and final package producers. The public path is
 being qualified. Fresh execution establishes the captured requirements, parts,
 native schematic, placement, routing and artwork on a sourced 17-part multiblock
-design. Native checks, cancellation/resumption and honest rejection also run. A complete
-manufacturing run through this command remains an open requirement in the
-[system acceptance map](system-acceptance.md).
+design. Native checks, cancellation/resumption and honest rejection also run. Recent typed file-release outcomes are recorded in the
+[design compiler measurements](design-compile.md#real-run-example-and-claims); broader
+programme requirements remain in the [system acceptance map](system-acceptance.md).
 
 ```sh
 agent-ee build run build.json --out NEW_RUN

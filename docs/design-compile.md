@@ -163,6 +163,26 @@ mounting-pin symbol. The second example is a NE555 astable oscillator with
 script. Its signed datasheet acquisition failed the complete-PDF check; the
 manufacturer URL supplied by the same JLC row succeeded on the next capture.
 
+The measured results (UTC 2026-11-02) are:
+
+| Measurement | Result |
+| --- | --- |
+| Offline tests | 40 passed, including the compiler and adjacent stock/model/placement tests |
+| I2C compile determinism | 94 identical files; 4.63 s and 4.01 s |
+| Fresh 555 capture | 33.30 s; complete |
+| 555 build | Seven stages, 444 s, `accepted: true`, `file_release: pass` |
+| I2C build | Reached package in 815 s; rejected by DRC for one dangling track, zero opens/parity issues; its 17 functional rules, locality, CPL and fab passed |
+| Swapped SDA/SCL build | Reached package in 781 s; rejected only by `functional-rules`, naming `j2-sda` and `j2-scl`; final DRC passed |
+
+Native build times include admission waiting. The I2C example explicitly uses
+8 placement seeds and a 1200 s budget after four earlier candidates were rejected
+for dangling vias under the pinned router. Its retained run does **not** establish
+file release. That run exposed a placement/package mismatch: placement treated a
+dangling-track warning as advisory, but package DRC rejected it. The subsequent
+build-only candidate-rejection fix is unit-tested; its native rerun remains
+unmeasured. Native evidence used frozen source `d0fda1db`; the compiler source is
+unchanged by the later placement fix.
+
 The retained evidence root is
 `~/.local/share/agent-ee/zeroasic-20261029-agent707/design-compile-r1/evidence`.
 See its `REPORT.md` for exact commands, runtimes, failures and package outcomes.
