@@ -44,6 +44,20 @@ class SilkGraphicConflictTests(unittest.TestCase):
         self.assertEqual(job._silk_graphic_conflicts(report), [graphics, over_pad, text, footprint_text])
 
 
+class PackageTrackConflictTests(unittest.TestCase):
+    def test_build_policy_rejects_a_dangling_track_that_artwork_cannot_fix(self):
+        # Real design-compile I2C run r3: placement called this advisory,
+        # then the unchanged package DRC rejected it with zero open nets.
+        dangling = dict(type='track_dangling', severity='warning',
+                        items=[dict(description='Track [/SDA]', uuid='stub')])
+        library = dict(type='lib_footprint_issues', severity='warning', items=[])
+        report = dict(violations=[library, dangling])
+        self.assertEqual(job._unrepairable_track_warnings(report, reject_track_dangling=True), [dangling])
+        self.assertEqual(job._unrepairable_track_warnings(report), [])
+        self.assertEqual(job._unrepairable_track_warnings(dict(violations=[library]),
+                                                         reject_track_dangling=True), [])
+
+
 class RepeatedPadRefusalTests(unittest.TestCase):
     def test_refusal_lists_the_lands_of_a_repeated_pad_number(self):
         # A SOT-223 lead and tab share one number.

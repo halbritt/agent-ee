@@ -275,8 +275,10 @@ def execute(attempt, plan, previous, *, diagnostic=False):
             coverage = dict(status='declared')
         write_json(directory / 'manufacturing-coverage.json', coverage)
         placement = plan['placement']
-        # This build's artwork stage moves only fields, so it can never fix a graphic's conflict.
+        # Artwork moves only fields; it cannot fix graphic conflicts or dangling copper
+        # that this build's final package DRC rejects.
         config = dict(schema=placement_job.CONFIG_SCHEMA, reject_silk_graphic_conflicts=True,
+            reject_track_dangling=True,
             **{key: placement[key] for key in ('budget_s', 'search', 'router')}, inputs={})
         for key, name in dict(board=scope['board'], project=str(Path(scope['board']).with_suffix('.kicad_pro')),
                               intent=placement['intent'], groups=placement['groups']).items():

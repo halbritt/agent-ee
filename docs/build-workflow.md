@@ -75,6 +75,11 @@ cancellation control cover these native processes. The original placement
 candidate and engineering source files remain unchanged. A failed plane attempt
 cannot become an eligible routed result.
 
+Build placement also rejects `track_dangling` findings before choosing a routed
+candidate: artwork moves fields and cannot remove the copper stub that the final
+package DRC rejects. Standalone placement retains its existing advisory policy.
+Rejected candidates remain retained while the job tries the next placement.
+
 The final DRC check must bind the same captured plan:
 
 ```json

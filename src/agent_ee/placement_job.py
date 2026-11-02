@@ -1933,7 +1933,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                            length_match=length_match, ac_match=ac_match,
                                            local_routing=local_seed,
                                            input_board=board_path, input_board_sha256=sha256_bytes(board_bytes),
-                                           reject_silk_graphics=config.get('reject_silk_graphic_conflicts') is True)
+                                           reject_silk_graphics=config.get('reject_silk_graphic_conflicts') is True,
+                                           reject_track_dangling=config.get('reject_track_dangling') is True)
             if local_seed is not None and report['final'].get('board'):
                 seed_check = report['final']['local_routing']
                 if (routed.get('copper_policy') != 'preserve_existing'
@@ -1959,6 +1960,13 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     write_json(job_dir / f'job-report-a{attempt}.json', report)
     write_json(job_dir / 'job-report.json', report)
     return report
+
+
+def _unrepairable_track_warnings(report, *, reject_track_dangling=False):
+    """Build artwork moves fields; it cannot remove a package-fatal copper stub."""
+    if not reject_track_dangling:
+        return []
+    return [v for v in report.get('violations', []) if v.get('type') == 'track_dangling']
 
 
 def _silk_graphic_conflicts(report):
@@ -2118,7 +2126,8 @@ def _verify_local_routing(board,incumbent,normalized,planes,record,*,clock,cance
 
 def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, refinement=None, clock=None, cancel_dir=None,
                  owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None,
-                 input_board=None, input_board_sha256=None, local_routing=None, reject_silk_graphics=False):
+                 input_board=None, input_board_sha256=None, local_routing=None, reject_silk_graphics=False,
+                 reject_track_dangling=False):
     groups, intent, rails = (_bundle(normalized)[k] for k in ('groups', 'intent', 'rails'))
     import pcbnew
     clock = clock or Clock(300)
@@ -2263,7 +2272,8 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     if mechanics_result.get('status') != 'not_declared' and mechanics_result.get('board_sha256') != final_board_sha256:
         problems.append('final board changed after acquisition mechanics check')
     silk_conflicts = _silk_graphic_conflicts(report_)
-    failed = (problems or (reject_silk_graphics and silk_conflicts) or any(split.values())
+    track_conflicts = _unrepairable_track_warnings(report_, reject_track_dangling=reject_track_dangling)
+    failed = (problems or (reject_silk_graphics and silk_conflicts) or track_conflicts or any(split.values())
               or report_['unconnected_items'] or edge_intent['status'] != 'pass'
               or locality['status'] not in ('pass', 'info', 'not_declared')
               or block_result['status'] not in ('pass', 'info', 'not_declared')
@@ -2281,6 +2291,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
             'eligibility': 'INELIGIBLE' if failed else 'eligible',
             'identity_problems': problems, 'rule_files': rule_files,
             'drc': exec_, 'opens': len(report_['unconnected_items']), 'silk_graphic_conflicts': silk_conflicts,
+            **({'track_dangling_conflicts': track_conflicts} if reject_track_dangling else {}),
             'errors': _error_summary(split), 'warnings': _warnings(report_),
             'physical_checks': 'FAILED' if failed else 'no native errors',
             'edge_intent': edge_intent, 'locality': locality, 'block_contract': block_result, 'mechanics': mechanics_result, 'metrics': metrics,
