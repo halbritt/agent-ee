@@ -1,8 +1,9 @@
 # Compile a design statement
 
 `agent-ee design` is the general path from explicit circuit and board decisions to
-a captured engineering build. The existing `generate` command remains the narrow
-RC driver; `generate.py` is unchanged.
+a captured engineering build. For requirements text, use the bounded
+[`agent-ee design generate` loop](design-generate.md). The root `agent-ee generate`
+command remains the narrow RC driver; `generate.py` is unchanged.
 
 ```sh
 agent-ee design capture fixtures/design-examples/i2c-sensor.json --out captures/i2c

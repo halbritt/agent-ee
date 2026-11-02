@@ -1,6 +1,6 @@
 # Captured engineering build
 
-For a general design statement, start with [design capture and compile](design-compile.md). It generates the typed input bundle consumed here. The existing `generate` command remains the narrow RC driver.
+For a general design statement, start with [design capture and compile](design-compile.md). It generates the typed input bundle consumed here. For requirements text, use [design generate](design-generate.md). The root `agent-ee generate` command remains the narrow RC driver.
 
 For the bounded acquisition control/150 pF source recipe, start with the
 [acquisition brief preparer](acquisition-prepare.md). It generates the typed
