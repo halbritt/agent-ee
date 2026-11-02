@@ -122,9 +122,11 @@ Tools available in this seat (downloads only; no project uploads, orders or purc
   python3 -m agent_ee.design_tools search 'KEYWORDS' --out /work/experiments/search-N
   python3 -m agent_ee.design_tools symbol 'Library:Symbol' --kicad-root {kicad_root}
   python3 -m agent_ee.design_tools footprint 'Library:Footprint' --kicad-root {kicad_root}
-Search live JLC stock for every selected identity; prefer stocked Basic or Preferred
+Use retained live JLC search evidence for every selected identity; prefer stocked Basic or Preferred
 parts with datasheet URLs. The search retains responses, stock, package, MPN, tier,
 price and candidate datasheet URLs; URLs are not verified PDFs until capture.
+If /candidate/prior-author-experiments exists, reuse its searches and CAD inventories
+for unchanged selections; capture will refresh the stock and verify downloads.
 Inspect real symbol pins and footprint pads instead of guessing pin numbers.
 You may list local libraries under {kicad_root}/symbols and /footprints. Retain any
 additional downloaded references under /work/experiments. Do not run native KiCad,
@@ -328,7 +330,15 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                     retry_capture = None
                 else:
                     shutil.copytree(out / 'context', attempt / 'inputs')
+                    if number > 1:
+                        prior = out / f'attempt-{number - 1:03}' / 'review-work/author/experiments'
+                        if prior.is_dir() and not prior.is_symlink():
+                            shutil.copytree(prior, attempt / 'inputs/prior-author-experiments',
+                                ignore=lambda directory, names: [name for name in names
+                                    if (Path(directory) / name).is_symlink()])
                     timeout = min(author_seconds, remaining(deadline))
+                    prompt += f'\nReturn the final envelope within {int(timeout)} seconds. Full capture and native validation happen after this turn; keep exploration focused.\n'
+                    (attempt / 'prompt.txt').write_text(prompt, encoding='utf-8')
                     record, response = review_run.structured_call(attempt, 'author', prompt, AUTHOR_SCHEMA,
                         lambda supplied: harnesses.native_call(attempt, 'author', definition, supplied, AUTHOR_SCHEMA,
                             min(timeout, remaining(deadline))), validate_response)
@@ -340,6 +350,10 @@ def generate(requirements_path, out, *, author=DEFAULT_AUTHOR, max_attempts=4, m
                             if isinstance(raw, dict) and isinstance(raw.get('statement_json'), str):
                                 current = raw['statement_json']
                             raise design.DesignError(['author_response: ' + record.get('error', 'Malformed structured output')])
+                        if record['execution'] == 'timeout':
+                            row.update(status='author_timeout', reason='Author time limit reached before a final structured response')
+                            report['status'] = 'author_timeout'
+                            break
                         row.update(status='seat_failed', reason=record.get('error', 'Author returned no valid response'))
                         report['status'] = 'seat_failed'
                         break  # Auth/quota/transport failures never trigger a fallback or another seat.

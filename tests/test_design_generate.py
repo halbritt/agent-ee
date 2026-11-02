@@ -132,6 +132,37 @@ class GenerateTests(unittest.TestCase):
         self.assertIn('supply all documented envelope fields', self.prompts[1])
         self.assertEqual(json.loads((self.root / 'run/attempt-001/review-attempts/author/0/response.json').read_text()), bad)
 
+    def test_author_timeout_does_not_skip_unrelated_benchmark_designs(self):
+        directory = self.root / 'requirements'
+        directory.mkdir()
+        for name in ('a', 'b'):
+            (directory / (name + '.md')).write_text(self.requirements.read_text())
+        self.responses = [(dict(execution='timeout', error='time limit'), None), self.response()]
+        report = loop.benchmark(directory, self.root / 'benchmark', max_attempts=1)
+        self.assertEqual(report['status'], 'complete')
+        self.assertEqual([r['status'] for r in report['designs']], ['author_timeout', 'accepted'])
+        self.assertEqual(len(self.prompts), 2)
+
+    def test_author_reuses_own_prior_evidence_read_only_without_copying_links(self):
+        bad = self.response()
+        bad['statement_json'] = '{}'
+        self.responses = [bad, self.response()]
+        original = self.seat
+        def seat(run, *args):
+            if run.name == 'attempt-001':
+                experiments = run / 'review-work/author/experiments'
+                experiments.mkdir(parents=True)
+                (experiments / 'parts.json').write_text('{"retained":true}')
+                (experiments / 'skip-link').symlink_to('/never-follow-this')
+            else:
+                self.assertEqual((run / 'inputs/prior-author-experiments/parts.json').read_text(), '{"retained":true}')
+                self.assertFalse((run / 'inputs/prior-author-experiments/skip-link').is_symlink())
+            return original(run, *args)
+        with patch.object(loop.harnesses, 'native_call', side_effect=seat):
+            report = self.generate(max_attempts=2)
+        self.assertTrue(report['accepted'])
+        self.assertIn('Return the final envelope within', self.prompts[0])
+
     def test_subscription_failure_stops_without_retry(self):
         self.responses = [(dict(execution='failed', error='quota exhausted; no fallback'), None)]
         report = self.generate(max_attempts=4)

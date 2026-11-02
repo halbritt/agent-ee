@@ -18,7 +18,9 @@ agent-ee design benchmark fixtures/design-requirements --out NEW_BENCHMARK \
 The default author needs a subscription login, not an API key. Set
 `AGENT_EE_CODEX_AUTH_HOME` to the mounted login directory and
 `AGENT_EE_CODEX_BINARY` to the native binary. There is no fallback on login,
-quota or harness failure. Those failures stop the design and benchmark.
+quota or harness failure. Those failures stop the design and benchmark. A seat
+timeout stops that design and remains a scored failure; the benchmark continues
+with the remaining designs.
 `--context-root` selects the checkout with current compiler docs/examples;
 `--kicad-root` selects local CAD libraries (default `/usr/share/kicad`).
 
@@ -27,6 +29,8 @@ validators and a structured envelope schema. The statement is JSON text inside
 that envelope because its parts/nets maps have design-dependent keys. Every
 intent and functional text has an exact requirement quotation in `trace`.
 `agent_selected` lists discretionary choices separately from requirement facts.
+A correcting turn can read the prior author's retained experiments through its
+read-only candidate inputs; capture still refreshes stock and downloads.
 These are retained provenance, not an assertion that the prose or engineering is
 correct. Unsupported requirements must be reported explicitly.
 
