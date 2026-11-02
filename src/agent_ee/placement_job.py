@@ -2011,6 +2011,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         trial.update(status=status, route=report['route'], final=report['final'])
         receipt = retain_routing_trial(trial, suffix)
         if status == 'completed':
+            report.pop('reason', None)
             tmp = job_dir / '.routed-incumbent.json.tmp'
             write_json(tmp, {'placement': selected, 'trial': str(receipt), 'trial_sha256': digest(receipt)})
             os.replace(tmp, job_dir / 'routed-incumbent.json')

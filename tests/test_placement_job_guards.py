@@ -174,6 +174,15 @@ class FinalInventoryTests(Fixture):
 
 class ControllerBoundaryTests(Fixture):
     def test_native_rejection_tries_next_legal_placement_and_retains_both_results(self):
+        self._portfolio_failure()
+
+    def test_local_copper_failure_tries_the_next_eligible_candidate(self):
+        self._portfolio_failure(local_failure=True)
+
+    def test_every_local_copper_failure_retains_the_relation_named_reason(self):
+        self._portfolio_failure(local_failure=True, all_fail=True)
+
+    def _portfolio_failure(self, *, local_failure=False, all_fail=False):
         """Controller fault injection only; normal native entrypoint runs separately."""
         problem, _ = self.problem()
         out = self.dir / 'portfolio'
@@ -189,8 +198,11 @@ class ControllerBoundaryTests(Fixture):
                     'integrity': 'preserved', 'problems': []}
         def routed(directory, *_args, **_kwargs):
             selected.append(str(directory))
-            return {'status': 'routed', 'board': str(self.board), 'preflight': {
+            result = {'status': 'routed', 'board': str(self.board), 'preflight': {
                 k: None for k in ('commit', 'pin', 'executable_sha256', 'adapter_sha256', 'problems')}}
+            if local_failure and (all_fail or len(selected) == 1):
+                result.update(status='local_copper_failed', reason='local decoupling cell: no clear local path')
+            return result
         failed = {'integrity': 'preserved', 'edge_intent': {'status': 'pass'},
                   'eligibility': 'ineligible', 'physical_checks': 'FAILED'}
         passed = {**failed, 'eligibility': 'eligible', 'physical_checks': 'PASS'}
@@ -205,15 +217,22 @@ class ControllerBoundaryTests(Fixture):
                 {'status': 'pass'}, {'status': 'failed'}, {'status': 'pass'}]))
             stack.enter_context(patch.object(job, 'drc', return_value=({'violations': [], 'unconnected_items': []}, {})))
             stack.enter_context(patch.object(job, 'route', side_effect=routed))
-            stack.enter_context(patch.object(job, 'final_checks', side_effect=[failed, passed]))
+            stack.enter_context(patch.object(job, 'final_checks', side_effect=[passed] if local_failure else [failed, passed]))
             report = job.run_job(config, out)
-        self.assertEqual(report['status'], 'completed')
+        self.assertEqual(report['status'], 'local_copper_failed' if all_fail else 'completed')
         self.assertEqual([Path(p).name for p in selected], ['a1-00-seed0', 'a1-02-seed2'])
-        self.assertEqual([t['status'] for t in report['routing_trials']], ['verification_failed', 'completed'])
-        self.assertEqual(report['route_selection']['seed'], 2)
+        self.assertEqual([t['status'] for t in report['routing_trials']],
+                         ['local_copper_failed' if local_failure else 'verification_failed',
+                          'local_copper_failed' if all_fail else 'completed'])
+        if all_fail:
+            self.assertIn('local decoupling cell:', report['reason'])
+            self.assertFalse((out / 'routed-incumbent.json').exists())
+        else:
+            self.assertNotIn('reason', report)
+            self.assertEqual(report['route_selection']['seed'], 2)
+            self.assertEqual(json.loads((out / 'routed-incumbent.json').read_text())['placement']['seed'], 2)
         self.assertEqual(report['routed_candidate'], 'shortlist_alternative')
         self.assertEqual(json.loads((out / 'incumbent.json').read_text())['seed'], 0)
-        self.assertEqual(json.loads((out / 'routed-incumbent.json').read_text())['placement']['seed'], 2)
         state = json.loads((out / 'checkpoint.json').read_text())
         self.assertEqual(len(state['routing_trials']), 2)
         for trial in state['routing_trials']:

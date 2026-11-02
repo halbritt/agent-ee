@@ -97,6 +97,13 @@ class LocalCopperTests(unittest.TestCase):
         self.assertAlmostEqual(result['records'][0]['loop_length_mm'], 6)
         self.assertFalse(result['records'][0]['return']['pin_bypasses_capacitor'])
 
+    def test_native_copper_save_preserves_authored_project_bytes(self):
+        project = self.path.with_suffix('.kicad_pro')
+        raw = b'{"meta":{"version":1},"net_settings":{"meta":{"version":3}}}\n'
+        project.write_bytes(raw)
+        self.seed()
+        self.assertEqual(project.read_bytes(), raw)
+
     def test_broken_loop_fails_even_with_identical_pad_distances_and_nets(self):
         self.seed()
         board = self.k.LoadBoard(str(self.path))

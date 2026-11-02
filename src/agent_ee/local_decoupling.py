@@ -4,6 +4,7 @@ The visibility search proposes geometry. The caller runs native DRC before the
 router sees it, and verifies the locked items again on the final saved board.
 """
 import math
+from pathlib import Path
 from .storage import digest
 
 SCHEMA = 'agent-ee.local-decoupling/1'
@@ -235,7 +236,19 @@ def seed(board_path, document, *, clock, cancel_dir=None):
                     tied.add(terminal.m_Uuid.AsString())
                     protected += [copper_identity(item) for item in added]
                     other.append(dict(pad=terminal.m_Uuid.AsString(), status='seeded' if added else 'already_on_layer'))
-    k.SaveBoard(str(board_path), board)
+    # Native SaveBoard also rewrites the sibling project with defaults. The
+    # operation owns copper only; preserve the exact authored project and PRL.
+    siblings = {Path(board_path).with_suffix(suffix): None for suffix in ('.kicad_pro', '.kicad_prl')}
+    siblings = {path: path.read_bytes() if path.exists() else None for path in siblings}
+    try:
+        if not k.SaveBoard(str(board_path), board):
+            raise JobRefusal('local decoupling: native board save failed')
+    finally:
+        for path, raw in siblings.items():
+            if raw is not None:
+                path.write_bytes(raw)
+            elif path.exists():
+                path.unlink()
     receipt = dict(schema='agent-ee.local-decoupling-seed/1', source_sha256=before,
                    board_sha256=digest(board_path), contract=document, relations=rows,
                    protected=protected, other_pads=other)
