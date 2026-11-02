@@ -410,13 +410,15 @@ an older `manufacturing-decision.json` is preserved by hash in `supersedes`.
 
 Package roundtrip and orientation are assessed from verified check rows.
 Orientation also retains the package producer's assembly-profile assessment;
-unassessed rows remain pending. An executable obligation bound to either record
-blocks file release while its required evidence is pending. Software completion
-does not perform or confirm a supplier preview or a physical test.
+unassessed rows remain pending. A typed package's file release always needs the
+orientation record to pass. A round trip gates it once an executable obligation
+binds one. Software completion does not perform or confirm a supplier preview or
+a physical test.
 
 For a default manufacturing run, before placement/routing the build requires declared ERC, DRC, netlist,
 geometry, parts membership, placement, board envelope, manufacturing profile,
-assembly readiness and package checks. The profile and membership must name
+assembly readiness and package checks, and a typed plan also requires a
+`cpl_rotation` check. The profile and membership must name
 the same envelope and parts used by generation. Unresolved requirement
 limitations refuse this path. These are minimum coverage gates; the authored
 electrical and mechanical requirements still determine the necessary checks.

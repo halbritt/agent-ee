@@ -25,6 +25,8 @@ WITNESS_CHECKS = ('source_citations_resolved', 'applicability_recomputed', 'conc
 STAGES = retained_run.STAGES
 MANDATORY = {'erc', 'drc', 'netlist', 'geometry', 'parts_subset', 'placement',
              'board_envelope', 'fab_profile', 'assembly_readiness', 'fab_package'}
+# A placement file with no rotation evidence is not a software file claim.
+TYPED_MANDATORY = MANDATORY | {'cpl_rotation'}
 _inventory = requirement_map.input_inventory
 
 
@@ -39,7 +41,8 @@ def _keys(value, required, optional=()):
 
 def manufacturing_coverage(plan, scope, accounting):
     from .baseline import generation_marker
-    missing = MANDATORY - {check['kind'] for check in scope['checks']}
+    required = TYPED_MANDATORY if plan.get('schema') == TYPED_SCHEMA else MANDATORY
+    missing = required - {check['kind'] for check in scope['checks']}
     if missing:
         raise ValueError('manufacturing coverage missing: ' + ', '.join(sorted(missing)))
     unresolved = [r['id'] for r in accounting if r['mode'] == 'limitation']
@@ -505,6 +508,12 @@ def _package_records(rows):
     return records
 
 
+def _required_package_records(rows, bound):
+    """Orientation always gates a typed package; a round trip gates it once a clause cites one."""
+    cited = any(row['kind'] == 'fab_roundtrip' and row['id'] in bound for row in rows)
+    return ['orientation', 'roundtrip'] if cited else ['orientation']
+
+
 def _methods(root, review):
     if review is None:
         return []
@@ -642,12 +651,10 @@ def _assess(out, *, persist=True, host=None):
             demonstrated_failure = True
     package_records = _package_records(rows)
     bound = {cid for clause in coverage.values() for span in clause['spans'] for cid in span['bound_ids']}
-    if typed and any(package_records[name] != 'pass' and any(row['kind'] == kind and row['id'] in bound for row in rows)
-                     for name, kind in (('roundtrip', 'fab_roundtrip'), ('orientation', 'cpl_rotation'))):
+    required_records = _required_package_records(rows, bound)
+    if typed and any(package_records[name] != 'pass' for name in required_records):
         blockers.append('Required exact-package evidence is incomplete')
-        demonstrated_failure |= any(package_records[name] == 'failed'
-            and any(row['kind'] == kind and row['id'] in bound for row in rows)
-            for name, kind in (('roundtrip', 'fab_roundtrip'), ('orientation', 'cpl_rotation')))
+        demonstrated_failure |= any(package_records[name] == 'failed' for name in required_records)
     if package is not None:
         dimensions['file_release'] = _dimension('failed' if demonstrated_failure else 'pending' if blockers else 'pass',
             binding=review.binding if review else None, evidence=[_evidence(root, marker_path), *group_evidence],

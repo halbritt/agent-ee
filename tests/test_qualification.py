@@ -277,6 +277,25 @@ class QualificationTests(unittest.TestCase):
                 qualification.assess(self.root)
 
 
+class RotationEvidenceTests(unittest.TestCase):
+    # Spike 2026-11-01: a map with no cpl_rotation reached file_release pass with no rotation evidence.
+    SCOPE = dict(checks=[dict(kind=kind) for kind in sorted(qualification.MANDATORY)])
+
+    def test_typed_plan_without_a_rotation_check_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'manufacturing coverage missing: cpl_rotation'):
+            qualification.manufacturing_coverage(dict(schema=build.TYPED_SCHEMA), self.SCOPE, [])
+
+    def test_untyped_plan_keeps_its_existing_coverage(self):
+        with self.assertRaises(ValueError) as refused:
+            qualification.manufacturing_coverage(dict(schema='agent-ee.build-plan/1'), self.SCOPE, [])
+        self.assertNotIn('coverage missing', str(refused.exception))
+
+    def test_orientation_gates_a_typed_package_even_when_no_clause_cites_it(self):
+        rows = [dict(id='cpl', kind='cpl_rotation'), dict(id='trip', kind='fab_roundtrip')]
+        self.assertEqual(qualification._required_package_records(rows, set()), ['orientation'])
+        self.assertEqual(qualification._required_package_records(rows, {'trip'}), ['orientation', 'roundtrip'])
+
+
 class BuildQualificationTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
