@@ -350,6 +350,11 @@
       "value": "BME280"
     }
   },
+  "placement": {
+    "budget_s": 1200,
+    "seeds": 8,
+    "steps_per_seed": 100000
+  },
   "plane": {
     "layer": "B.Cu",
     "net": "GND"
