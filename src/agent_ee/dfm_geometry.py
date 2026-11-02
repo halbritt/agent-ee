@@ -747,6 +747,8 @@ def plated_hole_ring(rule, facts):
 
 def check_plated_hole_ring(facts, thresholds):
     min_ring = thresholds.get('min_ring_mm', 0.0)
+    if min_ring < 0.0:
+        raise ValueError('min_ring_mm must be non-negative')
     violations = []
     for ring in facts.get('plated_rings', []):
         ring_mm = ring.get('ring_mm') if 'ring_mm' in ring else ring.get('outer_ring_mm')

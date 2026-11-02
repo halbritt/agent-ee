@@ -185,8 +185,7 @@ class TestTier1PlacementJobDecoupling(unittest.TestCase):
     def test_placement_job_checkpoint_identity_omits_acquisition_files(self):
         """Checkpoint identity in placement_job does not hash acquisition_*.py files."""
         source = Path("src/agent_ee/placement_job.py").read_text()
-        # Verify that specific acquisition filenames are not in checkpoint identity calculation
-        self.assertTrue(True)
+        self.assertNotIn("acquisition_", source)
 
     def test_block_package_mechanics_custody_modes(self):
         """block_package admits design-declared custody without requiring known_revision."""

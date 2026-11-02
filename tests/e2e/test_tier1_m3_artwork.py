@@ -124,6 +124,15 @@ class TestTier1CoordinatorPcbnewRemoval(unittest.TestCase):
 
     def test_pcbnew_swig_isolation_check(self):
         """Coordinator process must not load SWIG _pcbnew C extension directly."""
-        # Check that importing build_stages and build_workflow does not force load pcbnew if not already loaded
-        import sys
-        self.assertTrue(True)
+        import ast
+        for name in ("build_stages.py", "build_workflow.py"):
+            path = Path("src/agent_ee") / name
+            if not path.exists():
+                continue
+            tree = ast.parse(path.read_text(), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        self.assertNotIn("pcbnew", alias.name)
+                elif isinstance(node, ast.ImportFrom):
+                    self.assertNotIn("pcbnew", node.module or "")

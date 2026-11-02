@@ -212,6 +212,9 @@ def stage_kicad_project(inputs, work, design_rel, suffixes=('.kicad_pro', '.kica
             raise error_type(msg)
         raise ValueError(msg)
 
+    if design.is_absolute() or '..' in design.parts or not str(design_rel).strip():
+        _fail('design path must be relative to project root without parent references')
+
     before, other = file_tree(inputs)
     if other:
         _fail('child inputs must be regular captured files')
@@ -478,9 +481,12 @@ class StageContext:
         if parent.is_symlink() or parent.resolve() != parent:
             raise ValueError('custom-pad scratch must stay in outer work')
         root = Path(tempfile.mkdtemp(prefix='member-', dir=parent))
-        inputs, work = root / 'inputs', root / 'work'
-        inputs.mkdir()
-        member = inputs / (footprint['name'] + '.kicad_mod')
+        name = footprint.get('name') if isinstance(footprint, dict) else None
+        if not isinstance(name, str) or not name.strip() or '/' in name or '\\' in name or '..' in name:
+            raise FootprintError(f'invalid or unsafe footprint name: {name!r}')
+        member = inputs / (name + '.kicad_mod')
+        if not member.resolve().is_relative_to(inputs.resolve()):
+            raise FootprintError('footprint path escapes inputs directory')
         member.write_bytes(data)
         member.chmod(0o400)
         command = ('from agent_ee.footprint_probe import _stage_main; import sys; '

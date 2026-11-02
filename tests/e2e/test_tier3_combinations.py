@@ -146,7 +146,7 @@ class TestTier3ArtworkCoordinatorStageCombination(unittest.TestCase):
             # Check that coordinator has no direct pcbnew in sys.modules
             import sys
             # pcbnew must not be forced by artwork step generation
-            self.assertTrue(True)
+            self.assertNotIn("pcbnew", sys.modules)
 
 
 class TestTier3MechanicsPlacementRustCombination(unittest.TestCase):

@@ -68,6 +68,8 @@ def check(draft_path, run_dir, control_dir):
         raw = _read_draft(draft_path)
         result['draft_sha256'] = sha256(raw).hexdigest()
         value = json.loads(raw)
+        if not isinstance(value, dict):
+            raise ValueError('draft must be a JSON object')
         run, control = Path(run_dir), Path(control_dir)
         context = read_json(control / 'context.json')
         if context['schema'] != 'agent-ee.review-draft-context/1':
@@ -81,7 +83,7 @@ def check(draft_path, run_dir, control_dir):
                 raise ValueError(f'draft validation binding changed: {key}')
         validate_evidence_paths(value, read_json(control / 'schema.json'))
         role = context.get('role')
-        if role == 'adjudicator' or value.get('schema') == DECISIONS_VERSION:
+        if role == 'adjudicator' or (isinstance(value, dict) and value.get('schema') == DECISIONS_VERSION):
             if not isinstance(value, dict) or value.get('schema') != DECISIONS_VERSION:
                 raise ValueError(f'fresh adjudication requires {DECISIONS_VERSION}')
             if value.get('candidate_id') != context.get('candidate_id'):
@@ -94,7 +96,7 @@ def check(draft_path, run_dir, control_dir):
             adjudicate(findings, value, run)
         else:
             validate_fresh_review(value, context, run, role)
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         result['error'] = str(error)
     else:
         result.update(valid=True, notice='Draft syntax and evidence validation only; final admission remains required.')

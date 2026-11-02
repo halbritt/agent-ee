@@ -82,8 +82,7 @@ class TestTier1EliminateNestedBwrap(unittest.TestCase):
         """footprint_probe recognizes /tool/agent-ee as enclosing container."""
         from agent_ee import footprint_probe
         if hasattr(footprint_probe, "_enclosing_sandbox"):
-            # When running under /tool/agent-ee, must not reject
-            self.assertTrue(True)
+            self.assertFalse(footprint_probe._enclosing_sandbox())
 
     def test_block_variant_stage_contained_capture(self):
         """block_variant_stage handles variant capture under container confinement."""
@@ -140,8 +139,12 @@ class TestTier1ComprehensiveCampaignVerification(unittest.TestCase):
 
     def test_unified_e2e_runner_execution(self):
         """All tier 1 tests are discoverable by pytest."""
-        self.assertTrue(True)
+        runner = Path("tests/e2e/run_tests.sh")
+        self.assertTrue(runner.is_file())
+        import os
+        self.assertTrue(os.access(runner, os.X_OK))
 
     def test_full_pipeline_contract_readiness(self):
         """The 7-stage typed build pipeline contracts are verified."""
-        self.assertTrue(True)
+        from agent_ee import stages
+        self.assertEqual(stages.STAGE_ORDER, ('schematic', 'placement', 'routing', 'verification', 'fab'))

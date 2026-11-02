@@ -364,13 +364,19 @@ def unstrict_value(value, original_schema):
     if original_schema is None or not isinstance(original_schema, dict):
         return value
 
-    def is_nullable(schema, root):
+    def is_nullable(schema, root, visited=None):
         if not isinstance(schema, dict):
             return False
+        if visited is None:
+            visited = set()
+        schema_id = id(schema)
+        if schema_id in visited:
+            return False
+        visited.add(schema_id)
         if '$ref' in schema:
             resolved = resolve_ref(schema['$ref'], root)
             if resolved is not None and resolved is not schema:
-                return is_nullable(resolved, root)
+                return is_nullable(resolved, root, visited)
         if schema.get('type') == 'null':
             return True
         stype = schema.get('type')
@@ -382,10 +388,10 @@ def unstrict_value(value, original_schema):
             return True
         for key in ('anyOf', 'oneOf'):
             if key in schema and isinstance(schema[key], list):
-                if any(is_nullable(sub, root) for sub in schema[key]):
+                if any(is_nullable(sub, root, visited) for sub in schema[key]):
                     return True
         if 'allOf' in schema and isinstance(schema['allOf'], list):
-            if any(is_nullable(sub, root) for sub in schema['allOf']):
+            if any(is_nullable(sub, root, visited) for sub in schema['allOf']):
                 return True
         return False
 
@@ -407,10 +413,17 @@ def unstrict_value(value, original_schema):
         best_branch = None
         best_score = -1
         for branch in branches:
-            if '$ref' in branch:
-                target = resolve_ref(branch['$ref'], root)
-                if target:
+            seen_refs = set()
+            while '$ref' in branch:
+                ref = branch['$ref']
+                if ref in seen_refs:
+                    break
+                seen_refs.add(ref)
+                target = resolve_ref(ref, root)
+                if target and isinstance(target, dict):
                     branch = target
+                else:
+                    break
             props = branch.get('properties', {})
             score = len(set(props) & set(val))
             if score > best_score:
@@ -418,13 +431,20 @@ def unstrict_value(value, original_schema):
                 best_branch = branch
         return best_branch or (branches[0] if branches else None)
 
-    def walk(val, schema, root):
+    def walk(val, schema, root, visited_refs=None):
         if schema is None or not isinstance(schema, dict):
             return val
+        if visited_refs is None:
+            visited_refs = set()
         if '$ref' in schema:
-            target = resolve_ref(schema['$ref'], root)
+            ref = schema['$ref']
+            if ref in visited_refs:
+                return val
+            visited_refs = set(visited_refs)
+            visited_refs.add(ref)
+            target = resolve_ref(ref, root)
             if target:
-                return walk(val, target, root)
+                return walk(val, target, root, visited_refs)
 
         if isinstance(val, dict):
             for union_key in ('anyOf', 'oneOf'):

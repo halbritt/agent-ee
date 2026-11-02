@@ -318,8 +318,13 @@ class TestTier1OptInPurposeReview(unittest.TestCase):
 
     def test_omitted_purpose_review_no_unknown_coverage_flag(self):
         """Omitting purpose review must not inject purpose coverage unknown into run summary."""
-        # Check that purpose coverage is not marked unknown when purpose review is omitted
-        self.assertTrue(True)
+        result = {
+            "reviews": [{"role": "circuit", "coverage": [], "limitations": [], "findings": []}],
+            "limitations": []
+        }
+        res = purpose_review.record_coverage(result)
+        self.assertEqual(res["purpose_coverage"], [])
+        self.assertFalse(any("purpose coverage unknown" in lim for lim in res["limitations"]))
 
     def test_configured_purpose_review_returns_active_brief(self):
         """Configured purpose review provides non-empty guidance brief."""
