@@ -1,6 +1,5 @@
 """Tests for pose MILP solver contracts and candidate generation."""
 import hashlib
-import json
 import unittest
 
 from agent_ee import pose_milp

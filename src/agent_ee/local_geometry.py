@@ -86,7 +86,7 @@ def two_layer_plans(source, endpoints, *, clock, cancel_dir, connection=None):
         pads = [p for p in fps[0].Pads() if p.GetNumber() == number]
         if (len(pads) != 1 or pads[0].GetNetname() != net or pads[0].GetAttribute() != k.PAD_ATTRIB_SMD
                 or fps[0].GetLayer() != k.F_Cu
-                or [l for l in board.GetEnabledLayers().CuStack() if pads[0].FlashLayer(l)] != [k.F_Cu]):
+                or [layer for layer in board.GetEnabledLayers().CuStack() if pads[0].FlashLayer(layer)] != [k.F_Cu]):
             raise JobRefusal('local loops: unsupported via pad '+ref+'.'+number)
         return fps[0], pads[0]
 

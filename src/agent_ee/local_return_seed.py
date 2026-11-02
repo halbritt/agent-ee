@@ -3,9 +3,7 @@
 Supports both design-declared models (accepting decoupling loop definitions, ground ties,
 and B.Cu thermal bars in geometry-model.json) and legacy historical revisions.
 """
-from decimal import Decimal
 import hashlib
-import json
 from pathlib import Path
 import re
 import shutil

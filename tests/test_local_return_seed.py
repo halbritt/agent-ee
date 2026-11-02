@@ -1,6 +1,5 @@
 """Tests for data-driven local routing seed, ground ties, and reservation contracts."""
 import hashlib
-import json
 from pathlib import Path
 import tempfile
 import unittest
