@@ -111,7 +111,7 @@ def problems(design):
                 **{"return": list},
                 max_distance_mm=None,
             ),
-            {},
+            dict(max_loop_mm=None),
             path,
         ):
             for key in ("supply", "return"):

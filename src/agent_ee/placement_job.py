@@ -1412,7 +1412,7 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
-          bus=None, length_match=None, ac_match=None, layout=None):
+          bus=None, length_match=None, ac_match=None, layout=None, local_decoupling=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1448,6 +1448,33 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         except JobRefusal as exc:
             return {'status': 'plane_failed', 'preflight': check, 'reason': str(exc),
                     'elapsed_s': time.monotonic() - started}
+    import pcbnew
+    owned_copper = planes is not None and not list(pcbnew.LoadBoard(str(staged / 'board.kicad_pcb')).GetTracks())
+    local_record = None
+    if local_decoupling is not None:
+        from . import local_decoupling as local
+        local_dir = route_dir / 'local-decoupling'
+        local_dir.mkdir()
+        (local_dir / 'before').mkdir()
+        (local_dir / 'after').mkdir()
+        try:
+            baseline, _ = drc(staged / 'board.kicad_pcb', local_dir / 'before',
+                              clock=clock, cancel_dir=cancel_dir)
+            local_record = local.seed(staged / 'board.kicad_pcb', local_decoupling,
+                                      clock=clock, cancel_dir=cancel_dir)
+            write_json(local_dir / 'seed.json', local_record)
+            seeded, _ = drc(staged / 'board.kicad_pcb', local_dir / 'after', refill=True,
+                            clock=clock, cancel_dir=cancel_dir)
+            existing = {_key(v) for v in baseline['violations'] if v.get('severity') == 'error'}
+            errors = [v for v in seeded['violations'] if v.get('severity') == 'error' and _key(v) not in existing]
+            if errors:
+                names = ', '.join(row['id'] for row in local_decoupling['relations']) or 'plane ties'
+                raise JobRefusal('local decoupling ' + names + ': native DRC rejects generated copper: ' +
+                                 ', '.join(v['type'] for v in errors))
+        except JobRefusal as exc:
+            write_json(local_dir / 'failure.json', {'reason': str(exc)})
+            return {'status': 'local_copper_failed', 'preflight': check, 'reason': str(exc),
+                    'elapsed_s': time.monotonic() - started}
     _check_stop(clock, cancel_dir)
     # The CLI accepts integral seconds. Refuse sub-second remainder rather than
     # inventing a minimum extension; the outer clock also bounds all descendants.
@@ -1459,8 +1486,6 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
                 'elapsed_s': time.monotonic() - started}
     # These jobs normally start without copper. Prove that on the actual native
     # input before allowing the router to revisit its own generated tracks.
-    import pcbnew
-    owned_copper = planes is not None and not list(pcbnew.LoadBoard(str(staged / 'board.kicad_pcb')).GetTracks())
     argv = routing_adapter.board_route_argv(
         checkout, staged, route_dir / 'out', design_name=design_name, owned_copper=owned_copper,
         budget_s=remaining, grid_step_mm=grid_step_mm, pair_layers=pair_layers,
@@ -1503,6 +1528,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
                   copper_policy='generated_from_track_free_input' if owned_copper else 'preserve_existing')
     if plane_record is not None:
         record['planes'] = plane_record
+    if local_record is not None:
+        record['local_decoupling'] = local_record
     return record
 
 
@@ -1588,7 +1615,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         pair_layers = router_options['pair_layers']
         impedance = router_options['pair_impedance']
         matching = router_options['intra_pair_match']
-        unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes', 'group_rails', 'block_contract', 'mechanics'}
+        unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes', 'group_rails', 'block_contract', 'mechanics', 'local_decoupling'}
         if unknown:
             raise JobRefusal('unsupported placement input(s): ' + ', '.join(sorted(unknown)))
         board_path, board_bytes = verified_input(config['inputs']['board'], 'board')
@@ -1659,6 +1686,18 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             if any(zone['island_removal'] != 'always' for zone in plane_plan['zones']):
                 raise JobRefusal('placement job final planes require island_removal=always')
             plane_ids = zone_ids(plane_plan)
+        local_contract = None
+        if 'local_decoupling' in config['inputs']:
+            from .local_decoupling import validate as validate_local
+            _, raw = verified_input(config['inputs']['local_decoupling'], 'local_decoupling')
+            try:
+                local_contract = validate_local(strict_json(raw))
+            except ValueError as exc:
+                raise JobRefusal('invalid local decoupling contract: ' + str(exc)) from exc
+            if local_contract['planes'] and (plane_bytes is None or any(
+                    not any(z['net'] == p['net'] and z['layer'] == p['layer'] for z in plane_plan['zones'])
+                    for p in local_contract['planes'])):
+                raise JobRefusal('local decoupling planes differ from captured plane plan')
         report['preflight'] = {}
         report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
         if impedance is not None:
@@ -1710,6 +1749,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     identity = sha256_bytes(canonical({'problem': problem['problem_sha256'], 'config': report['config_sha256'],
                                        'engine': report['preflight']['engine_sha256'],
                                        'controller': digest(Path(__file__)),
+                                       **({'local_decoupling': local_contract,
+                                           'local_decoupling_module': digest(Path(__file__).with_name('local_decoupling.py'))}
+                                          if local_contract is not None else {}),
                                        **({'mechanics_controller': digest(Path(__file__).with_name('source_mechanics.py'))}
                                           if 'mechanics' in normalized else {}),
                                        **({name: digest(Path(__file__).with_name(name+'.py')) for name in
@@ -1935,10 +1977,16 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
                            grid_step_mm=grid_step,
                            intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers, pair_impedance=impedance,
-                           bus=bus, length_match=length_match, ac_match=ac_match)
+                           bus=bus, length_match=length_match, ac_match=ac_match, local_decoupling=local_contract)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}
+            if routed['status'] == 'local_copper_failed':
+                status = 'local_copper_failed'
+                trial.update(status=status, reason=routed['reason'], route=report['route'])
+                report['reason'] = routed['reason']
+                retain_routing_trial(trial, suffix)
+                continue
         with clock.phase('final_validation'):
             _check_stop(clock, job_dir)
             selected_seed = next((row for row in report['engine']['seeds'] if row.get('seed') == selected['seed']), {})
@@ -2292,6 +2340,13 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
         local_check=_verify_local_routing(board,incumbent,normalized,planes,local_routing,
                                          clock=clock,cancel_dir=cancel_dir)
     final_board_sha256 = digest(board)
+    general_local_check = None
+    if routed.get('local_decoupling') is not None:
+        from .local_decoupling import verify as verify_local
+        try:
+            general_local_check = verify_local(board, routed['local_decoupling'])
+        except JobRefusal as exc:
+            problems.append(str(exc))
     if block_result['status'] != 'not_declared' and block_result['board_sha256'] != final_board_sha256:
         problems.append('final board changed after block contract check')
     if mechanics_result.get('status') != 'not_declared' and mechanics_result.get('board_sha256') != final_board_sha256:
@@ -2307,6 +2362,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
               or length_result is not None and length_result.get('status') != 'PASS'
               or ac_result is not None and ac_result.get('status') != 'PASS')
     return {'status': 'checked', 'board': str(board), 'board_sha256': final_board_sha256,
+            **({'local_decoupling': general_local_check} if general_local_check is not None else {}),
             **({'local_routing':local_check} if local_check is not None else {}),
             **({'planes': plane_result, 'plane_fill': plane_fill} if planes is not None else {}),
             **({'impedance': impedance_result} if impedance_result is not None else {}),

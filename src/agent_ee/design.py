@@ -565,7 +565,7 @@ def validate(design, captures=None, *, cad_only=False):
         path = f"decoupling[{i}]"
         refused_before = len(errors)
         if not fields(
-            d, ("capacitor", "device", "supply", "return", "max_distance_mm"), (), path
+            d, ("capacitor", "device", "supply", "return", "max_distance_mm"), ("max_loop_mm",), path
         ):
             continue
         for key in ("capacitor", "device"):
@@ -573,6 +573,8 @@ def validate(design, captures=None, *, cad_only=False):
                 fail(path + "." + key, "select a declared part")
         if d["capacitor"] == d["device"]:
             fail(path + ".capacitor", "capacitor and device must be different parts")
+        if "max_loop_mm" in d and (not number(d["max_loop_mm"]) or d["max_loop_mm"] <= 0):
+            fail(path + ".max_loop_mm", "supply a positive finite copper loop length")
         if d["supply"] == d["return"] or set(d["supply"]) & set(d["return"]):
             fail(path + ".return", "supply and return must use different terminals")
         if not number(d["max_distance_mm"]) or d["max_distance_mm"] <= 0:

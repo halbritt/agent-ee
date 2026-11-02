@@ -53,6 +53,13 @@ zones until the stage-three pre-receipt below writes the declared mechanics.
 Scaffolding does not claim those envelope obligations pass. Copper weights
 remain declarations because native board files have no corresponding field.
 
+The design compiler also emits a `Power` net class with a 0.4 mm preferred
+routing width for plane nets, power-flag nets and declared decoupling supply
+nets. `power-routing-default.json` records the membership and its basis:
+agent-selected routing default, not a fabrication limit or owner/datasheet
+ruling. Native board minima remain sourced separately. KiCad net-class patterns
+assign the class; the router reads its width and may neck into small pads.
+
 For an emitter-driven circuit, pass both `--intent BOUND_INTENT` and
 `--layout EMITTER_LAYOUT`. Both files and their libraries must be captured by
 the supplied scope or producer plan. The scaffold asks the existing emitter for

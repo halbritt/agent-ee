@@ -69,6 +69,17 @@ The config (`agent-ee.placement-job-config/1`) names every external input by
 path **and SHA-256**; a mismatch refuses the job before any work. Fixture bytes
 stay outside the public repository.
 
+Optional `inputs.local_decoupling` captures a
+[`agent-ee.local-decoupling/1`](decoupling-loops.md) document. Build plans use
+`placement.local_decoupling` for the source-relative path. It generates locked
+local supply/return legs and capacitor plane entries after placement and before
+general routing. Optional other-pad plane ties leave pads without a local fit
+to the router. A required seed failure rejects the candidate and tries the
+next portfolio entry; all-candidate failure retains the relation-named reason.
+`route-*/local-decoupling/seed.json` records generated item identities and
+geometry; `before/`, `after/` and `failure.json` retain native DRC or failure
+evidence. Final validation rechecks the protected copper on the saved board.
+
 ## Supported intent boundary (AGENTEE-520)
 
 New intent documents use `"schema": "agent-ee.placement-intent/1"`. Existing

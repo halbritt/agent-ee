@@ -33,7 +33,7 @@ def validate_plan(plan):
                 or reserved.startswith(plan['judgments'] + '/') for reserved in ('build-generated', requirement_map.PROVENANCE)):
             raise ValueError('judgments directory overlaps the source root or generated namespace')
     _keys(plan['parts'], ('manifest', 'circuit', 'layout'), ('deviations', 'ratings'))
-    _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'), ('planes', 'block_contract', 'block_source', 'mechanics'))
+    _keys(plan['placement'], ('intent', 'groups', 'budget_s', 'search', 'router'), ('planes', 'block_contract', 'block_source', 'mechanics', 'local_decoupling'))
     if {'block_contract', 'block_source'} <= plan['placement'].keys():
         raise ValueError('block_contract and block_source are mutually exclusive')
     paths = [plan['envelope'], *plan['requirements'].values(), *plan['parts'].values(),
@@ -50,7 +50,7 @@ def validate_plan(plan):
                for reserved in ('build-generated', requirement_map.PROVENANCE)):
             raise ValueError('review_profile occupies a generated namespace')
         paths.append(plan['review_profile'])
-    for key in ('block_contract', 'block_source', 'mechanics'):
+    for key in ('block_contract', 'block_source', 'mechanics', 'local_decoupling'):
         if key in plan['placement']:
             paths.append(plan['placement'][key])
     for path in paths:

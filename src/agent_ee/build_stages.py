@@ -221,7 +221,7 @@ def placement_configuration(placement, scope, candidate):
     rules = (candidate / scope['board']).with_suffix('.kicad_dru')
     if rules.exists():
         config['inputs']['rules'] = dict(path=str(rules), sha256=digest(rules))
-    for name in ('planes', 'block_contract', 'mechanics'):
+    for name in ('planes', 'block_contract', 'mechanics', 'local_decoupling'):
         if name in placement:
             path = candidate / placement[name]
             config['inputs'][name] = dict(path=str(path), sha256=digest(path))

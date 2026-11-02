@@ -39,7 +39,7 @@ Unknown fields are refused.
 | `power_flags` | Unique net names that need virtual `PWR_FLAG` symbols. |
 | `ground` | The declared ground net; currently `GND`. A virtual GND symbol supplies its native power name. |
 | `connectors` | List of `{reference, edge, position_mm, inset_mm, rotation_deg, insertion}` plus `local_mating_axis` for `through_edge`. Edges are `top`, `right`, `bottom`, `left`; insertion is `from_top` or `through_edge`. `position_mm` is measured from the edge's start corner along its direction. Seen from the front, the edges run clockwise: `top` starts at the top-left corner and runs east, `right` starts at the top-right corner and runs south, `bottom` starts at the bottom-right corner and runs west, and `left` starts at the bottom-left corner and runs north. Rotations are multiples of 90 degrees and are normalized modulo 360. |
-| `decoupling` | List of `{capacitor, device, supply, return, max_distance_mm}`. Each pair is `[DEVICE.PIN, CAPACITOR.PIN]`; both endpoints must share a net. |
+| `decoupling` | List of `{capacitor, device, supply, return, max_distance_mm}` with optional positive `max_loop_mm`. Each pair is `[DEVICE.PIN, CAPACITOR.PIN]`; both endpoints must share a net. Generates locked local copper and a final native [loop check](decoupling-loops.md). |
 | `groups` | List of `{name, anchor, title}`. Members come from the parts' `group` fields. |
 | `plane` | `{net, layer}`; choose a declared net and `F.Cu` or `B.Cu`. |
 | `functional` | Nonempty list of `{text, witnesses}`. Each requirement needs independent topology witnesses. |

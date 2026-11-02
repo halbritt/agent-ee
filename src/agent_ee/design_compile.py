@@ -50,6 +50,13 @@ def decoupling_text(pair):
     )
 
 
+def loop_text(pair):
+    text = f"{pair['device']}-to-{pair['capacitor']} local supply and return copper shall form a connected decoupling loop."
+    if 'max_loop_mm' in pair:
+        text += f" Its saved copper loop length shall be at most {pair['max_loop_mm']} mm."
+    return text
+
+
 def spec(design):
     sections = {
         "Design intent": [design["intent"]],
@@ -67,7 +74,7 @@ def spec(design):
         "Placement and mechanics": [
             f"The board shall be {design['board']['width_mm']} by {design['board']['height_mm']} mm, two copper layers and nominal {design['board']['thickness_mm']} mm thick.",
             "All declared connectors shall occupy their fixed edge positions and rotations. Mouth direction and physical mating access are not established by this check.",
-            " ".join(decoupling_text(pair) for pair in design["decoupling"]),
+            " ".join(decoupling_text(pair) + " " + loop_text(pair) for pair in design["decoupling"]),
             f"Courtyards shall not overlap and components shall fit the outline and {design['board']['max_component_height_mm']} mm height envelope.",
         ],
         "Manufacturing": [
@@ -464,6 +471,13 @@ def envelope(design, root):
             selected_routing=routing,
         ),
     )
+    power = {design['plane']['net'], *design['power_flags']}
+    power.update(next(n for n, terminals in design['nets'].items() if pair['supply'][0] in terminals)
+                 for pair in design['decoupling'])
+    write_json(root / 'power-routing-default.json', dict(
+        schema='agent-ee.power-routing-default/1', nets=sorted(native_net(design, n) for n in power),
+        track_width_mm=0.4,
+        basis='Agent-selected routing default; not a fabrication limit or an owner or datasheet ruling'))
     project = dict(
         board=dict(
             design_settings=dict(
@@ -479,8 +493,10 @@ def envelope(design, root):
                 dict(
                     name="Default",
                     **routing,
-                )
+                ),
+                dict(name='Power', **{**routing, 'track_width': 0.4}),
             ],
+            netclass_patterns=[dict(netclass='Power', pattern=native_net(design, n)) for n in sorted(power)],
             meta=dict(version=3),
         ),
     )
@@ -490,6 +506,22 @@ def envelope(design, root):
 
 
 def placement(design, root):
+    from .local_decoupling import BASIS, SCHEMA, validate as validate_local
+    relations = []
+    for index, pair in enumerate(design['decoupling'], 1):
+        row = dict(id='decoupling-' + str(index))
+        for leg in ('supply', 'return'):
+            row[leg] = []
+            for terminal in pair[leg]:
+                reference, pin = terminal.split('.', 1)
+                net = next(n for n, terms in design['nets'].items() if terminal in terms)
+                row[leg].append(dict(reference=reference, pad=pin, net=native_net(design, net)))
+        if 'max_loop_mm' in pair:
+            row.update(max_loop_mm=pair['max_loop_mm'], basis=BASIS)
+        relations.append(row)
+    write_json(root / 'local-decoupling.json', validate_local(dict(
+        schema=SCHEMA, relations=relations, tie_other_pads=True,
+        planes=[dict(net=native_net(design, design['plane']['net']), layer=design['plane']['layer'])])))
     write_json(
         root / "planes.json",
         dict(
@@ -977,7 +1009,8 @@ def requirements(design, root, record, suppliers):
                     criterion="electrical-locality/1",
                     drc_check="drc",
                     locality="electrical-locality.json",
-                )
+                ),
+                check('decoupling-loops', 'decoupling_loops', contract='local-decoupling.json'),
             ]
             if design["decoupling"]
             else [check("plane-drc", "drc", plane_plans=[blob(root, "planes.json")])],
@@ -1313,6 +1346,7 @@ def _compile_design(design, captures, out):
                 intent="placement.json",
                 groups="groups.json",
                 planes="planes.json",
+                local_decoupling="local-decoupling.json",
                 budget_s=p.get("budget_s", 600),
                 search=dict(
                     seeds=[dict(seed=i, start="clustered") for i in range(seeds)],

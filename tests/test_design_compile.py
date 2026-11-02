@@ -715,6 +715,31 @@ class DesignCompileTests(unittest.TestCase):
         roundtrip = next(c for c in checks if c['kind'] == 'fab_roundtrip')
         self.assertEqual(roundtrip['params'], dict(package_check=package['id']))
         self.assertLess(checks.index(package), checks.index(roundtrip))
+    def test_local_copper_and_optional_loop_limit_reach_the_plan_and_requirement_map(self):
+        self.design['decoupling'] = [dict(capacitor='R2', device='R1',
+            supply=['R1.1', 'R2.1'], **{'return': ['R1.2', 'R2.2']}, max_distance_mm=6, max_loop_mm=9)]
+        self.compile()
+        root = self.root / 'bundle/inputs'
+        plan = json.loads((self.root / 'bundle/build-plan.json').read_text())
+        self.assertEqual(plan['placement']['local_decoupling'], 'local-decoupling.json')
+        doc = json.loads((root / 'local-decoupling.json').read_text())
+        self.assertEqual(doc['relations'][0]['supply'][0], dict(reference='R1', pad='1', net='/SIGNAL'))
+        self.assertEqual(doc['relations'][0]['max_loop_mm'], 9)
+        self.assertEqual(doc['relations'][0]['basis'], 'Agent-selected measurement requirement; not an owner or datasheet ruling')
+        requirement = next(r for r in json.loads((root / 'requirement-map.json').read_text())['requirements']
+                           if r['id'] == 'TEST-MECH-3')
+        self.assertIn('decoupling_loops', [c['kind'] for c in requirement['checks']])
+        self.assertIn('9 mm', (root / 'spec.md').read_text())
+
+    def test_power_routing_default_is_a_net_class_and_leaves_fabrication_minimum_alone(self):
+        self.compile()
+        root = self.root / 'bundle/inputs'
+        project = json.loads((root / 'project/owned.kicad_pro').read_text())
+        classes = {c['name']: c for c in project['net_settings']['classes']}
+        self.assertEqual(classes['Power']['track_width'], .4)
+        self.assertLess(project['board']['design_settings']['rules']['min_track_width'], .4)
+        self.assertEqual(project['net_settings']['netclass_patterns'], [dict(netclass='Power', pattern='GND')])
+        self.assertIn('not a fabrication limit', json.loads((root / 'power-routing-default.json').read_text())['basis'])
 
     def test_clearance_uses_fab_floor_track_width_uses_native_routing_default(
         self,
