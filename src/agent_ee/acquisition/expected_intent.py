@@ -7,8 +7,8 @@ import copy
 from pathlib import Path
 from hashlib import sha256
 
-from . import parts_manifest, parts_stage, stage_receipts, storage, tool_source, typed_overlay, requirement_map
-from .catalog import strict_json
+from .. import parts_manifest, parts_stage, stage_receipts, storage, tool_source, typed_overlay, requirement_map
+from ..catalog import strict_json
 
 EXPECTED = 'fixedexpected/connectivity-intent-addr-gnd.json'
 GENERATED = 'build-generated/connectivity-intent.json'

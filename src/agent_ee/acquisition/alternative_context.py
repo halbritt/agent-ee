@@ -1,9 +1,10 @@
 """Finite captured-context admission/copy for acquisition preparation; no fetches."""
 from pathlib import Path
 
-from . import acquisition_alternative, jlc_stock_capture, parts_manifest, requirement_map
-from .catalog import exact_fields, strict_json
-from .storage import json_bytes
+from . import alternative as acquisition_alternative
+from .. import jlc_stock_capture, parts_manifest, requirement_map
+from ..catalog import exact_fields, strict_json
+from ..storage import json_bytes
 
 SCHEMA = 'agent-ee.acquisition-alternative-context/1'
 AT = 'preparation/alternative-context'
@@ -29,7 +30,7 @@ def read(root, raw):
         raise ValueError('this context supports exactly two retained catalog parents')
     refs += context['parents']
     if 'supplier_capture' in context:
-        from . import acquisition_selected_cpl
+        from . import selected_cpl as acquisition_selected_cpl
         exact_fields(context['supplier_capture'], ('provenance', 'raw', 'http_response', 'receipt'))
         refs += list(context['supplier_capture'].values())
     for blob in refs:

@@ -3,8 +3,8 @@ import copy
 from decimal import Decimal
 from pathlib import Path
 
-from . import block_adaptation, block_composition, parts_manifest, reference_blocks, requirement_map, storage
-from .catalog import decimal_number, decimal_text, exact_fields, strict_json
+from .. import block_adaptation, block_composition, parts_manifest, reference_blocks, requirement_map, storage
+from ..catalog import decimal_number, decimal_text, exact_fields, strict_json
 
 SCHEMA = 'agent-ee.acquisition-role-context/1'
 AT = 'reference-roles'
@@ -14,7 +14,7 @@ ROLES = {'acq-tps7a2033-power': ('power', {'U1','J1','D1','C1','C2','R5','R6'}),
 
 
 POLICY_PATH = 'roles/adaptation-policy-150.json'
-POLICY_RAW = (Path(__file__).with_name('data')/'acquisition-role-policy-150.json').read_bytes()
+POLICY_RAW = (Path(__file__).parent.parent/'data'/'acquisition-role-policy-150.json').read_bytes()
 POLICY = strict_json(POLICY_RAW)
 BRIEF_CAPACITANCE = {'from':'public-brief','policy':POLICY['id']}
 COHORTS = {('4','4','4'): '100', ('5','5','5'): '150', ('5','6','5'): '150'}
@@ -133,7 +133,7 @@ def read(root, raw, capacitance):
     # Supplied observations use the existing verifier's host API. The coordinator
     # must independently admit this pinned observation; this code never probes CAD.
     exact_fields(doc['host_observation'],('policy_files','runtime_files'))
-    from .run_record import policy_files
+    from ..run_record import policy_files
     if doc['host_observation']['policy_files']!=policy_files():
         raise ValueError('role observation policy differs from current source rules')
     needed=set(); memberships=[]; reports={}

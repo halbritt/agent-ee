@@ -192,3 +192,32 @@ def sealed_baseline(run, config):
     if sealed == manifest['scope']:
         return baseline
     return compile_baseline(sealed, manifest['files'], Path(run) / 'inputs')
+
+
+def same_authored_baseline(first, successor):
+    """Compare authored criteria after verifying both builds' rating custody, or compare criteria dicts."""
+    if isinstance(first, dict) and isinstance(successor, dict):
+        return first == successor
+    from .baseline import compile_baseline, load_baseline
+    from .passive_ratings import load_provenance
+    runs = (Path(first), Path(successor))
+    manifests = [read_json(run / 'candidate.json') for run in runs]
+    declarations = [declared(manifest['scope']) for manifest in manifests]
+    if all(value is None for value in declarations):
+        return load_baseline(first) == load_baseline(successor)
+    if any(value is None for value in declarations):
+        return False
+    # Receipt identities are build-specific; declaration paths and every other
+    # field still belong to the immutable comparison.
+    contracts = [{key: value for key, value in declaration.items() if key != 'receipt_sha256'}
+                 for declaration in declarations]
+    if contracts[0] != contracts[1]:
+        return False
+    authored = []
+    for run, manifest, declaration in zip(runs, manifests, declarations):
+        load_provenance(run / 'inputs', declaration)
+        authored.append(compile_baseline(strip(manifest['scope']), manifest['files'], run / 'inputs'))
+    return authored[0] == authored[1]
+
+
+_same_generated_baseline = same_authored_baseline

@@ -7,13 +7,14 @@ from copy import deepcopy
 from hashlib import sha256
 from pathlib import Path
 
-from . import (acquisition_block_source, acquisition_mechanics, acquisition_power_analysis,
-               acquisition_power_geometry, acquisition_power_parts, acquisition_reverse_blocking,
-               build_workflow, cpl_rotation, jlc_stock_capture, parts_manifest, requirement_map,
+from . import (block_source as acquisition_block_source, mechanics as acquisition_mechanics,
+               power_analysis as acquisition_power_analysis, power_geometry as acquisition_power_geometry,
+               power_parts as acquisition_power_parts, reverse_blocking as acquisition_reverse_blocking)
+from .. import (build_workflow, cpl_rotation, jlc_stock_capture, parts_manifest, requirement_map,
                spec_record, typed_overlay)
-from .catalog import strict_json
-from .footprint_library import _members
-from .storage import identity, json_bytes
+from ..catalog import strict_json
+from ..footprint_library import _members
+from ..storage import identity, json_bytes
 
 DATA = acquisition_reverse_blocking.DATA
 REFERENCE = acquisition_reverse_blocking.REFERENCE

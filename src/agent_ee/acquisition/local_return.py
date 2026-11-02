@@ -15,12 +15,12 @@ import shutil
 import stat
 import uuid
 
-from .placement_job import JobRefusal, JobStopped, _check_stop, drc, verify_rule_loading
-from .dc_rail import NONCONDUCTIVE_IGNORES
-from .net_constraints import rule_forms, template_rules
-from .storage import canonical, write_json
-from .symbol_library import children, nanometres, parse_sexpr
-from . import acquisition_local_geometry as geometry
+from ..placement_job import JobRefusal, JobStopped, _check_stop, drc, verify_rule_loading
+from ..dc_rail import NONCONDUCTIVE_IGNORES
+from ..net_constraints import rule_forms, template_rules
+from ..storage import canonical, write_json
+from ..symbol_library import children, nanometres, parse_sexpr
+from . import local_geometry as geometry
 
 FILES = ('board.kicad_pcb', 'board.kicad_pro', 'board.kicad_dru')
 WIDTH_NM = 250_000

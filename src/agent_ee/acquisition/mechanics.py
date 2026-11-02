@@ -11,11 +11,11 @@ from decimal import Decimal
 from pathlib import Path
 import hashlib
 
-from . import acquisition_source_supplement, acquisition_power_repair, acquisition_resistor, acquisition_connector_geometry
-from .candidate import safe_relative
-from .catalog import strict_json
-from .mechanical_reservations import _native_owner, _current_owner, _sha
-from .storage import canonical, digest
+from . import source_supplement as acquisition_source_supplement, power_repair as acquisition_power_repair, resistor as acquisition_resistor, connector_geometry as acquisition_connector_geometry
+from ..candidate import safe_relative
+from ..catalog import strict_json
+from ..mechanical_reservations import _native_owner, _current_owner, _sha
+from ..storage import canonical, digest
 
 SCHEMA = 'agent-ee.acquisition-mechanics/1'
 BINDING = 'agent-ee.acquisition-mechanics-binding/1'
@@ -81,7 +81,7 @@ def known_revision(model_sha256):
 
 
 def _model_sources(model):
-    from . import acquisition_film, acquisition_power_geometry
+    from . import film as acquisition_film, power_geometry as acquisition_power_geometry
     if model in acquisition_film.MODELS:
         return {**_model_sources(acquisition_power_geometry.MODEL), **acquisition_film.MODELS[model]}
     if model == acquisition_power_geometry.MODEL:
@@ -124,7 +124,7 @@ def load(path):
         _design_model(model, document['sources'])
         return {'declaration': document, 'model': model, 'model_raw': raw[MODEL_SOURCE].decode('utf-8')}
     requirements = strict_json(raw['requirement-map.json'])
-    from .typed_overlay import _check_pool
+    from ..typed_overlay import _check_pool
     try:
         pool = _check_pool(requirements)
         limits = [pool['engineering-geometry']['params']['limits']]
@@ -146,7 +146,7 @@ def _identity(binding):
 
 
 def _version(document, parsed=None):
-    from . import acquisition_film
+    from . import film as acquisition_film
     sources = document['sources']
     model = sources[MODEL_SOURCE]
     extra = _model_sources(model)

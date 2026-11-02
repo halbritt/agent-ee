@@ -56,7 +56,10 @@ epistemic independence.
 | [build_plan.py](../src/agent_ee/build_plan.py) | Build plan validation (`agent-ee.build-plan/1` and `/2`), input admission and source inventory |
 | [build_stages.py](../src/agent_ee/build_stages.py) | Build stage producers (`requirements`, `parts`, `scaffold`, `schematic`, `placement-routing`, `artwork`, `package`) whose retained records `retained_run` owns |
 | [retained_run.py](../src/agent_ee/retained_run.py) | Custody and access for a build's retained run directory, `build-report.json`, scope, accounting, completed stages, review and qualification records |
+| [build_completion.py](../src/agent_ee/build_completion.py) | Reusable typed build completion, seat policy validation, and package binding verification |
+| [rating_lineage.py](../src/agent_ee/rating_lineage.py) | Compare authored baseline requirements/criteria across run records |
 | [qualification.py](../src/agent_ee/qualification.py) | Qualification of retained builds from sealed typed evidence (`agent-ee.qualification/1`) and report summaries |
+| [acquisition/](../src/agent_ee/acquisition/) | Isolated campaign acquisition recipe implementations and bundle helpers; single-direction dependency from benchmarks |
 | [locking.py](../src/agent_ee/locking.py) | Process writer leases including enclosing campaigns |
 | [storage.py](../src/agent_ee/storage.py) | Canonical identities, digests and atomic JSON writes |
 | [run_record.py](../src/agent_ee/run_record.py) | Run record: work lifecycle, `result.json` shape, outcome and report projections, freshness verification, operator mutations, and the policy and runtime fingerprints it verifies against (a caller that holds them passes them in) |

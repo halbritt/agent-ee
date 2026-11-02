@@ -731,7 +731,7 @@ class CaptureIdentityBudgetTests(unittest.TestCase):
 class RefusalTests(unittest.TestCase):
     """Public authored cases: oracle frozen independently of producer parsing."""
     def setUp(self):
-        from agent_ee import acquisition_prepare
+        from agent_ee.acquisition import prepare as acquisition_prepare
         from agent_ee.storage import json_bytes
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
@@ -790,7 +790,7 @@ class RefusalTests(unittest.TestCase):
         return target, digest(target)
 
     def test_real_public_producer_refusal_replays_freezes_and_is_never_a_design_pass(self):
-        from agent_ee import acquisition_prepare
+        from agent_ee.acquisition import prepare as acquisition_prepare
         with patch.object(acquisition_prepare, 'parse_brief', side_effect=AssertionError('producer oracle forbidden')):
             path, trial = self.evaluated()
             report = read_json(path)
@@ -808,7 +808,7 @@ class RefusalTests(unittest.TestCase):
             self.assertEqual({r['tasks'] for r in rows}, {1})
 
     def test_second_public_utf8_clause_with_unicode_line_boundary_uses_frozen_bytes(self):
-        from agent_ee import acquisition_prepare
+        from agent_ee.acquisition import prepare as acquisition_prepare
         from agent_ee.storage import json_bytes
         clause = 'Require a π-shaped custom display with a different byte length.'
         raw = ('Use acquisition reference acquisition-control unchanged.\u2028\t' + clause + '\n').encode()

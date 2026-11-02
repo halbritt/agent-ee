@@ -18,6 +18,46 @@ from .executor import RECORDS, SANDBOX_PATH
 from .findings import safe_id
 from .storage import digest, fingerprint, identity, json_bytes, write_json
 from .run_record import pcbnew_extension, policy_files
+from typing import Protocol, runtime_checkable
+
+
+@runtime_checkable
+class BenchmarkDriver(Protocol):
+    """Protocol for pluggable benchmark completion and verification drivers."""
+    def verify(self, completion_work, *, deadline=None, cancel=None, replay=False): ...
+    def context(self, root, expect_pins): ...
+    def seat_policy(self, path, expected): ...
+    def preparation_options(self, root, config): ...
+    def admit_public_context(self, root, expect_pins, prompt_path, public_context, expect_sha256, *, deadline=None, cancel=None): ...
+    def complete(self, public, work, production, context_root, expect_pins, *, attempt, deadline, cancel,
+                 policy=None, expect_policy=None, public_context=None, public_context_sha256=None): ...
+    def retain(self, destination, context_root, expect_pins, production, *, brief, attempt, productive_deadline,
+               finished, deadline=None, cancel=None, public_context=None, public_context_sha256=None,
+               completion_policy_sha256=None): ...
+
+
+Driver = BenchmarkDriver
+
+_REGISTERED_DRIVER = None
+
+
+def register_driver(driver):
+    """Register an external benchmark driver."""
+    global _REGISTERED_DRIVER
+    _REGISTERED_DRIVER = driver
+
+
+def get_driver(driver=None):
+    """Resolve active benchmark driver without hardcoding imports."""
+    if driver is not None:
+        return driver
+    if _REGISTERED_DRIVER is not None:
+        return _REGISTERED_DRIVER
+    import importlib
+    try:
+        return importlib.import_module("agent_ee.acquisition.completion")
+    except (ImportError, ModuleNotFoundError):
+        return None
 
 
 class NonOrdinaryTree(ValueError):
@@ -324,12 +364,7 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
     deadline = min(time.monotonic() + timeout, deadline) if deadline is not None else time.monotonic() + timeout
     with native_run.using(deadline=deadline, cancel=cancel):
         deadline = native_run._deadline.get()
-        cancel = native_run._cancel.get()
-        def checkpoint():
-            if cancel is not None and cancel.cancelled.is_set():
-                raise native_run.DeadlineExhausted('evaluation cancelled')
-            if time.monotonic() >= deadline:
-                raise native_run.DeadlineExhausted('evaluation deadline exhausted')
+        checkpoint = lambda: native_run.checkpoint(deadline, cancel)
         def observe_identity():
             try:
                 return _refusal_identity() if 'expected_refusal' in task else evaluator_identity()
@@ -345,8 +380,10 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
         refusal = 'expected_refusal' in task
         completion = None
         if completion_work is not None:
-            from . import acquisition_completion
-            completion = acquisition_completion.verify(completion_work, deadline=deadline, cancel=cancel)
+            driver = get_driver()
+            if driver is None:
+                raise ValueError('benchmark driver not available')
+            completion = driver.verify(completion_work, deadline=deadline, cancel=cancel)
             if (completion['brief_sha256'] != task['files'][task['prompt']] or
                     (_case is not None and (completion['attempt'] != _case['attempt']
                      or completion['context_pins'] != _case.get('completion_context_pins')))):
@@ -505,7 +542,8 @@ def combined_result(generation_execution, scoring):
 
 def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, expect_pins=None,
              case_timeout=None, grading_reserve=None, max_work=None, cancel=None,
-             completion_context=None, expect_context=None, completion_policy=None, expect_completion_policy=None):
+             completion_context=None, expect_context=None, completion_policy=None, expect_completion_policy=None,
+             driver=None):
     """One finite case; a work credit admits one generation subtree or grading phase.
 
     The generation sandbox's PID namespace contains its child preparation/build/review.
@@ -539,13 +577,15 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
     cancel = cancel if cancel is not None else native_run.Cancellation()
     task_root, scratch = Path(task_root), Path(scratch)
     task = pinned_task(task_root, expect_pins=expect_pins)
+    driver = get_driver(driver)
     if acquisition:
-        from . import acquisition_completion
+        if driver is None:
+            raise ValueError('acquisition completion driver not available')
         context_path = Path(completion_context).absolute()
         task_path = task_root.resolve()
         if context_path.resolve() == task_path or task_path in context_path.resolve().parents or context_path.resolve() in task_path.parents:
             raise ValueError('public completion context must be separate from the private task')
-        acquisition_completion.context(context_path, expect_context)
+        driver.context(context_path, expect_context)
     scratch.mkdir(parents=True, exist_ok=False)
     ledger = {'schema': 'agent-ee.generation-trial/1', 'generator_sha256': None, 'evaluations': [],
               'task_pins': task['files']['pins.json'], 'limits': {'attempts': attempts, 'timeout_s': timeout,
@@ -576,12 +616,12 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
             raise native_run.DeadlineExhausted('case stopped before public preparation')
         if acquisition:
             shutil.copytree(context_path, scratch / 'completion-context')
-            acquisition_completion.context(scratch / 'completion-context', expect_context)
+            driver.context(scratch / 'completion-context', expect_context)
             if expect_completion_policy is not None:
-                acquisition_completion.seat_policy(completion_policy, expect_completion_policy)
+                driver.seat_policy(completion_policy, expect_completion_policy)
                 shutil.copyfile(completion_policy, scratch / 'completion-policy.json')
                 completion_policy = scratch / 'completion-policy.json'
-                acquisition_completion.seat_policy(completion_policy, expect_completion_policy)
+                driver.seat_policy(completion_policy, expect_completion_policy)
         public = scratch / 'public'
         public.mkdir()
         shutil.copyfile(task_root / task['prompt'], public / 'prompt.md')
@@ -591,14 +631,14 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(task_root / task['public_context'], destination)
         if acquisition:
-            prepared_config, _ = acquisition_completion.context(scratch / 'completion-context', expect_context)
-            prepared_options = acquisition_completion.preparation_options(scratch / 'completion-context', prepared_config)
+            prepared_config, _ = driver.context(scratch / 'completion-context', expect_context)
+            prepared_options = driver.preparation_options(scratch / 'completion-context', prepared_config)
             effective_public = public / task['public_context'] if public_pin else prepared_options.get('public_context')
             effective_pin = public_pin or prepared_options.get('public_context_sha256')
             if public_pin and 'public_context_sha256' in prepared_options and prepared_options['public_context_sha256'] != public_pin:
                 raise ValueError('task/public preparation context conflicts')
             if effective_public is not None:
-                acquisition_completion.admit_public_context(scratch / 'completion-context', expect_context,
+                driver.admit_public_context(scratch / 'completion-context', expect_context,
                     public / 'prompt.md', effective_public, effective_pin, deadline=productive, cancel=cancel)
         ledger['generator_sha256'] = digest(public / 'generator.py')
         save()
@@ -644,14 +684,14 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
                         pass
                     else:
                         entry['status'] = 'qualifying'; save()
-                        completion_record = acquisition_completion.complete(public, work, scratch / f'production-{index + 1}',
+                        completion_record = driver.complete(public, work, scratch / f'production-{index + 1}',
                             scratch / 'completion-context', expect_context, attempt=index + 1,
                             deadline=productive, cancel=cancel, policy=completion_policy, expect_policy=expect_completion_policy,
                             public_context=public / task['public_context'] if public_pin else None,
                             public_context_sha256=public_pin)
                         entry['qualification_execution'] = completion_record['execution']
                         finished = time.monotonic()
-                        completion_work = acquisition_completion.retain(scratch / f'completion-{index + 1}',
+                        completion_work = driver.retain(scratch / f'completion-{index + 1}',
                             scratch / 'completion-context', expect_context, scratch / f'production-{index + 1}',
                             brief=public / 'prompt.md', attempt=index + 1, productive_deadline=productive, finished=finished,
                             deadline=deadline, cancel=cancel,
@@ -924,7 +964,7 @@ def expected_series(paths, manifest, expect_pins):
     return expected
 
 
-def replay_report(trial, report):
+def replay_report(trial, report, *, driver=None):
     """Recompute derived claims without invoking tools or trusting report verdicts."""
     binding = report['binding']
     task = pinned_task(trial / 'task', expect_pins=binding['task_files']['pins.json'])
@@ -949,11 +989,13 @@ def replay_report(trial, report):
         raise ValueError('unsafe outputs cannot provide evidence')
     completion = None
     if 'completion_files' in binding:
-        from . import acquisition_completion
+        driver = get_driver(driver)
+        if driver is None:
+            raise ValueError('benchmark driver not available for replay')
         if tree_files(trial / 'completion') != binding['completion_files']:
             raise ValueError('completion evidence differs from binding')
         # Replay is not a new productive run. Production verification launches no tools.
-        completion = acquisition_completion.verify(trial / 'completion', deadline=sys.float_info.max, replay=True)
+        completion = driver.verify(trial / 'completion', deadline=sys.float_info.max, replay=True)
         if (completion['brief_sha256'] != task['files'][task['prompt']] or
                 completion.get('public_context_sha256') != public_pin or
                 completion.get('completion_policy_sha256') != binding.get('case', {}).get('completion_policy_sha256')):

@@ -9,7 +9,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from agent_ee import acquisition_completion as completion, campaign, generation_benchmark as benchmark
+from agent_ee.acquisition import completion, addr_repair as campaign
+from agent_ee import generation_benchmark as benchmark
 from agent_ee import native_run, retained_run, run_record
 from agent_ee.check_record import CheckRecord
 from agent_ee.storage import digest, read_json, write_json
@@ -235,7 +236,7 @@ class GeneratedAddrTests(unittest.TestCase):
             self.assertFalse(out.exists());self.assertEqual(kwargs['addr_tie'],'GND')
             self.assertIs(native_run._cancel.get(),self.cancel);self.assertEqual(native_run._deadline.get(),self.deadline)
             observed.append(out);out.mkdir();write_json(out/'preparation.json',{'synthetic':'fresh original source preparation boundary'})
-        with patch('agent_ee.acquisition_prepare.prepare',side_effect=prepare), \
+        with patch('agent_ee.acquisition.prepare.prepare',side_effect=prepare), \
                 patch.object(run_record,'runtime_files',return_value=self.host['runtime_files']):
             selection=production/'repair/selection.json'
             completion.produce(common,digest(common/'pins.json'),brief,request,production,attempt=2,deadline=self.deadline,
@@ -327,7 +328,7 @@ class PolicyRequestBindingTests(unittest.TestCase):
 class PublicCatalogAdmissionTests(unittest.TestCase):
     """Use the actual producer policy reader, before any generation admission."""
     def setUp(self):
-        from agent_ee import acquisition_resistor
+        from agent_ee.acquisition import resistor as acquisition_resistor
         self.producer=acquisition_resistor
         self.root=Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.common=self.root/'common';self.common.mkdir();(self.common/'inputs').mkdir()

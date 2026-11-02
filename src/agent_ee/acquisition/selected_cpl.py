@@ -3,9 +3,9 @@ from pathlib import Path
 from hashlib import sha256
 import shutil
 
-from . import cpl_rotation, easyeda_footprint, land_pattern, parts_manifest, requirement_map
-from .catalog import exact_fields, strict_json
-from .storage import digest, json_bytes
+from .. import cpl_rotation, easyeda_footprint, land_pattern, parts_manifest, requirement_map
+from ..catalog import exact_fields, strict_json
+from ..storage import digest, json_bytes
 
 
 def supplier_files(context, captures):
@@ -39,7 +39,7 @@ def projected_inventory(original, context, captures, *, resistor_captures=None):
     projected = dict(original)
     files = supplier_files(context, captures)
     if resistor_captures is not None:
-        from . import acquisition_resistor
+        from . import resistor as acquisition_resistor
         files.update(acquisition_resistor.supplier_files(resistor_captures))
     for path, raw in files.items():
         if path in projected:
@@ -52,10 +52,10 @@ def materialize(original, destination, context, captures, expected, *, power_rep
     shutil.copytree(original, destination)
     files = supplier_files(context, captures)
     if power_repair_captures is not None:
-        from . import acquisition_power_repair
+        from . import power_repair as acquisition_power_repair
         files.update(acquisition_power_repair.supplier_files(power_repair_captures))
     if resistor_captures is not None:
-        from . import acquisition_resistor
+        from . import resistor as acquisition_resistor
         files.update(acquisition_resistor.supplier_files(resistor_captures))
     for name, raw in files.items():
         path = Path(destination) / name
@@ -100,7 +100,7 @@ def finalize(revised, overlay, cpl_root, *, resistor_selection=None, public_poli
     if selected & {'C137695', 'C114669'}:
         expected = expected - {'C137695', 'C114669'}
     if 'C118155' in selected:
-        from . import acquisition_resistor
+        from . import resistor as acquisition_resistor
         if resistor_selection is None or resistor_selection.get('selected') != 'C118155':
             raise ValueError('Panasonic CPL selection requires its admitted resistor decision')
         decision = strict_json(parts_manifest._read_blob(revised, resistor_selection['decision']))
@@ -124,7 +124,7 @@ def finalize(revised, overlay, cpl_root, *, resistor_selection=None, public_poli
     question['sources'] = [s for s in question['sources'] if s not in ('assembly-release-ids.json', 'stock-assembly-release')]
     question['sources'] += ['assembly-release-ids.json SHA256 ' + digest(roster_path),
                             'parts.json and preparation/alternative/decision.json (operative selected purchasing identities)']
-    from .acquisition_alternative import _assembly_check
+    from .alternative import _assembly_check
     mapping = strict_json((revised / 'requirement-map.json').read_bytes())
     question['sources'].append(_assembly_check(mapping)['params']['catalog'] + ' (operative stock capture; freshness remains run-bound)')
     if selected & {'C137695', 'C114669'}:

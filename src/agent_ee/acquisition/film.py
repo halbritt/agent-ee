@@ -8,14 +8,15 @@ from fractions import Fraction
 from hashlib import sha256
 from pathlib import Path
 
-from . import (acquisition_film_analysis, acquisition_film_removal, acquisition_power_analysis, acquisition_power_prepare,
-               acquisition_reverse_blocking, cpl_rotation, easyeda_footprint,
-               jlc_stock_capture, part_record, parts_manifest, typed_overlay)
-from .catalog import strict_json
-from .footprint_library import _members
-from .storage import identity, json_bytes
+from . import (film_analysis as acquisition_film_analysis, film_removal as acquisition_film_removal,
+               power_analysis as acquisition_power_analysis, power_prepare as acquisition_power_prepare,
+               reverse_blocking as acquisition_reverse_blocking)
+from .. import cpl_rotation, easyeda_footprint, jlc_stock_capture, part_record, parts_manifest, typed_overlay
+from ..catalog import strict_json
+from ..footprint_library import _members
+from ..storage import identity, json_bytes
 
-DATA = Path(__file__).resolve().parents[2] / 'fixtures/acquisition-film'
+DATA = Path(__file__).resolve().parents[3] / 'fixtures/acquisition-film'
 REFERENCE = 'acquisition-control-film-r1'
 MPN = '25MU225MB23225'
 LCSC = 'C3778570'

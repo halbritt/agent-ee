@@ -10,12 +10,12 @@ from fractions import Fraction
 from hashlib import sha256
 from pathlib import Path
 
-from . import easyeda_footprint
-from .catalog import strict_json
-from .storage import json_bytes
+from .. import easyeda_footprint
+from ..catalog import strict_json
+from ..storage import json_bytes
 
 REFERENCE = 'acquisition-control-reverse-blocking-r1'
-DATA = Path(__file__).resolve().parents[2] / 'fixtures/acquisition-reverse-blocking'
+DATA = Path(__file__).resolve().parents[3] / 'fixtures/acquisition-reverse-blocking'
 LIBRARY = 'AgentEE_Power'
 SYMBOL = 'ADP7104ARDZ-3.3'
 FOOTPRINT = 'ADP7104ARDZ_SOIC8_EP'

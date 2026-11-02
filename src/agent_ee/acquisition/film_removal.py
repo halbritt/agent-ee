@@ -3,11 +3,11 @@ from copy import deepcopy
 from hashlib import sha256
 from pathlib import Path
 
-from . import acquisition_power_prepare
-from .catalog import strict_json
-from .storage import json_bytes
+from . import power_prepare as acquisition_power_prepare
+from ..catalog import strict_json
+from ..storage import json_bytes
 
-DATA = Path(__file__).resolve().parents[2] / 'fixtures/acquisition-film'
+DATA = Path(__file__).resolve().parents[3] / 'fixtures/acquisition-film'
 AT = 'analysis/film-removal/'
 CONDITION = 'adp7104-film-25c-independent-removal-sensitivity'
 CHECK = 'film-independent-removal'
@@ -31,7 +31,7 @@ def attach(files, root):
     files.update(additions)
     files[AT + 'evidence-manifest.json'] = json_bytes(declaration)
     files[AT + 'replay.py'] = (DATA / 'removal_replay.py').read_bytes()
-    analysis = Path(__file__).with_name('acquisition_power_analysis.py').read_bytes()
+    analysis = Path(__file__).with_name('power_analysis.py').read_bytes()
     if sha256(analysis).hexdigest() != declaration['power_analysis_sha256']:
         raise ValueError('removal measurement reader differs from the executed investigation')
     files[AT + 'power_analysis.py'] = analysis

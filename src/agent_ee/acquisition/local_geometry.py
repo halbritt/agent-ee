@@ -2,7 +2,7 @@
 import heapq
 import math
 
-from .placement_job import JobRefusal, _check_stop
+from ..placement_job import JobRefusal, _check_stop
 
 
 def via_points(a, b, cap_other, ic_centre, next_pad, cap_box, ic_box):
@@ -127,7 +127,7 @@ def polygon_path(source,endpoints,limit_mm,*,clock,cancel_dir):
     The caller must subsequently check every emitted segment with native DRC.
     """
     import pcbnew as k
-    from .rf_geometry import _polyset
+    from ..rf_geometry import _polyset
     _check_stop(clock,cancel_dir)
     board=k.LoadBoard(str(source))
     if board is None:raise JobRefusal('local loops: native obstacle load failed')

@@ -50,6 +50,12 @@ The refusal or acceptance of a build's inputs before any run directory exists; e
 **Stage receipt**:
 The sealed evidence that one build stage ran on identified inputs and produced identified outputs.
 
+**Stage execution**:
+The execution harness (`stage_execution.py`) that enforces candidate read-only confinement, manages scratch directory lifecycles, and verifies process mountinfo isolation.
+
+**Build completion**:
+The reusable typed completion workflow (`build_completion.py`) that replays production verification, validates judgment seat policies, and verifies package binding without coupling to campaign recipes.
+
 **Qualification**:
 The assessment of a retained run against sealed typed evidence, producing one qualification record that says whether the run is accepted and why.
 
@@ -72,6 +78,9 @@ One proposed position, rotation and side for a footprint, carrying its provenanc
 **Pinned router run**:
 One attempt by the pinned kicad-route checkout on a candidate, with preflight, run and one classification of its result as accepted, policy-failed or refused.
 _Avoid_: router call, KRT run
+
+**agent-ee.local-routing-seed/1**:
+A normalized data-driven schema for local decoupling loops, return paths, and ground-tie geometry derived from board geometry models rather than single-board heuristics.
 
 **Pin**:
 The exact kicad-route commit and code hashes agent-ee is qualified against; a run on any other code is refused.

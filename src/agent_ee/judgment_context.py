@@ -26,11 +26,7 @@ class Source:
     diagnostic: bool = False
 
 
-def checkpoint(deadline=None):
-    limits = [value for value in (deadline, native_run._deadline.get()) if value is not None]
-    cancel = native_run._cancel.get()
-    if (limits and time.monotonic() >= min(limits)) or (cancel is not None and cancel.cancelled.is_set()):
-        raise native_run.DeadlineExhausted('judgment context deadline/cancellation')
+checkpoint = native_run.checkpoint
 
 
 def _bytes(path, deadline=None, limit=MAX_BYTES):

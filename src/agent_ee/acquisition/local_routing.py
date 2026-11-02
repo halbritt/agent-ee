@@ -4,13 +4,13 @@ from pathlib import Path
 import shutil
 import uuid
 
-from . import (acquisition_ground_ties as ground, acquisition_local_return as local,
-               acquisition_mechanics as mechanics)
-from .add_planes import validate_plan
-from .catalog import strict_json
-from .placement_job import JobRefusal, JobStopped, _check_stop, drc
-from .storage import canonical, digest, write_json
-from .symbol_library import children, nanometres, parse_sexpr
+from . import (ground_ties as ground, local_return as local,
+               mechanics as mechanics)
+from ..add_planes import validate_plan
+from ..catalog import strict_json
+from ..placement_job import JobRefusal, JobStopped, _check_stop, drc
+from ..storage import canonical, digest, write_json
+from ..symbol_library import children, nanometres, parse_sexpr
 
 SCHEMA='agent-ee.acquisition-local-routing/1'
 
@@ -22,7 +22,7 @@ def applies(recipe):
 
 def power_reference(recipe):
     """A validated mechanical source revision selects the electrical recipe."""
-    from . import acquisition_film, acquisition_power_geometry, acquisition_reverse_blocking
+    from . import film as acquisition_film, power_geometry as acquisition_power_geometry, reverse_blocking as acquisition_reverse_blocking
     mechanics._recipe(recipe)
     if recipe['declaration']['sources']['analysis/geometry-model.json'] in acquisition_film.MODELS:
         return acquisition_film.REFERENCE
@@ -81,7 +81,7 @@ def reservation_bytes(data,recipe,planes):
 
 def verify_reservations(board_path,reservations):
     import pcbnew as k
-    from .placement_probe import rule_area
+    from ..placement_probe import rule_area
     board=k.LoadBoard(str(board_path))
     if board is None:raise JobRefusal('local routing: native reservation board load failed')
     result=[]

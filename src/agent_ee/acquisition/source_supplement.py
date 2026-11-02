@@ -6,12 +6,12 @@ module admits its complete pinned inventory; it neither fetches nor qualifies it
 import json
 from pathlib import Path
 
-from . import requirement_map
-from .spec_record import sha256
-from .storage import json_bytes
+from .. import requirement_map
+from ..spec_record import sha256
+from ..storage import json_bytes
 
 AT = 'source-supplement'
-PINS = Path(__file__).resolve().parents[2] / 'fixtures/acquisition-typed/source-supplement.json'
+PINS = Path(__file__).resolve().parents[3] / 'fixtures/acquisition-typed/source-supplement.json'
 ORIGINAL_MODEL = '0badae526e172bd688bc634e1fb2dec040fbca80dab15641bb0ff7e83d7f23f4'
 MURATA_PDF = '3f5a339eb51502df7716dfd2d4c4e6d33e837abc0df5cb8e4fc1e6e275d09790'
 MURATA_BASIS = ('Murata GRM1885C1H103JA01D exact reference sheet GRM1885C1H103JA01-01A, '

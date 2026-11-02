@@ -6,9 +6,9 @@ LTspice's temperature to 25 C does not supply missing temperature coefficients.
 from decimal import Decimal
 from hashlib import sha256
 
-from . import acquisition_power_analysis as power
-from .catalog import strict_json
-from .storage import json_bytes
+from . import power_analysis as power
+from ..catalog import strict_json
+from ..storage import json_bytes
 
 CIRCUIT_SHA256 = '44a6f38c1bb764ca9ad257b9c6f6e1da6722bd384f74b7cb804e244b0ddcdfd4'
 PARTS_SHA256 = '44a05242208806564a409ddd936c48b74b26c490a0dfec6d8587762890a2bc4a'

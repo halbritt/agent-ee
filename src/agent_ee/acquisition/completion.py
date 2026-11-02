@@ -7,11 +7,12 @@ from pathlib import Path
 import sys
 import time
 
-from . import native_run, qualification, retained_run
-from .candidate import safe_relative
-from .catalog import exact_fields
-from .stage_receipts import tree_identity
-from .storage import digest, read_json, write_json
+from .. import native_run, qualification, retained_run
+from ..native_run import checkpoint
+from ..candidate import safe_relative
+from ..catalog import exact_fields
+from ..stage_receipts import tree_identity
+from ..storage import digest, read_json, write_json
 
 CONTEXT = 'agent-ee.acquisition-completion/1'
 PINS = 'agent-ee.acquisition-context-pins/1'
@@ -23,14 +24,8 @@ class CompletionUnavailable(ValueError):
     """A required production integration is absent; never substitute testimony."""
 
 
-def checkpoint(deadline, cancel=None):
-    if (not isinstance(deadline, (int, float)) or not math.isfinite(deadline)
-            or time.monotonic() >= deadline or (cancel is not None and cancel.cancelled.is_set())):
-        raise native_run.DeadlineExhausted('acquisition completion deadline/cancellation')
-
-
 def context(root, expect_pins):
-    from .generation_benchmark import tree_files
+    from ..generation_benchmark import tree_files
     root = Path(root).absolute()
     if any(p.is_symlink() for p in (root, *root.parents)):
         raise ValueError('public context traverses a link')
@@ -118,9 +113,10 @@ def preparation_options(root, config):
 def admit_public_context(context_root, expect_pins, brief, public_context, expected, *, deadline, cancel=None):
     """Admit exact catalog identities before an attempt using the producer's readers."""
     checkpoint(deadline, cancel)
-    from . import acquisition_prepare, acquisition_resistor, acquisition_alternative_context
-    from . import acquisition_alternative, acquisition_power_repair, parts_manifest
-    from .catalog import strict_json
+    from . import prepare as acquisition_prepare, resistor as acquisition_resistor, alternative_context as acquisition_alternative_context
+    from . import alternative as acquisition_alternative, power_repair as acquisition_power_repair
+    from .. import parts_manifest
+    from ..catalog import strict_json
     root = Path(context_root)
     config, _ = context(root, expect_pins)
     options = preparation_options(root, config)
@@ -155,55 +151,10 @@ def admit_public_context(context_root, expect_pins, brief, public_context, expec
     return result
 
 
-def seat_policy(path, expected):
-    """A separately pinned trusted-parent policy, never part of writer output."""
-    from .judgment_seats import seat_policy as validate_seats
-    path = Path(path)
-    if (path.is_symlink() or not path.is_file() or path.stat().st_size > 1048576
-            or digest(path) != expected):
-        raise ValueError('trusted judgment seat policy pin mismatch')
-    data = read_json(path)
-    exact_fields(data, ('author', 'verifier', 'private_evaluator_pair', 'launch_environment',
-                        *(['implementation'] if 'implementation' in data else [])))
-    if 'implementation' in data:
-        from .profiles import validate_definition
-        validate_definition(data['implementation'])
-    validate_seats(data['author'], data['verifier'], data['private_evaluator_pair'])
-    exact_fields(data['launch_environment'], ('run_id', 'policy_files', 'runtime_files'))
-    return data
-
-
-def package_binding(root, deadline, cancel=None, *, environment=None):
-    """Replay the production verifier read-only, including complete stage/native custody."""
-    checkpoint(deadline, cancel)
-    root = Path(root).resolve()
-    plan = retained_run.verify_retained(root)
-    report = retained_run.snapshot(root)
-    if (report.get('accepted') is not True or report.get('status') != 'accepted'
-            or plan is None or plan['schema'] != qualification.TYPED_SCHEMA or 'review_profile' not in plan
-            or [r['stage'] for r in report['completed']] != list(retained_run.STAGES)):
-        raise ValueError('completion requires seven-stage typed package and requested full review')
-    from .run_record import policy_files, runtime_files
-    if environment is None:
-        environment = dict(policy_files=policy_files(), runtime_files=runtime_files(
-            checkpoint=lambda: checkpoint(deadline, cancel)))
-    elif environment.get('policy_files') != policy_files():
-        raise ValueError('package verifier source differs from frozen environment')
-    record = qualification.assess(root, persist=False, host=environment)
-    checkpoint(deadline, cancel)
-    if not record['accepted'] or read_json(root / 'qualification.json') != record:
-        raise ValueError('production package qualification is not accepted/current')
-    package = retained_run.completed_stage(root, 'package', report)
-    review = retained_run.checked_review(root, report, host=environment)
-    if review is None or review.directory != package.directory:
-        raise ValueError('package review does not bind final candidate')
-    manifest = read_json(package.directory / 'review/candidate.json')
-    binding = dict(root=str(root), tree=tree_identity(root), build_identity=report['identity'],
-        candidate=package.record['candidate'], candidate_id=manifest['candidate_id'],
-        verifier_environment=environment,
-        board_sha256=review.binding['board_sha256'], scope_sha256=review.binding['scope_sha256'])
-    checkpoint(deadline, cancel)
-    return binding
+from ..build_completion import (
+    load_seat_policy, verify_package_binding, complete_typed_build,
+    seat_policy, package_binding, complete_prepared,
+)
 
 
 def complete(public, work, production, context_root, expect_pins, *, attempt, deadline, cancel,
@@ -305,7 +256,7 @@ def terminal(production, productive_deadline):
 
 def retain(root, context_root, expect_pins, production, *, brief, attempt, productive_deadline, finished, deadline, cancel=None, public_context=None, public_context_sha256=None, completion_policy_sha256=None):
     """Parent-owned receipt: execution failure never supplies native/refusal outputs."""
-    from .generation_benchmark import executor_outcome, tree_files
+    from ..generation_benchmark import executor_outcome, tree_files
     root, production = Path(root), Path(production)
     checkpoint(deadline, cancel)
     context(context_root, expect_pins)
@@ -350,7 +301,7 @@ def retain(root, context_root, expect_pins, production, *, brief, attempt, produ
 
 
 def verify(root, *, deadline, cancel=None, replay=False):
-    from .generation_benchmark import executor_outcome, tree_files
+    from ..generation_benchmark import executor_outcome, tree_files
     checkpoint(deadline, cancel)
     root = Path(root)
     record = read_json(root / 'receipt.json')
@@ -361,7 +312,7 @@ def verify(root, *, deadline, cancel=None, replay=False):
         raise ValueError('unknown completion receipt')
     context(record['context'], record['context_pins'])
     if 'public_context' in record:
-        from .generation_benchmark import case_context
+        from ..generation_benchmark import case_context
         path = Path(record['public_context'])
         if path.is_symlink() or digest(path) != record['public_context_sha256']:
             raise ValueError('public case context changed at completion replay')
@@ -405,8 +356,8 @@ def produce(context_root, expect_pins, brief, request, production, *, attempt, d
     Accepted packages are established only by the supervised trusted parent.
     The campaign repair and per-case catalog selector remain separate boundaries.
     """
-    from . import acquisition_prepare
-    from .generation_benchmark import tree_files
+    from . import prepare as acquisition_prepare
+    from ..generation_benchmark import tree_files
     checkpoint(deadline)
     config, _ = context(context_root, expect_pins)
     if public_context is not None or public_context_sha256 is not None:
@@ -415,7 +366,7 @@ def produce(context_root, expect_pins, brief, request, production, *, attempt, d
                 or Path(public_context).stat().st_size > 65536 or digest(public_context) != public_context_sha256):
             raise ValueError('public case-context pin mismatch')
         # Selector and qualification remain owned by the existing production producer.
-        from .generation_benchmark import case_context
+        from ..generation_benchmark import case_context
         case_context(public_context)
     request, production, context_root = Path(request), Path(production), Path(context_root)
     validate_request(request, brief, attempt)
@@ -429,7 +380,7 @@ def produce(context_root, expect_pins, brief, request, production, *, attempt, d
             raise ValueError('unexpected repair selection on initial attempt')
         production.mkdir(parents=True, exist_ok=False)
     else:
-        from .campaign import verify_generated_addr
+        from .addr_repair import verify_generated_addr
         selection = production / 'repair' / 'selection.json'
         if (repair_selection is None or expect_repair_selection is None
                 or Path(repair_selection) != selection or digest(selection) != expect_repair_selection
@@ -456,7 +407,7 @@ def produce(context_root, expect_pins, brief, request, production, *, attempt, d
 
 
 def validate_request(request, brief, attempt):
-    from .generation_benchmark import tree_files
+    from ..generation_benchmark import tree_files
     request = Path(request)
     if set(tree_files(request)) != {'request.json'} or (request / 'request.json').stat().st_size > 4096:
         raise ValueError('generator may emit only bounded request.json')
@@ -467,7 +418,7 @@ def validate_request(request, brief, attempt):
 
 def failed_public_review(production, context_root, expect_pins, deadline, cancel):
     """Diagnostic only: never a package or release, never a detached post-case review."""
-    from . import build_workflow
+    from .. import build_workflow
     checkpoint(deadline, cancel)
     config, _ = context(context_root, expect_pins)
     selected = retained_run.review_source(Path(production) / 'build')
@@ -514,7 +465,7 @@ def repair_original(production, context_root, expect_pins):
 
 
 def begin_addr_repair(production, context_root, expect_pins, policy, policy_sha256, deadline, cancel):
-    from .campaign import select_generated_addr
+    from .addr_repair import select_generated_addr
     checkpoint(deadline, cancel)
     previous, first = repair_original(production, context_root, expect_pins)
     if read_json(previous / 'parent-completion.json')['deadline'] != deadline:
@@ -529,7 +480,7 @@ def begin_addr_repair(production, context_root, expect_pins, policy, policy_sha2
 
 
 def verify_addr_lineage(production, context_root, expect_pins, package, deadline, cancel=None):
-    from .campaign import verify_generated_addr
+    from .addr_repair import verify_generated_addr
     checkpoint(deadline, cancel)
     production = Path(production)
     previous, first = repair_original(production, context_root, expect_pins)
@@ -571,70 +522,7 @@ def finish_addr_repair(production, context_root, expect_pins, package, deadline,
     return dict(path=str(Path(production) / 'repair'), tree=tree_identity(Path(production) / 'repair'))
 
 
-def complete_prepared(prepared, build_run, out, *, author, verifier, private_evaluator_pair,
-                      deadline, cancellation, launch_environment, host=None):
-    """Parent-side composition for the fixed public judgment producer.
 
-    The caller retains the SAME case cancellation object. This function is not
-    exposed as a generator command and accepts no producer/module/shell override.
-    Supervised preparation is intermediate until this composition finishes.
-    """
-    import importlib
-    import importlib.util
-    import shutil
-    from . import build_workflow
-    from .requirement_map import input_inventory
-    checkpoint(deadline, cancellation)
-    name = 'agent_ee.judgment_seats'
-    if importlib.util.find_spec(name) is None:
-        raise CompletionUnavailable('independent judgment author/verifier adapter is not wired')
-    producer = importlib.import_module(name)
-    prepared, build_run, out = Path(prepared).resolve(), Path(build_run).resolve(), Path(out).resolve()
-    plan_path = prepared / 'build-plan.json'
-    plan = read_json(plan_path)
-    with native_run.using(deadline=deadline, cancel=cancellation):
-        checkpoint(deadline, cancellation)
-        report = build_workflow.run(plan_path, build_run, through='artwork')
-        if [r['stage'] for r in report['completed']] != list(retained_run.STAGES[:-1]):
-            raise ValueError('judgments require actual completed artwork')
-        checkpoint(deadline, cancellation)
-        native_checks = out.with_name(out.name + '-native-checks')
-        build_workflow.review_build(build_run, native_checks,
-            max_seconds=max(1, min(86400, int(deadline-time.monotonic()))))
-        checkpoint(deadline, cancellation)
-        result = producer.produce(build_run, out, author=author, verifier=verifier,
-            private_evaluator_pair=private_evaluator_pair, deadline=deadline,
-            cancellation=cancellation, launch_environment=launch_environment, host=host,
-            native_checks=native_checks)
-        checkpoint(deadline, cancellation)
-        if result['execution'] != 'ok' or result['outcome'] != 'criteria_satisfied':
-            raise ValueError('judgment author/verifier did not complete successfully')
-        records = Path(result['judgment_directory']).absolute()
-        receipt = Path(result['producer_receipt']).absolute()
-        if (not records.is_relative_to(out) or not receipt.is_relative_to(out)
-                or records == out or records.resolve() != records or receipt.resolve() != receipt):
-            raise ValueError('judgment producer paths escape owned output')
-        for path in (records, receipt):
-            if any(p.is_symlink() for p in (path, *path.parents)):
-                raise ValueError('judgment producer paths contain a link')
-        if (not receipt.is_file() or receipt.stat().st_nlink != 1
-                or digest(receipt) != result['producer_receipt_sha256']
-                or input_inventory(records) != result['judgment_inventory']):
-            raise ValueError('judgment producer receipt/directory custody differs')
-        producer.verify(out, result)
-        source = (plan_path.parent / plan['source']).resolve()
-        target = retained_run.retained_path(source, plan['judgments'])
-        if target.exists() or target.is_symlink():
-            raise ValueError('judgment source already exists; never overwrite prior records')
-        shutil.copytree(records, target)
-        if input_inventory(target) != result['judgment_inventory']:
-            raise ValueError('judgment inventory changed during adoption')
-        checkpoint(deadline, cancellation)
-        report = build_workflow.run(plan_path, build_run, resume=True)
-        checkpoint(deadline, cancellation)
-        if report['status'] != 'accepted':
-            raise ValueError('resumed package/full review did not accept')
-        return package_binding(build_run, deadline, cancellation)
 
 
 def main():

@@ -5,14 +5,14 @@ from fractions import Fraction
 import json
 from pathlib import Path
 
-from . import (acquisition_alternative, acquisition_source_supplement, active_spice,
-               assembly_readiness, cpl_rotation, easyeda_footprint, jlc_stock_capture,
+from . import alternative as acquisition_alternative, source_supplement as acquisition_source_supplement
+from .. import (active_spice, assembly_readiness, cpl_rotation, easyeda_footprint, jlc_stock_capture,
                part_record, parts_manifest, requirement_map)
-from .storage import digest, identity, json_bytes
+from ..storage import digest, identity, json_bytes
 
 AT = 'power-repair'
 PREFIX = 'preparation/power-repair'
-PINS = Path(__file__).resolve().parents[2] / 'fixtures/acquisition-typed/power-repair.json'
+PINS = Path(__file__).resolve().parents[3] / 'fixtures/acquisition-typed/power-repair.json'
 PINS470 = PINS.with_name('power-repair-470.json')
 # Supporting rail assertion: conditional JEDEC-reference U1 dissipation screen at declared 25C.
 # Limit floor((125C recommended TJmax - 25C)/187.1C/W DBV RthetaJA) to 5 decimals, TI SBVS338H 5.3/5.4.

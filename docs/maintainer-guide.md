@@ -248,6 +248,15 @@ The baseline and campaign additions are explicit interfaces with separate owners
 | `advance(history, result, manifest, max_iterations)` | Pure convergence decision and iteration record; no model calls or file mutation |
 | `run_campaign(config_path, out)` / `verify_campaign(root)` | Own repair orchestration and verification of retained historical projections |
 | `ingest(run, report_path, out)` | Validate and capture sample/calibration evidence; lower-level helper, not a standalone complete feedback workflow |
+
+## Architectural boundaries and package isolation
+
+To prevent regressions across milestones and campaigns, architectural boundaries are verified by `tests/test_architecture_boundaries.py` using static AST inspection:
+1. **Acquisition package isolation**: General modules in `src/agent_ee/` must not import `agent_ee.acquisition` or `.acquisition`. Campaign-specific recipes live exclusively in `src/agent_ee/acquisition/`.
+2. **Native pcbnew boundary**: `build_workflow.py` and `build_stages.py` do not import `pcbnew`.
+3. **Stage confinement**: Reads of `/proc/self/mountinfo` are strictly confined to stage execution and receipts.
+4. **Reviewer dispatch**: External calls to `reviewers.dispatch` are forbidden outside `reviewers.py` and metered test utilities (`packet_ab.py`).
+5. **Acyclic completion graph**: Zero bidirectional import cycles are permitted across `build_completion`, `judgment_seats`, `campaign`, and `generation_benchmark`.
 | `bench_review(run, report, out, max_seconds, review_out=...)` | Register source supersession and run fresh verification; `review_out` is an internal keyword-only placement hook |
 | `campaign_feedback(root, report, out, max_seconds)` | Hold campaign ownership, admit feedback and continue a calibrated epoch |
 

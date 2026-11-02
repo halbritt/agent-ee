@@ -9,11 +9,11 @@ from pathlib import Path
 import re
 import uuid
 
-from . import acquisition_local_return as local
-from .placement_job import JobRefusal
-from .catalog import strict_json
-from .storage import canonical, digest
-from .symbol_library import children, parse_sexpr
+from . import local_return as local
+from ..placement_job import JobRefusal
+from ..catalog import strict_json
+from ..storage import canonical, digest
+from ..symbol_library import children, parse_sexpr
 
 POLICY = dict(schema='agent-ee.acquisition-ground-ties/2',
     endpoints=[['U2', '3'], ['C4', '2'], ['C5', '2']],

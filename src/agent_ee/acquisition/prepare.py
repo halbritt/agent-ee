@@ -16,12 +16,17 @@ import shutil
 import stat
 import tempfile
 
-from . import acquisition_resistor, acquisition_expected_intent, acquisition_power_repair, acquisition_source_supplement, acquisition_selected_cpl, acquisition_alternative, acquisition_alternative_context, acquisition_local_return, acquisition_mechanics, build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
-from . import (acquisition_local_geometry, acquisition_local_routing, acquisition_connector_geometry,
-               acquisition_ground_ties)
-from .storage import json_bytes, rename_noreplace
+from . import (resistor as acquisition_resistor, expected_intent as acquisition_expected_intent,
+               power_repair as acquisition_power_repair, source_supplement as acquisition_source_supplement,
+               selected_cpl as acquisition_selected_cpl, alternative as acquisition_alternative,
+               alternative_context as acquisition_alternative_context, local_return as acquisition_local_return,
+               mechanics as acquisition_mechanics)
+from .. import build_plan, catalog, profiles, requirement_map, spec_record, storage, typed_overlay
+from . import (local_geometry as acquisition_local_geometry, local_routing as acquisition_local_routing,
+               connector_geometry as acquisition_connector_geometry, ground_ties as acquisition_ground_ties)
+from ..storage import json_bytes, rename_noreplace
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 REFERENCE = 'acquisition-control'
 REVIEW_PROFILE = 'preparation/review-profile.json'
 INHERITED_REVIEW = 'ENGINEERING-REVIEW.md'
@@ -515,7 +520,7 @@ def _evaluation_replay(path, expected_sha):
             or not isinstance(recipe.get('alternative_context'), dict)
             or recipe.get('addr_tie') not in (None, 'GND', 'V3V3')):
         raise ValueError('expected a pinned compatible prior preparation report')
-    from .jlc_stock_capture import _utc
+    from ..jlc_stock_capture import _utc
     anchor = recipe['alternative_context']['evaluation_as_of']
     if _utc(anchor, 'preparation evaluation anchor') > datetime.now(timezone.utc):
         raise ValueError('preparation evaluation anchor is in the future')
@@ -636,7 +641,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     if any(v is not None for v in role_args):
         if any(v is None for v in role_args):
             raise ValueError('role context requires source root and exact context SHA-256')
-        from . import acquisition_roles, tool_source
+        from . import roles as acquisition_roles
+        from .. import tool_source
         role_raw,role_stamp=_read_context_file(role_context,'role context')
         if spec_record.sha256(role_raw)!=role_context_sha256:
             raise ValueError('role context hash mismatch')
@@ -703,7 +709,8 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
         recipe['public_context'] = {**public, 'catalog_policy': catalog_policy}
         recipe['helpers'][acquisition_resistor.__name__] = storage.digest(acquisition_resistor.__file__)
     if resistor is not None:
-        from . import acquisition_roles, tool_source
+        from . import roles as acquisition_roles
+        from .. import tool_source
         resistor_choice = acquisition_resistor.choose(catalog_policy)
         role_doc, role_captures, role_reports = resistor_roles[resistor_choice]
         entry = resistor_doc['role_contexts'][resistor_choice]
@@ -723,7 +730,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
     if addr_tie is not None:
         recipe['addr_tie'] = addr_tie
     if final_groups:
-        from . import acquisition_block_source
+        from . import block_source as acquisition_block_source
         recipe['final_groups'] = dict(path=acquisition_block_source.PATH,
             engineering_source=dict(path=acquisition_block_source.ENGINEERING_PATH,
                 sha256=spec_record.sha256(acquisition_block_source.engineering_text())),
@@ -862,7 +869,7 @@ def prepare(brief, plan_path, out, *, added_sources, review_profile=None, verifi
                                  for name, pin in files.items()})
         connector_geometry = acquisition_connector_geometry.apply(revised, geometry_sources)
         if final_groups:
-            from . import block_source_stage
+            from .. import block_source_stage
             acquisition_block_source.apply(revised, plan)
             group_source = acquisition_block_source.derive(revised, plan)
             group_path = acquisition_block_source.PATH

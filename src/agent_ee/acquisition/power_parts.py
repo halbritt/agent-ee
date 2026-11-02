@@ -8,11 +8,11 @@ import copy
 from hashlib import sha256
 from pathlib import Path
 
-from . import acquisition_reverse_blocking as variant
-from . import part_record, parts_manifest
-from .catalog import exact_fields, strict_json
-from .footprint_library import _members
-from .storage import identity, json_bytes
+from . import reverse_blocking as variant
+from .. import part_record, parts_manifest
+from ..catalog import exact_fields, strict_json
+from ..footprint_library import _members
+from ..storage import identity, json_bytes
 
 SCHEMA = 'agent-ee.acquisition-power-parts-sources/1'
 AT = 'power-reference'

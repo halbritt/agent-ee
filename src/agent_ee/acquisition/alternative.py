@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-from . import assembly_readiness, part_record, part_selection, parts_manifest, requirement_map
-from .catalog import strict_json
-from .storage import json_bytes, identity
+from .. import assembly_readiness, part_record, part_selection, parts_manifest, requirement_map
+from ..catalog import strict_json
+from ..storage import json_bytes, identity
 
 PRIMARY = 'C37593'
 ALTERNATIVE = 'C468683'

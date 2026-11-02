@@ -8,8 +8,8 @@ import hashlib
 import math
 from pathlib import Path
 
-from .electrical_locality import resolve, roles
-from .storage import canonical
+from ..electrical_locality import resolve, roles
+from ..storage import canonical
 
 MM = 1_000_000
 SCHEMA = 'agent-ee.acquisition-placement-proposal/1'

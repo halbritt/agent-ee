@@ -4,7 +4,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from agent_ee import acquisition_completion as completion, generation_benchmark as benchmark, native_run, qualification
+from agent_ee.acquisition import completion
+from agent_ee import generation_benchmark as benchmark, native_run, qualification
 from agent_ee.storage import digest, json_bytes, read_json, write_json
 from tests import test_generation_benchmark as benchmark_tests
 from tests import test_qualification as qualification_tests
@@ -54,7 +55,7 @@ class AcquisitionBoundaryTests(benchmark_tests.RefusalTests):
         if call.intent.tool != 'acquisition_completion':
             raise AssertionError('unexpected tool call: '+call.intent.tool)
         self.assertEqual(call.intent.isolation, 'host')
-        self.assertEqual(call.intent.argv[1:4], ('-B','-m','agent_ee.acquisition_completion'))
+        self.assertEqual(call.intent.argv[1:4], ('-B','-m','agent_ee.acquisition.completion'))
         values={name:call.intent.argv[call.intent.argv.index('--'+name)+1] for name in
                 ('context','expect-context','brief','request','production','attempt','deadline')}
         self.assertNotIn(str(self.task), call.intent.argv)
@@ -201,7 +202,7 @@ class AcquisitionBoundaryTests(benchmark_tests.RefusalTests):
         self.assertIn('cleanup incomplete',read_json(self.root/'trial/completion-1/receipt.json')['error'])
 
     def test_supported_preparation_is_intermediate_and_never_an_accepted_package(self):
-        from agent_ee import acquisition_prepare
+        from agent_ee.acquisition import prepare as acquisition_prepare
         output=self.root/'request';output.mkdir()
         write_json(output/'request.json',dict(schema=completion.REQUEST,
             brief_sha256=digest(self.task/'prompt.md'),action='prepare'))

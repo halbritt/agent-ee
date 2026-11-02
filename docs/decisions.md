@@ -49,6 +49,10 @@ Future debt must name a demonstrated consequence and a measurable deletion or
 simplification, with preservation tests; routine engineering choices need no
 owner escalation.
 
+### ADR Addendum: Single-campaign recipe isolation in `src/agent_ee/acquisition/` (2026-11-02, AGENTEE-576)
+
+Under AGENTEE-576, the 26 campaign acquisition recipe modules were relocated from the root `src/agent_ee/` namespace into `src/agent_ee/acquisition/`. Reusable typed build completion logic (`complete_typed_build`, `verify_package_binding`, `load_seat_policy`) has been extracted into `src/agent_ee/build_completion.py`, and cooperative deadline/cancellation checkpointing is centralized in `src/agent_ee/native_run.py`. This isolates single-campaign recipe code while strictly preserving AGENTEE-556 architectural invariants: zero bidirectional cycles exist between core modules and recipes, general modules in `src/agent_ee/` maintain zero imports of `agent_ee.acquisition`, and benchmark execution is decoupled via the `BenchmarkDriver` protocol.
+
 ## Nominal manufacturing dimensions (2026-10-24)
 
 Agent-selected implementation decision under the owner's continuing delivery

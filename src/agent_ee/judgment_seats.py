@@ -11,8 +11,8 @@ import shutil
 import stat
 import time
 
-from . import qualification, retained_run
-from .acquisition_completion import checkpoint
+from . import native_run, qualification, retained_run
+checkpoint = native_run.checkpoint
 from .baseline import compile_baseline
 from .catalog import exact_fields, strict_json
 from .profiles import validate_definition
@@ -196,7 +196,7 @@ def verify_native_checks(root, selection, files, scope, *, host=None, current_so
         raise ValueError('judgment native checks are not bound to selected artwork')
     result = verify(root/'review', current_source=current_source, host=host)
     manifest = read_json(root/'review/candidate.json')
-    if (manifest['files'] != {**files, 'build-review/source.json': digest(root/'source.json')}
+    if (manifest['files'] != {**files, retained_run.REVIEW_SOURCE: digest(root/'source.json')}
             or {k:v for k,v in manifest['scope'].items() if k != 'inputs'} !=
                {k:v for k,v in scope.items() if k != 'inputs'}
             or result['candidate_id'] != summary['candidate_id']

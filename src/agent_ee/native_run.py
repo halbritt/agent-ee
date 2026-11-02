@@ -21,6 +21,7 @@ import errno
 import hashlib
 import json
 import locale
+import math
 import os
 import selectors
 import signal
@@ -208,6 +209,36 @@ def cut_by_deadline(record, intent):
     if record.get("execution") != "timeout":
         return False
     return intent.timeout is None or record.get("timeout_s", intent.timeout) < intent.timeout
+
+
+def _is_expired(limit):
+    now = time.time() if limit > 1_000_000_000 else time.monotonic()
+    return now >= limit
+
+
+def checkpoint(deadline=None, cancel=None, *, label=None):
+    """Canonical cooperative deadline and cancellation check."""
+    limits = [value for value in (deadline, _deadline.get()) if value is not None]
+    if limits:
+        for limit in limits:
+            if not isinstance(limit, (int, float)) or not math.isfinite(limit):
+                tag = f" ({label})" if label else ""
+                raise DeadlineExhausted(f"deadline invalid or exhausted{tag}")
+            if _is_expired(limit):
+                tag = f" ({label})" if label else ""
+                raise DeadlineExhausted(f"deadline exhausted{tag}")
+    active_cancel = cancel if cancel is not None else _cancel.get()
+    if active_cancel is not None:
+        is_cancelled = False
+        if callable(active_cancel):
+            is_cancelled = bool(active_cancel())
+        elif hasattr(active_cancel, "cancelled") and hasattr(active_cancel.cancelled, "is_set"):
+            is_cancelled = active_cancel.cancelled.is_set()
+        elif hasattr(active_cancel, "is_set"):
+            is_cancelled = active_cancel.is_set()
+        if is_cancelled:
+            tag = f" ({label})" if label else ""
+            raise DeadlineExhausted(f"execution cancelled{tag}")
 
 
 def baseline_mounts(baseline):

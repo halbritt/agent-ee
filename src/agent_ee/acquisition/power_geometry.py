@@ -1,8 +1,8 @@
 """Exact mechanical derivation for the generated ADP7104 development reference."""
 from hashlib import sha256
 
-from .acquisition_reverse_blocking import DATA
-from .catalog import strict_json
+from .reverse_blocking import DATA
+from ..catalog import strict_json
 
 _PINS = strict_json((DATA / 'geometry-sources.json').read_bytes())
 BASE = _PINS['base_model']

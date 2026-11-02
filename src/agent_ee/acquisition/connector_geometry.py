@@ -1,9 +1,9 @@
 """Finite PH body correction before preparation seals either geometry consumer."""
 from pathlib import Path
 
-from .catalog import strict_json
-from .spec_record import sha256
-from .storage import digest, json_bytes
+from ..catalog import strict_json
+from ..spec_record import sha256
+from ..storage import digest, json_bytes
 
 AT = 'preparation/connector-geometry'
 ORIGINAL = AT + '/original-model.json'

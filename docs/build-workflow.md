@@ -471,3 +471,12 @@ The current integration run passed 93 tests with no skips in 97.303 seconds
 `tests.test_requirement_map`, `tests.test_cli`) in the native executor. Evidence
 is retained under `build/agent545/build-entry-*`. The earlier missing-command
 and malformed test-map failures remain diagnostic evidence.
+
+## Reusable build completion and recipe isolation
+
+Typed build completion logic (`build_completion.py`) provides reusable, uncoupled completion orchestration:
+- `complete_typed_build`: Parent-side composition for fixed judgment producers, executing through artwork and review.
+- `verify_package_binding`: Read-only production verifier replay, confirming complete stage and native custody.
+- `load_seat_policy`: Verification of trusted-parent policy pins.
+
+Campaign-specific preparation, resistor selection, and ADDR repair recipes are isolated within `src/agent_ee/acquisition/` and decoupled from general build completion and benchmark orchestration via the `BenchmarkDriver` protocol.

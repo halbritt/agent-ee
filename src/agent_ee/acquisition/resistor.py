@@ -8,11 +8,11 @@ import tempfile
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 
-from . import (acquisition_alternative, assembly_readiness,
-               easyeda_footprint, jlc_stock_capture, land_pattern, part_record,
+from . import alternative as acquisition_alternative
+from .. import (assembly_readiness, easyeda_footprint, jlc_stock_capture, land_pattern, part_record,
                parts_manifest, requirement_map, storage)
-from .catalog import exact_fields, strict_json
-from .storage import json_bytes
+from ..catalog import exact_fields, strict_json
+from ..storage import json_bytes
 
 SCHEMA = 'agent-ee.acquisition-resistor-context/1'
 AT = 'preparation/resistor-context'
@@ -43,7 +43,7 @@ MODELS = {'fa010715d48ba3fe6e1843e17744834583b98f03a23fb61e004909a7840507b2': '4
 
 
 def geometry_sources(model):
-    from . import acquisition_power_repair, acquisition_source_supplement
+    from . import power_repair as acquisition_power_repair, source_supplement as acquisition_source_supplement
     if model not in MODELS:
         raise ValueError('unsupported Panasonic body-model revision')
     return {**acquisition_source_supplement.geometry_sources(),
@@ -140,7 +140,7 @@ def _relative(path):
 
 def read(root, raw, capacitance):
     """Admit both common qualified cohorts, not caller assertions of qualification."""
-    from . import acquisition_roles
+    from . import roles as acquisition_roles
     root = Path(root).absolute()
     if root.resolve(strict=True) != root:
         raise ValueError('resistor source root contains an alias')
@@ -217,7 +217,7 @@ def reconcile(root, doc, selected, operative=None):
             if model['packages'][ref] != panasonic_body():
                 raise ValueError('qualified analog6 Panasonic body attribution differs')
     if operative is not None:
-        from .block_adaptation import _part_allocations
+        from ..block_adaptation import _part_allocations
         if _part_allocations(dict(parts=list(expected.values())), {}) != _part_allocations(operative, {}):
             raise ValueError('operative full selected union differs from qualified cohort')
     entry = doc['roles'][ANALOG]
@@ -275,7 +275,7 @@ def _union(root, captures, old_blob):
 
 def apply(root, captures, value, *, role_source, role_context, capacitance, as_of, policy_blob):
     """Public admission replays real source qualification before any revision."""
-    from . import acquisition_roles
+    from . import roles as acquisition_roles
     doc, _, _ = acquisition_roles.read(role_source, role_context, capacitance)
     qualification = reconcile(role_source, doc, ALTERNATIVE)
     result = _revise(root, captures, value, qualification, as_of, policy_blob)
@@ -412,7 +412,7 @@ def derive_source(source, out, *, source_inventory_sha256, capture_source):
     qualification report, native export or stock freshness. Native qualification
     and any regenerated PCB remain root-owned later steps.
     """
-    from . import parts_stage, reference_blocks, schematic_emitter, typed_overlay
+    from .. import parts_stage, reference_blocks, schematic_emitter, typed_overlay
     parts_manifest._sha(source_inventory_sha256)
     source, capture_source, out = Path(source).absolute(), Path(capture_source).absolute(), Path(out).absolute()
     if source.resolve(strict=True) != source or capture_source.resolve(strict=True) != capture_source:
