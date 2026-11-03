@@ -13,7 +13,8 @@ BASIS = 'Agent-selected measurement requirement; not an owner or datasheet rulin
 
 def validate(document):
     from .hardware_interface import exact_keys, text
-    exact_keys(document, 'schema relations planes tie_other_pads')
+    exact_keys({k: v for k, v in document.items() if k != 'banks'} if isinstance(document, dict) else document,
+               'schema relations planes tie_other_pads')
     if document['schema'] != SCHEMA or type(document['tie_other_pads']) is not bool:
         raise ValueError('expected local-decoupling/1 and boolean tie_other_pads')
     if not isinstance(document['planes'], list) or not isinstance(document['relations'], list):
@@ -49,49 +50,46 @@ def validate(document):
                 raise ValueError(row['id'] + ': positive finite max_loop_mm and measurement basis required')
         elif 'basis' in row:
             raise ValueError('basis requires a loop limit')
+    if 'banks' in document and document['banks'] != banks(document):
+        raise ValueError('banks must match automatically derived shared-device components')
     return document
 
 
+def endpoint_key(endpoint):
+    return tuple(endpoint[k] for k in ('reference', 'pad', 'net'))
+
+
+def banks(document):
+    """Connected components of relations sharing either device terminal."""
+    components = []
+    for relation in document['relations']:
+        terminals = {endpoint_key(relation[leg][0]) for leg in ('supply', 'return')}
+        joined = [group for group in components if terminals & group[1]]
+        ids = {relation['id']}
+        for group in joined:
+            ids.update(group[0])
+            terminals.update(group[1])
+            components.remove(group)
+        components.append((ids, terminals))
+    order = {row['id']: i for i, row in enumerate(document['relations'])}
+    components.sort(key=lambda group: min(order[rid] for rid in group[0]))
+    return [dict(id='bank-' + str(i), relations=sorted(ids, key=order.get))
+            for i, (ids, _) in enumerate(components, 1)]
+
+
 def validate_topology(document):
-    """Generation feasibility is separate from measuring an existing board."""
+    """Refuse a device terminal that would itself require a capacitor entry."""
     validate(document)
-    plane_returns = {}
-    for row in document['relations']:
-        # Separate entries for a shared device pin necessarily bypass each
-        # other's capacitor. Placement cannot repair this declared topology.
-        for leg in ('supply', 'return'):
-            first, second = row[leg]
-            if first['net'] not in {p['net'] for p in document['planes']}:
-                continue
-            key = (first['reference'], first['pad'], first['net'])
-            previous = plane_returns.get(key)
-            if previous is not None and previous[1] != second:
-                raise ValueError(row['id'] + ' and ' + previous[0] + ': shared plane-net device pad ' +
-                                 first['reference'] + '.' + first['pad'] +
-                                 ' cannot reach separate capacitor plane entries without bypass; declare one return cell')
-            plane_returns[key] = (row['id'], second)
-    adjacency, entries = {}, {}
-    def terminal_key(endpoint):
-        return tuple(endpoint[k] for k in ('reference', 'pad', 'net'))
+    plane_nets = {p['net'] for p in document['planes']}
+    entries = {endpoint_key(row[leg][1]): row['id'] for row in document['relations']
+               for leg in ('supply', 'return') if row[leg][1]['net'] in plane_nets}
     for row in document['relations']:
         for leg in ('supply', 'return'):
-            first, second = map(terminal_key, row[leg])
-            adjacency.setdefault(first, set()).add(second)
-            adjacency.setdefault(second, set()).add(first)
-            if second[2] in {p['net'] for p in document['planes']}:
-                entries[second] = row['id']
-    for row in document['relations']:
-        for leg in ('supply', 'return'):
-            first, blocked = map(terminal_key, row[leg])
-            reached, pending = {first}, [first]
-            while pending:
-                node = pending.pop()
-                if node in entries and node != blocked:
-                    raise ValueError(row['id'] + ' and ' + entries[node] + ': declared local copper at ' +
-                                     first[0] + '.' + first[1] + ' bypasses its capacitor through another plane entry')
-                for other in adjacency.get(node, set()) - reached - {blocked}:
-                    reached.add(other)
-                    pending.append(other)
+            first = row[leg][0]
+            key = endpoint_key(first)
+            if key in entries:
+                raise ValueError(row['id'] + ' and ' + entries[key] + ': device plane pad ' +
+                                 first['reference'] + '.' + first['pad'] + ' is also a capacitor entry')
     return document
 
 
@@ -365,7 +363,7 @@ def seed(board_path, document, *, clock, cancel_dir=None):
                 path.unlink()
     receipt = dict(schema='agent-ee.local-decoupling-seed/1', source_sha256=before,
                    board_sha256=digest(board_path), contract=document, relations=rows,
-                   protected=list({r['uuid']: r for r in protected}.values()), other_pads=other)
+                   protected=list({r['uuid']: r for r in protected}.values()), other_pads=other, banks=banks(document))
     verify(board_path, receipt)
     return receipt
 
@@ -393,6 +391,7 @@ def verify_geometry(board, receipt):
     tracks = {t.m_Uuid.AsString(): t for t in board.GetTracks() if t.m_Uuid.AsString() in generated}
     allowed, ties, groups = {}, {}, {}
     owners = {}
+    relation_banks = {rid: bank['id'] for bank in banks(receipt['contract']) for rid in bank['relations']}
     for relation in receipt['relations']:
         for uid in relation['copper']:
             owners.setdefault(uid, set()).add(relation['id'])
@@ -400,6 +399,8 @@ def verify_geometry(board, receipt):
             for uid in leg['tracks']:
                 allowed.setdefault(uid, set()).update(leg['pads'])
                 groups.setdefault(uid, set()).add((relation['id'], index))
+                if leg['kind'] in ('supply', 'return'):
+                    groups[uid].add(('bank-leg', relation_banks[relation['id']], leg['kind'], tracks[uid].GetNetname()))
                 if leg['kind'] == 'plane_tie':
                     ties.setdefault(uid, set()).update(leg['tracks'])
     for row in receipt['other_pads']:

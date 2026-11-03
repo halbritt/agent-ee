@@ -507,7 +507,7 @@ def envelope(design, root):
 
 
 def placement(design, root):
-    from .local_decoupling import BASIS, SCHEMA, validate_topology as validate_local
+    from .local_decoupling import BASIS, SCHEMA, banks, validate_topology as validate_local
     relations = []
     for index, pair in enumerate(design['decoupling'], 1):
         row = dict(id='decoupling-' + str(index))
@@ -542,6 +542,7 @@ def placement(design, root):
             planes=[dict(net=native_net(design, design['plane']['net']), layer=design['plane']['layer'])]))
     except ValueError as exc:
         raise DesignError([str(exc)]) from exc
+    local_document['banks'] = banks(local_document)
     write_json(root / 'local-decoupling.json', local_document)
     write_json(
         root / "planes.json",

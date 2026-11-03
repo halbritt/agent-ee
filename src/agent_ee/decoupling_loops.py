@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 
 from . import local_loop_geometry as geo
-from .local_decoupling import pad, position, validate
+from .local_decoupling import banks, endpoint_key, pad, position, validate
 from .storage import digest, read_json, write_json
 
 
@@ -162,14 +162,20 @@ class CopperGraph:
                      contact_nm=tags[node][2] if isinstance(tags[node][2], tuple) else 'plane contact')
                 for node in nodes]
 
+    @staticmethod
+    def pad_ids(terminals):
+        if not isinstance(terminals, (list, tuple)):
+            terminals = [terminals]
+        return {p.m_Uuid.AsString() for p in terminals}
+
     def bypass(self, first, second):
-        blocked = {node for tag, node in self.tags.items() if tag[0] == second.m_Uuid.AsString()}
+        blocked = {node for tag, node in self.tags.items() if tag[0] in self.pad_ids(second)}
         start = self.terminal(first)
         return any(geo.shortest(self.adj, start, entry, blocked) is not None
                    for entry, _, _, _ in self.entries)
 
     def bypass_evidence(self, first, second):
-        blocked = {node for tag, node in self.tags.items() if tag[0] == second.m_Uuid.AsString()}
+        blocked = {node for tag, node in self.tags.items() if tag[0] in self.pad_ids(second)}
         start = self.terminal(first)
         paths = [(path, key) for entry, _, _, key in self.entries
                  if (path := geo.shortest(self.adj, start, entry, blocked)) is not None]
@@ -178,11 +184,41 @@ class CopperGraph:
 
     def plane_access(self, terminal, layer, blocked):
         start = self.terminal(terminal)
-        blocked_nodes = {node for tag, node in self.tags.items() if tag[0] == blocked.m_Uuid.AsString()}
+        blocked_nodes = {node for tag, node in self.tags.items() if tag[0] in self.pad_ids(blocked)}
         paths = [geo.shortest(self.adj, start, entry, blocked_nodes)
                  for entry, island, _, _ in self.entries if self.islands[island][0] == layer]
         found = [p[0] / 1e6 for p in paths if p is not None]
         return min(found) if found else None
+
+
+def bank_terminals(board, relations, leg, side, net):
+    endpoints = {endpoint_key(row[leg][side]): row[leg][side] for row in relations if row[leg][side]['net'] == net}
+    return [pad(board, endpoint) for endpoint in endpoints.values()]
+
+
+def measure_bank(board, bank, relations, graphs):
+    row = dict(**bank, outcome='info', reasons=[])
+    try:
+        for leg in ('supply', 'return'):
+            devices = []
+            endpoints = {endpoint_key(r[leg][0]): r[leg][0] for r in relations}
+            for endpoint in endpoints.values():
+                net = endpoint['net']
+                if net not in graphs:
+                    graphs[net] = CopperGraph(board, net)
+                graph = graphs[net]
+                first = pad(board, endpoint)
+                capacitors = bank_terminals(board, relations, leg, 1, net)
+                devices.append(dict(endpoint=endpoint, pin_bypasses_bank=graph.bypass(first, capacitors),
+                                    reaches_plane=graph.bypass(first, []),
+                                    bypass_paths=graph.bypass_evidence(first, capacitors)))
+            row[leg] = dict(devices=devices, pin_bypasses_bank=any(d['pin_bypasses_bank'] for d in devices))
+        row['device_return_reaches_plane_only_through_bank_capacitors'] = all(
+            d['reaches_plane'] and not d['pin_bypasses_bank'] for d in row['return']['devices'])
+    except ValueError as exc:
+        row.update(outcome='unknown', reasons=[str(exc)],
+                   device_return_reaches_plane_only_through_bank_capacitors=None)
+    return row
 
 
 def measure(board_path, document):
@@ -195,8 +231,13 @@ def measure(board_path, document):
     # Grade saved fill; the producer is responsible for native refill/save.
     board.BuildConnectivity()
     graphs, records = {}, []
+    derived_banks = banks(document)
+    by_id = {r['id']: r for r in document['relations']}
+    relation_banks = {rid: bank for bank in derived_banks for rid in bank['relations']}
     for relation in document['relations']:
-        row = dict(id=relation['id'], outcome='info', reasons=[])
+        bank = relation_banks[relation['id']]
+        members = [by_id[rid] for rid in bank['relations']]
+        row = dict(id=relation['id'], bank=bank['id'], outcome='info', reasons=[])
         try:
             for leg in ('supply', 'return'):
                 first, second = [pad(board, endpoint) for endpoint in relation[leg]]
@@ -204,13 +245,16 @@ def measure(board_path, document):
                 if net not in graphs:
                     graphs[net] = CopperGraph(board, net)
                 graph = graphs[net]
-                row[leg] = dict(net=net, pin_bypasses_capacitor=graph.bypass(first, second),
-                                bypass_paths=graph.bypass_evidence(first, second),
-                                surface_path=graph.path(first, second),
+                row[leg] = dict(net=net, surface_path=graph.path(first, second),
                                 path=graph.path(first, second, plane=True))
+                if len(members) == 1:
+                    # Preserve the single-cell result fields used before banks.
+                    row[leg].update(pin_bypasses_capacitor=graph.bypass(first, second),
+                                    bypass_paths=graph.bypass_evidence(first, second))
                 for plane in document['planes']:
                     if plane['net'] == net:
-                        access = graph.plane_access(second, board.GetLayerID(plane['layer']), first)
+                        devices = bank_terminals(board, members, leg, 0, net)
+                        access = graph.plane_access(second, board.GetLayerID(plane['layer']), devices)
                         row[leg]['capacitor_to_plane_mm'] = access
                         if access is None:
                             row['reasons'].append(leg + ': capacitor has no native plane connection without the device pin')
@@ -227,13 +271,15 @@ def measure(board_path, document):
         except ValueError as exc:
             row.update(outcome='unknown', reasons=[str(exc)], loop_length_mm=None)
         records.append(row)
+    bank_records = [measure_bank(board, bank, [by_id[rid] for rid in bank['relations']], graphs)
+                    for bank in derived_banks]
     if digest(board_path) != before:
         raise ValueError('board changed during loop measurement')
     tracks = list(board.GetTracks())
     return dict(schema='agent-ee.decoupling-loops-result/1', board_sha256=before,
-                contract_sha256=digest_document(document), pcbnew_version=k.Version(), records=records,
+                contract_sha256=digest_document(document), pcbnew_version=k.Version(), records=records, banks=bank_records,
                 outcome=('defect' if any(r['outcome'] == 'defect' for r in records) else
-                         'unknown' if any(r['outcome'] == 'unknown' for r in records) else
+                         'unknown' if any(r['outcome'] == 'unknown' for r in records + bank_records) else
                          'pass' if records and all(r['outcome'] == 'pass' for r in records) else 'info'),
                 nets={net: dict(track_length_mm=sum(float(t.GetLength()) / 1e6 for t in tracks
                                                     if t.GetNetname() == net and t.GetClass() != 'PCB_VIA'),

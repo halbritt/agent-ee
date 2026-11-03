@@ -8,6 +8,10 @@ The requirement map adds a typed `decoupling_loops` check with
 This check is also usable in an ordinary captured scope/3 requirement map.
 
 The document contains `relations`, `planes` and boolean `tie_other_pads`.
+The compiler also emits derived `banks`: `{id, relations}` records. Relations
+sharing a device supply or return pad join the same bank transitively. Statements
+need no bank field. Legacy contracts without `banks` derive the same components
+on read; a supplied bank list must match those components exactly.
 Each relation has a unique `id`, `supply` and `return` pairs in device/capacitor
 order. Each endpoint is `{reference, pad, net}`. A plane is `{net, layer}`.
 References and net names are data; no component or board recipe is selected.
@@ -20,12 +24,14 @@ plane entry. The via search uses the side of the capacitor away from the device
 and keeps every generated via clear of all pads and other generated legs.
 The final report retains the actual bypass paths and plane-entry UUIDs;
 copper added by the router and authored plated device pads need separate attribution.
-A plane-net device pin shared by different capacitor entries is refused during
-compilation: each entry would bypass the other capacitor, independently of
-placement. The diagnostic names both relations and the shared pad. More general
-declared leg chains are also checked for a path to another capacitor's entry.
-Shared non-plane supply segments remain valid. A capacitor entry shared by
-multiple relations is generated once. Optional other-pad ties give remaining
+Each bank uses star legs from each declared device pin to its capacitors.
+Shared same-net device-leg copper within a bank is allowed; escape tracks still
+meet device legs only inside a declared capacitor pad. Every capacitor retains
+its own plane entry beside its return pad, away from its device leg. A capacitor
+entry shared by multiple relations is generated once. The generator gives no
+device pin a plane entry of its own. A device plane pad also declared as a
+capacitor entry is refused at compile with the relations and pad named.
+Optional other-pad ties give remaining
 surface pads on plane nets their own short track and via where one fits.
 The compiler leaves `tie_other_pads` false: the example controls completed with
 and without them, and the additional ties increased routing time. Required
@@ -36,8 +42,9 @@ The local search uses effective native net-class routing sizes and clearance,
 bounded visibility paths around copper and every undeclared pad, including
 same-net pads, and radial via escapes outside all solder lands. Each generated
 via keeps effective net-class clearance from every pad on every copper layer.
-Generated tracks may touch only their declared endpoint pads; different legs
-may meet only inside a declared shared pad. A separate native
+Generated tracks may touch only their declared endpoint pads. Same-net
+device legs in one bank may share copper; other distinct legs may meet only
+inside a declared shared pad. Vias may never touch another generated leg. A separate native
 shape check rejects violations even when native DRC permits same-net contact. A wide class may neck into a small land down to the unchanged
 board minimum. Paths are bounded to 12 mm; via escapes to 2 mm. These are finite
 search budgets, not electrical acceptance limits. Native DRC grades generated
@@ -74,9 +81,18 @@ When a return uses a plane, entry and exit must lie on the **same filled
 island**. The lateral hop follows a visibility path inside its saved polygon,
 including holes; the report retains that path. Plane travel is never free.
 `loop_length_mm` sums the two external copper legs; component internals are
-excluded. Bypass flags report whether the pin can reach plane copper without
-passing through the selected capacitor pad. Bypass itself is reported, not
-an implicit additional acceptance rule.
+excluded. The primary bypass flags are in the result's `banks` array. Each bank lists its
+relations and supply/return device pins. `return.pin_bypasses_bank` reports a
+path to the plane after all same-net capacitor return pads in that bank are
+removed together. `device_return_reaches_plane_only_through_bank_capacitors`
+is true when every device return reaches the plane and no such bypass exists.
+The report retains each bypass path and entry UUID. Travel through another
+capacitor of the same bank is allowed. Per-relation supply, return, capacitor
+plane-access and loop lengths remain separate and carry their bank ID.
+Single-relation banks also retain the round-2 `pin_bypasses_capacitor` and
+`bypass_paths` fields. Bypass remains information, not an implicit acceptance
+threshold; broken continuity, unknown measurements and supplied limits still
+decide eligibility.
 
 The optional design `max_loop_mm` becomes a hard relation limit with the basis
 **Agent-selected measurement requirement; not an owner or datasheet ruling**.
@@ -112,3 +128,9 @@ where the items meet inside the pad. The kicad-route audit remains read-only
 and unchanged; compare its selected pins and definition with the declared typed
 relations before interpreting differences. A ground-only plane cannot make
 both sides of a kicad-route cell `respects`.
+
+The round-3 bank rule supersedes the round-2 shared-return compile refusal.
+Capacitors in parallel on a shared device pin are ordinary supported input.
+The kicad-route audit still uses its own per-capacitor topology and can label a
+legitimate path through another bank capacitor `bypassed`. Its result is not the
+typed bank result.

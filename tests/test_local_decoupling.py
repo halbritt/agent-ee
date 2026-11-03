@@ -96,6 +96,71 @@ class LocalCopperTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'info', result)
         self.assertAlmostEqual(result['records'][0]['loop_length_mm'], 6)
         self.assertFalse(result['records'][0]['return']['pin_bypasses_capacitor'])
+        self.assertEqual(result['banks'][0]['relations'], ['cell'])
+        self.assertFalse(result['banks'][0]['return']['pin_bypasses_bank'])
+        self.assertTrue(result['banks'][0]['device_return_reaches_plane_only_through_bank_capacitors'])
+
+    def two_capacitors(self):
+        from copy import deepcopy
+        doc = contract()
+        second = deepcopy(doc['relations'][0])
+        second['id'] = 'bulk'
+        for leg in ('supply', 'return'):
+            second[leg][1]['reference'] = 'OTHER'
+        doc['relations'].append(second)
+        return doc
+
+    def test_two_capacitor_bank_passes_with_a_separate_entry_for_each_capacitor(self):
+        from agent_ee.decoupling_loops import CopperGraph
+        doc = self.two_capacitors()
+        receipt = self.seed(doc)
+        self.filled()
+        result = measure(self.path, doc)
+        self.assertEqual(result['outcome'], 'info', result)
+        self.assertEqual(len(result['records']), 2)
+        self.assertEqual([r['bank'] for r in result['records']], ['bank-1', 'bank-1'])
+        for row in result['records']:
+            self.assertGreater(row['supply']['path']['length_mm'], 0)
+            self.assertGreater(row['return']['path']['length_mm'], 0)
+            self.assertAlmostEqual(row['loop_length_mm'], sum(row[leg]['path']['length_mm'] for leg in ('supply', 'return')))
+            self.assertNotIn('pin_bypasses_capacitor', row['return'])
+        bank = result['banks'][0]
+        self.assertEqual(bank['relations'], ['cell', 'bulk'])
+        self.assertFalse(bank['return']['pin_bypasses_bank'], bank)
+        self.assertTrue(bank['device_return_reaches_plane_only_through_bank_capacitors'], bank)
+        self.assertEqual(local.verify(self.path, receipt)['geometry']['generated_vias'], 2)
+        board = self.k.LoadBoard(str(self.path))
+        board.BuildConnectivity()
+        graph = CopperGraph(board, '/return')
+        # Removing only one cap still leaves the other cap's legitimate entry.
+        self.assertTrue(graph.bypass(local.pad(board, doc['relations'][0]['return'][0]),
+                                     local.pad(board, doc['relations'][0]['return'][1])))
+        checked = self.checked(doc)
+        self.assertEqual((checked['execution'], checked['outcome']), ('ok', 'pass'), checked)
+        self.assertFalse(checked['details']['banks'][0]['return']['pin_bypasses_bank'])
+
+    def test_router_device_pin_via_skips_every_capacitor_in_the_bank(self):
+        doc = self.two_capacitors()
+        self.seed(doc)
+        board = self.k.LoadBoard(str(self.path))
+        device = local.pad(board, doc['relations'][0]['return'][0])
+        via = self.k.PCB_VIA(board)
+        via.SetPosition(device.GetPosition())
+        via.SetWidth(600_000)
+        via.SetDrill(300_000)
+        via.SetViaType(self.k.VIATYPE_THROUGH)
+        via.SetLayerPair(self.k.F_Cu, self.k.B_Cu)
+        via.SetNetCode(device.GetNetCode())
+        board.Add(via)
+        uid = via.m_Uuid.AsString()
+        self.k.SaveBoard(str(self.path), board)
+        self.filled()
+        result = self.checked(doc)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        bank = result['details']['banks'][0]
+        self.assertTrue(bank['return']['pin_bypasses_bank'], bank)
+        self.assertFalse(bank['device_return_reaches_plane_only_through_bank_capacitors'], bank)
+        self.assertIn(uid, [p['plane_entry'] for d in bank['return']['devices'] for p in d['bypass_paths']])
 
     def test_native_copper_save_preserves_authored_project_bytes(self):
         project = self.path.with_suffix('.kicad_pro')
@@ -529,21 +594,37 @@ class LocalCopperTests(unittest.TestCase):
 
 
 class ContractTests(unittest.TestCase):
-    def test_shared_plane_return_refuses_before_placement_but_shared_supply_is_valid(self):
+    def test_shared_returns_and_shared_supplies_form_transitive_banks(self):
         from copy import deepcopy
         doc = contract()
         second = deepcopy(doc['relations'][0])
         second['id'] = 'other-cell'
-        second['return'][1]['reference'] = 'OTHER'
-        doc['relations'].append(second)
-        self.assertEqual(local.validate(doc), doc)  # Existing boards can still be audited.
-        with self.assertRaisesRegex(ValueError, r'other-cell and cell: shared plane-net device pad IC.2'):
-            local.validate_topology(doc)
-        second['return'][0]['reference'] = 'OTHER'
-        second['return'][1]['reference'] = 'BYP'
+        second['supply'][0]['reference'] = 'ALT'
+        for leg in ('supply', 'return'):
+            second[leg][1]['reference'] = 'OTHER'
+        third = deepcopy(second)
+        third['id'] = 'third-cell'
+        third['return'][0]['reference'] = 'ALT'
+        for leg in ('supply', 'return'):
+            third[leg][1]['reference'] = 'THIRD'
+        doc['relations'] += [second, third]
         self.assertEqual(local.validate_topology(doc), doc)
+        expected = [dict(id='bank-1', relations=['cell', 'other-cell', 'third-cell'])]
+        self.assertEqual(local.banks(doc), expected)
+        doc['banks'] = expected
+        self.assertEqual(local.validate(doc), doc)
+        doc['banks'] = [dict(id='bank-1', relations=['cell'])]
+        self.assertRaisesRegex(ValueError, 'automatically derived', local.validate, doc)
+
+    def test_device_pad_cannot_also_require_its_own_capacitor_plane_entry(self):
+        from copy import deepcopy
+        doc = contract()
+        second = deepcopy(doc['relations'][0])
+        second['id'] = 'other-cell'
+        second['return'][0]['reference'] = 'OTHER'
         second['return'][1]['reference'] = 'IC'
-        with self.assertRaisesRegex(ValueError, 'bypasses its capacitor through another plane entry'):
+        doc['relations'].append(second)
+        with self.assertRaisesRegex(ValueError, r'cell and other-cell: device plane pad IC.2'):
             local.validate_topology(doc)
 
     def test_malformed_limits_and_unknown_fields_refuse(self):
