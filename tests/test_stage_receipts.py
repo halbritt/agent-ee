@@ -1636,7 +1636,9 @@ class StepExecutionTests(StepFixture):
                 spec = validate_step(spec)
                 original = stage_receipts.file_tree(design)
                 work = self.root / ('consumer-' + mutation + '-work') / '1'
+                # As routing_adapter.campaign_binding records it, with the checkout's commit.
                 binding = {'spec': spec, 'tool': stage_receipts.observe_tool(spec),
+                           'commit': routing_adapter.attempt.checkout_commit(routing_adapter.checkout_of(spec)),
                            'adapter_sha256': digest(routing_adapter.ADAPTER_SOURCE)}
                 state = {'routing_binding': binding, 'stage_receipts': {}}
                 manifest = {'candidate_id': 'c' * 64, 'files': original[0]}
