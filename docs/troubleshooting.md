@@ -53,7 +53,10 @@ temporarily changed design.
 | --- | --- |
 | `review scope changed; evidence is stale` | Exact scope file bytes changed; inspect the change and recapture |
 | `candidate snapshot changed; evidence is stale` | Copied inputs were edited, added, removed or linked; restore only from trusted original evidence or rerun |
-| `review implementation changed` | Python policy differs; use matching historical implementation for inspection or rerun current policy |
+| `review implementation changed` | The agent-ee implementation differs from the one the run recorded, and the caller continues work on the run (`adjudicate`, `close-correction`, a campaign in progress, `verify --current-host`). Plain `verify` prints an `observation:` line; rerun to continue under the current implementation |
+| `KiCad install record ... does not describe the installed kicad-cli` (or `pcbnew`) | The image's `/opt/kicad.install.json` names other digests than the installed binaries the run observed; rebuild the image or restore its record |
+| `KiCad install record changed during the run` | The image's install record changed while a run was in progress; rerun |
+| `retained KiCad install record changed` / `... is missing` / `... is not one agent-ee writes` | The run's `kicad-install.json` differs from its recorded SHA-256 or is not a valid record; preserve and investigate |
 | `tool runtime changed; rerun under the current tools` | A tool the run used differs on this host, and the caller claims this host's tools for the run (a campaign in progress, `verify --current-host`). Plain `verify` and `verify-campaign` print an `observation:` line instead and verify the run against its records |
 | `tool runtime changed in the run's records` | `result.json` `runtime_files` is missing or differs from the run's launch expectation; the record was edited. Preserve and investigate |
 | `execution/review evidence changed` | Raw or interpreted retained artifacts differ; preserve and investigate the discrepancy |

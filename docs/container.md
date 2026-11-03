@@ -88,9 +88,11 @@ body-less HTTP 5xx responses that apt may not retry internally. Updates use
 stale or missing indexes. Snapshot URLs, package version pins and signature
 verification remain unchanged.
 
-`doctor` reports the KiCad install record with the `kicad-cli` probe and fails
-that probe when the record does not describe the `kicad-cli` that runs (another
-version or binary digest). It also reports the installed PDF extractor binary and, when
+`doctor` reports the KiCad install record with the `kicad-cli` probe. It fails
+the `kicad-cli` probe when the `kicad-cli` found on `PATH`, wherever it is, has
+another version or SHA-256 than the record's, and the `pcbnew` probe when
+pcbnew's build version, its extension or `pcbnew.py` differ from the record. An
+unreadable or invalid record also fails. It also reports the installed PDF extractor binary and, when
 `AGENT_EE_KICAD_HAPPY` names an installation, the analyzer version, its
 source-file hashes and identity, and the tag and commit from its install record
 (null without one). Optional tools absent from a basic installation do not
@@ -122,34 +124,46 @@ time and when a run reads it):
   DRC report on it.
 
 The build fails if any of these does not hold. Every run with the image uses
-that release. Runs record what they used with their evidence: `result.json`
+that release and retains the install record: its bytes as `kicad-install.json`
+in the run directory, sealed with the run's artifacts, and its path, SHA-256 and
+version as `result.json` `kicad_install` (`null` on a host without a record). A
+run refuses to start with a record that is invalid or that names other digests
+for the installed `/usr/bin/kicad-cli` or pcbnew extension than the ones it
+observes, and fails if the image's record changes while it runs. `result.json`
 `runtime_files` holds the `kicad-cli`, pcbnew extension and `/usr/bin/python3`
 digests; native checks keep the `kicad_version` of their DRC and ERC reports,
 the `pcbnew_version` of their geometry probes and the `kicad-cli` version and
 digest of schematic renders; DC checks record the tool digests they measured
 when they started. `agent-ee verify` checks a finished run against these
-records, not against the verifying host: a run made with 10.0.7 verifies on a
-10.0.8 image, and each differing tool is printed as an `observation:` line,
-recorded versus current ([cli-reference.md](cli-reference.md#inspect-and-verify)). Only a run
-in progress, or a caller that claims this host's tools for the run (`verify
---current-host`, a campaign in progress), refuses the difference.
+records, not against the verifying host: the retained install record must have
+its recorded digest, be a valid record and describe the run's recorded
+installed tools, and the host's own record is not read. A run made with 10.0.7
+verifies on a 10.0.8 image, and each differing tool is printed as an
+`observation:` line, recorded versus current
+([cli-reference.md](cli-reference.md#inspect-and-verify)). Only a run in
+progress, or a caller that continues work on the run (`verify --current-host`,
+adjudication, a campaign in progress), refuses the difference.
 
 No check compares with one fixed KiCad version. Native readers refuse only a
 release outside the 10.x line their formats are written for
 (`kicad_install.line_release`). Behaviour that differs between releases is keyed
 on the recorded version in [kicad_quirks.py](../src/agent_ee/kicad_quirks.py):
 the ERC JSON coordinate scale (10.0.0 to 10.0.6 against 10.0.7 and later) and
-the omitted board text-height default of the 10.0 series. Stock-library files
+the omitted board text-height default, classified only for releases with
+recorded native evidence (10.0.7 and 10.0.8; the native default test observes
+the installed release). Stock-library files
 captured by digest, such as the ESP32-S3-WROOM-1 footprint and RF_Module symbols
 in `footprint_library.py`, are still compared byte for byte; a release that
 changes them needs a recapture.
 
 To update KiCad, rebuild the image. The PPA's release file is the cache key of
 the native base stage, so a rebuild after a KiCad release installs it, and an
-unchanged PPA keeps the cached layers. After an update, regenerate the package
+unchanged PPA keeps the cached layers. After an update, generate the package
 map for the new footprint release
-([package-consistency.md](package-consistency.md#mapping-table)) and run the
-native test modules in the rebuilt image. The image reads the 10.0 series PPA
+([package-consistency.md](package-consistency.md#mapping-table)); until then,
+generation refuses for want of a map. Run the native test modules in the rebuilt
+image, and record the text-height observation of a new release in
+`kicad_quirks` if the native default test asks for it. The image reads the 10.0 series PPA
 (`kicad-10.0-releases`); a later series' PPA needs its URL and signing key in
 the Dockerfile.
 

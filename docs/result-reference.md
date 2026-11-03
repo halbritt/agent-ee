@@ -624,7 +624,13 @@ entries), never a failure. A campaign in progress, which builds on its runs with
 this host's tools, and `verify --current-host` still refuse such a difference
 with `tool runtime changed; rerun under the current tools`. A `result.json`
 whose `runtime_files` disagrees with its launch expectation refuses everywhere
-with `tool runtime changed in the run's records`. These are consistency checks
+with `tool runtime changed in the run's records`. The run's recorded Python
+policy files are treated the same way: another implementation on this checkout
+is an observation (`kind: policy_difference`, listing the files) for a finished
+run and refuses work that continues on it. `kicad_install` is the image's KiCad
+install record the run retained (`{path, sha256, version}`, or `null` on a host
+without one); its bytes are `kicad-install.json` in the run directory and are
+part of `artifact_hashes`. These are consistency checks
 over unkeyed records: a writer who rewrites `result.json` and a matching launch
 expectation consistently is not detected without independent custody of the
 evidence.

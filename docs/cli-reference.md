@@ -323,9 +323,9 @@ target is reported; the original event is retained.
 
 Normal verification checks the original scope file and currently declared
 source bytes as well as the copied snapshot. `--snapshot-only` skips the live
-scope/source comparison. It still checks the captured candidate, Python policy,
-the recorded runtime and retained artifacts. It does not mean "ignore all stale
-evidence".
+scope/source comparison. It still checks the captured candidate, the recorded
+policy and runtime, the retained KiCad install record and retained artifacts. It
+does not mean "ignore all stale evidence".
 
 A finished run is verified against its own records. It used the tools it
 recorded in `result.json` `runtime_files` (KiCad, ngspice, Bubblewrap, Python,
@@ -335,11 +335,17 @@ a run made with 10.0.7, does not fail verification: each one is printed as an
 `observation: NAME differs on this host` line with the recorded and current
 path and SHA-256. A changed harness that the run's profile never invokes is also
 an `observation:` line ([used and unused harnesses](result-reference.md#used-and-unused-harnesses)).
-The records must still agree: `runtime_files` must equal the launch expectation's,
-which verification recomputes from the run. `--current-host` is for work that
-continues on the run on this host. It also requires the tools the run used to
-be this host's, and refuses a difference with `tool runtime changed; rerun under
-the current tools`. Historical restoration is covered in
+So is an agent-ee implementation (Python policy files) other than the one the
+run recorded: the observation lists the files that differ. The records must
+still agree: `runtime_files` must equal the launch expectation's, which
+verification recomputes from the run, and a retained `kicad-install.json` must
+have its recorded SHA-256, be a valid install record and describe the run's
+recorded installed `kicad-cli` and pcbnew extension. `--current-host` is for
+work that continues on the run on this host. It also requires the run's tools
+and implementation to be this host's, and refuses a difference with `tool
+runtime changed; rerun under the current tools` or `review implementation
+changed; rerun under the current rules`. `adjudicate` and `close-correction`
+write into runs and always apply that requirement. Historical restoration is covered in
 [evidence reproduction](reproducing-evidence.md).
 
 ## `adjudicate`

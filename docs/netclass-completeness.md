@@ -12,9 +12,13 @@ The profile was derived from KiCad 10.0.7, `net_settings.meta.version == 5`.
 The [empty native project](../fixtures/netclass-completeness/native.kicad_pro)
 was generated through `pcbnew.SETTINGS_MANAGER.LoadProject/SaveProject` using
 10.0.7-10.0.7~ubuntu24.04.1. The check reads captured project bytes and runs no
-KiCad. The qualification's `native_writer` names the writer build that
-reproduced the fixture; any 10.x build is accepted, and the profile, fixture
-digest and source digests stay the 10.0.7 derivation. The native test runs the
+KiCad. The qualification (`agent-ee.netclass-qualification/2`) records the
+writer that reproduced the fixture twice: `native_release` (`pcbnew.Version()`,
+a release of the 10.x line) and `native_writer` (`GetBuildVersion()`). They must
+agree: the build is the release itself or the release packaged as
+`<release>-<release>~<suffix>`, so a prerelease, nightly or other suffix is
+refused. The profile, fixture digest and source digests stay the 10.0.7
+derivation. The native test runs the
 installed writer and requires the same bytes.
 Its [generator](../fixtures/netclass-completeness/generate.py)
 uses no third-party design; `LoadProject` reports false for the new, absent project,

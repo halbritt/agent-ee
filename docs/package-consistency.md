@@ -85,10 +85,12 @@ that release's footprint library:
 [10.0.7](../references/package-map/kicad-10.0.7-lcsc-1.json) and
 [10.0.8](../references/package-map/kicad-10.0.8-lcsc-1.json). Generation and
 the rung-1 scaffold use the table of the installed `kicad-footprints` release
-that the image install record names ([container.md](container.md#kicad)), else
-the table of the newest release (`generate.package_map_path`). A check reads the
-table its scope captures and records its path, SHA-256 and version. Each table
-has exactly `schema`,
+(`generate.package_map_path`). The image install record names that release
+([container.md](container.md#kicad)); a host without a record reads it from its
+Debian package database. A corrupt record, an unknown release or a release
+without a committed table refuses; no other release's table is substituted. A
+caller may name a release explicitly. A check reads the table its scope captures
+and records its path, SHA-256 and version. Each table has exactly `schema`,
 `version`, `derivation`, `rules`, `footprints` and `packages`. Every footprint
 entry is an exact `library:name` ID with a rule, a class list (catalog
 categories, or `null` for class-free outlines) and a `{family, pins, body}`
@@ -113,8 +115,9 @@ read from public product pages on 2026-10-17 (`C1525` `0402`, `C14663` `0603`,
 catalog feed: a real string the table lacks is unknown, and a feed row whose
 string misstates its body would be compared as stated. After a KiCad update, run
 `python3 -I references/package-map/generate.py /usr/share/kicad/footprints references/package-map/kicad-<release>-lcsc-1.json`
-in the rebuilt image; the generator takes the release from the install record
-(or a third argument) and writes it into `version` and `derivation`. The native
+in the rebuilt image; the generator takes the release from the install record,
+else the installed package, or a third argument, and writes it into `version`
+and `derivation`. The native
 test regenerates the installed release's table and compares it byte for byte. A
 change to the rules or vocabulary needs a new table version (`-lcsc-2`).
 
