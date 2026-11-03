@@ -9,8 +9,9 @@ pinned as generated.
 Each board's bytes must not depend on which boards were built before it: every
 board is generated alone in a fresh process, and all boards are generated in
 one shared process in reordered and repeated sequence across both generators.
-The boards are pinned to pcbnew 10.0.7; this test refuses another installed
-version, and both generators refuse an unknown or other version before writing.
+The committed boards were made with pcbnew 10.0.7. The installed pcbnew, the
+release the toolchain records, regenerates them; both generators refuse a
+version outside the 10.x line before writing.
 """
 import shutil
 import tempfile
@@ -20,12 +21,11 @@ from pathlib import Path
 from agent_ee.executor import execute
 
 try:
-    from toolchain import require_toolchain
+    from toolchain import recorded_kicad_version, require_toolchain
 except ImportError:
-    from tests.toolchain import require_toolchain
+    from tests.toolchain import recorded_kicad_version, require_toolchain
 
 FIXTURES = Path(__file__).resolve().parents[1] / 'fixtures'
-QUALIFIED_PCBNEW = '10.0.7'
 GENERATED = {
     'fab-export': (('fab.kicad_sch',), ('fab.kicad_pcb', 'fab4.kicad_pcb', 'pod4.kicad_pcb')),
     'cpl-rotation': (('cpl.kicad_sch',) + tuple(
@@ -58,9 +58,9 @@ class FixtureGeneratorDeterminismTest(unittest.TestCase):
             record = execute(inputs, Path(tmp) / 'run',
                              ['/usr/bin/python3', '-B', '-c', 'import pcbnew; print(pcbnew.Version())'])
             version = (Path(tmp) / 'run' / 'stdout.log').read_text().strip()
-        if record['exit_code'] != 0 or version != QUALIFIED_PCBNEW:
-            raise AssertionError(f'fixture boards are pinned to pcbnew {QUALIFIED_PCBNEW}; '
-                                 f'native pcbnew reports {version!r} (exit {record["exit_code"]})')
+        if record['exit_code'] != 0 or version != recorded_kicad_version():
+            raise AssertionError(f'sandbox pcbnew reports {version!r} (exit {record["exit_code"]}), not the '
+                                 f'recorded KiCad release {recorded_kicad_version()!r}')
 
     def run_sandboxed(self, root, label, files, argv):
         inputs = root / f'{label}-inputs'
