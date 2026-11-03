@@ -229,9 +229,14 @@ value. For example, when the two device pads are diagonal corner pins of
 `Capacitor_SMD:C_0603_1608Metric` capacitor needs at least 5.335 mm, so a 5 mm
 limit is refused. The check uses only these two parts: other parts, the outline
 and copper clearance can raise the distance a real placement needs, so passing
-it does not prove a placement exists. No check is made when a footprint's front
-courtyard is missing or curved, or when a land has a drill offset, a chamfer, a
-per-layer padstack or a shape other than rect, roundrect, circle or oval.
+it does not prove a placement exists. The placer keeps a movable part's
+courtyard box clear of every other part's box, so the check needs at least one
+movable part. No check is made when both parts are declared connectors: the
+placer does not separate two fixed parts, and their courtyards can be apart
+while their boxes overlap. No check is made either when a footprint's front
+courtyard is missing or curved, when a land has a drill offset, a chamfer, a
+per-layer padstack or a shape other than rect, roundrect, circle or oval, or
+when the relation already has another refusal.
 
 A connector's rotated front courtyard must reach within 1 mm of its declared
 edge. Along the edge, the courtyard must stay between the edge's two corners.

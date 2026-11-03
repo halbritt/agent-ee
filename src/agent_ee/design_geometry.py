@@ -130,14 +130,21 @@ def _segment_reach(a, b, p, q):
 
 
 def decoupling_reach(device, capacitor, supply, ret):
-    """The smallest limit, in mm, that lets both decoupling legs meet it with these two parts alone.
+    """The smallest limit, in mm, that both decoupling legs can meet while the two front courtyard
+    bounding boxes do not overlap.
 
     ``supply`` and ``ret`` are (device pad, capacitor pad) numbers. The capacitor takes every quarter
     turn relative to the device (the same turn of both parts gives congruent distances) and every
-    position whose courtyard box does not overlap the device's; touching boxes count as apart. The
-    result is a lower bound for any placement: other parts, the outline, copper clearance and a
-    coarser search grid can only raise it. None when either footprint lacks a straight front
-    courtyard or a plain land centre for its pads, so that no limit is refused on a guess."""
+    position whose courtyard box does not overlap the device's; touching boxes count as apart.
+
+    The result bounds a real placement from below only where the placer keeps these two boxes
+    apart: both parts on the front, turned by quarter turns, and at least one of them movable, so
+    that the engine's hard body overlap applies to the pair, with each body the courtyard's
+    bounding box (see the caller in design.validate). There, other parts, the outline, copper
+    clearance and a coarser search grid can only raise it. It bounds nothing for two fixed parts,
+    which the engine does not separate, or for a model that keeps only the courtyard polygons
+    apart: such courtyards can be apart while their boxes overlap. None when either footprint
+    lacks a straight front courtyard or a plain land centre for its pads."""
     device_box, capacitor_box = courtyard_box(device), courtyard_box(capacitor)
     lands = [land_centre(device, supply[0]), land_centre(capacitor, supply[1]),
              land_centre(device, ret[0]), land_centre(capacitor, ret[1])]

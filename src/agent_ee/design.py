@@ -529,6 +529,7 @@ def validate(design, captures=None, *, cad_only=False):
         decoupling = design["decoupling"]
     for i, d in enumerate(decoupling):
         path = f"decoupling[{i}]"
+        refused_before = len(errors)
         if not fields(
             d, ("capacitor", "device", "supply", "return", "max_distance_mm"), (), path
         ):
@@ -590,15 +591,23 @@ def validate(design, captures=None, *, cad_only=False):
                         f"{t[0]}.{t[1]} has repeated lands; this compiler cannot yet derive the native land UUID; use an unambiguous package",
                     )
         legs = [d[key] for key in ("supply", "return")]
+        # The two-part bound assumes what the placement engine enforces between these parts:
+        # their courtyard bounding boxes may not overlap. The engine scores a pair only when at
+        # least one part is movable (crates/placement-engine/src/job.rs:1088-1091 `interacts`,
+        # used at 1552, 1578 and 1732-1745), and then any body overlap is hard (job.rs:1104-1110).
+        # A body is the occupancy rectangle (job.rs:1001-1003), which for a footprint with a
+        # courtyard is the bounding box of its courtyard polygons (placement_job.classify_footprint).
+        # Two declared connectors are both fixed, so nothing keeps their courtyard boxes apart and
+        # the bound does not apply to them. A relation already refused above gets no bound either.
         if (
-            d["device"] in footprints
+            len(errors) == refused_before
+            and not (d["device"] in locked and d["capacitor"] in locked)
+            and d["device"] in footprints
             and d["capacitor"] in footprints
-            and number(d["max_distance_mm"])
-            and d["max_distance_mm"] > 0
             and all(
                 isinstance(leg, list)
                 and len(leg) == 2
-                and all(isinstance(t, str) for t in leg)
+                and all(isinstance(t, str) and "." in t for t in leg)
                 and [t.split(".", 1)[0] for t in leg] == [d["device"], d["capacitor"]]
                 for leg in legs
             )

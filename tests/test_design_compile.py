@@ -1118,12 +1118,14 @@ class DesignCompileTests(unittest.TestCase):
         with self.assertRaisesRegex(DesignError, "different nets"):
             validate(d)
 
-    def put_footprint(self, name, pads, courtyard):
-        """An original two-pad footprint: (number, x, y) land centres and one F.CrtYd graphic."""
-        lands = "".join(f'(pad "{n}" smd rect (at {x} {y}) (size 0.6 0.6) (layers "F.Cu" "F.Mask"))'
+    def put_footprint(self, name, pads, *courtyard):
+        """An original two-pad footprint: (number, x, y) land centres and F.CrtYd graphics, each
+        given without its closing stroke and layer."""
+        lands = "".join(f'(pad "{n}" smd rect (at {x} {y}) (size 0.2 0.2) (layers "F.Cu" "F.Mask"))'
                         for n, x, y in pads)
         (self.captures / f"cad/Owned.pretty/{name}.kicad_mod").write_bytes(kicad_footprint(
-            name, lands, extra=courtyard + ' (stroke (width 0.05) (type default)) (layer "F.CrtYd"))'))
+            name, lands, extra="".join(graphic + ' (stroke (width 0.05) (type default)) (layer "F.CrtYd"))'
+                                       for graphic in courtyard)))
 
     def test_decoupling_limit_no_courtyard_arrangement_meets_is_refused_with_the_bound(self):
         # Benchmark r4 led-flasher attempt-004: the supply and return pads of a 3.9 x 4.9 mm SOIC-8
@@ -1154,6 +1156,40 @@ class DesignCompileTests(unittest.TestCase):
         seal_capture(self.captures)
         self.design["decoupling"] = [dict(relation, max_distance_mm=5)]
         validate(self.design, self.captures)
+
+    def test_decoupling_bound_needs_a_movable_part(self):
+        # Review of 36cf4842 (agent-1006): two fixed connectors with straight triangular courtyards
+        # 0.565685 mm apart have both legs 1.979899 mm, and the placement engine reports that pose
+        # feasible. Their courtyard boxes overlap, so the box bound refused 2 mm and asked for 9 mm.
+        from agent_ee.design import validate
+        triangles = dict(DEV=[(-5, -5), (5, -5), (-5, 5)], CAP=[(-5, 5), (5, -5), (5, 5)])
+        lands = dict(DEV=[("1", -1, 0), ("2", 0, -1)], CAP=[("1", 0, 1), ("2", 1, 0)])
+        for name, corners in triangles.items():
+            self.put_footprint(name, lands[name], *(f"(fp_line (start {a[0]} {a[1]}) (end {b[0]} {b[1]})"
+                                                    for a, b in zip(corners, corners[1:] + corners[:1])))
+        seal_capture(self.captures)
+        self.design["parts"]["R1"]["footprint"] = "Owned:DEV"
+        self.design["parts"]["R2"]["footprint"] = "Owned:CAP"
+        self.design["decoupling"] = [dict(capacitor="R2", device="R1", supply=["R1.1", "R2.1"],
+                                          **{"return": ["R1.2", "R2.2"]}, max_distance_mm=2)]
+        connectors = [dict(reference=ref, edge="top", position_mm=10 + offset, inset_mm=5 + offset,
+                           rotation_deg=0, insertion="from_top") for ref, offset in (("R1", 0), ("R2", 0.4))]
+        self.design["connectors"] = connectors
+        validate(self.design, self.captures)
+        # With the capacitor movable, the placer keeps the two boxes apart: 2 mm is out of reach.
+        self.design["connectors"] = connectors[:1]
+        with self.assertRaisesRegex(DesignError, r"decoupling\[0\]\.max_distance_mm: .* at least 9\.000 mm"):
+            validate(self.design, self.captures)
+
+    def test_malformed_decoupling_terminal_keeps_its_refusal_when_captures_are_given(self):
+        # Review of 36cf4842 (agent-1006): the bound read the missing pin of "R1", and the
+        # refusal became "list index out of range".
+        self.design["decoupling"] = [dict(capacitor="R2", device="R1", supply=["R1", "R2"],
+                                          **{"return": ["R1.2", "R2.2"]}, max_distance_mm=5)]
+        with self.assertRaises(DesignError) as caught:
+            self.compile()
+        self.assertIn("decoupling[0].supply: use REF.PIN", str(caught.exception))
+        self.assertNotIn("index out of range", str(caught.exception))
 
     def test_device_symbol_families_cannot_lie_about_class(self):
         from agent_ee.design import validate, device_class
