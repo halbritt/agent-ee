@@ -71,6 +71,21 @@ def identity(root):
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def expected_meaning(probe):
+    """What the owned probe projects must keep meaning, from their own fixture expectations.
+
+    Per project: (analyzer, finding_id, severity, assumed). The AGENTEE-219 correction's
+    notes that state assumptions (ac4-false-positives/expected.json) must keep an
+    `assumed` source_path and their assumptions; the severity-gate fixture's
+    dispositioned warnings (severity-gate/dispositions.json) must stay warnings."""
+    notes = json.loads((probe / 'expected.json').read_text())['corrected_notes']
+    warnings = json.loads((probe / 'dispositions.json').read_text())['dispositions']
+    return {'AGENTEE-219 reproducer': [('schematic', note['finding_id'], note['severity'], True)
+                                       for note in notes if note.get('assumptions')],
+            'severity-gate': [(entry['finding_id'].split(':', 1)[0], entry['finding_id'], 'warning', False)
+                              for entry in warnings]}
+
+
 def output_format(root, formats, probe=HERE / 'probe'):
     """Run the analyzers on the owned probe projects; every report must be one agent-ee reads.
 
@@ -78,11 +93,17 @@ def output_format(root, formats, probe=HERE / 'probe'):
     the schematic analyzer, whose corrected PP-001 notes carry assumptions and
     source_path. Reports are checked exactly as agent-ee checks them at run time:
     kicad_happy_format.check_report, and check_summary for the severity gate's
-    analyzers. All reports must name one envelope format."""
+    analyzers. Their meaning is checked too: each expected finding must be present
+    with its severity, its stated assumptions where it has them, and the severity
+    gate's disposition requirement (kicad_happy_format.requires_disposition). A
+    rename of those fields under the same envelope number therefore fails the build.
+    All reports must name one envelope format."""
     projects = (('severity-gate', 'gate.kicad_sch', ANALYZERS),
                 ('AGENTEE-219 reproducer', 'reproducer.kicad_sch', {'schematic': ANALYZERS['schematic']}))
+    expected = expected_meaning(probe)
     found = set()
     for project, schematic, analyzers in projects:
+        reports = {}
         with tempfile.TemporaryDirectory(prefix='kicad-happy-probe-') as tmp:
             work = Path(tmp)
             (work / 'config.json').write_text(json.dumps({'version': 1, 'project': {}, 'suppressions': []}))
@@ -91,12 +112,19 @@ def output_format(root, formats, probe=HERE / 'probe'):
                      *contract.analyzer_args(name, str(probe / schematic), str(probe / 'gate.kicad_pcb'),
                                              str(work), 25.0)], cwd=work)
                 try:
-                    report = json.loads((work / f'{name}.json').read_text())
-                    found.add(contract.check_report(name, report, formats))
+                    reports[name] = json.loads((work / f'{name}.json').read_text())
+                    found.add(contract.check_report(name, reports[name], formats))
                     if name in contract.SEVERITY_ANALYZERS:
-                        contract.check_summary(name, report)
+                        contract.check_summary(name, reports[name])
                 except (OSError, ValueError) as exc:
                     fail(f'{name} report on the {project} probe is outside the contract agent-ee reads: {exc}')
+        for name, finding_id, severity, assumed in expected[project]:
+            finding = next((f for f in reports[name]['findings'] if f.get('finding_id') == finding_id), None)
+            if (finding is None or finding['severity'] != severity or not contract.requires_disposition(finding)
+                    or assumed and (finding.get('source_path') != 'assumed' or not finding.get('assumptions'))):
+                fail(f'{name} report on the {project} probe lost the meaning agent-ee reads: {finding_id} '
+                     f'is no longer a {severity} finding that requires a disposition'
+                     + (' with an assumed source and its assumptions' if assumed else ''))
     if len(found) != 1:
         fail(f'analyzers report several output formats {sorted(found)}')
     return found.pop()

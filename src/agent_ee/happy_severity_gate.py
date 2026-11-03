@@ -12,7 +12,7 @@ from pathlib import Path
 from .candidate import safe_relative
 from .hardware_interface import exact_keys, text
 from .kicad_happy import SEVERITY_ANALYZERS, legacy_declaration, normalize, run_analyzers
-from .kicad_happy_format import FormatError, check_summary
+from .kicad_happy_format import FormatError, check_summary, requires_disposition
 from .netclass_completeness import load_json
 from .storage import digest, write_json
 
@@ -93,8 +93,8 @@ def evaluate(reports, recorded):
         finding['finding_id'] = fid
         if finding['severity'] == 'error':
             errors.append(fid)
-        if (finding['severity'] == 'warning' or native.get('assumptions')
-                or native.get('source_path') == 'assumed'):
+        # Shared with the image build's probe, which asserts it on the owned projects.
+        if requires_disposition(native):
             eligible.add(fid)
             if fid in recorded:
                 finding['disposition'] = dict(recorded[fid])

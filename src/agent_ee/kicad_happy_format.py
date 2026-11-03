@@ -1,17 +1,25 @@
 """The kicad-happy output and install-record contract that agent-ee reads.
 
 agent-ee's checks and the image installer (docker/kicad-happy/install.py) both
-use these checks, so a release whose output changes shape under the same
-envelope number fails the image build instead of reaching a run. Standard
-library only: the image's kicad-happy build stage loads this file beside the
-installer, before the agent-ee package is in the image.
+use these checks. Standard library only: the image's kicad-happy build stage
+loads this file beside the installer, before the agent-ee package is in the image.
 
 The checks cover the fields that acceptance reads. A report must name its
 analyzer and a listed envelope format and carry a findings list. A finding needs
 a rule id and a known severity. When present, finding_id, source_path, status
 and type are strings, suppressed is a boolean, assumptions is a list of strings,
-and components, nets and pins are lists. The severity gate's summary counts must
-match the findings. Other native fields stay informative.
+and components, nets and pins are lists. Findings of the rules that always state
+their supply provenance (PROVENANCE_RULES) must carry source_path, so renaming it
+cannot turn an assumption note into a plain one. The severity gate's summary
+counts must match the findings.
+
+What this catches is limited to those fields and rules. A release that changes
+one of them under the same envelope number is refused at run time and fails the
+image build. The build also checks meaning on the owned probe projects (see
+install.py): the known assumption notes and dispositioned warnings keep their
+evidence and their disposition requirement. A changed representation elsewhere,
+on a rule and field this module does not name and the probes do not exercise,
+is not detected.
 """
 import re
 
@@ -59,6 +67,13 @@ FINDING_FIELDS = {
 }
 
 
+# Every emission site of these rules in kicad-happy 2.3.1, 2.3.2 and the AGENTEE-219
+# correction sets source_path: PP-001 (`none`, or `assumed` with assumptions), RS-001
+# (`none`), RS-002 (`open_jumper`), RS-003 (`bridged_jumper`). A finding of one of them
+# without source_path is a changed representation, not a plain unrestricted note.
+PROVENANCE_RULES = frozenset({'PP-001', 'RS-001', 'RS-002', 'RS-003'})
+
+
 def check_report(analyzer, report, formats):
     """Return the report's envelope format; FormatError unless its read fields have their shapes."""
     if (not isinstance(report, dict) or report.get('schema_version') not in formats
@@ -72,7 +87,15 @@ def check_report(analyzer, report, formats):
         for key, valid in FINDING_FIELDS.items():
             if key in finding and not valid(finding[key]):
                 raise FormatError(f'unrecognized {analyzer} finding field {key} at /findings/{index}')
+        if finding['rule_id'] in PROVENANCE_RULES and 'source_path' not in finding:
+            raise FormatError(f"{analyzer} {finding['rule_id']} finding without source_path at /findings/{index}")
     return report['schema_version']
+
+
+def requires_disposition(finding):
+    """The severity gate's rule: a warning, or a finding of any severity resting on assumptions."""
+    return (finding.get('severity') == 'warning' or bool(finding.get('assumptions'))
+            or finding.get('source_path') == 'assumed')
 
 
 def check_summary(analyzer, report):

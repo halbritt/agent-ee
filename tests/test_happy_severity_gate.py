@@ -170,6 +170,18 @@ class SeverityPolicyTests(unittest.TestCase):
         data['schematic']['findings'][0]['source_path'] = 'assumed'
         self.assertEqual(evaluate(data, {})['undispositioned_warning_ids'], ['schematic:TEST-001:j1'])
 
+    def test_renamed_provenance_fields_are_unsupported_not_a_pass(self):
+        # Review of 0c05b823 (P1 continued): source_path and assumptions renamed under
+        # envelope 1.4.0 used to read as a plain info note without a disposition requirement.
+        data = reports()
+        data['schematic']['findings'] = [{'finding_id': 'schematic:PP-001:u2', 'rule_id': 'PP-001', 'severity': 'info',
+                                          'source_provenance': {'kind': 'assumed'},
+                                          'assumption_notes': ['U1 regulation is unverified']}]
+        data['schematic']['summary'] = {'total_findings': 1, 'by_severity': {'error': 0, 'warning': 0, 'info': 1}}
+        with self.assertRaises(checks.CheckError) as error:
+            evaluate(data, {})
+        self.assertEqual(error.exception.execution, 'unsupported')
+
     def test_disposition_for_a_finding_a_newer_release_drops_is_unused_not_failing(self):
         # kicad-happy 2.3.2 (#53) no longer reports PU-001 on a no-connect pin alone on its net.
         # A disposition recorded against the older output is reported unused and fails nothing.

@@ -123,6 +123,13 @@ class NormalizationTest(unittest.TestCase):
             self.assertEqual(error.exception.execution, 'unsupported')
         with self.assertRaises(CheckError):
             normalize({'schematic': {**{k: v for k, v in report.items() if k != 'findings'}, 'issues': []}}, [])
+        # A provenance rule's finding without source_path is a changed representation,
+        # not a plain note (review of 0c05b823).
+        for rule in ('PP-001', 'RS-001', 'RS-002', 'RS-003'):
+            changed = {k: v for k, v in {**finding, 'rule_id': rule}.items() if k != 'source_path'}
+            with self.subTest(rule=rule), self.assertRaises(CheckError) as error:
+                normalize({'schematic': {**report, 'findings': [changed]}}, [])
+            self.assertEqual(error.exception.execution, 'unsupported')
 
 
 import hashlib
@@ -393,38 +400,73 @@ class ImageInstallerTest(unittest.TestCase):
         with remote('v2', 'v2.3', 'v2.4.0-rc.1', 'v3.0.0'), self.assertRaisesRegex(SystemExit, 'no v2.x.y release'):
             self.installer.newest_release(CONTRACT['release_major'])
 
-    def test_format_probe_accepts_the_installed_analyzer(self):
+    def test_format_probe_accepts_the_corrected_analyzer_and_refuses_the_bare_release(self):
         if not (INSTALLED / '.claude-plugin/plugin.json').is_file():
             missing_installation()
-        self.assertEqual(self.installer.output_format(INSTALLED, CONTRACT['output_formats']), '1.4.0')
+        from test_happy_ac4_false_positives import analyzer_pair
+        release, corrected = analyzer_pair(Path(self.tmp.name) / 'pair')
+        # The build probes the corrected tree it installs, with the real analyzers.
+        self.assertEqual(self.installer.output_format(corrected, CONTRACT['output_formats']), '1.4.0')
+        # Without the correction, the reproducer's PP-001 notes are errors, not assumption notes.
+        with self.assertRaisesRegex(SystemExit, 'reproducer probe lost the meaning'):
+            self.installer.output_format(release, CONTRACT['output_formats'])
 
-    def test_format_probe_refuses_shape_drift_under_the_same_format_number(self):
-        finding = {'finding_id': 'schematic:PP-001:u2', 'rule_id': 'PP-001', 'severity': 'info',
-                   'source_path': 'assumed', 'assumptions': ['U1 regulates its output']}
+    def test_format_probe_refuses_shape_and_meaning_drift_under_the_same_format_number(self):
+        # The probe's expected findings, from the same fixture files the image build reads.
+        notes = [{'finding_id': n['finding_id'], 'rule_id': n['finding_id'].split(':')[1], 'severity': n['severity'],
+                  'source_path': 'assumed', 'assumptions': n['assumptions']}
+                 for n in read_json(REPO / 'fixtures/kicad-happy/ac4-false-positives/expected.json')['corrected_notes']
+                 if n.get('assumptions')]
+        warnings = {}
+        for entry in read_json(REPO / 'fixtures/kicad-happy/severity-gate/dispositions.json')['dispositions']:
+            analyzer, rule = entry['finding_id'].split(':')[:2]
+            warnings.setdefault(analyzer, []).append(
+                {'finding_id': entry['finding_id'], 'rule_id': rule, 'severity': 'warning'})
+        first = notes[0]['finding_id']
+
+        def renamed(finding):
+            # Review of 0c05b823: the provenance fields renamed under envelope 1.4.0.
+            kept = {k: v for k, v in finding.items() if k not in ('source_path', 'assumptions')}
+            return {**kept, 'source_provenance': {'kind': 'assumed'}, 'assumption_notes': ['U1 regulation is unverified']}
+
+        def on_first(change):
+            return lambda finding: change(finding) if finding['finding_id'] == first else finding
+
+        # name: (project, analyzer, change to each finding, change to the report)
         drifts = {
-            'none (control)': {},
-            'findings renamed to issues': {'findings': None, 'issues': []},
-            'assumed source as an object': {'findings': [{**finding, 'source_path': {'kind': 'assumed'}}]},
-            'assumptions as text': {'findings': [{**finding, 'assumptions': 'U1 regulates its output'}]},
-            'summary without info count': {'summary': {'total_findings': 1, 'by_severity': {'error': 0, 'warning': 0}}},
-            'unlisted envelope format': {'schema_version': '1.5.0'},
+            'none (control)': None,
+            'provenance fields renamed': ('reproducer', 'schematic', on_first(renamed), None),
+            'assumed source as an object': ('reproducer', 'schematic',
+                                            on_first(lambda f: {**f, 'source_path': {'kind': 'assumed'}}), None),
+            'assumptions as text': ('reproducer', 'schematic',
+                                    on_first(lambda f: {**f, 'assumptions': 'U1 regulation is unverified'}), None),
+            'assumption note became a plain error': ('reproducer', 'schematic', on_first(lambda f: {
+                'finding_id': f['finding_id'], 'rule_id': f['rule_id'], 'severity': 'error', 'source_path': 'none'}), None),
+            'dispositioned warning became info': ('gate', 'schematic', lambda f: {**f, 'severity': 'info'}, None),
+            'findings renamed to issues': ('gate', 'schematic', None, lambda r: r.update(issues=r.pop('findings'))),
+            'summary without info count': ('reproducer', 'schematic', None,
+                                           lambda r: r['summary']['by_severity'].pop('info')),
+            'unlisted envelope format': ('gate', 'schematic', None, lambda r: r.update(schema_version='1.5.0')),
         }
         for name, drift in drifts.items():
             def analyzer(argv, **kwargs):
                 output = Path(argv[argv.index('--output') + 1])
-                report = analyzer_report(output.stem, [finding] if output.stem == 'schematic' else [])
-                if output.stem == 'schematic':
-                    report.update(drift)
-                    if report.get('findings') is None:
-                        del report['findings']
+                project = 'reproducer' if any(str(arg).endswith('reproducer.kicad_sch') for arg in argv) else 'gate'
+                findings = [dict(f) for f in (notes if project == 'reproducer' else warnings.get(output.stem, []))]
+                hit = drift is not None and drift[:2] == (project, output.stem)
+                if hit and drift[2]:
+                    findings = [drift[2](f) for f in findings]
+                report = analyzer_report(output.stem, findings)
+                if hit and drift[3]:
+                    drift[3](report)
                 output.write_text(json.dumps(report))
                 return subprocess.CompletedProcess(argv, 0, '', '')
             with self.subTest(name), mock.patch.object(self.installer.subprocess, 'run', side_effect=analyzer):
-                if not drift:
+                if drift is None:
                     self.assertEqual(self.installer.output_format(Path('/analyzer'), CONTRACT['output_formats']),
                                      '1.4.0')
                     continue
-                with self.assertRaisesRegex(SystemExit, 'schematic report .* outside the contract'):
+                with self.assertRaisesRegex(SystemExit, 'report on the .* probe (is outside|lost)'):
                     self.installer.output_format(Path('/analyzer'), CONTRACT['output_formats'])
 
 

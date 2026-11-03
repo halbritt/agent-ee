@@ -60,6 +60,9 @@ runs accept a prerelease of the line. These cases are refused as `unsupported`:
   `type` as strings; `suppressed` as a boolean; `assumptions` as a list of strings;
   `components`, `nets` and `pins` as lists; and severity-gate summary counts that
   match the findings ([kicad_happy_format.py](../src/agent_ee/kicad_happy_format.py));
+- a PP-001, RS-001, RS-002 or RS-003 finding without `source_path`. Every
+  emission of these rules in 2.3.1, 2.3.2 and the correction states it, so a
+  missing `source_path` is a changed representation, not a plain note;
 - an install record with other fields, malformed values or an unlisted output
   format, or one that does not describe the installed files.
 
@@ -68,10 +71,17 @@ image's `kicad-happy` build stage, so a rebuild after an upstream release
 installs that release, and an unchanged release keeps the later layers cached.
 The build runs the same report checks as a run. It fails if the correction no
 longer applies or a probe report fails those checks, for example a renamed
-findings list or a changed field shape under the same format number. Then the
-update needs a re-derived correction, or adapter and gate checks before the
-contract file or the shape checks are extended. A host checkout is updated with
-Git; runs record whatever it holds, with tag and commit unknown.
+findings list or a changed field shape under the same format number. It also
+checks meaning on the owned projects, from their fixture expectations: the
+AGENTEE-219 notes that state assumptions must keep an `assumed` `source_path`,
+their assumptions and the severity gate's disposition requirement, and the
+severity-gate fixture's dispositioned warnings must stay warnings. Renaming a
+field on those findings therefore fails the build. A changed representation on a
+rule and field that these checks do not name and the owned projects do not
+exercise is not detected. After a failed build, the update needs a re-derived
+correction, or adapter and gate checks before the contract file or the checks
+are extended. A host checkout is updated with Git; runs record whatever it holds,
+with tag and commit unknown.
 
 `agent-ee verify` checks a finished run's analyzer record against that run's own
 evidence. The record must be one the recording code could write: its fields,
