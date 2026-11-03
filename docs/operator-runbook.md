@@ -12,11 +12,7 @@ Production builds require a deterministic, pinned native EDA toolchain. Before i
 ./bin/agent-ee doctor --checks-only
 ```
 
-For automated CI/CD environments, supply the `--json` output format to integrate with monitoring dashboards:
-
-```bash
-./bin/agent-ee doctor --checks-only
-```
+`agent-ee doctor` unconditionally outputs formatted JSON on stdout by default without requiring extra flags, making it directly ingestible by automated CI/CD pipelines and monitoring dashboards.
 
 ### Required Toolchain Dependencies
 
@@ -98,7 +94,7 @@ To request a graceful, cooperative termination of a long-running build without k
 touch runs/telemetry-pod-v1/CANCEL
 ```
 
-The coordinator monitors this cancel trigger file at stage and step boundaries. When detected, the coordinator completes the currently executing step, records status `cancelled`, writes all partial stage receipts to disk, and exits cleanly.
+The coordinator monitors this cancel trigger file at stage and step boundaries. When detected, the coordinator raises a KeyboardInterrupt, records status `interrupted` (exit code `130`) in `build-report.json`, writes all partial stage receipts to disk, and exits cleanly.
 
 ### Signal Handling (SIGINT / Ctrl+C)
 
@@ -107,7 +103,7 @@ When the operator issues a `SIGINT` (Ctrl+C):
 2. Active sandboxed subprocesses in the process group receive `SIGTERM` (with a configurable grace period before `SIGKILL`).
 3. Partial stage receipts and logs are flushed to disk.
 4. The run status is marked as `interrupted` (exit code `130`).
-5. No partial files in `<run>/package/candidate/` are adopted, ensuring candidate immutability is preserved.
+5. No partial files in stage candidate directories (e.g. `stages/07-package-*/candidate/`) are adopted, ensuring candidate immutability is preserved.
 
 ### Resuming Interrupted or Checkpointed Builds (`--resume`)
 
@@ -226,12 +222,14 @@ To verify candidate snapshot files without checking the original working source 
 
 ### Validating the Sealed Package
 
+Captured inputs from preflight reside in `<run-dir>/source/`. Candidate artifacts generated at each stage reside in stage-isolated directories under `<run-dir>/stages/<index>-<stage>-<hex>/candidate/`. Operators can locate the exact active candidate directory by inspecting `<run-dir>/build-report.json` under the `"candidate"` key.
+
 The accepted manufacturing package resides at:
 ```
-<run-dir>/package/candidate/
+<run-dir>/stages/07-package-<hex>/candidate/
 ```
 
-Verify that `<run-dir>/accepted-package.json` contains valid SHA-256 digests matching the exported files:
+Verify that `<run-dir>/stages/07-package-<hex>/accepted-package.json` contains valid SHA-256 digests matching the exported files:
 * `*.gbr`: Gerber layer plots.
 * `*.drl`: Excellon NC drill files.
 * `BOM.csv`: Bill of Materials.
@@ -242,9 +240,9 @@ Verify that `<run-dir>/accepted-package.json` contains valid SHA-256 digests mat
 To inspect physical placement metrics on the generated board:
 
 ```bash
-./bin/agent-ee place metrics runs/telemetry-pod-v1/package/candidate/board.kicad_pcb \
-  --groups runs/telemetry-pod-v1/inputs/groups.json \
-  --intent runs/telemetry-pod-v1/inputs/placement-intent.json
+./bin/agent-ee place metrics runs/telemetry-pod-v1/stages/07-package-*/candidate/board.kicad_pcb \
+  --groups runs/telemetry-pod-v1/source/groups.json \
+  --intent runs/telemetry-pod-v1/source/placement-intent.json
 ```
 
 This outputs a structured JSON report detailing:

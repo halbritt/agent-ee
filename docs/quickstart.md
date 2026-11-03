@@ -97,10 +97,10 @@ Each stage consumes the immutable artifacts produced by earlier stages. If all n
 
 ## 4. Inspecting the Candidate Outputs
 
-All generated files are sealed within the run output directory:
+All generated files are sealed within the run output directory. Captured preflight inputs are preserved in `runs/quickstart-run/source/`, intermediate stage outputs reside in `runs/quickstart-run/stages/<01..07>-<stage>-<hex>/candidate/`, and the final manufacturing package resides in the package stage directory:
 
 ```bash
-ls -la runs/quickstart-run/package/candidate/
+ls -la runs/quickstart-run/stages/07-package-*/candidate/
 ```
 
 Key output files:
@@ -115,8 +115,8 @@ Key output files:
   * `BOM.csv`: Bill of Materials mapping reference designators to manufacturer part numbers and LCSC order codes.
   * `CPL.csv`: Component Placement List (Pick-and-Place) with exact X, Y coordinates, rotation, and board side.
 * **Custody and Qualification Records**:
-  * `accepted-package.json`: Contains the cryptographic SHA-256 hashes of all exported fabrication artifacts.
-  * `build-report.json`: Comprehensive report recording stage receipts, runtime fingerprints, and check outcomes.
+  * `accepted-package.json`: Contains the cryptographic SHA-256 hashes of all exported fabrication artifacts (located inside `stages/07-package-*/accepted-package.json`).
+  * `build-report.json`: Comprehensive report at the run root recording stage receipts, runtime fingerprints, check outcomes, and the relative path to the candidate directory under the `"candidate"` key (`report["candidate"]`).
 
 ---
 
@@ -129,13 +129,13 @@ Key output files:
 Generate a standalone Three.js 3D web bundle to inspect the board, components, and layer stack in your browser:
 
 ```bash
-./bin/agent-ee view3d runs/quickstart-run/package/candidate/board.kicad_pcb --out /tmp/board-viewer --port 8080 --no-browser
+./bin/agent-ee view3d runs/quickstart-run/stages/07-package-*/candidate/board.kicad_pcb --out /tmp/board-viewer --port 8080 --no-browser
 ```
 
 To export the web viewer files without launching an HTTP server:
 
 ```bash
-./bin/agent-ee view3d runs/quickstart-run/package/candidate/board.kicad_pcb --out build/viewer-export --export-only
+./bin/agent-ee view3d runs/quickstart-run/stages/07-package-*/candidate/board.kicad_pcb --out build/viewer-export --export-only
 ```
 
 ### Photorealistic Ray-Traced Renders (`render3d`)
@@ -143,7 +143,7 @@ To export the web viewer files without launching an HTTP server:
 To generate publication-grade ray-traced PNG renderings (top, bottom, and isometric views) using the native KiCad raytracer:
 
 ```bash
-./bin/agent-ee render3d runs/quickstart-run/package/candidate/board.kicad_pcb --out renders/quickstart --quality basic --jobs 3
+./bin/agent-ee render3d runs/quickstart-run/stages/07-package-*/candidate/board.kicad_pcb --out renders/quickstart --quality basic --jobs 3
 ```
 
 This exports high-resolution images (`top.png`, `bottom.png`, `isometric.png`) to `renders/quickstart/` along with an audit manifest.

@@ -43,12 +43,12 @@ ValueError: requirement map names different spec-record bytes
 
 ### Parts Stage Failures
 
-#### Problem: Repeated Decoupling Lands
+#### Problem: Decoupling Distance Numeric Binding Failure
 ```
-ValueError: repeated decoupling lands are refused with a specific remedy
+ValueError: decoupling[0].max_distance_mm: exact numeric source binding failed: ...; use a distance representable in whole nanometres
 ```
-* **Cause**: In `agent-ee.design/1` or `circuit.json`, two decoupling capacitors are bound to the same IC power/ground terminal without distinct terminal definitions.
-* **Resolution**: In the `decoupling` array, ensure each decoupling capacitor specifies distinct supply and return pin terminals (e.g., `["U1.1", "C1.1"]` and `["U1.8", "C2.1"]`).
+* **Cause**: In `agent-ee.design/1` or `circuit.json`, a decoupling constraint specifies a `max_distance_mm` value that cannot be bound to an exact integer number of nanometres.
+* **Resolution**: Specify `max_distance_mm` using a distance representable in whole nanometres (e.g., `2.5` or `5.0`). Also ensure each decoupling capacitor specifies distinct supply and return pin terminals in the `decoupling` array.
 
 ---
 
@@ -150,10 +150,12 @@ KiCad's Python bindings are compiled as a native shared library (`_pcbnew.so`) b
 Ensure you are running `agent-ee` with the matching system Python interpreter.
 
 ### Q4: How do I export or share completed board designs for manufacturing?
-All manufacturing deliverables are collected in the run directory under:
+All manufacturing deliverables are collected in the run directory under the package stage candidate directory:
 ```
-<run-dir>/package/candidate/
+<run-dir>/stages/07-package-*/candidate/
 ```
+(You can find the exact active candidate directory recorded in `<run-dir>/build-report.json` under the `"candidate"` key.)
+
 This folder contains:
 * RS-274X Gerber files (`*.gbr`) and NC drill files (`*.drl`).
 * Pick-and-Place component positioning (`CPL.csv`).
@@ -162,7 +164,7 @@ This folder contains:
 
 You can zip this directory and upload it directly to PCB manufacturers (e.g., JLCPCB). To share an interactive 3D model with stakeholders, run:
 ```bash
-./bin/agent-ee view3d <run-dir>/package/candidate/board.kicad_pcb --out export-viewer --export-only
+./bin/agent-ee view3d <run-dir>/stages/07-package-*/candidate/board.kicad_pcb --out export-viewer --export-only
 ```
 
 ### Q5: How do I resume a build that was cancelled or stopped at a checkpoint?

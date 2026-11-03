@@ -83,35 +83,39 @@ Stage 7: Package       <--  Stage 6: Artwork <--  Stage 5: Placement & Routing <
     * Excellon NC drill files (`.drl`).
     * Bill of Materials (`BOM.csv`).
     * Component Placement List (`CPL.csv`).
-* **Outputs**: `accepted-package.json` sealing the candidate files and manufacturing package with SHA-256 digests.
+* **Outputs**: `accepted-package.json` sealing the candidate files and manufacturing package with SHA-256 digests (inside `stages/07-package-*/accepted-package.json`).
 
 ---
 
 ## 3. Data Flow and Directory Layout
 
-A build run directory enforces a strict structure separating inputs, immutable candidates, execution receipts, and scratch directories:
+A build run directory enforces a strict structure separating captured inputs, immutable candidates, execution receipts, and scratch directories:
 
 ```
 <run-dir>/
 ├── .lock                     # Shared/exclusive file lock (fcntl.flock)
-├── build-report.json         # Overall build qualification and stage execution report
-├── accepted-package.json     # Final sealed manufacturing package manifest
-├── inputs/                   # Captured build inputs and plan copy
-├── candidate/                # Adopted candidate files for the latest completed stage
-│   ├── board.kicad_pcb
-│   ├── board.kicad_sch
-│   ├── board.kicad_pro
-│   └── board.kicad_dru
-├── receipts/                 # Immutable stage step receipts
-│   ├── 0/                    # Step index
-│   │   ├── receipt.json      # Step declaration, status, input digests, output hashes
-│   │   └── run/
-│   │       ├── execution.json # Executor parameters, bwrap argv, exit code, elapsed time
-│   │       ├── stdout.log
-│   │       ├── stderr.log
-│   │       └── console.log
+├── build-report.json         # Overall build qualification report (records active candidate path)
+├── source/                   # Captured preflight inputs and source inventory copy
+├── stages/                   # Isolated stage directories (01-requirements through 07-package)
+│   ├── <index>-<stage>-<hex>/
+│   │   ├── candidate/        # Immutable candidate files produced by this stage
+│   │   │   ├── board.kicad_pcb
+│   │   │   ├── board.kicad_sch
+│   │   │   ├── board.kicad_pro
+│   │   │   └── board.kicad_dru
+│   │   ├── accepted-package.json # Sealed manufacturing package manifest (stage 07)
+│   │   ├── receipts/         # Step receipts and execution logs for this stage
+│   │   │   ├── 0/
+│   │   │   │   ├── receipt.json
+│   │   │   │   └── run/
+│   │   │   │       ├── execution.json
+│   │   │   │       ├── stdout.log
+│   │   │   │       ├── stderr.log
+│   │   │   │       └── console.log
+│   │   │   └── ...
+│   │   └── work/             # Isolated scratch workspace used during active tool runs
 │   └── ...
-└── work/                     # Isolated scratch workspace used during active tool runs
+└── superseded/               # Historical records preserved when resuming or replacing
 ```
 
 ### File Locking and Writer Exclusivity

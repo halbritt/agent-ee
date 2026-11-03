@@ -211,7 +211,7 @@ The `agent-ee design` family manages the transformation from high-level circuit 
 ```sh
 agent-ee design capture fixtures/design-examples/i2c-sensor.json --out captures/i2c
 agent-ee design compile fixtures/design-examples/i2c-sensor.json --captures captures/i2c --out bundles/i2c
-agent-ee design generate fixtures/design-requirements/555-oscillator.md --out runs/555-gen --max-attempts 2
+agent-ee design generate fixtures/design-requirements/led-flasher.md --out runs/led-flasher-gen --max-attempts 2
 ```
 
 ## `scaffold`
@@ -518,5 +518,5 @@ Exit codes: 0 if all evaluated tasks pass dual-gate evaluation; 1 if any task fa
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.pcbschemagen_benchmark \
-  --task-id 104 --candidate fixtures/pcbschemagen-tier1/tasks/104/design.json --summary
+  --task-id 104 --candidate evaluation_candidates/104.json --summary
 ```

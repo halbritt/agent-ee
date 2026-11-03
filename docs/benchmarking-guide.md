@@ -70,7 +70,7 @@ Common subcommands:
 Example invocation:
 
 ```bash
-python3 scripts/seeded_benchmark.py prepare fixtures/telemetry-pod /tmp/bench-cache /tmp/bench-prepared
+python3 scripts/seeded_benchmark.py prepare benchmarks/seeded/expectations.json /tmp/bench-cache /tmp/bench-prepared
 ```
 
 ### Measured Placement Metrics
@@ -92,13 +92,23 @@ python3 scripts/seeded_benchmark.py prepare fixtures/telemetry-pod /tmp/bench-ca
 The design generation benchmark evaluates the autonomous translation of natural-language engineering requirements (`REQUIREMENTS.md`) into valid, manufacturing-ready `agent-ee.design/1` specifications.
 
 ### Execution
-Run `agent-ee design benchmark` pointing to a requirements file:
+Run `agent-ee design benchmark` pointing to a directory containing requirements markdown files:
 
 ```bash
-./bin/agent-ee design benchmark fixtures/design-requirements/555-oscillator.md \
-  --out runs/bench-555 \
+./bin/agent-ee design benchmark fixtures/design-requirements/ \
+  --out runs/bench-requirements \
   --author codex:gpt-6.1-sol:high \
   --max-attempts 4 \
+  --max-seconds 2400
+```
+
+To run generation against a single requirements document (such as `fixtures/design-requirements/current-monitor.md`), use `agent-ee design generate`:
+
+```bash
+./bin/agent-ee design generate fixtures/design-requirements/current-monitor.md \
+  --out runs/current-monitor-gen \
+  --author codex:gpt-6.1-sol:high \
+  --max-attempts 2 \
   --max-seconds 2400
 ```
 
@@ -159,12 +169,14 @@ The dual-gate runner scores each task as a 2-tuple `(Gate 1: PASS/FAIL, Gate 2: 
 ### Executing PCBSchemaGen Benchmarks
 
 #### Evaluating a Single Task Candidate
-To evaluate a candidate design against Task `104` (Buck Converter):
+To evaluate a candidate design against Task `104` (USB_DATA_LOGGER):
+
+Note: `--candidate` requires a candidate design JSON file (e.g. `evaluation_candidates/104.json`), whereas `fixtures/pcbschemagen-tier1/tasks/104.json` contains the benchmark task specification.
 
 ```bash
 PYTHONPATH=src python3 -m agent_ee.pcbschemagen_benchmark \
   --task-id 104 \
-  --candidate fixtures/pcbschemagen-tier1/tasks/104/design.json \
+  --candidate evaluation_candidates/104.json \
   --summary
 ```
 

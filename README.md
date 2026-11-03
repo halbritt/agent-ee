@@ -92,12 +92,12 @@ stage. `--through STAGE` stops at a checkpoint for diagnosis. See the
 | `agent-ee build run PLAN` | Run the complete 7-stage generative build pipeline | [build-workflow](docs/build-workflow.md) |
 | `agent-ee build review RUN` | Independently re-check completed build candidate | [build-workflow](docs/build-workflow.md) |
 | `agent-ee place run CONFIG` | Execute standalone placement search and routing | [placement-job](docs/placement-job.md) |
-| `agent-ee place metrics PCB` | Evaluate native placement quality metrics and wirelengths | [placement-job](docs/placement-job.md) |
+| `agent-ee place metrics BOARD` | Evaluate native placement quality metrics and wirelengths | [placement-job](docs/placement-job.md) |
 | `agent-ee parts compile ARGS` | Compile part selections and bind footprint/symbol sources | [parts-stage](docs/parts-stage.md) |
 | `agent-ee design compile DESIGN` | Validate and compile typed design statement to build bundle | [design-compile](docs/design-compile.md) |
 | `agent-ee design capture DESIGN` | Capture circuit and envelope into design schema | [design-compile](docs/design-compile.md) |
-| `agent-ee design generate PROMPT` | Synthesize design schema statement from natural language prompt | [design-compile](docs/design-compile.md) |
-| `agent-ee design benchmark RUNS` | Run automated benchmark suite across design examples | [benchmarking-guide](docs/benchmarking-guide.md) |
+| `agent-ee design generate REQUIREMENTS` | Synthesize design schema statement from engineering requirements document | [design-compile](docs/design-compile.md) |
+| `agent-ee design benchmark REQUIREMENTS_DIR` | Run automated benchmark suite across requirements documents | [benchmarking-guide](docs/benchmarking-guide.md) |
 
 ## Try it
 
