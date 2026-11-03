@@ -63,10 +63,13 @@ compiler can register footprints without a pad named `1`, with composite supplie
 pad numbers, or with differently numbered repeated plated lands. The ordinary
 pin-1 frame and polarity checks remain in use for previously supported parts.
 
-Automatic registration considers the four quarter turns and requires exactly one
-identity-preserving result. When at least two unique pad numbers occur on both
-sides, their coordinate-wise median centre displacement supplies the translation datum. Otherwise
-it centres the copper bounding boxes. Every native and supplier land needs
+Orientation considers all four quarter turns without using the author's map or
+circuit nets to select one. Independent pad identities or a single admissible
+copper registration can establish the turn. Ambiguous geometry requires matching
+captured supplier and native symbol pin names; an author declaration cannot
+resolve it. When at least two unique pad numbers occur on both sides on identical
+copper surfaces, their coordinate-wise median centre displacement supplies the
+translation datum. Otherwise it centres the copper bounding boxes. Every native and supplier land needs
 certified positive copper overlap on the same surfaces. Possible copper contact
 with an unrelated identity on any shared surface refuses. These checks establish
 registration, not physical assembly suitability; the existing overlap diagnostic
@@ -85,24 +88,26 @@ Electrical identity has an explicit basis in `design-compile-report.json`:
   at its pad centre under the existing `100000` nm tolerance. At least two identified
   electrical terminal groups must establish the automatic orientation. This is
   positional evidence for the repeated land, not proof of its physical function.
+  A separately listed supplier symbol pin cannot acquire its identity by this
+  positional rule.
 - Other numbering needs a declaration. It records an author-supplied electrical
   identity, checked against the captured copper and circuit nets; it does not
   independently authenticate that identity against a manufacturer datasheet.
 
-An optional part field declares the supplier-to-native rotation and a complete
-map from supplier numbers to lists of native numbers. For example, an original
+An optional part field declares a complete map from supplier numbers to lists of
+native numbers. For example, an original
 connector whose supplier calls one joined land `JOIN` could declare:
 
 ```json
 "cpl_registration": {
-  "rotation_degrees": 90,
   "pad_map": {"JOIN": ["K1", "K2"], "S0": ["S0"], "S1": ["S1"]}
 }
 ```
 
 The map must cover every supplier number and agree with every overlapping land.
 It cannot override a conflicting common pad number or merge distinct circuit
-nets. Registrations requiring reflection, uncovered lands and ambiguous automatic
+nets. An optional legacy `rotation_degrees` can assert the independently derived
+quarter turn, but never selects it. Registrations requiring reflection, uncovered lands and ambiguous
 rotations refuse. Geometrically indistinguishable reflections cannot be detected.
 Polarized parts still require their existing pin-1 polarity gate; this declaration
 cannot replace it.
@@ -111,26 +116,41 @@ The compiled CPL policy retains each registration in `pad_registrations` by
 designator. At package time, `cpl_rotation` rechecks it against the captured board
 and supplier bytes and the sealed board pad nets, and checks the policy angle.
 Its `pin1` record names `electrical_pad_correspondence` as the orientation reference
-and retains the pad map, physical land pairs and identity proof for each number.
+and retains the pad map, physical land pairs and the evidence used at that boundary.
+`orientation_proof` records independent pad identities, unique copper geometry or
+captured symbol pin names. Compiler-derived aliases are checked as a supplied
+policy map at package time, so their package identity proof is
+`declared_map_and_copper`; it does not repeat the compiler's automatic plated-land
+proof. Native symbol-name fallback uses captured board pin functions or the
+sealed native netlist with matching part and pad-net bindings.
 Supplier placement preview and physical validation remain required.
 
 A footprint may mix SMD and plated through-hole terminals under one explicit
 native assembly attribute. CAD assignment records the mixed pad technology and
-uses that attribute as the primary assembly type. Every numbered contact stays
-electrical for symbol parity and connector counts unless a captured mechanical
-declaration says otherwise. Shared-number SMD/through-hole lands still need the
+uses that attribute as the primary assembly type. Numbered contacts stay
+electrical for symbol parity unless a captured mechanical declaration says
+otherwise. Stock `MP` pads do not count as connector positions, preserving the
+existing position-count rule. Shared-number SMD/through-hole lands still need the
 existing thermal-via declaration; missing or competing assembly attributes refuse.
 
 Supplier `POLYGON` pads use exact decimal vertices from the
 [EasyEDA standard PAD record](https://docs.easyeda.com/en/DocumentFormat/3-EasyEDA-PCB-File-Format/#pad).
 Conversion removes consecutive duplicate endpoints and the closing duplicate,
-preserves concavity, and refuses self-intersections or zero area. The geometry
+preserves concavity, and refuses self-intersections or zero area. The pad's centre
+must match the outline bounding-box centre within the source tolerance, and its
+size, after the declared quarter turn, must match that box. These checks also
+precede placement of a plated drill at the recorded centre. Non-quarter-turn pad
+rotations refuse. Polygon vertices are already in canvas coordinates and are not
+rotated a second time; the checked centre remains the position used for pin-1
+classification and registration anchors. The geometry
 kernel uses the resulting polygon exactly, including under registration; it
 does not replace it with a rectangle or convex hull.
 
-Deterministic supplier refusals name every affected `parts.<ref>.lcsc`, the LCSC
-id and the parser mode. Unsupported capability carries `[tool_gap]`; feedback
-keeps the part field and records the tool gap. The `captures` infrastructure
+Supplier-parser refusals during capture name every affected `parts.<ref>.lcsc`,
+the LCSC id and the parser mode. Unsupported supplier capability carries
+`[tool_gap]`; malformed or inconsistent source metadata does not. Missing-model
+capture and independently unresolved orientation also carry `[tool_gap]`.
+Feedback keeps the part field and records the tool gap. The `captures` infrastructure
 path is not classified as a design field. The full supplier response remains
 in the failed capture directory for diagnosis.
 
@@ -215,10 +235,14 @@ embedded credentials or fragments are accepted, and paths absent from the
 selected footprints refuse. The declared URL takes precedence for that path;
 other references still use the stock resolver. Capture retains the declaration
 in `model-sources.json` and verifies the downloaded bytes against its digest.
-An incorrect digest refuses and leaves the downloaded bytes for diagnosis.
+An incorrect digest refuses before publishing the final cache entry and leaves
+the downloaded bytes in a separate `.model-rejected-*` file for diagnosis.
 The model receipt records `source: declared-url`, the URL, size and digest;
 compile retains and verifies that receipt and the model bytes. This verifies
-source identity and integrity, not the model's dimensions or suitability.
+agreement with the declared content digest and records the URL. It does not
+authenticate the source's identity or establish model dimensions or suitability.
+The generate loop does not yet forward this option; a missing stock model still
+refuses there, with a tool-gap classification.
 
 Compile generates the spec and byte-located record, selected-part records, CAD
 closure, circuit, layout, envelope, sourced project rules, groups, placement and

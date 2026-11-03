@@ -610,7 +610,7 @@ def placement(design, root):
 
 def cpl_policy(design, root):
     from .land_pattern import library_footprint
-    from .easyeda_footprint import parse_package
+    from .easyeda_footprint import SupplierError, parse_package, symbol_pins
     from . import cpl_rotation as c
 
     cad = load(root / "cad.json")
@@ -690,9 +690,17 @@ def cpl_policy(design, root):
             nets = {term.split('.', 1)[1]: net for net, terms in design.get('nets', {}).items()
                     for term in terms if term.split('.', 1)[0] == ref}
             try:
+                from .symbol_library import parse_library, resolve_symbol
+                lib, symbol = part['lib_id'].split(':')
+                symbol_path = root / (lib + '.kicad_sym')
+                native_pins = []
+                if symbol_path.is_file():
+                    native_pins, _, _ = resolve_symbol(parse_library(symbol_path.read_bytes()), symbol,
+                                                       lib, digest(symbol_path))
                 correspondence = derive(native['pattern'], supplier['pattern'],
-                    declaration=part.get('cpl_registration'), nets=nets)
-            except (PatternError, GeometryError) as exc:
+                    declaration=part.get('cpl_registration'), nets=nets, native_pins=native_pins,
+                    supplier_pins=symbol_pins((root / provenance['path']).read_bytes(), lcsc)['pins'])
+            except (PatternError, GeometryError, SupplierError) as exc:
                 raise DesignError([f"parts.{ref}.lcsc: {lcsc}: deterministic {exc.mode}: {exc}"]) from exc
             offset = correspondence['rotation_degrees']
             registrations[ref] = {k: correspondence[k] for k in ('rotation_degrees', 'pad_map')}

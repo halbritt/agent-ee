@@ -988,7 +988,7 @@ def _generate(requirements_path, out, options, identity=None):
                 feedback = str(exc)
                 row.update(status='refused', reason=feedback, refusal_classes=refusal_classes(feedback))
                 if '[tool_gap]' in feedback:
-                    row['tool_gap'] = 'Supplier footprint capability refused deterministically'
+                    row['tool_gap'] = 'Capture or compile capability refused deterministically'
                 (attempt / 'refusal.txt').write_text(feedback, encoding='utf-8')
             except PhaseFailure as exc:
                 row.update(status='failed', failing_stage=exc.stage, reason=str(exc),
@@ -1004,7 +1004,7 @@ def _generate(requirements_path, out, options, identity=None):
                 (attempt / 'refusal.txt').write_text(str(exc), encoding='utf-8')
                 if exc.stage in ('capture', 'compile'):
                     if '[tool_gap]' in str(exc):
-                        row['tool_gap'] = 'Supplier footprint capability refused deterministically'
+                        row['tool_gap'] = 'Capture or compile capability refused deterministically'
                     elif not row['refusal_classes']:
                         row['tool_gap'] = 'Refusal does not name a design field'
                 if exc.stage in ('build', 'placement-routing') and any(s in feedback for s in

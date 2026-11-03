@@ -46,7 +46,7 @@ NETS = dict(K1='RETURN', K2='RETURN', S0='DATA', S1='SELECT', CASE='CASE_NET')
 class PolygonPadTests(unittest.TestCase):
     def test_concavity_exact_decimals_and_repeated_endpoints_survive_conversion(self):
         points = '10.25 20 12.25 20 12.25 20 12.25 21 11.25 21 11.25 23 10.25 23 10.25 20'
-        raw = component('C9', [pad('POLYGON', 11, 21, 2, 3, 'X', points=points)], origin=(10, 20))
+        raw = component('C9', [pad('POLYGON', '11.25', '21.5', 2, 3, 'X', points=points)], origin=(10, 20))
         result = parse_package(raw, 'C9', 200)
         p = result['pattern']['pads'][0]['primitive']
         self.assertEqual(p['points'], [['63500', '0'], ['571500', '0'], ['571500', '254000'],
@@ -72,12 +72,12 @@ class PolygonPadTests(unittest.TestCase):
             self.assertEqual(area_bounds(registered)['copper'], area_bounds(supplier['pattern'])['copper'])
         self.assertEqual(supplier, original)
 
-    def test_polygon_canvas_points_are_not_rotated_again_by_pad_metadata(self):
-        raw = component('C9', [pad('POLYGON', 0, 0, 2, 2, 'X', rotation='37',
+    def test_polygon_metadata_at_an_unqualified_angle_refuses(self):
+        raw = component('C9', [pad('POLYGON', 1, 1, 2, 2, 'X', rotation='13.7',
                                   points='0 0 2 1 0 2')], origin=(0, 0))
-        p = parse_package(raw, 'C9', 200)['pattern']['pads'][0]['primitive']
-        self.assertEqual(p['points'], [['0', '0'], ['508000', '254000'], ['0', '508000']])
-        self.assertEqual(p['angle'], '0')
+        with self.assertRaises(SupplierError) as caught:
+            parse_package(raw, 'C9', 200)
+        self.assertEqual(caught.exception.mode, 'unsupported_rotation')
 
     def test_malformed_polygons_are_never_replaced_by_their_boxes(self):
         for points in ('0 0 1 1', '0 0 1 0 1', '0 0 1 1 2 2',
@@ -122,25 +122,29 @@ class CorrespondenceTests(unittest.TestCase):
             with self.subTest(nets=nets), self.assertRaisesRegex(PatternError, 'merges distinct or unconnected'):
                 self.derive(nets=nets)
 
-    def test_signal_swap_missing_land_mirror_and_wrong_rotation_refuse(self):
-        original = copy.deepcopy(self.supplier['pattern'])
+    def test_signal_swap_refuses_conflicting_electrical_terminals(self):
         self.supplier['pattern']['pads'][1]['number'], self.supplier['pattern']['pads'][2]['number'] = 'S1', 'S0'
-        with self.assertRaises(PatternError):
+        with self.assertRaisesRegex(PatternError, 'overlaps different electrical terminals'):
             self.derive()
-        self.supplier['pattern'] = copy.deepcopy(original)
+
+    def test_missing_supplier_land_refuses_incomplete_copper_coverage(self):
         self.supplier['pattern']['pads'].pop(2)
-        with self.assertRaises(PatternError):
+        with self.assertRaisesRegex(PatternError, 'no certified copper correspondence'):
             self.derive()
-        self.supplier['pattern'] = copy.deepcopy(original)
+
+    def test_reflected_supplier_refuses_a_rotation_only_registration(self):
         for p in self.supplier['pattern']['pads']:
             p['primitive']['center'][0] = text(-Fraction(p['primitive']['center'][0]))
             if 'points' in p['primitive']:
                 p['primitive']['points'] = [[text(-Fraction(x)), y] for x, y in p['primitive']['points']]
-        with self.assertRaises(PatternError):
+        for hole in self.supplier['pattern']['holes']:
+            hole['center'][0] = text(-Fraction(hole['center'][0]))
+        with self.assertRaisesRegex(PatternError, 'orientation requires one independently admissible quarter turn'):
             self.derive()
-        self.supplier['pattern'] = original
-        with self.assertRaises(PatternError):
-            verify(self.native['pattern'], original, 180, nets=NETS)
+
+    def test_wrong_fixed_rotation_refuses_incomplete_copper_coverage(self):
+        with self.assertRaisesRegex(PatternError, 'no certified copper correspondence'):
+            verify(self.native['pattern'], self.supplier['pattern'], 180, nets=NETS)
 
     def test_unique_rotation_is_derived_without_pad_one(self):
         for angle in (90, 180, 270):
@@ -169,7 +173,7 @@ class CorrespondenceTests(unittest.TestCase):
         raw = component('C9', [pad('RECT', x, y, 1, 1, name)
             for name, x, y in [('X', -3, 0), ('X', 3, 0), ('Y', 0, -3), ('Y', 0, 3)]], origin=(0, 0))
         pattern = parse_package(raw, 'C9', 200)['pattern']
-        with self.assertRaisesRegex(PatternError, 'expected one electrical registration, found 2'):
+        with self.assertRaisesRegex(PatternError, r'\[tool_gap\].*found 2 geometric'):
             derive(pattern, pattern)
 
     def test_declaration_shape_is_strict(self):
@@ -191,6 +195,7 @@ class CompileAndPackageTests(unittest.TestCase):
             root = Path(tmp)
             for path in ('supplier', 'named', 'Owned.pretty'):
                 (root / path).mkdir()
+            write_native_symbol(root, 'Owned', 'Connector', {pin: '~' for pin in NETS})
             (root / 'Owned.pretty/OwnedConnector.kicad_mod').write_bytes(fp)
             write_json(root / 'cad.json', dict(schema='agent-ee.footprint-libraries/1', complete=True,
                 libraries=[dict(name='Owned', members=[dict(path='Owned.pretty/OwnedConnector.kicad_mod',
@@ -248,3 +253,39 @@ class CompileAndPackageTests(unittest.TestCase):
 
 def _sexpr(node):
     return '(' + ' '.join(_sexpr(v) if isinstance(v, list) else json.dumps(v) for v in node) + ')'
+
+
+def write_native_symbol(root, library, symbol, names):
+    pins = ' '.join(f'(pin passive line (at 0 {i} 0) (length 2.54) '
+                    f'(name {json.dumps(name)}) (number {json.dumps(number)}))'
+                    for i, (number, name) in enumerate(names.items()))
+    (root / (library + '.kicad_sym')).write_text(
+        f'(kicad_symbol_lib (version 20241209) (generator "owned") '
+        f'(symbol "{symbol}" (symbol "{symbol}_1_1" {pins})))')
+
+
+def policy_inputs(root, raw, fp, *, ref='J7', lcsc='C900000017', footprint_name='OwnedConnector',
+                  native_names=None, symbol_library='Owned', symbol='Connector'):
+    from agent_ee.storage import digest, write_json
+    for path in ('supplier', 'named', 'Owned.pretty'):
+        (root / path).mkdir()
+    relative = f'Owned.pretty/{footprint_name}.kicad_mod'
+    (root / relative).write_bytes(fp)
+    write_json(root / 'cad.json', dict(schema='agent-ee.footprint-libraries/1', complete=True,
+        libraries=[dict(name='Owned', members=[dict(path=relative, sha256=digest(root / relative))])]))
+    (root / f'supplier/{lcsc}.raweasy.json').write_bytes(raw)
+    (root / f'supplier/{lcsc}.provenance.json').write_bytes(provenance(lcsc, f'supplier/{lcsc}.raweasy.json', raw))
+    write_json(root / f'named/{ref}.json', dict(package=footprint_name))
+    if native_names is not None:
+        write_native_symbol(root, symbol_library, symbol, native_names)
+    return dict(parts={ref: dict(footprint='Owned:' + footprint_name, lcsc=lcsc,
+                                lib_id=symbol_library + ':' + symbol)}, nets={})
+
+
+def supplier_symbol(raw, names):
+    document = json.loads(raw)
+    document['dataStr']['shape'] = [
+        f'P~show~0~{number}~0~0~0~owned{index}~0^^0~0^^M 0 0 h 1~#000000'
+        f'^^1~0~0~0~{name}~start^^1~0~0~0~{number}~start^^0~0~0^^0~M 0 0 L 1 1'
+        for index, (number, name) in enumerate(names.items())]
+    return json.dumps(document).encode()

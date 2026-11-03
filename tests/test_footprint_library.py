@@ -137,6 +137,19 @@ class AssignmentTests(unittest.TestCase):
             unknown = check_assignments(changed, captured, declarations(lib))
             self.assertEqual(unknown['outcome'], 'unknown')
 
+    def test_mixed_technology_mp_keeps_parity_and_does_not_count_as_a_position(self):
+        from agent_ee.footprint_library import check_assignments
+        data = SOT3[:-1] + '(pad "MP" thru_hole circle (at 4 0) (size 2 2) (drill 1) (layers "*.Cu" "*.Mask")))'
+        manifest, files = capture(data)
+        for numbers, outcome in ((('1', '2', '3', 'MP'), 'pass'), (('1', '2', '3'), 'defect')):
+            lib, raw = symbol_capture(numbers)
+            files[lib['path']] = raw
+            result = check_assignments(manifest, files, declarations(lib, connector={'rows': 1, 'columns': 3}))
+            with self.subTest(numbers=numbers):
+                self.assertEqual(result['outcome'], outcome)
+                self.assertNotIn('connector_count', {f['code'] for f in result['findings']})
+                self.assertEqual(result['assignments'][0]['pad_technology'], 'mixed')
+
     def test_empty_and_absent_are_defects_after_complete_index(self):
         for fp, code in (('', 'empty_footprint'), ('Owned:Absent', 'absent_footprint')):
             result = self.check(footprint=fp)
@@ -340,7 +353,7 @@ class DeclarationTests(unittest.TestCase):
         result = self.check(['ConnMP'], ('1', '2'), component)
         self.assertEqual(result['outcome'], 'defect')
         self.assertEqual(result['findings'][0]['extra_pads'], ['MP'])
-        self.assertEqual(self.codes(result), ['connector_count', 'pad_pin_parity'])
+        self.assertEqual(self.codes(result), ['pad_pin_parity'])
         declared = owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP']))])
         result = self.check(['ConnMP'], ('1', '2'), component, declared)
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result['findings'])

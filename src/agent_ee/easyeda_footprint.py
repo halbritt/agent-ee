@@ -176,7 +176,7 @@ def _pad(fields, tol):
     if not number:
         _unsupported(label + ': unnumbered copper pad is not qualified')
     rotation = decimal(fields[11], label + ' rotation')
-    turn = rotation % 360 if shape == 'POLYGON' else _quarter(rotation, label)
+    turn = _quarter(rotation, label)
     hole_r = decimal(fields[9], label + ' hole radius')
     if shape == 'RECT':
         corners = _points(fields[10], label + ' outline', 4)
@@ -218,6 +218,13 @@ def _pad(fields, tol):
             polygon_area([outline])
         except GeometryError as exc:
             raise SupplierError(exc.mode, label + ': ' + str(exc), exc.execution) from exc
+        xs, ys = zip(*outline)
+        box_center = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+        box_size = (max(xs) - min(xs), max(ys) - min(ys))
+        expected_size = (w, h) if turn in (0, 180) else (h, w)
+        if not _near((cx, cy), box_center, tol) or not _near(expected_size, box_size, tol):
+            raise SupplierError('source_inconsistent', label + ': centre/size differ from polygon outline box',
+                                'malformed')
         # Points are already in canvas coordinates, including source rotation.
         primitive = dict(shape='polygon', points=outline)
     else:

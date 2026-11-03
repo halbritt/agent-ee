@@ -547,11 +547,16 @@ class StockModelFetchTests(unittest.TestCase):
 
     def test_declared_source_wrong_digest_retains_failure_and_no_verified_receipt(self):
         from agent_ee.models3d import fetch_stock_references
-        with patch('agent_ee.models3d.urlopen', return_value=ModelResponse(self.payload)):
+        with patch('agent_ee.models3d.urlopen', return_value=ModelResponse(self.payload)), \
+                patch('agent_ee.models3d.os.replace', wraps=os.replace) as replace:
             with self.assertRaisesRegex(ModelFetchError, 'SHA-256 differs'):
                 fetch_stock_references([self.relative], self.cache, sources={self.relative: dict(
                     source_url='https://example.invalid/owned.step', sha256='a' * 64)})
-        self.assertEqual((self.cache / self.relative).read_bytes(), self.payload)
+        self.assertNotIn(self.cache / self.relative, [Path(call.args[1]) for call in replace.call_args_list])
+        self.assertFalse((self.cache / self.relative).exists())
+        retained = list((self.cache / self.relative).parent.glob('.model-rejected-*'))
+        self.assertEqual(len(retained), 1)
+        self.assertEqual(retained[0].read_bytes(), self.payload)
         self.assertFalse((self.cache / '.agent-ee-models.json').exists())
 
     def test_declared_source_validation_is_before_network_and_writes(self):

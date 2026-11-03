@@ -319,10 +319,30 @@ class CaptureHttpTests(unittest.TestCase):
             self.assertIn(f"parts.{ref}.footprint: Owned:R2 uses the 3D model Owned.3dshapes/R2.step", message)
         for revision in models3d.STOCK_REVISIONS:
             self.assertIn(revision, message)
+        self.assertIn('[tool_gap]', message)
         report = json.loads((self.root / "captured/models-report.json").read_bytes())
         self.assertEqual([(r["path"], r["status"]) for r in report["files"]],
                          [("Owned.3dshapes/R2.step", "not-found")])
         self.assertFalse((self.root / "captured/capture.json").exists())
+
+    def test_missing_declared_model_names_part_path_and_source_without_claiming_a_stock_revision(self):
+        from urllib.error import HTTPError
+        from agent_ee import models3d
+        footprint = self.kicad / 'footprints/Owned.pretty/R2.kicad_mod'
+        footprint.write_bytes(footprint.read_bytes().rstrip()[:-1]
+            + b' (model "${KICAD10_3DMODEL_DIR}/Owned.3dshapes/Missing.step"))\n')
+        url = 'https://example.invalid/declared-model.step'
+        source = {'Owned.3dshapes/Missing.step': dict(source_url=url, sha256='a' * 64)}
+        with patch.object(models3d, 'urlopen', side_effect=HTTPError(url, 404, 'missing', {}, None)), \
+                self.assertRaises(DesignError) as caught:
+            capture_design(self.design, self.root / 'declared-missing', kicad_root=self.kicad,
+                stock_endpoint=self.url + '/stock', supplier_endpoint=self.url + '/supplier/{lcsc}', model_sources=source)
+        message = str(caught.exception)
+        for ref in ('R1', 'R2'):
+            self.assertIn('parts.' + ref + '.footprint:', message)
+        for value in ('[tool_gap]', url, 'Owned.3dshapes/Missing.step'):
+            self.assertIn(value, message)
+        self.assertNotIn('does not have at the revisions', message)
 
     def test_malformed_supplier_body_stays_retained_and_cannot_be_compiled(self):
         self.supplier_raw = b'{"result":null}'

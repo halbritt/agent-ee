@@ -156,16 +156,18 @@ def missing_models(design, cad, report):
             stock = stock_reference(model[1])
             if stock is None or stock[1] not in missing:
                 continue
-            tried = ", ".join(a.get("commit") or a.get("source_url", "unknown source")
-                              for a in missing[stock[1]].get("attempts", []))
+            attempts = missing[stock[1]].get("attempts", [])
+            tried = ", ".join(a.get("commit") or a.get("source_url", "unknown source") for a in attempts)
+            location = (f"{report['repository']} does not have at the revisions recorded for this capture"
+                        if attempts and all(a.get('commit') for a in attempts) else
+                        "was not found at the recorded model source")
             problems.append(
                 f"parts.{ref}.footprint: {part['footprint']} uses the 3D model {stock[1]}, which "
-                f"{report['repository']} does not have at the revisions recorded for this capture "
-                f"({tried}); choose a footprint whose model is there or supply --model-sources with "
+                f"{location} ({tried}) [tool_gap]; choose a footprint whose model is there or supply --model-sources with "
                 "explicit URLs and SHA-256 digests. models-report.json lists every model"
             )
     return problems or [
-        "parts.footprint: a stock 3D model was not found; see models-report.json"
+        "parts.footprint: [tool_gap] a referenced 3D model was not found; see models-report.json"
     ]
 
 

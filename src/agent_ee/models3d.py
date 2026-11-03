@@ -462,11 +462,12 @@ def _model_url(revision, relative):
     return f"{STOCK_REPOSITORY}/-/raw/{revision}/{quote(relative, safe='/')}"
 
 
-def _download_model(path, url, *, timeout, max_file_bytes):
+def _download_model(path, url, *, timeout, max_file_bytes, expected_sha256=None):
     request = Request(url, headers={"User-Agent": "agent-ee-stock-models/1"})
     try:
         with urlopen(request, timeout=timeout) as response:
-            return _save_download(response, path, url, timeout=timeout, max_file_bytes=max_file_bytes)
+            return _save_download(response, path, url, timeout=timeout, max_file_bytes=max_file_bytes,
+                                  expected_sha256=expected_sha256)
     except HTTPError as exc:
         if exc.code == 404:
             return None
@@ -475,7 +476,7 @@ def _download_model(path, url, *, timeout, max_file_bytes):
         raise ModelFetchError(f"stock model request failed: {url}: {exc}") from exc
 
 
-def _save_download(response, path, url, *, timeout, max_file_bytes):
+def _save_download(response, path, url, *, timeout, max_file_bytes, expected_sha256=None):
     declared = response.headers.get("Content-Length")
     try:
         expected = int(declared) if declared is not None else None
@@ -507,6 +508,11 @@ def _save_download(response, path, url, *, timeout, max_file_bytes):
                 raise ModelFetchError(f"download is not the referenced {path.suffix} model: {url}")
             stream.flush()
             os.fsync(stream.fileno())
+        if expected_sha256 is not None and checksum.hexdigest() != expected_sha256:
+            rejected = Path(temporary).with_name(Path(temporary).name.replace('.model-download-', '.model-rejected-', 1))
+            os.replace(temporary, rejected)
+            raise ModelFetchError(f'{path.name}: downloaded model SHA-256 differs from declared source; '
+                                  f'bytes retained at {rejected}')
         os.replace(temporary, path)
     finally:
         Path(temporary).unlink(missing_ok=True)
@@ -564,11 +570,10 @@ def _fetch_one(cache, relative, receipt, *, timeout, max_file_bytes, source=None
         return {**provenance, "status": "reused" if known else "existing-local"}
     attempts = []
     if source is not None:
-        downloaded = _download_model(path, source['source_url'], timeout=timeout, max_file_bytes=max_file_bytes)
+        downloaded = _download_model(path, source['source_url'], timeout=timeout, max_file_bytes=max_file_bytes,
+                                     expected_sha256=source['sha256'])
         if downloaded is None:
             return dict(status='not-found', attempts=[dict(source_url=source['source_url'], status=404)])
-        if downloaded['sha256'] != source['sha256']:
-            raise ModelFetchError(f'{relative}: downloaded model SHA-256 differs from declared source; bytes retained')
         provenance = dict(downloaded, source='declared-url')
         receipt['files'][relative] = provenance
         return dict(provenance, status='downloaded')

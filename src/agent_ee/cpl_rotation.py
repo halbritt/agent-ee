@@ -341,6 +341,23 @@ def _board_pin1_function(found, reference):
     return names.pop() if len(names) == 1 else None
 
 
+def _board_pin_names(found, reference, netlist, lcsc, pad_nets):
+    """Captured board pin functions, with a part/net-bound sealed netlist fallback."""
+    from .symbol_library import children
+    names = {}
+    for pad in children(found[reference][0], 'pad'):
+        functions = children(pad, 'pinfunction')
+        if len(functions) == 1 and len(functions[0]) == 2:
+            names.setdefault(pad[1], set()).add(functions[0][1])
+    result = {number: next(iter(values)) for number, values in names.items() if len(values) == 1}
+    if netlist is not None and netlist.get('lcsc') == lcsc:
+        for number, name in netlist['pins'].items():
+            if (number not in names and (pad_nets or {}).get(number)
+                    and netlist['nets'].get(number) == pad_nets[number]):
+                result[number] = name
+    return [dict(number=number, name=name) for number, name in result.items()]
+
+
 # ------------------------------------------------------------- evaluation
 
 def _midpoint(fp):
@@ -624,8 +641,10 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
         from .land_geometry import GeometryError
         try:
             correspondence = derive(native['pattern'], package['pattern'],
-                                    declaration=registration, nets=pad_nets)
-        except (PatternError, GeometryError) as exc:
+                                    declaration=registration, nets=pad_nets,
+                                    supplier_pins=symbol_pins(supplier['raw'], lcsc)['pins'],
+                                    native_pins=_board_pin_names(found, ref, netlist, lcsc, pad_nets))
+        except (PatternError, GeometryError, SupplierError) as exc:
             return mode('pad_correspondence', f'{ref} {lcsc}: deterministic {exc.mode}: {exc}')
         pin1.update(reference='electrical_pad_correspondence',
                     offset_degrees=correspondence['rotation_degrees'], **correspondence)

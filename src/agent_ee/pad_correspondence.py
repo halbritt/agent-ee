@@ -17,10 +17,12 @@ def _refuse(message):
 
 
 def validate_declaration(value):
-    if (not isinstance(value, dict) or set(value) != {'rotation_degrees', 'pad_map'}
-            or type(value['rotation_degrees']) is not int
+    if (not isinstance(value, dict) or 'pad_map' not in value
+            or set(value) - {'rotation_degrees', 'pad_map'}):
+        raise ValueError('CPL registration needs pad_map and an optional derived rotation assertion')
+    if 'rotation_degrees' in value and (type(value['rotation_degrees']) is not int
             or value['rotation_degrees'] not in (0, 90, 180, 270)):
-        raise ValueError('CPL registration needs rotation_degrees (0, 90, 180, 270) and pad_map')
+        raise ValueError('rotation_degrees must assert a quarter turn (0, 90, 180, 270)')
     mapping = value['pad_map']
     if not isinstance(mapping, dict) or not mapping:
         raise ValueError('pad_map must map every supplier number to native number lists')
@@ -109,14 +111,7 @@ def _registered(native, supplier, rotation):
                                                    anchors=[name for name, _ in anchors])
 
 
-def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='100000'):
-    """Prove complete land coverage and identity at one quarter-turn registration.
-
-    ``pad_map`` is supplier number -> native number list. ``nets`` is the
-    native terminal -> connected net map, required for merges of distinct pins.
-    Unknown or no-connect pins cannot authorize a physical short.
-    """
-    left, right, translation = _registered(native, supplier, rotation)
+def _overlap_graph(left, right):
     budget = geometry._Budget(None)
     lp, rp = geometry._pattern(left, budget), geometry._pattern(right, budget)
     circles = geometry._circle_envelopes(2, budget)
@@ -147,6 +142,20 @@ def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='10
                 edges.append((i, j))
     if {i for i, _ in edges} != set(range(len(lp[0]))) or {j for _, j in edges} != set(range(len(rp[0]))):
         _refuse('a native or supplier land has no certified copper correspondence')
+    return lp, rp, edges, possible, budget
+
+
+def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='100000', supplier_pins=()):
+    """Prove complete land coverage and identity at one quarter-turn registration.
+
+    ``pad_map`` is supplier number -> native number list. ``nets`` is the
+    native terminal -> connected net map, required for merges of distinct pins.
+    Unknown or no-connect pins cannot authorize a physical short. Captured
+    supplier symbol pins exclude positional-only renumbering of those terminals.
+    This fixed-angle check does not establish independent orientation evidence.
+    """
+    left, right, translation = _registered(native, supplier, rotation)
+    lp, rp, edges, possible, budget = _overlap_graph(left, right)
     native_names = {p[0] for p in lp[0]}
     supplier_names = {p[0] for p in rp[0]}
     if pad_map is not None and set(pad_map) != supplier_names:
@@ -167,6 +176,8 @@ def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='10
             known += 1
         elif pad_map is not None:
             basis = 'declared_map_and_copper'
+        elif any(pin['number'] == name for pin in supplier_pins):
+            _refuse(f'supplier pad {name} is a separate captured symbol pin; positional renumbering is not electrical identity')
         elif (len(names) == 1 and all(sum(k == j for _, k in edges) == 1
                 and sum(k == i for k, _ in edges) == 1
                 and _renumbered_plated(left, right, i, j, Fraction(tolerance)) for i, j in pairs)):
@@ -189,18 +200,64 @@ def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='10
                 pairs=[dict(native_index=i, supplier_index=j) for i, j in edges])
 
 
-def derive(native, supplier, *, declaration=None, nets=None):
-    """A declared registration, or the unique identity-preserving quarter turn."""
-    if declaration is not None:
-        validate_declaration(declaration)
-        return verify(native, supplier, declaration['rotation_degrees'], pad_map=declaration['pad_map'], nets=nets)
-    candidates, reasons = [], []
+def _symbol_names(pins, *, supplier=False):
+    found = {}
+    for pin in pins:
+        number, name = pin['number'], pin['name']
+        if (supplier and pin.get('displayed') != number) or name in ('', '~'):
+            continue
+        found.setdefault(number, set()).add(name)
+    return {number: next(iter(names)) for number, names in found.items() if len(names) == 1}
+
+
+def derive(native, supplier, *, declaration=None, nets=None, supplier_pins=(), native_pins=()):
+    """Derive orientation without an author map, then check the declared identities.
+
+    A declaration may name lands and assert the result, but is never used to
+    select a turn. Ambiguous geometry needs agreeing captured symbol names.
+    """
+    mapping = validate_declaration(declaration)['pad_map'] if declaration is not None else None
+    candidates, geometric, reasons = [], [], []
+    snames, nnames = _symbol_names(supplier_pins, supplier=True), _symbol_names(native_pins)
+    geometry_nets = {p['number']: 'geometry-only' for p in native['pads']}
     for angle in (0, 90, 180, 270):
         try:
-            candidates.append(verify(native, supplier, angle, nets=nets))
+            candidates.append(verify(native, supplier, angle, nets=geometry_nets, supplier_pins=supplier_pins))
         except PatternError as exc:
             reasons.append(f'{angle}: {exc}')
-    if len(candidates) != 1:
-        _refuse(f'expected one electrical registration, found {len(candidates)}; '
-                + '; '.join(reasons) + '; supply cpl_registration if numbering needs a declaration')
-    return candidates[0]
+        # Geometry is evaluated without the author's pad map or circuit nets.
+        # Provisional names describe overlaps only; final identity is checked below.
+        try:
+            left, right, _ = _registered(native, supplier, angle)
+            lp, rp, edges, _, _ = _overlap_graph(left, right)
+            inferred = {name: sorted({lp[0][i][0] for i, j in edges if rp[0][j][0] == name})
+                        for name in {p[0] for p in rp[0]}}
+            provisional = verify(native, supplier, angle, pad_map=inferred,
+                                 nets={p[0]: 'geometry-only' for p in lp[0]})
+            named = [(nnames[lp[0][i][0]], snames[rp[0][j][0]]) for i, j in edges
+                     if lp[0][i][0] in nnames and rp[0][j][0] in snames]
+            geometric.append((provisional, len(named) == len(edges) and all(a == b for a, b in named)))
+        except PatternError:
+            continue
+    if len(candidates) == 1:
+        angle, basis = candidates[0]['rotation_degrees'], 'independent_pad_identities'
+    elif len(geometric) == 1:
+        angle, basis = geometric[0][0]['rotation_degrees'], 'unique_copper_geometry'
+    else:
+        named = [result for result, agrees in geometric if agrees]
+        if len(named) != 1:
+            _refuse('[tool_gap] orientation requires one independently admissible quarter turn; '
+                    f'found {len(geometric)} geometric and {len(named)} symbol-name registrations; '
+                    'inspect captured geometry and symbol identities; author orientation selection is refused; '
+                    + '; '.join(reasons))
+        angle, basis = named[0]['rotation_degrees'], 'captured_symbol_pin_names'
+    symbolic = next((result['pad_map'] for result, agrees in geometric
+                     if agrees and result['rotation_degrees'] == angle), None)
+    result = verify(native, supplier, angle, pad_map=mapping if mapping is not None else symbolic,
+                    nets=nets, supplier_pins=supplier_pins)
+    if mapping is None and symbolic is not None:
+        result['identity_proof'] = {name: 'captured_symbol_name_and_copper'
+            if proof == 'declared_map_and_copper' else proof for name, proof in result['identity_proof'].items()}
+    if declaration is not None and 'rotation_degrees' in declaration and declaration['rotation_degrees'] != angle:
+        _refuse('declared rotation assertion disagrees with independently derived orientation')
+    return dict(result, orientation_proof=basis)

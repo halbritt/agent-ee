@@ -510,11 +510,12 @@ class GenerateTests(ScriptedLoop):
                 repository='https://example.invalid/models', status='partial', files=[found, missing], missing=1))
             (attempt / 'capture-execution').mkdir()
             (attempt / 'capture-execution/stderr.log').write_text(
-                'agent-ee: Design refused:\n- parts.J1.footprint: Owned:J1 uses the 3D model Owned.3dshapes/J1.step')
+                'agent-ee: Design refused:\n- parts.J1.footprint: Owned:J1 uses the 3D model Owned.3dshapes/J1.step [tool_gap]')
             return dict(execution='failed', exit_code=2)
         with patch.object(loop, 'run_step', side_effect=step):
             report = self.generate(max_attempts=2)
         self.assertEqual(report['attempts'][0]['missing_models'], [missing])
+        self.assertEqual(report['attempts'][0]['tool_gap'], 'Capture or compile capability refused deterministically')
         feedback = self.feedback(1)
         self.assertIn('parts.J1.footprint: Owned:J1 uses the 3D model Owned.3dshapes/J1.step', feedback)
         self.assertIn('"path": "Owned.3dshapes/J1.step", "status": "not-found"', feedback)
@@ -526,7 +527,9 @@ class GenerateTests(ScriptedLoop):
             ('- captures: acquisition failed; inspect retained files', [], 'Refusal does not name a design field'),
             ('- captures.capture.json: unavailable', [], 'Refusal does not name a design field'),
             ('- parts.J7.lcsc: C9: deterministic supplier unsupported_shape [tool_gap]',
-             ['parts.J7.lcsc'], 'Supplier footprint capability refused deterministically'),
+             ['parts.J7.lcsc'], 'Capture or compile capability refused deterministically'),
+            ('- parts.J7.footprint: [tool_gap] referenced model was not found',
+             ['parts.J7.footprint'], 'Capture or compile capability refused deterministically'),
         )
         for number, (message, fields, gap) in enumerate(cases):
             self.responses = [self.response()]

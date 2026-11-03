@@ -823,9 +823,9 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
                     assignment['findings'].append(dict(code='pad_pin_parity', missing_pads=missing, extra_pads=extra))
                 if comp['connector'] is not None:
                     expected = comp['connector']['rows'] * comp['connector']['columns']
-                    # Only a captured mechanical declaration removes a pad
-                    # from the electrical position inventory.
-                    positions = numbers
+                    # Stock MP mounting pads do not count as connector positions.
+                    # They remain in electrical parity until declared mechanical.
+                    positions = numbers - {'MP'}
                     if len(positions) != expected:
                         assignment['findings'].append(dict(code='connector_count', expected=expected, actual=len(positions)))
                 # Declared thermal vias are electrical but do not make an SMD part through-hole.
