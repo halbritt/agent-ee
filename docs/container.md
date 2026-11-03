@@ -507,8 +507,8 @@ scratch clone that shares the store's objects. The store itself is only read.
 
 The `pcbschemagen-verifier` partition covers real-verifier tests in
 `test_pcbschemagen_gate1` and `test_pcbschemagen_benchmark`. It requires a clean
-external checkout of `https://github.com/HZou9/PCBSchemaGen_v2` at
-`e07c545f4c01a8026480b1093ee503a926ce2be5`, including `framework/topo`,
+external Git checkout of `https://github.com/HZou9/PCBSchemaGen_v2`, at any
+commit (normally the current `main`), including `framework/topo`,
 `framework/task_config.yaml`, `component.json`, `kg_component.json` and
 `kg/kg_open_schematics.json`. Install the checkout's Python requirements in
 the test environment. Agent-ee does not vendor this verifier or its graphs.
@@ -522,7 +522,8 @@ container path. The default is
 The CI runner and `ae-ci-exec` do not provision this input yet. A full strict
 suite therefore reports the 12 real-verifier tests as not executed and fails
 until the input is supplied. Adapter translation and dependency-refusal tests
-run without it. The checkout check requires tracked files to match the pin;
+run without it. The checkout check requires tracked files to match the
+checkout's commit, which the tests compare with the recorded `verifier.commit`;
 untracked import bytecode does not make the checkout dirty.
 
 [test_pod_j1_courtyard.py](../tests/test_pod_j1_courtyard.py) uses committed

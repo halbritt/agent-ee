@@ -504,7 +504,7 @@ Deterministic Gate 1 topological and ERC verifier adapter. It translates candida
 - `--netlist, -n NETLIST`: Path to native KiCad XML netlist.
 - `--task-id, -t TASK_ID`: Task identifier (e.g. `104` or `BUCK_AUX_LOGIC`).
 - `--task-name TASK_NAME`: Optional human-readable task name.
-- `--pcbschemagen-root DIR`: Clean pinned PCBSchemaGen checkout (default: `$PCBSCHEMAGEN_ROOT` or `~/git/PCBSchemaGen_v2`). See [benchmark prerequisites](benchmarking-guide.md#executing-pcbschemagen-benchmarks).
+- `--pcbschemagen-root DIR`: Clean PCBSchemaGen Git checkout at any commit; the report records the commit as `verifier.commit` (default: `$PCBSCHEMAGEN_ROOT` or `~/git/PCBSchemaGen_v2`). See [benchmark prerequisites](benchmarking-guide.md#executing-pcbschemagen-benchmarks).
 - `--captures CAPTURES`: Path to captured KiCad symbols directory.
 - `--std-snapshot FILE`: Reference design snapshot JSON.
 - `--rules RULES`: Topological rules JSON file.
@@ -530,7 +530,7 @@ Emits a structured score `(Gate 1: PASS/FAIL, Gate 2: PASS/FAIL)` adhering to `a
 - `--task-id, -t TASK_ID`: Single task ID or comma-separated list of IDs (e.g. `104,105,106`).
 - `--candidate, -c CANDIDATE`: Path to candidate design JSON or build run directory (requires `--task-id`).
 - `--candidates-dir DIR`: Directory of candidates named `<id>.json` or `<id>/design.json`.
-- `--pcbschemagen-root DIR`: Root path to PCBSchemaGen repository.
+- `--pcbschemagen-root DIR`: Clean PCBSchemaGen Git checkout at any commit; each task's `gate1.verifier` records the commit.
 - `--captures-dir DIR`: Directory of captured stock/symbol libraries.
 - `--out, -o OUT`: Output path for structured benchmark report JSON.
 - `--run-build`: Execute physical board compilation and routing in Gate 2.

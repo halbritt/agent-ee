@@ -22,7 +22,8 @@ DEFAULT_PCBSCHEMAGEN_ROOT = Path(
     os.environ.get("PCBSCHEMAGEN_ROOT", str(Path.home() / "git/PCBSchemaGen_v2"))
 )
 PCBSCHEMAGEN_REPOSITORY = "https://github.com/HZou9/PCBSchemaGen_v2"
-PCBSCHEMAGEN_COMMIT = "e07c545f4c01a8026480b1093ee503a926ce2be5"
+REQUIRED_FILES = ('framework/topo/kg_loader.py', 'framework/task_config.yaml',
+                  'component.json', 'kg_component.json', 'kg/kg_open_schematics.json')
 SCHEMA = "agent-ee.pcbschemagen-gate1/1"
 
 
@@ -34,45 +35,96 @@ class PCBSchemaGenUnavailable(PCBSchemaGenInputError):
     """The separately provisioned Gate 1 verifier input is absent."""
 
 
-def check_pcbschemagen_checkout(root: Union[str, Path]) -> Path:
-    """Require the pinned external verifier with unchanged tracked inputs."""
+@dataclass(frozen=True)
+class VerifierCheckout:
+    """A clean verifier checkout and the commit it is at: the version a Gate 1 run used."""
+
+    root: Path
+    commit: str
+
+    def record(self) -> dict[str, str]:
+        return {"repository": PCBSCHEMAGEN_REPOSITORY, "commit": self.commit}
+
+
+def git(root: Path, *args: str) -> subprocess.CompletedProcess:
+    """Read the checkout's Git metadata (native_run_guard approves this function by name)."""
+    return subprocess.run(['git', '--no-optional-locks', '-C', str(root), *args],
+                          capture_output=True, text=True, timeout=10)
+
+
+def check_pcbschemagen_checkout(root: Union[str, Path]) -> VerifierCheckout:
+    """Require a clean Git checkout of the external verifier, at any commit, and return that commit.
+
+    The verifier is used at whatever commit the operator checked out (upstream main is the
+    expected one); Gate 1 records the commit so each result names the verifier that produced it.
+    A tracked-file change would make that record false, so a dirty tree is refused.
+    """
     root = Path(root).expanduser().resolve()
     if not root.is_dir():
         raise PCBSchemaGenUnavailable(
-            f"PCBSchemaGen verifier missing at {root}; provision {PCBSCHEMAGEN_REPOSITORY} "
-            f"at {PCBSCHEMAGEN_COMMIT} and set PCBSCHEMAGEN_ROOT or --pcbschemagen-root"
+            f"PCBSchemaGen verifier missing at {root}; clone {PCBSCHEMAGEN_REPOSITORY} "
+            "there, or set PCBSCHEMAGEN_ROOT or --pcbschemagen-root to a clean checkout"
         )
-    def git(*args):
-        result = subprocess.run(['git', '--no-optional-locks', '-C', str(root), *args],
-                                capture_output=True, text=True, timeout=10)
-        if result.returncode:
-            raise PCBSchemaGenInputError(f"PCBSchemaGen checkout at {root} cannot be verified: {result.stderr.strip()}")
-        return result.stdout.strip()
-    if git('rev-parse', 'HEAD') != PCBSCHEMAGEN_COMMIT:
-        raise PCBSchemaGenInputError(f"PCBSchemaGen checkout must be at {PCBSCHEMAGEN_COMMIT}: {root}")
+    top = git(root, 'rev-parse', '--show-toplevel')
+    if top.returncode:
+        raise PCBSchemaGenInputError(
+            f"PCBSchemaGen verifier at {root} is not a Git checkout, so its commit cannot be "
+            f"recorded; clone {PCBSCHEMAGEN_REPOSITORY} there ({top.stderr.strip()})")
+    if Path(top.stdout.strip()).resolve() != root:
+        raise PCBSchemaGenInputError(
+            f"PCBSchemaGen verifier at {root} is not a Git checkout: it is a directory inside "
+            f"the checkout at {top.stdout.strip()}, whose commit does not identify the verifier")
+    head = git(root, 'rev-parse', '--verify', 'HEAD^{commit}')
+    commit = head.stdout.strip()
+    if head.returncode or not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', commit):
+        raise PCBSchemaGenInputError(
+            f"PCBSchemaGen checkout at {root} has no commit to record: {head.stderr.strip()}")
     # Imports can write untracked bytecode even within the first verification.
-    if git('status', '--porcelain', '--untracked-files=no'):
-        raise PCBSchemaGenInputError(f"PCBSchemaGen checkout must be clean: {root}")
-    for name in ('framework/topo/kg_loader.py', 'framework/task_config.yaml',
-                 'component.json', 'kg_component.json', 'kg/kg_open_schematics.json'):
+    status = git(root, 'status', '--porcelain', '--untracked-files=no')
+    if status.returncode:
+        raise PCBSchemaGenInputError(
+            f"PCBSchemaGen checkout at {root} cannot be verified: {status.stderr.strip()}")
+    if status.stdout.strip():
+        raise PCBSchemaGenInputError(
+            f"PCBSchemaGen checkout must be clean: {root} has changes to tracked files, so its "
+            f"commit {commit} would not identify the verifier that runs; commit, stash or "
+            f"reset them\n{status.stdout.rstrip()}")
+    for name in REQUIRED_FILES:
         if not (root / name).is_file():
-            raise PCBSchemaGenInputError(f"PCBSchemaGen pinned input missing: {root / name}")
+            raise PCBSchemaGenInputError(
+                f"PCBSchemaGen required input missing at commit {commit}: {root / name}")
     for module in ('yaml', 'networkx'):
         if importlib.util.find_spec(module) is None:
             raise PCBSchemaGenUnavailable(f"PCBSchemaGen Python dependency missing: {module}; "
-                                          "install the pinned checkout's requirements.txt")
-    return root
+                                          "install the checkout's requirements.txt")
+    return VerifierCheckout(root, commit)
 
 
-def _ensure_topo_imports(pcbschemagen_root: Union[str, Path] = DEFAULT_PCBSCHEMAGEN_ROOT) -> None:
-    root = check_pcbschemagen_checkout(pcbschemagen_root)
+# The commit each checkout root was at when this process imported its framework.topo code.
+# Imported modules stay loaded while the knowledge graphs are read again on every use.
+_IMPORTED_AT: dict[Path, str] = {}
+
+
+def _ensure_topo_imports(pcbschemagen_root: Union[str, Path] = DEFAULT_PCBSCHEMAGEN_ROOT) -> VerifierCheckout:
+    checkout = check_pcbschemagen_checkout(pcbschemagen_root)
+    root = checkout.root
+    loaded = False
     for name, module in tuple(sys.modules.items()):
         if name.startswith('framework.topo') and getattr(module, '__file__', None):
             if not Path(module.__file__).resolve().is_relative_to(root):
                 raise PCBSchemaGenInputError(f"PCBSchemaGen module already loaded from another checkout: {name}")
+            loaded = True
+    if not loaded:
+        _IMPORTED_AT[root] = checkout.commit
+    elif _IMPORTED_AT.get(root) != checkout.commit:
+        raise PCBSchemaGenInputError(
+            f"PCBSchemaGen code in this process was imported at commit "
+            f"{_IMPORTED_AT.get(root) or 'unknown (not through this adapter)'}, but the checkout "
+            f"{root} is now at {checkout.commit}; start a new process to verify with it")
     root_str = str(root)
     if root_str not in sys.path:
         sys.path.insert(0, root_str)
+    return checkout
 
 
 @dataclass
@@ -494,8 +546,11 @@ def verify_gate1(
     rules: Optional[Union[list[dict[str, Any]], Path, str]] = None,
     task_name: Optional[str] = None,
 ) -> Gate1Result:
-    """Run deterministic Gate 1 schematic and topology verification."""
-    _ensure_topo_imports(pcbschemagen_root)
+    """Run deterministic Gate 1 schematic and topology verification.
+
+    The report's ``verifier`` records the checkout's commit, measured before the run and
+    confirmed unchanged after it."""
+    checkout = _ensure_topo_imports(pcbschemagen_root)
     from framework.topo.build_topology import augment_snapshot
     from framework.topo.complex_task_validator import is_complex_task, validate_complex_task
     from framework.topo.error_types import compute_reward_from_errors
@@ -625,9 +680,15 @@ def verify_gate1(
         for w in warning_errors:
             llm_lines.append(f"- [WARNING] {w}")
 
+    after = check_pcbschemagen_checkout(checkout.root)
+    if after.commit != checkout.commit:
+        raise PCBSchemaGenInputError(
+            f"PCBSchemaGen checkout {checkout.root} moved from {checkout.commit} to "
+            f"{after.commit} during verification; rerun Gate 1")
+
     report = {
         "schema": SCHEMA,
-        "verifier": {"repository": PCBSCHEMAGEN_REPOSITORY, "commit": PCBSCHEMAGEN_COMMIT},
+        "verifier": checkout.record(),
         "task_id": task_id,
         "task_name": task_name or str(task_id or "UNKNOWN"),
         "status": status,
@@ -696,7 +757,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--pcbschemagen-root",
         type=Path,
         default=DEFAULT_PCBSCHEMAGEN_ROOT,
-        help="Root path to PCBSchemaGen_v2 repository.",
+        help="Clean PCBSchemaGen_v2 Git checkout, at any commit; the report records the commit.",
     )
     parser.add_argument(
         "--captures",

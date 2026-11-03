@@ -15,6 +15,7 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -37,7 +38,9 @@ from agent_ee.pcbschemagen_benchmark import (
     run_benchmark,
 )
 from agent_ee.storage import read_json, write_json
-from agent_ee.pcbschemagen_gate1 import PCBSchemaGenUnavailable
+from agent_ee.pcbschemagen_gate1 import (
+    DEFAULT_PCBSCHEMAGEN_ROOT, PCBSCHEMAGEN_REPOSITORY, PCBSchemaGenUnavailable)
+from test_pcbschemagen_gate1 import owned_verifier, run_isolated
 from toolchain import require_pcbschemagen
 
 
@@ -281,6 +284,9 @@ class TestDualGateEvaluation(unittest.TestCase):
         self.assertEqual(res.divergence_category, CONCORDANT_PASS)
         self.assertTrue(res.gate1["passed"])
         self.assertTrue(res.gate2["passed"])
+        head = subprocess.run(['git', '-C', str(DEFAULT_PCBSCHEMAGEN_ROOT), 'rev-parse', 'HEAD'],
+                              check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(res.gate1["verifier"], {"repository": PCBSCHEMAGEN_REPOSITORY, "commit": head})
 
     def test_gate1_failure_missing_critical_connection(self):
         design = _make_valid_tps54302_design()
@@ -465,6 +471,21 @@ class TestBenchmarkVerifierBoundary(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertIn('Benchmark input error: PCBSchemaGen verifier missing', error.getvalue())
             self.assertFalse(out.exists())
+
+    def test_gate1_result_names_the_verifier_commit_that_scored_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'verifier'
+            commit = owned_verifier(root)
+            result = run_isolated('''
+                import json
+                import sys
+                sys.path.insert(0, sys.argv[1])   # the owned availability modules (yaml, networkx)
+                from agent_ee.pcbschemagen_benchmark import evaluate_gate1_candidate
+                gate1 = evaluate_gate1_candidate(json.loads(sys.argv[2]), task_id='6', pcbschemagen_root=sys.argv[1])
+                print(json.dumps(gate1['verifier']))
+            ''', root, json.dumps(_make_valid_tps54302_design()))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {'repository': PCBSCHEMAGEN_REPOSITORY, 'commit': commit})
 
 
 if __name__ == "__main__":

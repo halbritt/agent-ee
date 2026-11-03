@@ -12,7 +12,8 @@ import textwrap
 import unittest
 
 from agent_ee.pcbschemagen_gate1 import (
-    PCBSCHEMAGEN_COMMIT,
+    DEFAULT_PCBSCHEMAGEN_ROOT,
+    PCBSCHEMAGEN_REPOSITORY,
     PCBSchemaGenInputError,
     PCBSchemaGenUnavailable,
     check_pcbschemagen_checkout,
@@ -25,6 +26,76 @@ from agent_ee.pcbschemagen_gate1 import (
     verify_gate1,
 )
 from toolchain import require_pcbschemagen
+
+
+# An owned stand-in for the external verifier: the files the adapter requires and
+# framework.topo functions that report no errors. It tests the adapter's checkout handling
+# and records, never PCBSchemaGen's verdicts. OWNED_VERIFIER_MOVE makes Phase 2 commit to the
+# checkout while Gate 1 runs.
+OWNED_VERIFIER = {
+    'framework/topo/kg_loader.py': (
+        'class KGStore:\n'
+        '    def __init__(self, base_dir):\n'
+        '        self.component_map = {}\n'
+        '        self.kg_component_map = {}\n'),
+    'framework/topo/build_topology.py': 'def augment_snapshot(snapshot, kg_store):\n    return snapshot\n',
+    'framework/topo/complex_task_validator.py': (
+        'def is_complex_task(task_id):\n    return False\n\n'
+        'def validate_complex_task(snapshot, task_id, kg_store):\n    return True, [], []\n'),
+    'framework/topo/error_types.py': 'def compute_reward_from_errors(**kwargs):\n    return 1.0\n',
+    'framework/topo/match_skeleton.py': 'def check_graph_similarity(std, gen, task_id=None):\n    return []\n',
+    'framework/topo/phase2_checks.py': (
+        'import os\nimport subprocess\nfrom pathlib import Path\n\n'
+        'def run_phase2_checks(snapshot, kg_store, task_id=None):\n'
+        '    if os.environ.get("OWNED_VERIFIER_MOVE"):\n'
+        '        subprocess.run(["git", "-C", str(Path(__file__).resolve().parents[2]),\n'
+        '                        "-c", "user.name=fixture", "-c", "user.email=fixture@invalid",\n'
+        '                        "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty",\n'
+        '                        "-m", "Owned commit during verification"], check=True)\n'
+        '    return []\n'),
+    'framework/topo/rule_checker.py': 'def check_rules(snapshot, rules, task_id=None):\n    return []\n',
+    'framework/task_config.yaml': '{}',
+    'component.json': '{"components": []}',
+    'kg_component.json': '{"components": []}',
+    'kg/kg_open_schematics.json': '{"components": []}',
+    'yaml.py': '# Owned availability fixture, not a YAML parser.\n',
+    'networkx.py': '# Owned availability fixture, not a graph implementation.\n',
+}
+
+
+def fixture_git(root, *args):
+    return subprocess.run(['git', '-C', str(root), '-c', 'user.name=fixture', '-c', 'user.email=fixture@invalid',
+                           '-c', 'commit.gpgsign=false', *args],
+                          check=True, capture_output=True, text=True).stdout.strip()
+
+
+def owned_verifier(root):
+    """Write and commit the owned verifier at root; return its commit."""
+    root = Path(root)
+    for name, contents in OWNED_VERIFIER.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents)
+    fixture_git(root, 'init', '-q')
+    fixture_git(root, 'add', '.')
+    fixture_git(root, 'commit', '-q', '-m', 'Owned verifier fixture')
+    return fixture_git(root, 'rev-parse', 'HEAD')
+
+
+def run_isolated(script, *args, env=None):
+    """Run script in a new interpreter, so owned framework.topo modules stay out of this process."""
+    return subprocess.run([sys.executable, '-c', textwrap.dedent(script), *map(str, args)],
+                          env=env, capture_output=True, text=True, timeout=60)
+
+
+RECORD_SCRIPT = '''
+    import json
+    import sys
+    sys.path.insert(0, sys.argv[1])   # the owned availability modules (yaml, networkx)
+    from agent_ee import pcbschemagen_gate1 as gate1
+    report = gate1.verify_gate1(json.loads(sys.argv[2]), task_id=6, pcbschemagen_root=sys.argv[1]).report
+    print(json.dumps(report["verifier"]))
+'''
 
 
 class FixtureKGStore:
@@ -223,6 +294,10 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
         self.assertEqual(len(result.errors), 0)
         self.assertEqual(result.report["schema"], "agent-ee.pcbschemagen-gate1/1")
         self.assertEqual(result.report["stats"]["critical_errors"], 0)
+        # The report names the commit the real checkout is at, read here independently.
+        head = subprocess.run(['git', '-C', str(DEFAULT_PCBSCHEMAGEN_ROOT), 'rev-parse', 'HEAD'],
+                              check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(result.report["verifier"], {"repository": PCBSCHEMAGEN_REPOSITORY, "commit": head})
 
     def test_missing_required_connection_fails_gate1(self):
         # Case A: floating VIN (U1.3 removed from VIN net and not in no_connects)
@@ -362,73 +437,117 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
 
 
 class TestVerifierBoundary(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.temp = Path(scratch.name)
+
+    def test_any_clean_commit_is_accepted_and_its_commit_recorded(self):
+        root = self.temp / 'verifier'
+        first = owned_verifier(root)
+        design = json.dumps(_make_valid_tps54302_design())
+        result = run_isolated(RECORD_SCRIPT, root, design)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {'repository': PCBSCHEMAGEN_REPOSITORY, 'commit': first})
+        # A later upstream commit with changed knowledge graph data is used and recorded as such.
+        (root / 'kg_component.json').write_text('{"components": [], "revision": 2}')
+        fixture_git(root, 'commit', '-q', '-am', 'Owned knowledge graph update')
+        second = fixture_git(root, 'rev-parse', 'HEAD')
+        self.assertNotEqual(second, first)
+        result = run_isolated(RECORD_SCRIPT, root, design)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['commit'], second)
+
+    def test_dirty_tree_is_refused_with_its_changes(self):
+        root = self.temp / 'verifier'
+        commit = owned_verifier(root)
+        self.assertEqual(check_pcbschemagen_checkout(root).commit, commit)
+        (root / 'component.json').write_text('{"components": [], "edited": true}')
+        with self.assertRaisesRegex(PCBSchemaGenInputError, 'must be clean.*' + commit + '(.|\\n)*component.json'):
+            check_pcbschemagen_checkout(root)
+        fixture_git(root, 'add', 'component.json')   # staged only: still not the commit's bytes
+        with self.assertRaisesRegex(PCBSchemaGenInputError, 'must be clean'):
+            check_pcbschemagen_checkout(root)
+
+    def test_non_git_directories_are_refused_clearly(self):
+        plain = self.temp / 'plain'
+        for name, contents in OWNED_VERIFIER.items():
+            (plain / name).parent.mkdir(parents=True, exist_ok=True)
+            (plain / name).write_text(contents)
+        with self.assertRaisesRegex(PCBSchemaGenInputError, 'is not a Git checkout'):
+            check_pcbschemagen_checkout(plain)
+        # A copy inside another repository: that repository's commit says nothing about the verifier.
+        outer = self.temp / 'outer'
+        owned_verifier(outer)
+        nested = outer / 'vendored-verifier'
+        for name, contents in OWNED_VERIFIER.items():
+            (nested / name).parent.mkdir(parents=True, exist_ok=True)
+            (nested / name).write_text(contents)
+        fixture_git(outer, 'add', '.')
+        fixture_git(outer, 'commit', '-q', '-m', 'Owned nested copy')
+        with self.assertRaisesRegex(PCBSchemaGenInputError, 'is not a Git checkout: it is a directory inside'):
+            check_pcbschemagen_checkout(nested)
+
+    def test_code_imported_at_one_commit_is_not_recorded_as_another(self):
+        root = self.temp / 'verifier'
+        first = owned_verifier(root)
+        script = RECORD_SCRIPT + """
+    import subprocess
+    subprocess.run(['git', '-C', sys.argv[1], '-c', 'user.name=fixture', '-c', 'user.email=fixture@invalid',
+                    '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'Owned move'], check=True)
+    try:
+        gate1.verify_gate1(json.loads(sys.argv[2]), task_id=6, pcbschemagen_root=sys.argv[1])
+    except gate1.PCBSchemaGenInputError as exc:
+        print('refused:', exc)
+    else:
+        print('accepted')
+"""
+        result = run_isolated(script, root, json.dumps(_make_valid_tps54302_design()))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        recorded, outcome = result.stdout.split('\n', 1)
+        self.assertEqual(json.loads(recorded)['commit'], first)
+        self.assertIn('refused: PCBSchemaGen code in this process was imported at commit ' + first, outcome)
+        self.assertIn('start a new process', outcome)
+
+    def test_checkout_moved_during_verification_is_refused(self):
+        root = self.temp / 'verifier'
+        owned_verifier(root)
+        env = dict(os.environ, OWNED_VERIFIER_MOVE='1')
+        result = run_isolated(RECORD_SCRIPT, root, json.dumps(_make_valid_tps54302_design()), env=env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('during verification; rerun Gate 1', result.stderr)
+        self.assertEqual(result.stdout, '')
+
     def test_bytecode_imports_allow_repeat_loads_but_tracked_edits_are_refused(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            files = {
-                'framework/topo/kg_loader.py': (
-                    'class KGStore:\n'
-                    '    def __init__(self, base_dir):\n'
-                    '        self.component_map = {}\n'
-                    '        self.kg_component_map = {}\n'),
-                'framework/task_config.yaml': '{}',
-                'component.json': '{"components": []}',
-                'kg_component.json': '{"components": []}',
-                'kg/kg_open_schematics.json': '{"components": []}',
-                'yaml.py': '# Owned availability fixture, not a YAML parser.\n',
-                'networkx.py': '# Owned availability fixture, not a graph implementation.\n',
-            }
-            for name, contents in files.items():
-                path = root / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(contents)
-            def git(*args):
-                return subprocess.run(['git', '-C', str(root), *args], check=True,
-                                      capture_output=True, text=True).stdout.strip()
-            git('init', '-q')
-            git('add', '.')
-            git('-c', 'user.name=fixture', '-c', 'user.email=fixture@invalid',
-                'commit', '-q', '-m', 'Owned verifier import fixture')
-            commit = git('rev-parse', 'HEAD')
-            script = textwrap.dedent('''
-                import sys
-                import unittest
-                from pathlib import Path
-                from agent_ee import pcbschemagen_gate1 as adapter
-                root = Path(sys.argv[1])
-                adapter.PCBSCHEMAGEN_COMMIT = sys.argv[2]
-                assert not sys.dont_write_bytecode, 'bytecode must be enabled'
-                sys.path.insert(0, str(root))
-                for _ in range(2):
-                    adapter._ensure_topo_imports(root)
-                    adapter.Gate1KGStore(root)
-                assert list(root.glob('framework/topo/__pycache__/*.pyc')), 'no bytecode written'
-                (root / 'component.json').write_text('{"components": [], "modified": true}')
-                with unittest.TestCase().assertRaisesRegex(adapter.PCBSchemaGenInputError, 'must be clean'):
-                    adapter.check_pcbschemagen_checkout(root)
-            ''')
-            env = {k: v for k, v in os.environ.items()
-                   if k not in ('PYTHONDONTWRITEBYTECODE', 'PYTHONPYCACHEPREFIX')}
-            result = subprocess.run([sys.executable, '-c', script, str(root), commit],
-                                    env=env, capture_output=True, text=True, timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        root = self.temp / 'verifier'
+        commit = owned_verifier(root)
+        script = '''
+            import sys
+            import unittest
+            from pathlib import Path
+            from agent_ee import pcbschemagen_gate1 as adapter
+            root = Path(sys.argv[1])
+            assert not sys.dont_write_bytecode, 'bytecode must be enabled'
+            sys.path.insert(0, str(root))
+            for _ in range(2):
+                assert adapter._ensure_topo_imports(root).commit == sys.argv[2]
+                adapter.Gate1KGStore(root)
+            assert list(root.glob('framework/topo/__pycache__/*.pyc')), 'no bytecode written'
+            (root / 'component.json').write_text('{"components": [], "modified": true}')
+            with unittest.TestCase().assertRaisesRegex(adapter.PCBSchemaGenInputError, 'must be clean'):
+                adapter.check_pcbschemagen_checkout(root)
+        '''
+        env = {k: v for k, v in os.environ.items()
+               if k not in ('PYTHONDONTWRITEBYTECODE', 'PYTHONPYCACHEPREFIX')}
+        result = run_isolated(script, root, commit, env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_missing_checkout_is_explicit_even_after_a_verifier_was_loaded(self):
-        with tempfile.TemporaryDirectory() as temp:
-            missing = Path(temp) / 'absent'
-            with self.assertRaisesRegex(PCBSchemaGenUnavailable, 'PCBSchemaGen verifier missing'):
-                verify_gate1(_make_valid_tps54302_design(), pcbschemagen_root=missing)
-            with contextlib.redirect_stderr(io.StringIO()) as error:
-                rc = main(['--design', 'unused.json', '--pcbschemagen-root', str(missing)])
-            self.assertEqual(rc, 2)
-            self.assertIn(PCBSCHEMAGEN_COMMIT, error.getvalue())
-            self.assertIn('PCBSCHEMAGEN_ROOT', error.getvalue())
-
-    def test_wrong_revision_is_an_input_error(self):
-        with tempfile.TemporaryDirectory() as temp:
-            subprocess.run(['git', 'init', '-q', temp], check=True, capture_output=True)
-            subprocess.run(['git', '-C', temp, '-c', 'user.name=fixture', '-c', 'user.email=fixture@invalid',
-                            'commit', '-q', '--allow-empty', '-m', 'Owned verifier boundary fixture'],
-                           check=True, capture_output=True)
-            with self.assertRaisesRegex(PCBSchemaGenInputError, 'must be at ' + PCBSCHEMAGEN_COMMIT):
-                check_pcbschemagen_checkout(temp)
+        missing = self.temp / 'absent'
+        with self.assertRaisesRegex(PCBSchemaGenUnavailable, 'PCBSchemaGen verifier missing'):
+            verify_gate1(_make_valid_tps54302_design(), pcbschemagen_root=missing)
+        with contextlib.redirect_stderr(io.StringIO()) as error:
+            rc = main(['--design', 'unused.json', '--pcbschemagen-root', str(missing)])
+        self.assertEqual(rc, 2)
+        self.assertIn('clone ' + PCBSCHEMAGEN_REPOSITORY, error.getvalue())
+        self.assertIn('PCBSCHEMAGEN_ROOT', error.getvalue())

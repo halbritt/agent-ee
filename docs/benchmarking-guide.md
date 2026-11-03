@@ -168,26 +168,50 @@ The dual-gate runner scores each task as a 2-tuple `(Gate 1: PASS/FAIL, Gate 2: 
 
 ### Executing PCBSchemaGen Benchmarks
 
-Gate 1 requires a separate, clean checkout of
-[`HZou9/PCBSchemaGen_v2`](https://github.com/HZou9/PCBSchemaGen_v2) at
-`e07c545f4c01a8026480b1093ee503a926ce2be5`. The verifier code and knowledge
-graphs are external inputs; agent-ee does not redistribute them. Provision
-them before running either benchmark CLI:
+Gate 1 requires a separate, clean Git checkout of
+[`HZou9/PCBSchemaGen_v2`](https://github.com/HZou9/PCBSchemaGen_v2). Use the
+current upstream `main`; the adapter accepts any commit and records the one it
+used. The verifier code and knowledge graphs are external inputs; agent-ee does
+not redistribute them. Provision them before running either benchmark CLI, and
+update them the same way later:
 
 ```bash
 git clone https://github.com/HZou9/PCBSchemaGen_v2 "$HOME/git/PCBSchemaGen_v2"
-git -C "$HOME/git/PCBSchemaGen_v2" checkout --detach e07c545f4c01a8026480b1093ee503a926ce2be5
 export PCBSCHEMAGEN_ROOT="$HOME/git/PCBSchemaGen_v2"
+# Later, to move an existing checkout (also a detached one) to the current main:
+git -C "$PCBSCHEMAGEN_ROOT" checkout main
+git -C "$PCBSCHEMAGEN_ROOT" pull --ff-only
 ```
 
 Install that checkout's `requirements.txt` in the Python environment used for
 the benchmark (`networkx>=3.0` and `pyyaml>=6.0`). Both CLIs also accept
 `--pcbschemagen-root DIR`; the default is `$PCBSCHEMAGEN_ROOT` or
-`~/git/PCBSchemaGen_v2`. The adapter verifies the revision and unchanged tracked files,
-requires the knowledge graphs and task configuration, and records the verifier
-commit in Gate 1 reports. It never fetches a checkout or falls back to another
-one. A missing or invalid verifier produces a CLI input error (exit 2), without
-classifying the circuit as a topology failure or a semantic bypass.
+`~/git/PCBSchemaGen_v2`.
+
+Before each Gate 1 run the adapter reads the checkout's commit and requires:
+
+- a directory that exists (otherwise the verifier input is missing);
+- the top of its own Git checkout, not a plain directory and not a directory
+  inside another repository, whose commit would not identify the verifier;
+- no changes to tracked files, staged or not. Untracked files, such as import
+  bytecode, are allowed;
+- the verifier files `framework/topo/kg_loader.py`, `framework/task_config.yaml`,
+  `component.json`, `kg_component.json` and `kg/kg_open_schematics.json`, and the
+  Python packages `yaml` and `networkx`.
+
+Gate 1 reports record `verifier: {repository, commit}`: `repository` names the
+upstream project and `commit` is the checkout's commit. The dual-gate benchmark
+keeps that record in each task's `gate1` result. It is `null` for a missing
+candidate or a Gate 1 execution error, which produce no verifier result. The adapter
+checks the commit again after the run and refuses the result if the checkout
+moved during it. Imported verifier code stays loaded in a process, so a
+process that imported the code at one commit refuses a checkout at another and
+asks for a new process. The adapter never fetches a checkout or falls back to
+another one. A missing or invalid verifier produces a CLI input error (exit 2),
+without classifying the circuit as a topology failure or a semantic bypass.
+Results from different verifier commits are not directly comparable, because
+an upstream knowledge-graph change can change a verdict; compare the recorded
+commits first.
 
 Translation, XML parsing and dependency-refusal tests use owned small fixtures.
 The real-verifier tests in `test_pcbschemagen_gate1` and

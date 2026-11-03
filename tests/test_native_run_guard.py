@@ -62,8 +62,8 @@ EXEMPT = {
             ('src/agent_ee/benchmark_run.py', 'archive_implementation'),
             ('src/agent_ee/benchmark_run.py', 'implementation'),
             # Integrator agent-724, 2026-11-03: same purpose. design_generate.code_identity records the
-            # agent-ee HEAD and dirty state of a generation run; pcbschemagen_gate1's git checks the pinned
-            # PCBSchemaGen checkout's commit and cleanliness before use. Both pass --no-optional-locks.
+            # agent-ee HEAD and dirty state of a generation run; pcbschemagen_gate1's git reads the
+            # PCBSchemaGen checkout's commit, which Gate 1 records, and its cleanliness. Both pass --no-optional-locks.
             ('src/agent_ee/design_generate.py', 'code_identity'),
             ('src/agent_ee/pcbschemagen_gate1.py', 'git'),
         },

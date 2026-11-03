@@ -358,6 +358,7 @@ def evaluate_gate1_candidate(
             "erc_checks": [],
             "rule_checks": [],
             "llm_feedback": "Missing candidate circuit.",
+            "verifier": None,
         }
     elif isinstance(candidate, dict):
         design_input = candidate
@@ -384,6 +385,8 @@ def evaluate_gate1_candidate(
             "erc_checks": g1_res.report.get("erc_checks", []),
             "rule_checks": g1_res.report.get("rule_checks", []),
             "llm_feedback": g1_res.report.get("llm_feedback", ""),
+            # The verifier commit that scored this candidate (the checkout may be at any commit).
+            "verifier": g1_res.report["verifier"],
         }
     except PCBSchemaGenInputError:
         # An unavailable verifier says nothing about the candidate's topology.
@@ -400,6 +403,7 @@ def evaluate_gate1_candidate(
             "erc_checks": [],
             "rule_checks": [],
             "llm_feedback": f"Gate 1 execution failure: {exc}",
+            "verifier": None,
         }
 
 

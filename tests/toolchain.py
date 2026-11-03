@@ -132,7 +132,7 @@ def unavailable(gap, reason):
 
 
 def require_pcbschemagen():
-    """External verifier integrations require the adapter's clean pinned checkout."""
+    """External verifier integrations require a clean verifier checkout (any commit, recorded)."""
     from agent_ee.pcbschemagen_gate1 import (
         DEFAULT_PCBSCHEMAGEN_ROOT, PCBSchemaGenUnavailable, check_pcbschemagen_checkout)
     try:
