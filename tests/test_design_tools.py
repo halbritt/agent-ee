@@ -33,6 +33,14 @@ class ToolTests(unittest.TestCase):
         self.assertIn('PDF not yet verified', result['parts'][0]['datasheet_status'])
         self.assertIn('price1', result['parts'][0])
 
+    def test_out_of_stock_parts_sort_after_every_stocked_part(self):
+        raw = search(row('C10', 0, dataManualFileAccessIdUrl='https://example.org/a.pdf'),
+                     row('C11', 5, componentLibraryType='expand'))
+        with patch.object(tools.stock, '_query', return_value=self.exchange(raw)):
+            result = tools.search_parts('resistor', self.root / 'search')
+        # A stocked Extended part without a datasheet still precedes an out-of-stock Basic one.
+        self.assertEqual([p['lcsc'] for p in result['parts']], ['C11', 'C10'])
+
     def test_failed_exchange_retained_before_error(self):
         raw = b'upstream unavailable'
         exchange = self.exchange(raw)
@@ -41,6 +49,26 @@ class ToolTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '503'):
                 tools.search_parts('timer', self.root / 'search')
         self.assertEqual((self.root / 'search/response.json').read_bytes(), raw)
+        self.assertEqual(json.loads((self.root / 'search/exchange.json').read_text())['http_status'], 503)
+
+    def test_keyword_is_one_to_120_characters(self):
+        with patch.object(tools.stock, '_query') as query:
+            for n, keyword in enumerate(('', '   ', 'x' * 121, None)):
+                with self.assertRaisesRegex(ValueError, 'keyword: supply 1 to 120 characters'):
+                    tools.search_parts(keyword, self.root / f'search-{n}')
+            query.assert_not_called()
+        self.assertFalse(any(self.root.iterdir()))
+
+    def test_successive_searches_are_spaced_by_the_catalog_interval(self):
+        raw = search(row('C1', 10))
+        with patch.object(tools.stock, '_query', return_value=self.exchange(raw)), \
+             patch.object(tools.time, 'sleep') as sleep:
+            tools.search_parts('first', self.root / 'search-1')
+            sleep.assert_not_called()
+            tools.search_parts('second', self.root / 'search-2')
+        sleep.assert_called_once()
+        self.assertGreater(sleep.call_args.args[0], tools.stock.DEFAULT_INTERVAL - 1)
+        self.assertLessEqual(sleep.call_args.args[0], tools.stock.DEFAULT_INTERVAL)
 
     def test_custom_pad_inventory_refuses_without_starting_native_geometry(self):
         footprints = self.root / 'footprints/Owned.pretty'
