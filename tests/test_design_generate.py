@@ -1238,6 +1238,7 @@ class StopTests(ScriptedLoop):
     def test_a_stop_kills_the_phase_group_and_nothing_else(self):
         marker, attempt, outsider = self.root / 'pids', self.root / 'attempt', self.outsider()
         attempt.mkdir()
+        self.addCleanup(lambda: kill_all(recorded_pids(marker) or []))
         previous = signal.signal(signal.SIGINT, signal.default_int_handler)
         self.addCleanup(signal.signal, signal.SIGINT, previous)
         def interrupt():
@@ -1250,7 +1251,6 @@ class StopTests(ScriptedLoop):
                 REAL_RUN_STEP(attempt, 'build', [sys.executable, '-c', PHASE, str(marker), '300', '0'], 30)
         finally:
             helper.join()
-            self.addCleanup(kill_all, recorded_pids(marker) or [])
         pids = recorded_pids(marker)
         self.assertTrue(wait_for(lambda: not any(alive(pid) for pid in pids), 10), pids)
         self.assertEqual(json.loads((attempt / 'build-execution/execution.json').read_text())['execution'], 'interrupted')
@@ -1259,9 +1259,9 @@ class StopTests(ScriptedLoop):
     def test_a_finished_phase_keeps_its_exit_status_and_its_group_is_killed(self):
         marker, attempt, outsider = self.root / 'pids', self.root / 'attempt', self.outsider()
         attempt.mkdir()
+        self.addCleanup(lambda: kill_all(recorded_pids(marker) or []))
         record = REAL_RUN_STEP(attempt, 'build', [sys.executable, '-c', PHASE, str(marker), '0', '3'], 60)
         pids = recorded_pids(marker)
-        self.addCleanup(kill_all, pids or [])
         self.assertEqual((record['execution'], record['exit_code']), ('failed', 3))
         self.assertTrue(wait_for(lambda: not any(alive(pid) for pid in pids), 10), pids)
         self.assertIsNone(outsider.poll())
@@ -1280,6 +1280,7 @@ class StopTests(ScriptedLoop):
                 previous_int = signal.signal(signal.SIGINT, handler)
                 self.addCleanup(signal.signal, signal.SIGINT, previous_int)
                 marker, outsider = self.root / f'pids-{name}', self.outsider()
+                self.addCleanup(lambda marker=marker: kill_all(recorded_pids(marker) or []))
                 def launch(argv, **options):
                     process = real_popen(argv, **options)
                     if PHASE in argv:
@@ -1297,7 +1298,6 @@ class StopTests(ScriptedLoop):
                     with self.assertRaises(KeyboardInterrupt):
                         loop.generate(self.requirements, self.root / f'run-{name}', max_attempts=1)
                 pids = recorded_pids(marker)
-                self.addCleanup(kill_all, pids or [])
                 self.assertTrue(wait_for(lambda: not any(alive(pid) for pid in pids), 10), pids)
                 self.assertEqual(self.saved(f'run-{name}/generate-report.json')['status'], 'interrupted')
                 self.assertIsNone(outsider.poll())
@@ -1305,6 +1305,7 @@ class StopTests(ScriptedLoop):
     def test_sigterm_to_a_benchmark_finalizes_every_report_and_stops_the_phase_tree(self):
         marker, work, driver = self.root / 'pids', self.root / 'work', self.root / 'driver.py'
         driver.write_text(DRIVER)
+        self.addCleanup(lambda: kill_all(recorded_pids(marker) or []))
         env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(ROOT / 'src'), str(ROOT)]))
         process = subprocess.Popen([sys.executable, '-B', str(driver), str(work), str(marker)], cwd=ROOT, env=env,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -1318,7 +1319,6 @@ class StopTests(ScriptedLoop):
             if process.poll() is None:
                 process.kill()
                 process.communicate()
-            self.addCleanup(kill_all, recorded_pids(marker) or [])
         self.assertEqual(process.returncode, 130, err.decode()[-3000:])
         self.assertIn('interrupted; its reports under', err.decode())
         report = json.loads((work / 'benchmark/benchmark-report.json').read_text())
