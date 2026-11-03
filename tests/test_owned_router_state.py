@@ -78,7 +78,9 @@ class OwnedRouterStateTests(unittest.TestCase):
             root = copy_tool(self.checkout, Path(tmp) / 'tool')
             # kicad-route binds its manifest to the sandbox location of a checkout state
             # (/opt/kicad-route), so the copy reuses the qualified runtime as its own state.
-            derive_state(self.checkout, root, 'legacy')
+            # The venv is copied: kicad-route ignores .venv-krt only as a directory, and a
+            # link there is an untracked change that makes the checkout dirty.
+            derive_state(self.checkout, root, 'legacy', copy_venv=True)
             self.assertEqual(routing_adapter.preflight(root)['problems'], [])
             source = root / 'src/kicad_route/engine.py'
             cache = Path(importlib.util.cache_from_source(str(source)))
