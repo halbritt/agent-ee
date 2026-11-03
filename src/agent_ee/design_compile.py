@@ -513,10 +513,27 @@ def placement(design, root):
         row = dict(id='decoupling-' + str(index))
         for leg in ('supply', 'return'):
             row[leg] = []
+            surfaces = []
             for terminal in pair[leg]:
                 reference, pin = terminal.split('.', 1)
+                from .land_pattern import _native_pad
+                node = parse_sexpr((root / footprint_path(design['parts'][reference])).read_bytes())
+                selected = [p for p in children(node, 'pad') if p[1] == pin]
+                label = row['id'] + ': ' + terminal
+                if len(selected) != 1:
+                    raise DesignError([label + ': missing or ambiguous local pad'])
+                try:
+                    geometry = _native_pad(selected[0], children, label)
+                except ValueError as exc:
+                    raise DesignError([label + ': ' + str(exc)]) from exc
+                if (geometry['kind'] not in ('smd', 'thru_hole') or not geometry['surfaces']
+                        or geometry['kind'] == 'smd' and len(geometry['surfaces']) != 1):
+                    raise DesignError([label + ': unsupported local copper pad'])
+                surfaces.append(set(geometry['surfaces']))
                 net = next(n for n, terms in design['nets'].items() if terminal in terms)
                 row[leg].append(dict(reference=reference, pad=pin, net=native_net(design, net)))
+            if not surfaces[0] & surfaces[1]:
+                raise DesignError([row['id'] + ': ' + ', '.join(pair[leg]) + ': local pads share no copper layer'])
         if 'max_loop_mm' in pair:
             row.update(max_loop_mm=pair['max_loop_mm'], basis=BASIS)
         relations.append(row)

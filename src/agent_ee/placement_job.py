@@ -1469,7 +1469,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             existing = {_key(v) for v in baseline['violations'] if v.get('severity') == 'error'}
             errors = [v for v in seeded['violations'] if v.get('severity') == 'error' and _key(v) not in existing]
             if errors:
-                names = ', '.join(row['id'] for row in local_decoupling['relations']) or 'plane ties'
+                error_items = {item['uuid'] for error in errors for item in error.get('items', []) if 'uuid' in item}
+                names = ', '.join(row['id'] for row in local_record['relations'] if error_items.intersection(row['copper'])) or 'unattributed generated copper'
                 raise JobRefusal('local decoupling ' + names + ': native DRC rejects generated copper: ' +
                                  ', '.join(v['type'] for v in errors))
         except JobRefusal as exc:
@@ -1534,7 +1535,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
                 attempts[-1]['status'] = 'deadline'
             break
     record.update(attempts=attempts, elapsed_s=time.monotonic() - started, preflight=check,
-                  copper_policy='generated_from_track_free_input' if owned_copper else 'preserve_existing')
+                  copper_policy=('locked_local_copper_from_track_free_input' if owned_copper and local_record is not None
+                                 else 'generated_from_track_free_input' if owned_copper else 'preserve_existing'))
     if plane_record is not None:
         record['planes'] = plane_record
     if local_record is not None:
@@ -1759,7 +1761,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                        'engine': report['preflight']['engine_sha256'],
                                        'controller': digest(Path(__file__)),
                                        **({'local_decoupling': local_contract,
-                                           'local_decoupling_module': digest(Path(__file__).with_name('local_decoupling.py'))}
+                                           'local_decoupling_modules': {name: digest(Path(__file__).parent / name) for name in
+                                               ('local_decoupling.py', 'decoupling_loops.py', 'local_loop_geometry.py', 'acquisition/local_return.py')}}
                                           if local_contract is not None else {}),
                                        **({'mechanics_controller': digest(Path(__file__).with_name('source_mechanics.py'))}
                                           if 'mechanics' in normalized else {}),
@@ -1996,6 +1999,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 report['reason'] = routed['reason']
                 retain_routing_trial(trial, suffix)
                 continue
+            report.pop('reason', None)
         with clock.phase('final_validation'):
             _check_stop(clock, job_dir)
             selected_seed = next((row for row in report['engine']['seeds'] if row.get('seed') == selected['seed']), {})

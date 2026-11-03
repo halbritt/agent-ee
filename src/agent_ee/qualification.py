@@ -66,7 +66,7 @@ def manufacturing_coverage(plan, scope, accounting):
             raise ValueError('manufacturing plane checks must bind the generated plane plan')
     if 'local_decoupling' in plan['placement']:
         bound = [c['params']['contract'] for c in scope['checks'] if c['kind'] == 'decoupling_loops']
-        if bound and bound != [plan['placement']['local_decoupling']]:
+        if bound != [plan['placement']['local_decoupling']]:
             raise ValueError('manufacturing loop check must bind the generated local copper contract')
 
 

@@ -40,12 +40,14 @@ class CopperGraph:
                 target = other.m_Uuid.AsString()
                 if target == key or target not in self.items or target < key:
                     continue
-                # Preserve a capacitor land as a junction instead of bridging
-                # directly between tracks meeting inside it (the native audit's convention).
-                if item.GetClass() != 'PAD' and other.GetClass() != 'PAD' and touching[key] & touching[target]:
-                    continue
                 for layer in set(item.GetLayerSet().CuStack()) & set(other.GetLayerSet().CuStack()):
                     a, b = geo.closest(self.line(item), self.line(other))
+                    # Sharing a pad does not hide a junction elsewhere on the tracks.
+                    if item.GetClass() != 'PAD' and other.GetClass() != 'PAD' and any(
+                            self.items[p].IsOnLayer(layer) and all(self.items[p].GetEffectiveShape(layer).Collide(
+                                k.VECTOR2I(round(point[0]), round(point[1])), 0) for point in (a, b))
+                            for p in touching[key] & touching[target]):
+                        continue
                     self.edge(self.port(key, layer, a), self.port(target, layer, b), math.dist(a, b))
         self.islands = []
         for zone in board.Zones():
@@ -166,6 +168,14 @@ class CopperGraph:
         return any(geo.shortest(self.adj, start, entry, blocked) is not None
                    for entry, _, _, _ in self.entries)
 
+    def bypass_evidence(self, first, second):
+        blocked = {node for tag, node in self.tags.items() if tag[0] == second.m_Uuid.AsString()}
+        start = self.terminal(first)
+        paths = [(path, key) for entry, _, _, key in self.entries
+                 if (path := geo.shortest(self.adj, start, entry, blocked)) is not None]
+        return [dict(plane_entry=key, copper_path=self.describe_path(path[1]))
+                for path, key in sorted(paths, key=lambda row: (row[0][0], row[1]))]
+
     def plane_access(self, terminal, layer, blocked):
         start = self.terminal(terminal)
         blocked_nodes = {node for tag, node in self.tags.items() if tag[0] == blocked.m_Uuid.AsString()}
@@ -195,6 +205,7 @@ def measure(board_path, document):
                     graphs[net] = CopperGraph(board, net)
                 graph = graphs[net]
                 row[leg] = dict(net=net, pin_bypasses_capacitor=graph.bypass(first, second),
+                                bypass_paths=graph.bypass_evidence(first, second),
                                 surface_path=graph.path(first, second),
                                 path=graph.path(first, second, plane=True))
                 for plane in document['planes']:

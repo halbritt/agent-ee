@@ -83,19 +83,22 @@ def _rules(board, terminal):
                 drill=max(int(rules.m_MinThroughDrill), int(cls.GetViaDrill())))
 
 
-def _obstacles(board, net, layer, margin):
+def _obstacles(board, net, layer, margin, endpoints=()):
     items = ([p for fp in board.GetFootprints() for p in fp.Pads()]
              + list(board.GetTracks()) + list(board.GetDrawings()))
+    allowed = {p.m_Uuid.AsString() for p in endpoints}
     return [_box(item, margin) for item in items if item.IsOnLayer(layer)
-            and (not hasattr(item, 'GetNetCode') or item.GetNetCode() != net)]
+            and item.m_Uuid.AsString() not in allowed
+            and (item.GetClass() == 'PAD' or not hasattr(item, 'GetNetCode') or item.GetNetCode() != net)]
 
 
-def _surface(board, terminal):
+def _layers(board, terminal):
     import pcbnew as k
     layers = [layer for layer in board.GetEnabledLayers().CuStack() if terminal.FlashLayer(layer)]
-    if terminal.GetAttribute() != k.PAD_ATTRIB_SMD or len(layers) != 1:
-        raise ValueError('local leg needs unambiguous surface pads')
-    return layers[0]
+    if (terminal.GetAttribute() == k.PAD_ATTRIB_SMD and len(layers) == 1
+            or terminal.GetAttribute() == k.PAD_ATTRIB_PTH and len(layers) == 2):
+        return layers
+    raise ValueError('unsupported local pad ' + terminal.GetParentFootprint().GetReference() + '.' + terminal.GetNumber())
 
 
 def _track(board, points, net, layer, width):
@@ -103,6 +106,13 @@ def _track(board, points, net, layer, width):
     result = []
     for a, b in zip(points, points[1:]):
         if a == b:
+            continue
+        existing = next((t for t in board.GetTracks() if t.GetClass() == 'PCB_TRACK'
+                         and t.GetNetCode() == net and t.GetLayer() == layer and t.GetWidth() == width
+                         and {position_point(t.GetStart()), position_point(t.GetEnd())} == {a, b}
+                         and t.IsLocked()), None)
+        if existing is not None:
+            result.append(existing)
             continue
         item = k.PCB_TRACK(board)
         item.SetStart(k.VECTOR2I(*a))
@@ -116,29 +126,34 @@ def _track(board, points, net, layer, width):
     return result
 
 
+def position_point(p):
+    return int(p.x), int(p.y)
+
+
 def _leg(board, first, second, *, clock, cancel_dir):
     from .acquisition.local_return import _obstacle_path
-    layer = _surface(board, first)
-    if _surface(board, second) != layer:
+    common = set(_layers(board, first)) & set(_layers(board, second))
+    if not common:
         raise ValueError('local leg endpoints must share a copper face')
+    layer = min(common)
     rules = _rules(board, first)
     # A routing default can neck into a small land; the fabrication minimum
     # remains the board rule, not the class's preferred routing width.
     width = max(int(board.GetDesignSettings().m_TrackMinWidth),
                 min(rules['width'], *(min(p.GetSize().x, p.GetSize().y) for p in (first, second))))
-    boxes = _obstacles(board, first.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000)
+    boxes = _obstacles(board, first.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000, (first, second))
     path = _obstacle_path(position(first), position(second), boxes, clock=clock, cancel_dir=cancel_dir)
     if path is None:
         raise ValueError('no clear local surface path within the 12 mm search budget')
     return _track(board, path, first.GetNetCode(), layer, width)
 
 
-def _tie(board, terminal, plane, *, clock, cancel_dir):
+def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):
     import pcbnew as k
     from .placement_job import _check_stop
     if terminal.FlashLayer(plane):
         return []  # A plated land already reaches this layer.
-    layer = _surface(board, terminal)
+    layer = _layers(board, terminal)[0]
     rules = _rules(board, terminal)
     width = max(int(board.GetDesignSettings().m_TrackMinWidth),
                 min(rules['width'], terminal.GetSize().x, terminal.GetSize().y))
@@ -148,15 +163,22 @@ def _tie(board, terminal, plane, *, clock, cancel_dir):
     # all copper layers constrain a through-via, not only the pad's face.
     radius = rules['diameter'] // 2
     margin = rules['clearance'] + radius + 25_000
-    obstacles = [b for l in board.GetEnabledLayers().CuStack()
-                 for b in _obstacles(board, terminal.GetNetCode(), l, margin)]
-    front = _obstacles(board, terminal.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000)
+    obstacles = [_box(p, margin) for fp in board.GetFootprints() for p in fp.Pads()]
+    obstacles += [_box(t, margin) for t in board.GetTracks()]
+    obstacles += [b for l in board.GetEnabledLayers().CuStack()
+                  for b in _obstacles(board, terminal.GetNetCode(), l, margin)]
+    front = _obstacles(board, terminal.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000, (terminal,))
     edge = board.GetBoardEdgesBoundingBox()
+    angles = sorted(range(0, 360, 45), key=lambda angle: (
+        0 if away_from is None else (away_from[0]-a[0])*math.cos(math.radians(angle))
+        + (away_from[1]-a[1])*math.sin(math.radians(angle)), angle))
     for distance in (600_000, 800_000, 1_000_000, 1_250_000, 1_500_000, 2_000_000):
-        for angle in range(0, 360, 45):
+        for angle in angles:
             _check_stop(clock, cancel_dir)
             t = math.radians(angle)
             b = (a[0] + round(distance * math.cos(t)), a[1] + round(distance * math.sin(t)))
+            if away_from is not None and sum((v-u)*(w-u) for u, v, w in zip(a, b, away_from)) >= 0:
+                continue
             if (box.GetLeft() - radius - rules['clearance'] < b[0] < box.GetRight() + radius + rules['clearance']
                     and box.GetTop() - radius - rules['clearance'] < b[1] < box.GetBottom() + radius + rules['clearance']):
                 continue
@@ -208,21 +230,28 @@ def seed(board_path, document, *, clock, cancel_dir=None):
     rows, protected, tied = [], [], set()
     for relation in document['relations']:
         _check_stop(clock, cancel_dir)
-        added = []
+        added, legs = [], []
         try:
             for leg in ('supply', 'return'):
                 first, second = [pad(board, p) for p in relation[leg]]
-                added += _leg(board, first, second, clock=clock, cancel_dir=cancel_dir)
+                leg_items = _leg(board, first, second, clock=clock, cancel_dir=cancel_dir)
+                added += leg_items
+                legs.append(dict(kind=leg, pads=[p.m_Uuid.AsString() for p in (first, second)],
+                                 tracks=[t.m_Uuid.AsString() for t in leg_items]))
                 for plane in document['planes']:
                     if plane['net'] == second.GetNetname():
                         target = board.GetLayerID(plane['layer'])
-                        added += _tie(board, second, target, clock=clock, cancel_dir=cancel_dir)
+                        tie_items = _tie(board, second, target, clock=clock, cancel_dir=cancel_dir,
+                                         away_from=position(first))
+                        added += tie_items
+                        legs.append(dict(kind='plane_tie', pads=[second.m_Uuid.AsString()],
+                                         tracks=[t.m_Uuid.AsString() for t in tie_items]))
                         tied.add(second.m_Uuid.AsString())
                 tied.add(first.m_Uuid.AsString())
         except ValueError as exc:
             raise JobRefusal('local decoupling ' + relation['id'] + ': ' + str(exc)) from exc
         protected += [copper_identity(item) for item in added]
-        rows.append(dict(id=relation['id'], copper=[item.m_Uuid.AsString() for item in added]))
+        rows.append(dict(id=relation['id'], copper=[item.m_Uuid.AsString() for item in added], legs=legs))
     other = []
     if document['tie_other_pads']:
         for fp in sorted(board.GetFootprints(), key=lambda fp: fp.GetReference()):
@@ -237,7 +266,8 @@ def seed(board_path, document, *, clock, cancel_dir=None):
                         continue
                     tied.add(terminal.m_Uuid.AsString())
                     protected += [copper_identity(item) for item in added]
-                    other.append(dict(pad=terminal.m_Uuid.AsString(), status='seeded' if added else 'already_on_layer'))
+                    other.append(dict(pad=terminal.m_Uuid.AsString(), status='seeded' if added else 'already_on_layer',
+                                      copper=[t.m_Uuid.AsString() for t in added]))
     # Native SaveBoard also rewrites the sibling project with defaults. The
     # operation owns copper only; preserve the exact authored project and PRL.
     siblings = {Path(board_path).with_suffix(suffix): None for suffix in ('.kicad_pro', '.kicad_prl')}
@@ -253,7 +283,7 @@ def seed(board_path, document, *, clock, cancel_dir=None):
                 path.unlink()
     receipt = dict(schema='agent-ee.local-decoupling-seed/1', source_sha256=before,
                    board_sha256=digest(board_path), contract=document, relations=rows,
-                   protected=protected, other_pads=other)
+                   protected=list({r['uuid']: r for r in protected}.values()), other_pads=other)
     verify(board_path, receipt)
     return receipt
 
@@ -269,4 +299,45 @@ def verify(board_path, receipt):
         actual = items.get(row['uuid'])
         if actual is None or json.loads(json.dumps(actual)) != row:
             raise JobRefusal('local decoupling protected copper missing/changed: ' + row['uuid'])
-    return dict(status='pass', board_sha256=digest(board_path), count=len(receipt['protected']))
+    geometry = verify_geometry(board, receipt)
+    return dict(status='pass', board_sha256=digest(board_path), count=len(receipt['protected']), geometry=geometry)
+
+
+def verify_geometry(board, receipt):
+    """Same-net pad contacts are assembly/topology defects even when DRC permits them."""
+    from .placement_job import JobRefusal
+    pads = [p for fp in board.GetFootprints() for p in fp.Pads()]
+    generated = {r['uuid'] for r in receipt['protected']}
+    tracks = {t.m_Uuid.AsString(): t for t in board.GetTracks() if t.m_Uuid.AsString() in generated}
+    allowed, ties = {}, {}
+    for relation in receipt['relations']:
+        for leg in relation['legs']:
+            for uid in leg['tracks']:
+                allowed.setdefault(uid, set()).update(leg['pads'])
+                if leg['kind'] == 'plane_tie':
+                    ties.setdefault(uid, set()).update(leg['tracks'])
+    for row in receipt['other_pads']:
+        for uid in row.get('copper', []):
+            allowed.setdefault(uid, set()).add(row['pad'])
+            ties[uid] = set(row['copper'])
+    for uid, item in tracks.items():
+        via = item.GetClass() == 'PCB_VIA'
+        clearance = _rules(board, item)['clearance']
+        for terminal in pads:
+            for layer in board.GetEnabledLayers().CuStack():
+                if not item.IsOnLayer(layer) or not terminal.IsOnLayer(layer):
+                    continue
+                if item.GetEffectiveShape(layer).Collide(terminal.GetEffectiveShape(layer), clearance if via else 1):
+                    if via or terminal.m_Uuid.AsString() not in allowed.get(uid, set()):
+                        raise JobRefusal('local decoupling geometry: ' + uid + ' touches/violates pad clearance ' +
+                                         terminal.GetParentFootprint().GetReference() + '.' + terminal.GetNumber())
+        if via:
+            for other_uid, other in tracks.items():
+                if other_uid == uid or other_uid in ties.get(uid, set()):
+                    continue
+                for layer in board.GetEnabledLayers().CuStack():
+                    if other.IsOnLayer(layer) and item.GetEffectiveShape(layer).Collide(other.GetEffectiveShape(layer), 1):
+                        raise JobRefusal('local decoupling geometry: plane via touches another generated leg: ' + uid + ', ' + other_uid)
+    return dict(status='pass', generated_vias=sum(t.GetClass() == 'PCB_VIA' for t in tracks.values()),
+                pad_clearance='effective net-class clearance on every pad, including same-net pads',
+                tracks='declared endpoint pads only')

@@ -145,6 +145,22 @@ class LocalCopperTests(unittest.TestCase):
         self.assertEqual(final['integrity'], 'preserved', final)
         self.assertEqual(final['eligibility'], 'INELIGIBLE', final)
         self.assertEqual(final['decoupling_loops']['outcome'], 'defect')
+        # No length failure can mask the protected-copper check in this arm.
+        receipt['contract'] = contract()
+        native = self.k.LoadBoard(str(self.path))
+        track = next(t for t in native.GetTracks() if t.GetClass() == 'PCB_TRACK')
+        track.SetWidth(track.GetWidth() + 10_000)
+        self.k.SaveBoard(str(self.path), native)
+        routed = self.root / 'changed.kicad_pcb'
+        import shutil
+        shutil.copyfile(self.path, routed)
+        shutil.copyfile(self.path.with_suffix('.kicad_pro'), routed.with_suffix('.kicad_pro'))
+        with patch.object(job, 'drc', return_value=(dict(violations=[], unconnected_items=[]), {})), \
+                patch.object(job, '_group_views', return_value={'status': 'rendered'}):
+            final = job.final_checks(dict(status='routed', board=str(routed), local_decoupling=receipt),
+                incumbent, job._owners(native), set(), self.root / 'changed-final', normalized)
+        self.assertEqual(final['eligibility'], 'INELIGIBLE', final)
+        self.assertTrue(any('protected copper missing/changed' in p for p in final['identity_problems']), final)
 
     def test_removed_locked_item_is_rejected(self):
         receipt = self.seed()
@@ -278,6 +294,217 @@ class LocalCopperTests(unittest.TestCase):
         result = measure(self.path, contract())
         self.assertEqual(result['outcome'], 'defect', result)
         self.assertIn('return: no native-connected copper path', result['records'][0]['reasons'])
+
+    def test_mirrored_cell_places_plane_entry_beyond_capacitor(self):
+        for fp in self.board.GetFootprints():
+            if fp.GetReference() in ('IC', 'BYP'):
+                x = 33 if fp.GetReference() == 'IC' else 30
+                for p in fp.Pads():
+                    p.SetPosition(self.k.VECTOR2I(x * 1_000_000, p.GetPosition().y))
+        self.save()
+        self.seed()
+        self.filled()
+        row = measure(self.path, contract())['records'][0]
+        self.assertFalse(row['return']['pin_bypasses_capacitor'], row)
+        native = self.k.LoadBoard(str(self.path))
+        via = next(t for t in native.GetTracks() if t.GetClass() == 'PCB_VIA')
+        self.assertLess(via.GetPosition().x, 30_000_000)
+
+    def test_same_net_pad_is_an_obstacle_for_tracks_and_vias(self):
+        other = next(fp for fp in self.board.GetFootprints() if fp.GetReference() == 'OTHER')
+        p = next(p for p in other.Pads() if p.GetNumber() == '2')
+        p.SetPosition(self.k.VECTOR2I(34_400_000, 31_000_000))
+        rail = next(p for p in other.Pads() if p.GetNumber() == '1')
+        rail.SetPosition(self.k.VECTOR2I(31_500_000, 29_000_000))
+        self.save()
+        receipt = self.seed()
+        self.assertEqual(local.verify(self.path, receipt)['geometry']['status'], 'pass')
+        self.filled()
+        self.assertGreater(measure(self.path, contract())['records'][0]['supply']['path']['length_mm'], 3)
+
+    def test_foreign_pad_blocks_the_preferred_via_site(self):
+        other = next(fp for fp in self.board.GetFootprints() if fp.GetReference() == 'OTHER')
+        p = next(p for p in other.Pads() if p.GetNumber() == '2')
+        p.SetNet(self.board.FindNet('/foreign'))
+        p.SetPosition(self.k.VECTOR2I(34_000_000, 31_000_000))
+        self.save()
+        receipt = self.seed()
+        native = self.k.LoadBoard(str(self.path))
+        via = next(t for t in native.GetTracks() if t.GetClass() == 'PCB_VIA')
+        self.assertNotEqual(local.position(via), (34_000_000, 31_000_000))
+        self.assertEqual(local.verify(self.path, receipt)['status'], 'pass')
+
+    def test_via_site_keeps_the_board_edge_margin(self):
+        for line in self.board.GetDrawings():
+            for method in ('Start', 'End'):
+                point = getattr(line, 'Get' + method)()
+                if point.x == 45_000_000:
+                    getattr(line, 'Set' + method)(self.k.VECTOR2I(34_500_000, point.y))
+        self.save()
+        self.seed()
+        native = self.k.LoadBoard(str(self.path))
+        via = next(t for t in native.GetTracks() if t.GetClass() == 'PCB_VIA')
+        margin = local._rules(native, via)['clearance'] + via.GetWidth(self.k.PADSTACK.ALL_LAYERS) // 2 + 25_000
+        self.assertLess(via.GetPosition().x, native.GetBoardEdgesBoundingBox().GetRight() - margin)
+
+    def test_tracks_use_effective_class_width_and_are_not_duplicated(self):
+        doc = contract()
+        import copy
+        second = copy.deepcopy(doc['relations'][0])
+        second['id'] = 'second'
+        # Supply pin and capacitor are shared; return uses the other land.
+        second['return'][1]['reference'] = 'OTHER'
+        doc['relations'].append(second)
+        self.seed(doc)
+        native = self.k.LoadBoard(str(self.path))
+        identities = []
+        for t in native.GetTracks():
+            if t.GetClass() == 'PCB_TRACK':
+                self.assertEqual(t.GetWidth(), 400_000)
+                identities.append((t.GetNetCode(), t.GetLayer(), tuple(sorted((local.position_point(t.GetStart()), local.position_point(t.GetEnd()))))))
+        self.assertEqual(len(identities), len(set(identities)))
+
+    def test_geometry_rejects_via_pad_clearance_and_undeclared_pad_contacts(self):
+        from copy import deepcopy
+        receipt = self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        via = next(t for t in board.GetTracks() if t.GetClass() == 'PCB_VIA')
+        p = local.pad(board, contract()['relations'][0]['return'][1])
+        via.SetPosition(p.GetPosition())
+        changed = deepcopy(receipt)
+        changed['protected'] = [local.copper_identity(t) for t in board.GetTracks()]
+        self.k.SaveBoard(str(self.path), board)
+        self.assertRaisesRegex(JobRefusal, 'pad clearance', local.verify, self.path, changed)
+        # Restore the via and move an unrelated same-net land onto the supply leg.
+        via.SetPosition(self.k.VECTOR2I(34_000_000, 31_000_000))
+        other = next(fp for fp in board.GetFootprints() if fp.GetReference() == 'OTHER')
+        p = next(p for p in other.Pads() if p.GetNumber() == '1')
+        p.SetPosition(self.k.VECTOR2I(31_500_000, 29_000_000))
+        changed['protected'] = [local.copper_identity(t) for t in board.GetTracks()]
+        self.k.SaveBoard(str(self.path), board)
+        self.assertRaisesRegex(JobRefusal, 'pad clearance', local.verify, self.path, changed)
+
+    def test_changed_locked_item_geometry_is_rejected(self):
+        receipt = self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        track = next(t for t in board.GetTracks() if t.GetClass() == 'PCB_TRACK')
+        track.SetWidth(track.GetWidth() + 10_000)
+        self.k.SaveBoard(str(self.path), board)
+        self.assertRaisesRegex(JobRefusal, 'protected copper missing/changed', local.verify, self.path, receipt)
+
+    def test_plated_capacitor_pad_is_its_own_plane_entry(self):
+        p = local.pad(self.board, contract()['relations'][0]['return'][1])
+        p.SetAttribute(self.k.PAD_ATTRIB_PTH)
+        p.SetDrillSize(self.k.VECTOR2I(300_000, 300_000))
+        p.SetLayerSet(self.k.LSET.AllCuMask())
+        self.save()
+        self.seed()
+        self.filled()
+        native = self.k.LoadBoard(str(self.path))
+        self.assertFalse(any(t.GetClass() == 'PCB_VIA' for t in native.GetTracks()))
+        row = measure(self.path, contract())['records'][0]
+        self.assertEqual(row['outcome'], 'info', row)
+        self.assertFalse(row['return']['pin_bypasses_capacitor'], row)
+
+    def test_plated_device_pad_and_back_capacitor_share_a_copper_layer(self):
+        for p in next(fp for fp in self.board.GetFootprints() if fp.GetReference() == 'IC').Pads():
+            p.SetAttribute(self.k.PAD_ATTRIB_PTH)
+            p.SetDrillSize(self.k.VECTOR2I(300_000, 300_000))
+            p.SetLayerSet(self.k.LSET.AllCuMask())
+        for p in next(fp for fp in self.board.GetFootprints() if fp.GetReference() == 'BYP').Pads():
+            layers = self.k.LSET()
+            layers.AddLayer(self.k.B_Cu)
+            p.SetLayerSet(layers)
+        self.save()
+        self.seed()
+        self.filled()
+        result = measure(self.path, contract())
+        self.assertEqual(result['outcome'], 'info', result)
+        native = self.k.LoadBoard(str(self.path))
+        self.assertTrue(all(t.GetLayer() == self.k.B_Cu for t in native.GetTracks()))
+
+    def checked(self, doc, *, wrong_hash=False):
+        """Run the registered handler and its native CLI, with only mount paths adapted for the image test."""
+        import json
+        import shutil
+        import subprocess
+        import time
+        from unittest.mock import patch
+        from agent_ee.checks import Ctx
+        from agent_ee.decoupling_loops import check
+        from agent_ee.storage import digest, write_json
+        run = self.root / ('check-' + str(len(list(self.root.glob('check-*')))))
+        inputs = run / 'inputs'
+        inputs.mkdir(parents=True)
+        shutil.copyfile(self.path, inputs / 'board.kicad_pcb')
+        write_json(inputs / 'local.json', doc)
+        manifest = dict(candidate_id='native-fixture', scope=dict(board='board.kicad_pcb'),
+                        files={'board.kicad_pcb': '0' * 64 if wrong_hash else digest(inputs / 'board.kicad_pcb')})
+        ctx = Ctx(run, manifest, dict(id='loops', kind='decoupling_loops', params=dict(contract='local.json')),
+                  time.monotonic() + 120)
+        def execute(context, argv, timeout, **kwargs):
+            argv = [arg.replace('/candidate/', str(inputs) + '/').replace('/work/', str(context.work) + '/') for arg in argv]
+            subprocess.run(argv, check=True, timeout=timeout, capture_output=True)
+        with patch.object(Ctx, 'execute', execute):
+            return ctx.evaluate(check)
+
+    def test_check_native_pass_info_defect_unknown_and_board_hash_binding(self):
+        self.seed()
+        # An unfilled zone must remain unknown, even if both legs are connected.
+        unknown = self.checked(contract())
+        self.assertEqual((unknown['execution'], unknown['outcome']), ('ok', 'unknown'), unknown)
+        self.assertIn('unfilled zone', str(unknown['details']))
+        self.filled()
+        for limit, expected in ((None, 'info'), (7, 'pass'), (5, 'defect')):
+            with self.subTest(limit=limit):
+                result = self.checked(contract(limit))
+                self.assertEqual(result['execution'], 'ok', result)
+                self.assertEqual(result['outcome'], 'pass' if expected == 'info' else expected, result)
+                self.assertEqual(result['details']['outcome'], expected, result)
+                self.assertTrue(result['evidence'])
+        mismatch = self.checked(contract(), wrong_hash=True)
+        self.assertEqual(mismatch['execution'], 'malformed', mismatch)
+        self.assertEqual(mismatch['outcome'], 'unknown', mismatch)
+
+    def test_common_pad_does_not_hide_a_track_via_junction_outside_it(self):
+        self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        cap = local.pad(board, contract()['relations'][0]['return'][1])
+        # This return track touches the cap AND the tie via outside the pad.
+        via = next(t for t in board.GetTracks() if t.GetClass() == 'PCB_VIA')
+        local._track(board, [(30_000_000, 31_000_000), local.position(via)], cap.GetNetCode(), self.k.F_Cu, 400_000)
+        self.k.SaveBoard(str(self.path), board)
+        self.filled()
+        row = measure(self.path, contract())['records'][0]
+        self.assertTrue(row['return']['pin_bypasses_capacitor'], row)
+        self.assertTrue(row['return']['bypass_paths'])
+
+    def test_seed_drc_rejection_names_only_the_implicated_relation(self):
+        from copy import deepcopy
+        from unittest.mock import patch
+        from agent_ee import placement_job as job
+        self.path.with_suffix('.kicad_pro').write_text('{}')
+        doc = contract()
+        other = deepcopy(doc['relations'][0])
+        other['id'] = 'innocent'
+        for leg in ('supply', 'return'):
+            other[leg][1]['reference'] = 'OTHER'
+        doc['relations'].append(other)
+        fake = dict(violations=[], unconnected_items=[])
+        def seeded_drc(path, directory, **kwargs):
+            if Path(directory).name == 'before':
+                return fake, {}
+            native = self.k.LoadBoard(str(path))
+            uid = next(t.m_Uuid.AsString() for t in native.GetTracks() if t.GetClass() == 'PCB_VIA' and t.GetPosition().x < 36_000_000)
+            return dict(violations=[dict(type='clearance', severity='error', items=[dict(uuid=uid)])], unconnected_items=[]), {}
+        with patch('agent_ee.routing_adapter.preflight', return_value={'problems': []}), \
+                patch.object(job, 'drc', side_effect=seeded_drc), patch.object(job, '_route_attempt') as router:
+            result = job.route(self.root, self.root / 'routing', self.root / 'unused-router',
+                               budget_s=30, timeout_s=60, home=self.root / 'router-home', local_decoupling=doc)
+        self.assertEqual(result['status'], 'local_copper_failed', result)
+        self.assertIn('cell: native DRC rejects', result['reason'])
+        self.assertNotIn('innocent', result['reason'])
+        router.assert_not_called()
 
 
 class ContractTests(unittest.TestCase):
