@@ -526,6 +526,48 @@ class StockModelFetchTests(unittest.TestCase):
     def not_found(self, request, **kwargs):
         raise HTTPError(request.full_url, 404, "not found", {}, None)
 
+    def test_declared_source_retains_url_and_verified_digest_and_replays(self):
+        from agent_ee.models3d import fetch_stock_references, parse_stock_receipt
+        source = dict(source_url='https://example.invalid/models/owned.step',
+                      sha256=hashlib.sha256(self.payload).hexdigest())
+        with patch('agent_ee.models3d.urlopen', return_value=ModelResponse(self.payload)) as request:
+            report = fetch_stock_references([self.relative], self.cache, sources={self.relative: source})
+        self.assertEqual(request.call_args.args[0].full_url, source['source_url'])
+        self.assertEqual(report['missing'], 0)
+        receipt = parse_stock_receipt((self.cache / '.agent-ee-models.json').read_bytes(), 'owned')
+        self.assertEqual(receipt['files'][self.relative]['source'], 'declared-url')
+        self.assertEqual(receipt['files'][self.relative]['sha256'], source['sha256'])
+        with patch('agent_ee.models3d.urlopen') as request:
+            self.assertEqual(fetch_stock_references([self.relative], self.cache,
+                sources={self.relative: source})['files'][0]['status'], 'reused')
+        request.assert_not_called()
+        with self.assertRaisesRegex(ModelFetchError, 'differs from the declared source'):
+            fetch_stock_references([self.relative], self.cache,
+                sources={self.relative: dict(source, sha256='a' * 64)})
+
+    def test_declared_source_wrong_digest_retains_failure_and_no_verified_receipt(self):
+        from agent_ee.models3d import fetch_stock_references
+        with patch('agent_ee.models3d.urlopen', return_value=ModelResponse(self.payload)):
+            with self.assertRaisesRegex(ModelFetchError, 'SHA-256 differs'):
+                fetch_stock_references([self.relative], self.cache, sources={self.relative: dict(
+                    source_url='https://example.invalid/owned.step', sha256='a' * 64)})
+        self.assertEqual((self.cache / self.relative).read_bytes(), self.payload)
+        self.assertFalse((self.cache / '.agent-ee-models.json').exists())
+
+    def test_declared_source_validation_is_before_network_and_writes(self):
+        from agent_ee.models3d import fetch_stock_references
+        source = dict(source_url='https://example.invalid/owned.step', sha256='a' * 64)
+        for sources in ([], {'../escape.step': source},
+                        {'Other.3dshapes/Absent.step': source},
+                        {self.relative: dict(source, source_url='http://example.invalid/a')},
+                        {self.relative: dict(source, source_url='https://user:secret@example.invalid/a')},
+                        {self.relative: dict(source, sha256='bad')}):
+            with self.subTest(sources=sources), patch('agent_ee.models3d.urlopen') as request:
+                with self.assertRaises(ModelFetchError):
+                    fetch_stock_references([self.relative], self.cache, sources=sources)
+                request.assert_not_called()
+                self.assertFalse(self.cache.exists())
+
     def test_exact_pinned_download_deduplicates_and_persists_verified_provenance(self):
         self.write_refs(["${KICAD10_3DMODEL_DIR}/" + self.relative, "${KISYS3DMOD}/" + self.relative])
         with patch("agent_ee.models3d.urlopen", return_value=ModelResponse(self.payload)) as request:

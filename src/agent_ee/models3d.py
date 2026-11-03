@@ -17,7 +17,7 @@ import time
 from http.client import HTTPException
 from pathlib import Path, PureWindowsPath
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
 from . import native_run
@@ -449,6 +449,9 @@ def _validate_receipt_entry(relative, entry):
     if entry.get("source") == "existing-local":
         if "commit" not in entry and "source_url" not in entry:
             return
+    elif entry.get('source') == 'declared-url':
+        validate_model_sources({relative: {k: entry.get(k) for k in ('source_url', 'sha256')}})
+        return
     elif (entry.get("commit") in STOCK_REVISIONS
           and entry.get("source_url") == _model_url(entry["commit"], relative)):
         return
@@ -526,7 +529,25 @@ def _required_stock_models(inventory):
     return required, skipped
 
 
-def _fetch_one(cache, relative, receipt, *, timeout, max_file_bytes):
+def validate_model_sources(sources):
+    """Explicit stock-relative path -> HTTPS URL and expected content digest."""
+    if not isinstance(sources, dict):
+        raise ModelFetchError('model sources must be a path-to-source object')
+    for relative, source in sources.items():
+        _stock_relative(relative)
+        if not isinstance(source, dict) or set(source) != {'source_url', 'sha256'}:
+            raise ModelFetchError(f'{relative}: model source needs source_url and sha256')
+        url = source['source_url']
+        parsed = urlsplit(url) if isinstance(url, str) else None
+        if (parsed is None or parsed.scheme != 'https' or not parsed.hostname
+                or parsed.username or parsed.password or parsed.fragment):
+            raise ModelFetchError(f'{relative}: model source needs an HTTPS URL without credentials or fragment')
+        if not isinstance(source['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', source['sha256']):
+            raise ModelFetchError(f'{relative}: model source needs a lowercase SHA-256')
+    return sources
+
+
+def _fetch_one(cache, relative, receipt, *, timeout, max_file_bytes, source=None):
     path = _cache_path(cache, relative)
     if path.exists():
         if not path.is_file():
@@ -535,10 +556,22 @@ def _fetch_one(cache, relative, receipt, *, timeout, max_file_bytes):
         known = receipt["files"].get(relative)
         if known and known.get("sha256") != checksum:
             raise ModelFetchError(f"cached model changed since its receipt was written: {path}")
+        if source is not None and (not known or known.get('source') != 'declared-url'
+                or any(known.get(k) != v for k, v in source.items())):
+            raise ModelFetchError(f'cached model differs from the declared source: {relative}')
         provenance = known or {"sha256": checksum, "size_bytes": path.stat().st_size, "source": "existing-local"}
         receipt["files"][relative] = provenance
         return {**provenance, "status": "reused" if known else "existing-local"}
     attempts = []
+    if source is not None:
+        downloaded = _download_model(path, source['source_url'], timeout=timeout, max_file_bytes=max_file_bytes)
+        if downloaded is None:
+            return dict(status='not-found', attempts=[dict(source_url=source['source_url'], status=404)])
+        if downloaded['sha256'] != source['sha256']:
+            raise ModelFetchError(f'{relative}: downloaded model SHA-256 differs from declared source; bytes retained')
+        provenance = dict(downloaded, source='declared-url')
+        receipt['files'][relative] = provenance
+        return dict(provenance, status='downloaded')
     for revision in STOCK_REVISIONS:
         url = _model_url(revision, relative)
         downloaded = _download_model(path, url, timeout=timeout, max_file_bytes=max_file_bytes)
@@ -551,11 +584,14 @@ def _fetch_one(cache, relative, receipt, *, timeout, max_file_bytes):
 
 
 def fetch_stock_references(references, cache: Path, *, timeout=30,
-                           max_file_bytes=32 * 1024 * 1024) -> dict:
+                           max_file_bytes=32 * 1024 * 1024, sources=None) -> dict:
     """Fetch explicit stock-relative model paths without requiring a placed board."""
     if timeout <= 0 or max_file_bytes <= 0:
         raise ValueError("model download timeout and size limit must be positive")
     required = sorted(set(_stock_relative(ref).as_posix() for ref in references))
+    sources = validate_model_sources(sources if sources is not None else {})
+    if set(sources) - set(required):
+        raise ModelFetchError('model sources name paths absent from the selected footprints')
     cache = Path(cache).expanduser().resolve()
     for relative in required:
         _cache_path(cache, relative)
@@ -563,7 +599,8 @@ def fetch_stock_references(references, cache: Path, *, timeout=30,
     receipt = _read_receipt(cache)
     files = []
     for relative in required:
-        record = _fetch_one(cache, relative, receipt, timeout=timeout, max_file_bytes=max_file_bytes)
+        record = _fetch_one(cache, relative, receipt, timeout=timeout, max_file_bytes=max_file_bytes,
+                            source=sources.get(relative))
         files.append({"path": relative, **record})
         _atomic_json(cache / STOCK_RECEIPT, receipt)
     if not required:

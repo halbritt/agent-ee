@@ -823,8 +823,9 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
                     assignment['findings'].append(dict(code='pad_pin_parity', missing_pads=missing, extra_pads=extra))
                 if comp['connector'] is not None:
                     expected = comp['connector']['rows'] * comp['connector']['columns']
-                    # KiCad's stock connectors number mounting pads MP; those are not positions.
-                    positions = numbers - {'MP'}
+                    # Only a captured mechanical declaration removes a pad
+                    # from the electrical position inventory.
+                    positions = numbers
                     if len(positions) != expected:
                         assignment['findings'].append(dict(code='connector_count', expected=expected, actual=len(positions)))
                 # Declared thermal vias are electrical but do not make an SMD part through-hole.
@@ -840,7 +841,18 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
                 if technology is None or not attrs or (technology == 'smd' and attrs != {'smd'}) or (technology == 'through_hole' and attrs != {'through_hole'}):
                     raise FootprintError('ambiguous/missing native assembly attributes')
                 if technology == 'mixed':
-                    raise FootprintError('mixed assembly semantics are not qualified')
+                    surface = {p['number'] for p in fp['pads'] if p['role'] == 'electrical'
+                               and p['type'] == 'smd'}
+                    through = {p['number'] for p in fp['pads'] if p['role'] == 'electrical'
+                               and p['type'] == 'thru_hole' and not p.get('thermal_via')}
+                    if surface & through:
+                        raise FootprintError('mixed assembly on shared terminal numbers needs a thermal-via declaration')
+                    if len(attrs) != 1:
+                        raise FootprintError('mixed pad technologies need one native assembly attribute')
+                    # Keep all terminals electrical. The component's assembly
+                    # attribute does not turn plated contacts into mechanics.
+                    assignment.update(pad_technology='mixed', assembly_basis='native_attribute')
+                    technology = next(iter(attrs))
                 if comp['assembly'] != technology:
                     assignment['findings'].append(dict(code='assembly_mismatch', expected=comp['assembly'], actual=technology))
             assignment['status'] = 'defect' if assignment['findings'] else 'pass'

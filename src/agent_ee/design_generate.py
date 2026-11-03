@@ -667,7 +667,8 @@ def execution_error(record, attempt, label, names=('stderr.log', 'stdout.log')):
 
 def refusal_classes(text):
     """Stable field paths; keep the exact text separately, never relabel a gap."""
-    return sorted(set(re.findall(r'(?m)^- ([A-Za-z_][A-Za-z0-9_.\[\]-]*):', text)))
+    fields = set(re.findall(r'(?m)^- ([A-Za-z_][A-Za-z0-9_.\[\]-]*):', text))
+    return sorted(field for field in fields if field != 'captures' and not field.startswith('captures.'))
 
 
 def search_failure(build, run):
@@ -986,6 +987,8 @@ def _generate(requirements_path, out, options, identity=None):
             except design.DesignError as exc:
                 feedback = str(exc)
                 row.update(status='refused', reason=feedback, refusal_classes=refusal_classes(feedback))
+                if '[tool_gap]' in feedback:
+                    row['tool_gap'] = 'Supplier footprint capability refused deterministically'
                 (attempt / 'refusal.txt').write_text(feedback, encoding='utf-8')
             except PhaseFailure as exc:
                 row.update(status='failed', failing_stage=exc.stage, reason=str(exc),
@@ -999,8 +1002,11 @@ def _generate(requirements_path, out, options, identity=None):
                                              if isinstance(r, dict) and r.get('status') == 'not-found']
                 feedback = phase_feedback(exc.stage, str(exc), row)
                 (attempt / 'refusal.txt').write_text(str(exc), encoding='utf-8')
-                if exc.stage in ('capture', 'compile') and not row['refusal_classes']:
-                    row['tool_gap'] = 'Refusal does not name a design field'
+                if exc.stage in ('capture', 'compile'):
+                    if '[tool_gap]' in str(exc):
+                        row['tool_gap'] = 'Supplier footprint capability refused deterministically'
+                    elif not row['refusal_classes']:
+                        row['tool_gap'] = 'Refusal does not name a design field'
                 if exc.stage in ('build', 'placement-routing') and any(s in feedback for s in
                         ('is not the pinned', 'kicad-route pin', 'pinned code', 'router checkout')):
                     report['status'] = 'runtime_refused'

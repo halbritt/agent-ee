@@ -3,7 +3,7 @@
 The input is the raw component object exactly as captured (sha256-pinned by the
 caller). Nothing is fetched. Every package record is either converted into a
 land-geometry pad/hole, proven non-electrical by its declared layer, or refused:
-unknown record types (for example ``PT~M``), polygon/ellipse pads and conductive
+unknown record types (for example ``PT~M``), unequal ellipse pads and conductive
 non-pad records make the footprint unsupported rather than dropped. Standard
 through vias are represented only with unambiguous rectangular SMD-pad ownership.
 Coordinates are exact decimals; one canvas unit is 10 mil = 254000 nm, +Y down.
@@ -176,7 +176,7 @@ def _pad(fields, tol):
     if not number:
         _unsupported(label + ': unnumbered copper pad is not qualified')
     rotation = decimal(fields[11], label + ' rotation')
-    turn = _quarter(rotation, label)
+    turn = rotation % 360 if shape == 'POLYGON' else _quarter(rotation, label)
     hole_r = decimal(fields[9], label + ' hole radius')
     if shape == 'RECT':
         corners = _points(fields[10], label + ' outline', 4)
@@ -201,10 +201,28 @@ def _pad(fields, tol):
             _unsupported(label + ': unequal ELLIPSE axes are an unqualified ellipse')
         primitive = dict(shape='circle')
     elif shape == 'POLYGON':
-        _unsupported(label + ': POLYGON pads are not a qualified primitive')
+        values = fields[10].split()
+        if len(values) < 6 or len(values) % 2:
+            _malformed(label + ': polygon requires at least three coordinate pairs')
+        points = _points(fields[10], label + ' outline', len(values) // 2)
+        # The source may repeat each edge endpoint and close the outline.
+        # Remove only zero-length edges; never snap, simplify or take a hull.
+        outline = []
+        for point in points:
+            if not outline or point != outline[-1]:
+                outline.append(point)
+        if len(outline) > 1 and outline[-1] == outline[0]:
+            outline.pop()
+        from .land_geometry import GeometryError, polygon_area
+        try:
+            polygon_area([outline])
+        except GeometryError as exc:
+            raise SupplierError(exc.mode, label + ': ' + str(exc), exc.execution) from exc
+        # Points are already in canvas coordinates, including source rotation.
+        primitive = dict(shape='polygon', points=outline)
     else:
         _malformed(f'{label}: unknown pad shape {shape!r}')
-    primitive.update(center=[cx, cy], size=[w, h], angle=turn)
+    primitive.update(center=[cx, cy], size=[w, h], angle=0 if shape == 'POLYGON' else turn)
     hole = None
     length_field, ends_field, plated = fields[13], fields[14], fields[15]
     if hole_r < 0:
@@ -259,6 +277,9 @@ def _layer_of(kind, fields):
 
 
 def _bounds(primitive):
+    if primitive['shape'] == 'polygon':
+        xs, ys = zip(*primitive['points'])
+        return min(xs), min(ys), max(xs), max(ys)
     cx, cy = primitive['center']
     w, h = primitive['size']
     if primitive['angle'] % 180:
@@ -379,6 +400,8 @@ def parse_package(data, lcsc, tolerance_nm):
     def primitive(p):
         out = dict(shape=p['shape'], center=local(p['center']),
                    size=[text(v * UNIT_NM) for v in p['size']], angle=str(p['angle']))
+        if p['shape'] == 'polygon':
+            out['points'] = [local(point) for point in p['points']]
         return out
     pattern = dict(pads=[dict(number=p['number'], layers=p['layers'], primitive=primitive(p['primitive']))
                          for p in pads],

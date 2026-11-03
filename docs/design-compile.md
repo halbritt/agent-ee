@@ -33,7 +33,7 @@ Unknown fields are refused.
 | `requirement_prefix` | 1–16 uppercase ASCII letters/digits, beginning with a letter; used for generated source requirement IDs. |
 | `intent` | One paragraph describing the design and its limits. |
 | `board` | `width_mm`, `height_mm`, `thickness_mm`, `copper_layers`, `max_component_height_mm`. |
-| `parts` | Object keyed by reference; each part has `lcsc`, `value`, `lib_id`, `footprint`, `group`, and optional `connector: {rows, columns}` and `datasheet: {url, sha256}` (see [Datasheet sources](#datasheet-sources)). Assembly type comes from the native footprint attribute. |
+| `parts` | Object keyed by reference; each part has `lcsc`, `value`, `lib_id`, `footprint`, `group`, and optional `connector: {rows, columns}`, `datasheet: {url, sha256}` (see [Datasheet sources](#datasheet-sources)) and `cpl_registration` (below). Assembly type comes from the native footprint attribute. |
 | `nets` | Object mapping each net name to a list of `REF.PIN` strings. Names have no native `/` prefix. Each net needs at least two physical terminals. |
 | `no_connects` | List of `REF.PIN` strings. Every symbol pin needs one net or a no-connect entry. |
 | `power_flags` | Unique net names that need virtual `PWR_FLAG` symbols. |
@@ -55,6 +55,84 @@ must agree. Repeated physical lands with one number are allowed in that set,
 but a repeated-number **decoupling endpoint** is refused: the compiler cannot yet
 derive the native land UUID. Choose an unambiguous package or extend that
 compiler capability; no pad is guessed.
+
+## Supplier pad correspondence and orientation
+
+Supplier pad numbers may differ from the symbol/native footprint numbers. The
+compiler can register footprints without a pad named `1`, with composite supplier
+pad numbers, or with differently numbered repeated plated lands. The ordinary
+pin-1 frame and polarity checks remain in use for previously supported parts.
+
+Automatic registration considers the four quarter turns and requires exactly one
+identity-preserving result. When at least two unique pad numbers occur on both
+sides, their coordinate-wise median centre displacement supplies the translation datum. Otherwise
+it centres the copper bounding boxes. Every native and supplier land needs
+certified positive copper overlap on the same surfaces. Possible copper contact
+with an unrelated identity on any shared surface refuses. These checks establish
+registration, not physical assembly suitability; the existing overlap diagnostic
+and its warning threshold remain separate.
+
+Electrical identity has an explicit basis in `design-compile-report.json`:
+
+- Equal pad numbers must overlap only the same native terminal number. Geometry
+  cannot relabel a swapped electrical pin.
+- A composite supplier number must be an exact concatenation of the overlapping
+  native terminal numbers. All distinct terminals in one supplier land must have
+  the same connected net. Missing nets and no-connects cannot authorize a short.
+- A differently numbered plated land can be located automatically only when
+  it corresponds to one land of a repeated native number, with uniquely
+  overlapping drilled apertures. Each aperture must have unambiguous ownership
+  at its pad centre under the existing `100000` nm tolerance. At least two identified
+  electrical terminal groups must establish the automatic orientation. This is
+  positional evidence for the repeated land, not proof of its physical function.
+- Other numbering needs a declaration. It records an author-supplied electrical
+  identity, checked against the captured copper and circuit nets; it does not
+  independently authenticate that identity against a manufacturer datasheet.
+
+An optional part field declares the supplier-to-native rotation and a complete
+map from supplier numbers to lists of native numbers. For example, an original
+connector whose supplier calls one joined land `JOIN` could declare:
+
+```json
+"cpl_registration": {
+  "rotation_degrees": 90,
+  "pad_map": {"JOIN": ["K1", "K2"], "S0": ["S0"], "S1": ["S1"]}
+}
+```
+
+The map must cover every supplier number and agree with every overlapping land.
+It cannot override a conflicting common pad number or merge distinct circuit
+nets. Registrations requiring reflection, uncovered lands and ambiguous automatic
+rotations refuse. Geometrically indistinguishable reflections cannot be detected.
+Polarized parts still require their existing pin-1 polarity gate; this declaration
+cannot replace it.
+
+The compiled CPL policy retains each registration in `pad_registrations` by
+designator. At package time, `cpl_rotation` rechecks it against the captured board
+and supplier bytes and the sealed board pad nets, and checks the policy angle.
+Its `pin1` record names `electrical_pad_correspondence` as the orientation reference
+and retains the pad map, physical land pairs and identity proof for each number.
+Supplier placement preview and physical validation remain required.
+
+A footprint may mix SMD and plated through-hole terminals under one explicit
+native assembly attribute. CAD assignment records the mixed pad technology and
+uses that attribute as the primary assembly type. Every numbered contact stays
+electrical for symbol parity and connector counts unless a captured mechanical
+declaration says otherwise. Shared-number SMD/through-hole lands still need the
+existing thermal-via declaration; missing or competing assembly attributes refuse.
+
+Supplier `POLYGON` pads use exact decimal vertices from the
+[EasyEDA standard PAD record](https://docs.easyeda.com/en/DocumentFormat/3-EasyEDA-PCB-File-Format/#pad).
+Conversion removes consecutive duplicate endpoints and the closing duplicate,
+preserves concavity, and refuses self-intersections or zero area. The geometry
+kernel uses the resulting polygon exactly, including under registration; it
+does not replace it with a rectangle or convex hull.
+
+Deterministic supplier refusals name every affected `parts.<ref>.lcsc`, the LCSC
+id and the parser mode. Unsupported capability carries `[tool_gap]`; feedback
+keeps the part field and records the tool gap. The `captures` infrastructure
+path is not classified as a design field. The full supplier response remains
+in the failed capture directory for diagnosis.
 
 ## Functional witnesses
 
@@ -129,6 +207,18 @@ revisions tried; `models-report.json` keeps every model's result. Supplier
 capture retains the full response, the exact UTF-8 byte span of its top-level
 `result` object, and provenance plus byte offsets and hashes. Nothing uploads
 project files or places an order.
+
+If a footprint references a model absent from the stock repository, capture can
+take `--model-sources FILE`. The JSON object maps exact referenced model paths to
+`{"source_url": "https://…", "sha256": "…"}` records. Only HTTPS URLs without
+embedded credentials or fragments are accepted, and paths absent from the
+selected footprints refuse. The declared URL takes precedence for that path;
+other references still use the stock resolver. Capture retains the declaration
+in `model-sources.json` and verifies the downloaded bytes against its digest.
+An incorrect digest refuses and leaves the downloaded bytes for diagnosis.
+The model receipt records `source: declared-url`, the URL, size and digest;
+compile retains and verifies that receipt and the model bytes. This verifies
+source identity and integrity, not the model's dimensions or suitability.
 
 Compile generates the spec and byte-located record, selected-part records, CAD
 closure, circuit, layout, envelope, sourced project rules, groups, placement and

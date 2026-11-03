@@ -619,7 +619,7 @@ def cpl_policy(design, root):
         for lib in cad["libraries"]
         for m in lib["members"]
     }
-    rules, suppliers, overrides, diagnostics = {}, [], [], []
+    rules, suppliers, overrides, diagnostics, registrations = {}, [], [], [], {}
     (root / "cpl").mkdir()
     shutil.copytree(root / "supplier", root / "cpl/supplier")
     shutil.rmtree(root / "supplier")
@@ -641,14 +641,10 @@ def cpl_policy(design, root):
             c._top_view(native["pattern"]),
             c._top_view(supplier["pattern"]),
         )
-        if not c._same_pads_apart_from_extras(
-            sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)
-        ):
-            raise DesignError(
-                [
-                    f"parts.{ref}.lcsc: supplier and native pad sets disagree; select matching CAD and part"
-                ]
-            )
+        use_correspondence = (part.get('cpl_registration') is not None
+            or sum(p[0] == '1' for p in board_pads) != 1
+            or not c._same_pads_apart_from_extras(
+                sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)))
         board_name = None
         board_numbers = sorted(p[0] for p in board_pads)
         polarity_record = {}
@@ -662,8 +658,9 @@ def cpl_policy(design, root):
             )
             names = {p["name"] for p in inventory if p["number"] == "1"}
             board_name = next(iter(names)) if len(names) == 1 else None
-        if c.select_polarity(polarity_record, ref, board_numbers, board_name,
-                             board_basis="captured_symbol_pin_name"):
+        polarized = c.select_polarity(polarity_record, ref, board_numbers, board_name,
+                                      board_basis="captured_symbol_pin_name")
+        if polarized:
             diode = bool(c.POLARIZED.fullmatch(ref))
             board_polarity = c.polarity(board_name, diode=diode)
             supplier_pin = c._pad_with_board_polarity(
@@ -684,15 +681,31 @@ def cpl_policy(design, root):
                 supplier_pads = [
                     ({"1": "2", "2": "1"}[n], x, y) for n, x, y in supplier_pads
                 ]
-        board_side, board_frame, why = c.classify_pin1(board_pads)
-        supplier_side, supplier_frame, swhy = c.classify_pin1(supplier_pads)
-        if not board_side or not supplier_side or board_frame != supplier_frame:
-            raise DesignError(
-                [
-                    f"parts.{ref}.footprint: cannot derive CPL pin-1 orientation ({why}; {swhy}); choose CAD with an unambiguous matching pin-1 frame"
-                ]
-            )
-        offset = c.pin1_offset(supplier_side, board_side)
+        if use_correspondence:
+            from .pad_correspondence import derive
+            from .land_pattern import PatternError
+            from .land_geometry import GeometryError
+            if polarized:
+                raise DesignError([f'parts.{ref}.lcsc: {lcsc}: pad registration cannot replace the polarized pin-1 gate'])
+            nets = {term.split('.', 1)[1]: net for net, terms in design.get('nets', {}).items()
+                    for term in terms if term.split('.', 1)[0] == ref}
+            try:
+                correspondence = derive(native['pattern'], supplier['pattern'],
+                    declaration=part.get('cpl_registration'), nets=nets)
+            except (PatternError, GeometryError) as exc:
+                raise DesignError([f"parts.{ref}.lcsc: {lcsc}: deterministic {exc.mode}: {exc}"]) from exc
+            offset = correspondence['rotation_degrees']
+            registrations[ref] = {k: correspondence[k] for k in ('rotation_degrees', 'pad_map')}
+        else:
+            board_side, board_frame, why = c.classify_pin1(board_pads)
+            supplier_side, supplier_frame, swhy = c.classify_pin1(supplier_pads)
+            if not board_side or not supplier_side or board_frame != supplier_frame:
+                raise DesignError(
+                    [
+                        f"parts.{ref}.footprint: cannot derive CPL pin-1 orientation ({why}; {swhy}); choose CAD with an unambiguous matching pin-1 frame"
+                    ]
+                )
+            offset = c.pin1_offset(supplier_side, board_side)
         if offset is None:
             raise DesignError(
                 [
@@ -711,12 +724,20 @@ def cpl_policy(design, root):
             )
         from .land_pattern import compare
 
+        diagnostic_native, diagnostic_supplier = native, supplier
+        diagnostic_rotation, diagnostic_translation = str(offset), 'copper_bbox_center'
+        if use_correspondence:
+            from .pad_correspondence import _registered
+            left, right, _ = _registered(native['pattern'], supplier['pattern'], offset)
+            diagnostic_native = dict(native, pattern=left)
+            diagnostic_supplier = dict(supplier, pattern=right)
+            diagnostic_rotation, diagnostic_translation = '0', 'declared_origin'
         diagnostic = compare(
-            native,
-            supplier,
+            diagnostic_native,
+            diagnostic_supplier,
             dict(
                 registration=dict(
-                    translation="copper_bbox_center", rotation=str(offset), mirror=False
+                    translation=diagnostic_translation, rotation=diagnostic_rotation, mirror=False
                 ),
                 pin_aliases=None,
             ),
@@ -733,8 +754,11 @@ def cpl_policy(design, root):
                 catalog_package=package,
                 copper=diagnostic["copper"],
                 holes=diagnostic["holes"],
+                **(dict(pad_correspondence=correspondence) if use_correspondence else {}),
                 polarity=polarity_record["polarity"],
-                limitation="Diagnostic overlap at declared CPL registration; no suitability threshold is enforced.",
+                limitation=("Overlap verifies pad correspondence only; assembly suitability is unverified."
+                    if use_correspondence else
+                    "Diagnostic overlap at declared CPL registration; no suitability threshold is enforced."),
             )
         )
         name = part["footprint"].split(":")[1]
@@ -777,6 +801,7 @@ def cpl_policy(design, root):
             )
         ],
         component_overrides=overrides,
+        **(dict(pad_registrations=registrations) if registrations else {}),
     )
     write_json(root / "cpl/jlc-cpl-policy.json", policy)
     write_json(

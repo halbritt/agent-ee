@@ -480,6 +480,10 @@ def _bbox_center(pattern):
     xs, ys = [], []
     for pad in pattern['pads']:
         p = pad['primitive']
+        if p['shape'] == 'polygon':
+            xs.extend(Fraction(point[0]) for point in p['points'])
+            ys.extend(Fraction(point[1]) for point in p['points'])
+            continue
         turn = Fraction(p['angle']) % 360
         if turn % 90:
             _refuse('unsupported_rotation', 'copper bbox centring needs quarter-turn primitives')
@@ -498,6 +502,8 @@ def _transform(pattern, shift, rotation):
         return [text(x), text(y)]
     def primitive(p):
         out = dict(p, center=point(p['center']), angle=text((Fraction(p['angle']) + rotation) % 360))
+        if p['shape'] == 'polygon':
+            out.update(points=[point(v) for v in p['points']], angle='0')
         return out
     return dict(pads=[dict(pad, primitive=primitive(pad['primitive'])) for pad in pattern['pads']],
                 holes=[primitive(h) for h in pattern['holes']])

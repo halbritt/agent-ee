@@ -115,6 +115,28 @@ class AssignmentTests(unittest.TestCase):
         result = self.check(('1', '2', '3'), connector={'rows': 1, 'columns': 4}, assembly='through_hole')
         self.assertEqual({x['code'] for x in result['findings']}, {'connector_count', 'assembly_mismatch'})
 
+    def test_distinct_surface_and_through_terminals_keep_native_primary_assembly(self):
+        from agent_ee.footprint_library import check_assignments
+        data = SOT3[:-1] + '(pad "CASE" thru_hole circle (at 4 0) (size 2 2) (drill 1) (layers "*.Cu" "*.Mask")))'
+        manifest, files = capture(data)
+        lib, raw = symbol_capture(('1', '2', '3', 'CASE'))
+        files[lib['path']] = raw
+        result = check_assignments(manifest, files, declarations(lib))
+        self.assertEqual(result['outcome'], 'pass', result['findings'])
+        self.assertEqual(result['assignments'][0]['pad_technology'], 'mixed')
+        self.assertIn('CASE', result['assignments'][0]['pin_numbers'])
+        wrong = check_assignments(manifest, files, declarations(lib, assembly='through_hole'))
+        self.assertEqual(wrong['findings'][0]['code'], 'assembly_mismatch')
+        missing_lib, raw = symbol_capture(('1', '2', '3'))
+        files[missing_lib['path']] = raw
+        missing = check_assignments(manifest, files, declarations(missing_lib))
+        self.assertEqual(missing['findings'][0]['code'], 'pad_pin_parity')
+        for attributes in ('', '(attr smd through_hole)'):
+            changed, captured = capture(data.replace('(attr smd)', attributes))
+            captured[lib['path']] = files[lib['path']]
+            unknown = check_assignments(changed, captured, declarations(lib))
+            self.assertEqual(unknown['outcome'], 'unknown')
+
     def test_empty_and_absent_are_defects_after_complete_index(self):
         for fp, code in (('', 'empty_footprint'), ('Owned:Absent', 'absent_footprint')):
             result = self.check(footprint=fp)

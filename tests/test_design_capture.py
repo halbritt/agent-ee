@@ -5,6 +5,8 @@ import shutil
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
+import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -13,7 +15,7 @@ from agent_ee.design_capture import capture_design, validate_capture_manifest
 from agent_ee.design_compile import compile_design
 from tests.test_design_compile import design_fixture
 from tests.test_jlc_stock_capture import row, search
-from tests.land_pattern_fixtures import chip, component
+from tests.land_pattern_fixtures import chip, component, pad
 
 
 class CaptureHttpTests(unittest.TestCase):
@@ -332,3 +334,34 @@ class CaptureHttpTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(DesignError, "capture.json"):
             compile_design(self.design, self.root / "captured", self.root / "bundle")
+
+    def test_deterministic_supplier_refusal_names_every_part_id_mode_and_tool_gap(self):
+        self.supplier_raw = b'{"success":true,"result":' + component('C1', [
+            pad('ELLIPSE', 4000, 3000, 2, 3, '1')]) + b'}'
+        with self.assertRaises(DesignError) as caught:
+            self.capture()
+        message = str(caught.exception)
+        for ref in ('R1', 'R2'):
+            self.assertIn(f'parts.{ref}.lcsc: C1: deterministic supplier unsupported_shape [tool_gap]', message)
+        self.assertNotIn('retry', message)
+        self.assertIn('extend the footprint reader', message)
+        self.assertEqual((self.root / 'captured/supplier/C1.full.json').read_bytes(), self.supplier_raw)
+        self.assertFalse((self.root / 'captured/capture.json').exists())
+
+    def test_explicit_model_source_is_captured_and_usable_by_compile(self):
+        from tests.test_models3d import ModelResponse
+        fp = self.kicad / 'footprints/Owned.pretty/R2.kicad_mod'
+        raw = fp.read_text()
+        fp.write_text(raw.rstrip()[:-1] + '\n(model "${KICAD10_3DMODEL_DIR}/Owned.3dshapes/Connector.step"))\n')
+        payload = b'ISO-10303-21;\nHEADER;\nENDSEC;\nEND-ISO-10303-21;\n'
+        sources = {'Owned.3dshapes/Connector.step': dict(source_url='https://example.invalid/owned.step',
+                                                     sha256=hashlib.sha256(payload).hexdigest())}
+        out = self.root / 'explicit-model'
+        with patch('agent_ee.models3d.urlopen', return_value=ModelResponse(payload)):
+            capture_design(self.design, out, kicad_root=self.kicad, stock_endpoint=self.url + '/stock',
+                           supplier_endpoint=self.url + '/supplier/{lcsc}', model_sources=sources)
+        self.assertEqual(json.loads((out / 'model-sources.json').read_bytes()), sources)
+        validate_capture_manifest(out)
+        compile_design(self.design, out, self.root / 'explicit-bundle')
+        receipt = json.loads((self.root / 'explicit-bundle/inputs/lib3d/.agent-ee-models.json').read_bytes())
+        self.assertEqual(receipt['files']['Owned.3dshapes/Connector.step']['sha256'], sources['Owned.3dshapes/Connector.step']['sha256'])

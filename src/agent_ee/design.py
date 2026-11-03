@@ -250,6 +250,13 @@ def validate(design, captures=None, *, cad_only=False):
                 "the packaged sourced profile currently supports nominal 1.2 mm only",
             )
     parts = design["parts"]
+    from .pad_correspondence import validate_declaration
+    for ref, part in parts.items():
+        if 'cpl_registration' in part:
+            try:
+                validate_declaration(part['cpl_registration'])
+            except ValueError as exc:
+                fail('parts.' + ref + '.cpl_registration', str(exc))
     if not isinstance(parts, dict) or not parts:
         fail("parts", "supply parts keyed by physical reference")
         parts = {}
@@ -286,7 +293,7 @@ def validate(design, captures=None, *, cad_only=False):
         if not re.fullmatch(r"[A-Z]+[1-9][0-9]*", ref):
             fail(path, "use a physical KiCad reference such as U1")
         if not fields(
-            p, ("lcsc", "value", "lib_id", "footprint", "group"), ("connector", "datasheet"), path
+            p, ("lcsc", "value", "lib_id", "footprint", "group"), ("connector", "datasheet", "cpl_registration"), path
         ):
             continue
         if not isinstance(p["lcsc"], str) or not re.fullmatch(
@@ -851,12 +858,12 @@ def validate(design, captures=None, *, cad_only=False):
                 entry = receipt["files"].get(rel)
                 if (
                     not entry
-                    or not entry.get("commit")
+                    or not (entry.get("commit") or entry.get('source') == 'declared-url')
                     or digest(root / "lib3d" / rel) != entry["sha256"]
                 ):
                     fail(
                         "parts.footprint",
-                        f"{rel}: run design capture for a hash-verified model at a pinned upstream revision",
+                        f"{rel}: run design capture for a model bound to a source URL and verified content digest",
                     )
         except (OSError, ValueError) as exc:
             fail(
@@ -891,6 +898,7 @@ def configure_parser(parser):
         if command == "compile":
             p.add_argument("--captures", required=True)
         else:
+            p.add_argument('--model-sources', help='JSON map of model paths to explicit HTTPS URLs and SHA-256 digests')
             p.add_argument(
                 "--kicad-root",
                 default="/usr/share/kicad",
@@ -911,6 +919,7 @@ def execute(args):
     else:
         from .design_capture import capture_design
 
-        capture_design(design, Path(args.out), kicad_root=Path(args.kicad_root))
+        capture_design(design, Path(args.out), kicad_root=Path(args.kicad_root),
+                       model_sources=load(args.model_sources) if args.model_sources else None)
     print(args.out)
     return 0

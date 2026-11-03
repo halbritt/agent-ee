@@ -156,11 +156,13 @@ def missing_models(design, cad, report):
             stock = stock_reference(model[1])
             if stock is None or stock[1] not in missing:
                 continue
-            tried = ", ".join(a["commit"] for a in missing[stock[1]].get("attempts", []))
+            tried = ", ".join(a.get("commit") or a.get("source_url", "unknown source")
+                              for a in missing[stock[1]].get("attempts", []))
             problems.append(
                 f"parts.{ref}.footprint: {part['footprint']} uses the 3D model {stock[1]}, which "
                 f"{report['repository']} does not have at the revisions recorded for this capture "
-                f"({tried}); choose a footprint whose model is there. models-report.json lists every model"
+                f"({tried}); choose a footprint whose model is there or supply --model-sources with "
+                "explicit URLs and SHA-256 digests. models-report.json lists every model"
             )
     return problems or [
         "parts.footprint: a stock 3D model was not found; see models-report.json"
@@ -215,15 +217,20 @@ def capture_supplier(lcsc, out, *, endpoint=SUPPLIER_ENDPOINT):
     )
 
 
-def _capture_design(design, out, *, kicad_root, stock_endpoint, supplier_endpoint):
+def _capture_design(design, out, *, kicad_root, stock_endpoint, supplier_endpoint, model_sources):
     """Download only. Partial captures remain inspectable after failure."""
     validate(design)
+    from .models3d import validate_model_sources
+    if model_sources is not None:
+        validate_model_sources(model_sources)
     if out.exists() or out.is_symlink():
         raise FileExistsError(
             f"{out}: choose a new capture directory; captures are immutable"
         )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.mkdir()
+    if model_sources is not None:
+        write_json(out / 'model-sources.json', model_sources)
     capture_cad(design, out / "cad", kicad_root)
     validate(design, out, cad_only=True)
     from .jlc_stock_capture import capture_jlc_stock
@@ -251,10 +258,21 @@ def _capture_design(design, out, *, kicad_root, stock_endpoint, supplier_endpoin
 
     acquire(design, out, catalog)
     for lcsc in sorted(catalog["parts"]):
-        capture_supplier(lcsc, out / "supplier", endpoint=supplier_endpoint)
+        from .easyeda_footprint import SupplierError
+        try:
+            capture_supplier(lcsc, out / "supplier", endpoint=supplier_endpoint)
+        except SupplierError as exc:
+            refs = sorted(ref for ref, part in design['parts'].items() if part['lcsc'] == lcsc)
+            gap = ' [tool_gap]' if exc.execution == 'unsupported' else ''
+            raise DesignError([
+                f'parts.{ref}.lcsc: {lcsc}: deterministic supplier {exc.mode}{gap}: {exc}; '
+                'inspect the retained supplier response; correct the source or extend the footprint reader'
+                for ref in refs
+            ]) from exc
     from .models3d import fetch_stock_references
 
-    report = fetch_stock_references(model_references(out / "cad"), out / "lib3d")
+    report = fetch_stock_references(model_references(out / "cad"), out / "lib3d",
+                                    **({'sources': model_sources} if model_sources is not None else {}))
     write_json(out / "models-report.json", report)
     if report["missing"]:
         raise DesignError(missing_models(design, out / "cad", report))
@@ -279,6 +297,7 @@ def capture_design(
     kicad_root=Path("/usr/share/kicad"),
     stock_endpoint=None,
     supplier_endpoint=SUPPLIER_ENDPOINT,
+    model_sources=None,
 ):
     try:
         return _capture_design(
@@ -287,13 +306,14 @@ def capture_design(
             kicad_root=kicad_root,
             stock_endpoint=stock_endpoint,
             supplier_endpoint=supplier_endpoint,
+            model_sources=model_sources,
         )
     except DesignError:
         raise
     except (OSError, ValueError, RuntimeError, KeyError, TypeError, IndexError) as exc:
         raise DesignError(
             [
-                f"captures: acquisition failed: {exc}; inspect retained partial files and retry into a new directory"
+                f"captures: acquisition failed: {exc}; inspect retained partial files to diagnose the failure"
             ]
         ) from exc
 

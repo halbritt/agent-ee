@@ -50,7 +50,6 @@ class SupplierParserTests(unittest.TestCase):
     def test_unknown_and_unqualified_records_are_unsupported_never_dropped(self):
         cases = {
             'PT~M 245 303 L 235 310 L 245 317 Z ~#880000~1~0~none~gge49~0~': 'unsupported_shape',
-            pad('POLYGON', 4000, 3000, 2, 2, '1', points='3999 2999 4001 2999 4000 3001'): 'unsupported_shape',
             pad('ELLIPSE', 4000, 3000, 2, 3, '1'): 'unsupported_shape',
             'VIA~4000~3000~2.4~~0.6~gge1~0': 'unsupported_shape',
             'TRACK~1~1~~3990 3000 4010 3000~gge2~0': 'unsupported_shape',

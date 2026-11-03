@@ -221,14 +221,21 @@ def _pair(raw, budget):
 
 
 def _primitive(raw, budget):
-    _record(raw, ('shape', 'center', 'size'), ('angle', 'radius'))
+    _record(raw, ('shape', 'center', 'size'), ('angle', 'radius', 'points'))
     shape = raw['shape']
-    if shape not in ('rect', 'circle', 'oval', 'roundrect'):
+    if shape not in ('rect', 'circle', 'oval', 'roundrect', 'polygon'):
         raise GeometryError('unsupported_shape', 'unsupported primitive shape')
     center, size = _pair(raw['center'], budget), _pair(raw['size'], budget)
     if min(size) <= 0:
         _malformed('primitive sizes must be positive')
     angle = budget.number(raw.get('angle', 0))
+    if shape == 'polygon':
+        if angle != 0 or 'radius' in raw or 'points' not in raw:
+            _malformed('polygon needs absolute points, angle zero and no radius')
+        points = _polygons([raw['points']], budget)[0]
+        return center, size, points
+    if 'points' in raw:
+        _malformed('points are only allowed for polygons')
     if angle % 90:
         raise GeometryError('unsupported_rotation', 'only exact quarter turns are qualified')
     if shape == 'circle' and size[0] != size[1]:
@@ -305,6 +312,8 @@ def _circle_envelopes(n, budget):
 
 def _envelope(primitive, circles, budget):
     (cx, cy), (w, h), radius = primitive
+    if isinstance(radius, tuple):
+        return radius, radius
     hx, hy = w/2-radius, h/2-radius
     corners = [(sx*hx, sy*hy) for sx in (-1, 1) for sy in (-1, 1)]
     if radius == 0:

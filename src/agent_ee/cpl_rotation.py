@@ -24,6 +24,10 @@ a JLC CPL and a per-designator evidence report:
   must equal the policy delta. A cycle mismatch is a reflection. Pin-1 polarity
   is required for `D#`/`LED#` and two-pad parts with a named board polarity;
   other parts explicitly record an ungraded polarity assessment.
+* A policy may instead declare a designator's electrical pad correspondence.
+  That orientation reference is rechecked against the board, supplier capture
+  and sealed pad nets without requiring a pad named 1. It cannot replace a
+  required polarized pin-1 check.
 
 Every CPL row is listed in exactly one of `applied_corrections` or
 `unmatched_footprints`. Designators the export manifest lists as excluded by
@@ -89,6 +93,7 @@ MODES = {
     'footprint_mismatch': 'malformed', 'binding_missing': 'unsupported', 'supplier_missing': 'unsupported',
     'pin1_unclassified': 'unsupported', 'pin1_frame_mismatch': 'unsupported', 'pad_set_mismatch': 'unsupported',
     'polarity_unknown': 'unsupported',
+    'pad_correspondence': 'unsupported',
     'reflection': 'ok', 'rotation_conflict': 'ok', 'polarity_conflict': 'ok',
 }
 DEFECTS = frozenset(('reflection', 'rotation_conflict', 'polarity_conflict'))
@@ -159,13 +164,29 @@ def load_policy(data):
                          parse_int=Decimal, parse_constant=constant)
     except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError(f'policy is not strict UTF-8 JSON: {exc}') from exc
-    if not isinstance(doc, dict) or set(doc) != POLICY_KEYS:
+    if not isinstance(doc, dict) or not POLICY_KEYS <= set(doc) <= POLICY_KEYS | {'pad_registrations'}:
         raise ValueError(f'policy keys must be exactly {sorted(POLICY_KEYS)}')
     if doc['schema_version'] != POLICY_SCHEMA_VERSION or isinstance(doc['schema_version'], bool):
         raise ValueError(f'unsupported policy schema_version {doc["schema_version"]!r}')
     policy = dict(schema_version=POLICY_SCHEMA_VERSION, policy_id=_text(doc['policy_id'], 'policy_id'),
                   provenance=_text(doc['provenance'], 'provenance'), footprint_rules=[],
                   component_overrides=[])
+    if 'pad_registrations' in doc:
+        from .pad_correspondence import validate_declaration
+        registrations = doc['pad_registrations']
+        if not isinstance(registrations, dict) or not registrations:
+            raise ValueError('pad_registrations must be a nonempty designator map')
+        for ref, registration in registrations.items():
+            if not isinstance(ref, str) or not REF_RE.fullmatch(ref):
+                raise ValueError('pad_registrations needs valid designators')
+            # Policy JSON numbers are Decimals; do not silently round angles.
+            if isinstance(registration, dict) and isinstance(registration.get('rotation_degrees'), Decimal):
+                angle = registration['rotation_degrees']
+                if angle != angle.to_integral_value():
+                    raise ValueError('pad registration rotation must be a quarter turn')
+                registration = dict(registration, rotation_degrees=int(angle))
+            validate_declaration(registration)
+            policy.setdefault('pad_registrations', {})[ref] = registration
     ids, designators = set(), set()
     for group, required, target in (('footprint_rules', RULE_KEYS, 'footprint_prefix'),
                                     ('component_overrides', OVERRIDE_KEYS, 'designator')):
@@ -493,7 +514,8 @@ def evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance
 
         _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm, delta,
               netlist=(netlist or {}).get(ref), pad_nets=(pad_nets or {}).get(ref, {}),
-              partnumber=(partnumbers or {}).get(ref), evidence=(evidence or {}).get(record.get('lcsc')))
+              partnumber=(partnumbers or {}).get(ref), evidence=(evidence or {}).get(record.get('lcsc')),
+              registration=policy.get('pad_registrations', {}).get(ref))
         for note in notes:
             note['execution'] = MODES[note['mode']]
         failures = [n for n in notes if n['mode'] not in DEFECTS]
@@ -572,7 +594,7 @@ def _same_pads_apart_from_extras(board, supplier):
 
 
 def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm, delta, *,
-          netlist=None, pad_nets=None, partnumber=None, evidence=None):
+          netlist=None, pad_nets=None, partnumber=None, evidence=None, registration=None):
     def mode(name, message):
         notes.append({'mode': name, 'message': message})
     lcsc = record['lcsc']
@@ -596,6 +618,26 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
             'package': package['identity']['package']}
     record['pin1'] = pin1
     board_numbers, supplier_numbers = sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)
+    if (registration is not None or board_numbers.count('1') != 1
+            or not _same_pads_apart_from_extras(board_numbers, supplier_numbers)):
+        from .pad_correspondence import derive
+        from .land_geometry import GeometryError
+        try:
+            correspondence = derive(native['pattern'], package['pattern'],
+                                    declaration=registration, nets=pad_nets)
+        except (PatternError, GeometryError) as exc:
+            return mode('pad_correspondence', f'{ref} {lcsc}: deterministic {exc.mode}: {exc}')
+        pin1.update(reference='electrical_pad_correspondence',
+                    offset_degrees=correspondence['rotation_degrees'], **correspondence)
+        board_name = board_basis = None
+        if POLARIZED.fullmatch(ref) or board_numbers == ['1', '2']:
+            board_name, board_basis, _ = _board_pin1_name(found, ref, netlist, lcsc, pad_nets, mode)
+        if select_polarity(record, ref, board_numbers, board_name, board_basis=board_basis):
+            return mode('polarity_unknown', 'explicit pad registration cannot replace a polarized pin-1 check')
+        if Decimal(correspondence['rotation_degrees']) != turn(delta):
+            mode('rotation_conflict', f'policy rotation {delta} differs from electrical registration '
+                                     f'{correspondence["rotation_degrees"]}')
+        return
     if not _same_pads_apart_from_extras(board_numbers, supplier_numbers):
         return mode('pad_set_mismatch', 'board and supplier pad numbers differ: '
                     f'{board_numbers} vs {supplier_numbers}')
@@ -954,7 +996,7 @@ def check_cpl_rotation(ctx):
     else:
         summary = f'JLC CPL {cpl_rel} from pad-box midpoints'
     ctx.result['summary'] = (f'{summary}; policy {policy["policy_id"]}: {len(applied)} corrected, '
-                             f'{len(unmatched)} unmatched; pin-1 frames checked against captured supplier '
+                             f'{len(unmatched)} unmatched; orientation references checked against captured supplier '
                              f'footprints; status PREVIEW_REQUIRED')
     ctx.result['limitations'] += [
         'PREVIEW_REQUIRED: rotation is not physically validated; inspect every part in the JLCPCB '

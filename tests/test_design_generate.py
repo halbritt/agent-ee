@@ -521,6 +521,28 @@ class GenerateTests(ScriptedLoop):
         self.assertIn('"source_url": "https://example.invalid/J1.step"', feedback)
         self.assertNotIn('Owned.3dshapes/R2.step', feedback)
 
+    def test_capture_infrastructure_path_is_not_a_design_field_and_capability_gap_keeps_part(self):
+        cases = (
+            ('- captures: acquisition failed; inspect retained files', [], 'Refusal does not name a design field'),
+            ('- captures.capture.json: unavailable', [], 'Refusal does not name a design field'),
+            ('- parts.J7.lcsc: C9: deterministic supplier unsupported_shape [tool_gap]',
+             ['parts.J7.lcsc'], 'Supplier footprint capability refused deterministically'),
+        )
+        for number, (message, fields, gap) in enumerate(cases):
+            self.responses = [self.response()]
+            original = self.step
+            def step(attempt, label, argv, seconds):
+                if label == 'capture':
+                    folder = attempt / 'capture-execution'
+                    folder.mkdir()
+                    (folder / 'stderr.log').write_text(message)
+                    return dict(execution='failed', exit_code=2)
+                return original(attempt, label, argv, seconds)
+            with self.subTest(message=message), patch.object(loop, 'run_step', side_effect=step):
+                report = loop.generate(self.requirements, self.root / ('capture-gap-' + str(number)), max_attempts=1)
+            self.assertEqual(report['attempts'][0]['refusal_classes'], fields)
+            self.assertEqual(report['attempts'][0]['tool_gap'], gap)
+
     def test_phase_logs_reach_reasons_only_as_bounded_tails(self):
         self.responses = [self.response(), self.response()]
         original = self.step

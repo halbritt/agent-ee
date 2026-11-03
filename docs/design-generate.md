@@ -147,7 +147,11 @@ An author attempt keeps `prompt.txt`, `response.json`, `statement.json`,
 `review-attempts/author/`, its read-only `inputs/`, and the capture, bundle,
 build, review and `*-execution` logs of the phases that ran. Compiler/capture
 refusal fields form stable `refusal_classes`; the exact message is retained. An
-unlocated capture or compile refusal is flagged as a tool gap.
+unlocated capture or compile refusal is flagged as a tool gap. `captures` and
+its child paths are infrastructure locations, not design fields. A deterministic
+unsupported supplier capability names the part and LCSC id, retains its parser
+mode and carries `[tool_gap]`; that marker records a tool gap even when the
+refusal also names a valid part field.
 
 What goes back to the author is bounded:
 

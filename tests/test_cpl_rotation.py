@@ -308,7 +308,7 @@ class EvaluateTests(unittest.TestCase):
         }
         for name, pads in cases.items():
             with self.subTest(name):
-                self.assertEqual([m['mode'] for m in self.footprint_pads_case(pads)['modes']], ['pad_set_mismatch'])
+                self.assertEqual([m['mode'] for m in self.footprint_pads_case(pads)['modes']], ['pad_correspondence'])
 
     def test_unmatched_footprint_whose_supplier_frame_needs_270_is_a_rotation_conflict(self):
         records, applied, unmatched = self.soic_case(lib='lib:SO8_custom')
