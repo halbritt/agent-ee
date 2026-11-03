@@ -689,6 +689,8 @@ class ReviewRegressionTests(unittest.TestCase):
                 via.SetPosition(self.k.VECTOR2I(*point))
                 local._via_site_blocked(self.board,via,terminal,rules,obstacles)
             self.assertLessEqual(examined.call_count,1496*len(baseline[0]))
+            print(dict(far_pads=8000,local_obstacles=[len(group) for group in obstacles],
+                       pad_shape_tests=examined.call_count,max_pad_shape_tests=1496*len(baseline[0])))
         # Collection happens once per tie, independent of the number of trial sites.
         with patch.object(local,'_via_obstacles',wraps=local._via_obstacles) as collect:
             local._tie(self.board,terminal,self.k.B_Cu,clock=Clock(60),cancel_dir=None,
@@ -746,8 +748,12 @@ class ReviewRegressionTests(unittest.TestCase):
         stub.SetLocked(False);self.k.SaveBoard(str(self.path),native)
         warning=dict(type='track_dangling',severity='warning',items=[dict(uuid=stub.m_Uuid.AsString())])
         report=dict(violations=[warning],unconnected_items=[])
-        for fault in ('opens','dangling','verify','native-nodes'):
+        original=self.path.read_bytes()
+        # Refill owns these zones, as in the controller's real cleanup request.
+        owned={z.m_Uuid.AsString() for z in native.Zones()}
+        for fault in ('opens','dangling','verify','native-nodes','clean'):
             with self.subTest(fault=fault):
+                self.path.write_bytes(original)
                 before=digest(self.path)
                 def prepare(argv,**kwargs):
                     request=read_json(argv[-1]);result=local.prepare_stub_trial(request)
@@ -765,11 +771,12 @@ class ReviewRegressionTests(unittest.TestCase):
                 with patch.object(job,'_run_child',side_effect=prepare), patch.object(job,'drc',return_value=(after,{})):
                     if fault=='verify':
                         with patch.object(local,'verify',side_effect=JobRefusal('deliberate protected verification failure')):
-                            result=job._cleanup_local_router_stubs(self.path,report,receipt,self.root/('cleanup-'+fault),clock=Clock(60),cancel_dir=None)
+                            result=job._cleanup_local_router_stubs(self.path,report,receipt,self.root/('cleanup-'+fault),owned_zone_uuids=owned,clock=Clock(60),cancel_dir=None)
                     else:
-                        result=job._cleanup_local_router_stubs(self.path,report,receipt,self.root/('cleanup-'+fault),clock=Clock(60),cancel_dir=None)
-                self.assertEqual(result['status'],'rejected',result)
-                self.assertEqual(digest(self.path),before)
+                        result=job._cleanup_local_router_stubs(self.path,report,receipt,self.root/('cleanup-'+fault),owned_zone_uuids=owned,clock=Clock(60),cancel_dir=None)
+                self.assertEqual(result['status'],'accepted' if fault=='clean' else 'rejected',result)
+                if fault=='clean':self.assertNotEqual(digest(self.path),before)
+                else:self.assertEqual(digest(self.path),before)
 
     def test_search_keeps_native_floor_from_an_earlier_escape(self):
         self.board.GetDesignSettings().m_MinClearance = 100_000
@@ -786,6 +793,17 @@ class ReviewRegressionTests(unittest.TestCase):
         via.SetWidth(600_000);via.SetDrill(300_000);via.SetLayerPair(self.k.F_Cu,self.k.B_Cu)
         via.SetNetCode(net)
         self.assertTrue(local._via_site_blocked(self.board,via,endpoints[0],local._rules(self.board,endpoints[0])))
+
+    def test_search_keeps_native_floor_from_an_existing_plane_via(self):
+        self.board.GetDesignSettings().m_MinClearance = 100_000
+        endpoints = [local.pad(self.board,p) for p in contract()['relations'][0]['return']]
+        via = self.k.PCB_VIA(self.board);via.SetPosition(self.k.VECTOR2I(31_500_000,31_575_000))
+        via.SetWidth(600_000);via.SetDrill(300_000);via.SetLayerPair(self.k.F_Cu,self.k.B_Cu)
+        via.SetNetCode(endpoints[0].GetNetCode());self.board.Add(via)
+        added = local._leg(self.board,*endpoints,clock=Clock(60),cancel_dir=None)
+        self.assertTrue(added)
+        for item in added:
+            self.assertFalse(item.GetEffectiveShape(self.k.F_Cu).Collide(via.GetEffectiveShape(self.k.F_Cu),100_000))
 
     def close_pair(self, same_bank=False, escape=False, gap=50_000):
         from copy import deepcopy

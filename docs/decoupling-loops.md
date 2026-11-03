@@ -227,8 +227,9 @@ sum of their direct supply and return distances, reaching nearer capacitor
 endpoints first. This avoids enclosing an unvisited capacitor with earlier
 legs. Legs remain stars from device pads; all geometry and bank checks apply.
 Via-site obstacles are collected once per tie from the 2 mm search disk plus
-the via radius and applicable clearance. Every retained obstacle still receives
-the exact native-shape test for each site.
+the via radius and applicable clearance. Retained pads and tracks still receive
+exact native-shape tests at each site; drawing boxes remain conservative
+obstacles.
 
 Known junction limitation: the typed connectivity check locates in-pad junctions
 using centreline closest points, rather than the complete copper overlap.

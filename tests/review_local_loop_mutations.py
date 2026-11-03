@@ -431,6 +431,14 @@ MUTANTS.update({'R3_M1_corridor_counts_only_contained_boxes': ([('src/agent_ee/l
                                                       "    for relation in document['relations']:\n")],
                                                     ['test_local_decoupling.ReviewRegressionTests.test_three_capacitor_bank_reaches_nearest_capacitor_before_enclosing_it'])})
 
+# R3_M3e's class-to-floor change is intended in round six. Removing the via
+# fabrication floor instead is a non-equivalent fault and must be killed.
+MUTANTS['R7_same_net_via_obstacle_loses_floor'] = ([(
+    'src/agent_ee/local_decoupling.py',
+    "            track_margin = max(0, margin - _rules(board, item)['clearance'] + _separation_floor(board))\n",
+    "            track_margin = max(0, margin - _rules(board, item)['clearance'] + (0 if item.GetClass() == 'PCB_VIA' else _separation_floor(board)))\n")],
+    ['test_local_decoupling.ReviewRegressionTests.test_search_keeps_native_floor_from_an_existing_plane_via'])
+
 def run(name):
     edits, tests = MUTANTS[name]
     work = WORK / name
