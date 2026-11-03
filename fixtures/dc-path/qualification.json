@@ -5,7 +5,7 @@
   "max_loads": 8,
   "max_nodes": 32,
   "min_length_width_ratio": 10,
-  "model_sha256": "b37f924730616f6f705b1a102136c6bc74f6256c4628410683f918bcd14387cb",
+  "model_sha256": "d86ca443b5e8c0b798b1c470a7d67aeae1e1b4d22f94f9eb9c77bb9679607f8a",
   "physics": "ideal rho*L/A; endpoint contacts; external temperature; fixed topology",
   "policy": "endpoint-planar-dc/2",
   "probe_sha256": "757f65989f18bdf797ed79f96fe152c58f3d2ccaf6f879b52f6df1358485753e",

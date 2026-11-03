@@ -501,7 +501,7 @@ def check_dc_path(ctx):
         receipt['contract'] = c
         receipt['board_sha256'] = ctx.manifest['files'][ctx.scope['board']]
         geometry = ctx.load_json('geometry.json', 'native DC geometry')
-        receipt['pcbnew_version'] = geometry.get('pcbnew_version')
+        receipt['pcbnew_version'] = geometry.get('pcbnew_version') if isinstance(geometry, dict) else None
         network = extract_network(geometry, c)
         write_json(ctx.work / 'network.json', network)
         ctx.evidence('network.json')

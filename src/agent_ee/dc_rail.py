@@ -219,7 +219,7 @@ def check(ctx, c, receipt):
                  ctx.candidate_path(ctx.scope['board']), '--out', '/work/geometry.json'], timeout=60)
     unchanged_tools(receipt['tools'])
     geometry = ctx.load_json('geometry.json', 'native rail geometry')
-    receipt['pcbnew_version'] = geometry.get('pcbnew_version')
+    receipt['pcbnew_version'] = geometry.get('pcbnew_version') if isinstance(geometry, dict) else None
     analysis = bound(geometry, c)
     metrics = {p['id'] + '_drop': {'value': analysis['paths'][p['id']]['drop_bound_v'],
         'lower': 0., 'upper': analysis['paths'][p['id']]['drop_bound_v'], 'unit': 'V',

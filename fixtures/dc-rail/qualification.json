@@ -1,7 +1,7 @@
 {
-  "dispatcher_sha256": "b37f924730616f6f705b1a102136c6bc74f6256c4628410683f918bcd14387cb",
+  "dispatcher_sha256": "d86ca443b5e8c0b798b1c470a7d67aeae1e1b4d22f94f9eb9c77bb9679607f8a",
   "kicad_line": "10.x",
-  "model_sha256": "bfde433d62d79d518fd170f0198d9cbedede355da334092d1dbba6d882407f71",
+  "model_sha256": "8c5adce83ada3625c4c8ce4c491527a3cab9f6c1530d77e7c8062ae06838ff4c",
   "physics": "sum rho*L/A; full-height circular barrels; ideal pad/junction contacts",
   "policy": "whole-net-ideal-copper-bound/1",
   "prerequisite": "same-candidate full native DRC, no findings or ignored conductive checks",

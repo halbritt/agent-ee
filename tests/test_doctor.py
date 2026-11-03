@@ -10,6 +10,11 @@ from unittest.mock import patch
 
 from agent_ee import native_run
 from agent_ee.cli import main
+from agent_ee.kicad_install import RECORD_ENV
+try:
+    from test_kicad_install import record as install_record
+except ImportError:  # module-qualified invocation from the repository root
+    from tests.test_kicad_install import record as install_record
 from agent_ee.run_record import runtime_files
 from agent_ee.preflight import runtime_drift
 
@@ -33,8 +38,10 @@ class DoctorTests(unittest.TestCase):
         self.missing = set()
         self.pcbnew_fails = False
         self.calls = []
+        # A host install without the image's KiCad install record, unless a test writes one.
         environment = patch.dict("os.environ", {"AGENT_EE_KICAD_HAPPY": "",
-                                                 "AGENT_EE_RUST_PLANNER": str(self.binaries["agent-ee-placement"])})
+                                                 "AGENT_EE_RUST_PLANNER": str(self.binaries["agent-ee-placement"]),
+                                                 RECORD_ENV: str(self.root / "kicad.install.json")})
         environment.start()
         self.addCleanup(environment.stop)
 
@@ -94,6 +101,24 @@ class DoctorTests(unittest.TestCase):
         self.assertNotIn("skipped", report)
         self.assertEqual(probes["kicad-cli"]["erc_json_coordinates"],
                          {"version": "10.0.7", "regime": "native", "scale": 1})
+
+    def test_kicad_install_record_must_name_the_kicad_cli_that_runs(self):
+        path = self.root / "kicad.install.json"
+        for version, expected_code in (("10.0.7", 0), ("10.0.8", 1)):
+            with self.subTest(version=version):
+                path.write_text(json.dumps(install_record(version)))
+                code, report = self.doctor()
+                probe = report["prerequisites"]["kicad-cli"]
+                self.assertEqual(probe["install_record"]["record"]["version"], version)
+                self.assertEqual(code, expected_code)
+                if expected_code:
+                    self.assertIn("differs from the KiCad install record", probe["error"])
+                else:
+                    self.assertNotIn("error", probe)
+        path.write_text("{")
+        code, report = self.doctor()
+        self.assertEqual(code, 1)
+        self.assertIn("KiCad install record", report["prerequisites"]["kicad-cli"]["error"])
 
     def planner_receipt(self, binary_sha256=None):
         path = self.binaries["agent-ee-placement"].with_name("agent-ee-placement.json")

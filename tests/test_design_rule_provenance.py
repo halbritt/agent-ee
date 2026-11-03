@@ -632,7 +632,7 @@ class NativeDefaultTableTest(unittest.TestCase):
             bind_project(project, record)
             write_json(board.with_suffix('.kicad_pro'), project)
             script = ('import pcbnew,sys; '
-                'print(pcbnew.GetBuildVersion()); '
+                'print("build:", pcbnew.GetBuildVersion()); '
                 'b=pcbnew.LoadBoard(sys.argv[1]); pcbnew.SaveBoard(sys.argv[1],b)')
             result = subprocess.run(['/usr/bin/python3', '-c', script, str(board)],
                                     capture_output=True, text=True, timeout=60)
@@ -640,8 +640,7 @@ class NativeDefaultTableTest(unittest.TestCase):
             # The table records the release it was first observed on (VERSION); the installed
             # release, whichever it is, must save the same defaults.
             self.assertRegex(VERSION, r'^10\.\d+\.\d+$')
-            self.assertRegex(result.stdout.strip().splitlines()[-1],
-                             '^' + re.escape(recorded_kicad_version()) + r'(?:\D|$)')
+            self.assertRegex(result.stdout, '(?m)^build: ' + re.escape(recorded_kicad_version()) + r'(?:\D|$)')
             saved = read_json(board.with_suffix('.kicad_pro'))
             rows = geometry_defaults(saved, {})
             self.assertEqual({r['setting']: r['value'] for r in rows},

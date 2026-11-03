@@ -93,8 +93,10 @@ class NetclassTests(unittest.TestCase):
             generated = subprocess.run(['/usr/bin/python3', str(FIXTURE/'generate.py'), str(out)],
                                        capture_output=True, text=True, timeout=120)
             self.assertEqual(generated.returncode, 0, generated.stderr)
-            writer = generated.stdout.strip().splitlines()[-1]
-            self.assertTrue(writer.startswith(recorded_kicad_version()), writer)
+            writers = [line.split(': ', 1)[1] for line in generated.stdout.splitlines()
+                       if line.startswith('native_writer: ')]
+            self.assertEqual(len(writers), 1, generated.stdout)
+            self.assertTrue(writers[0].startswith(recorded_kicad_version() + '-'), writers[0])
             self.assertEqual(out.read_bytes(), (FIXTURE/'native.kicad_pro').read_bytes())
 
     def test_qualification_names_a_writer_build_of_the_10x_line(self):
