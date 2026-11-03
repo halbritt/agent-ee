@@ -641,13 +641,6 @@ def _generate(requirements_path, out, options, identity=None):
         report['duration_s'] = time.monotonic() - start
         write_json(out / 'generate-report.json', report)
 
-    def settle(status, reason):
-        """No attempt row stays running: mark one left in flight and rewrite its record."""
-        for row in report['attempts']:
-            if row['status'] == 'running':
-                row.update(status=status, reason=reason)
-                write_json(out / row['path'] / 'attempt.json', row)
-
     save()
     try:
         for number in range(1, max_attempts + 1):
@@ -658,10 +651,11 @@ def _generate(requirements_path, out, options, identity=None):
             attempt.mkdir()
             row = dict(number=number, kind='search_retry' if retry else 'author',
                 path=attempt.name, status='running', duration_s=0, refusal_classes=[], failed_checks=[])
-            report['attempts'].append(row)
             began = time.monotonic()
-            save()
             try:
+                # Listed inside the try: every way out of it gives the row a final status.
+                report['attempts'].append(row)
+                save()
                 if retry:
                     # No model call: the source attempt's response and captures with more seeds.
                     capture, response = retry['capture'], retry['response']
@@ -824,7 +818,7 @@ def _generate(requirements_path, out, options, identity=None):
             except KeyboardInterrupt:
                 row.update(status='interrupted', reason='Coordinator interrupted; partial artifacts retained')
                 raise
-            except Exception as exc:
+            except BaseException as exc:
                 row.update(status='error', reason=f'{type(exc).__name__}: {exc}')
                 raise
             finally:
@@ -842,12 +836,10 @@ def _generate(requirements_path, out, options, identity=None):
             report['status'] = 'time_exhausted' if time.monotonic() >= deadline else 'attempts_exhausted'
     except KeyboardInterrupt:
         report['status'] = 'interrupted'
-        settle('interrupted', 'Coordinator interrupted; partial artifacts retained')
         raise
     except BaseException as exc:
         # Preserve an unexpected coordinator failure and propagate it to the caller.
         report.update(status='error', error=f'{type(exc).__name__}: {exc}')
-        settle('error', report['error'])
         raise
     finally:
         if not report['accepted']:

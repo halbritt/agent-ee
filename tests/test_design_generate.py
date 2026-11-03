@@ -30,14 +30,19 @@ REQUIREMENTS = 'Build a compact divider. Measure it on hardware.'
 QUOTE = 'Build a compact divider'
 AUTHORITY = 'Agent-authored choices and requirement quotations; not owner or datasheet rulings.'
 # A phase that starts a descendant in its own session (as sandbox launchers and host runs
-# do), records both pids, waits argv[2] seconds and exits with status argv[3].
+# do), records both pids, waits argv[2] seconds and exits with status argv[3]. Interrupted,
+# it records that it could unwind.
 PHASE = textwrap.dedent('''
     import os, subprocess, sys, time
     detached = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'], start_new_session=True)
     with open(sys.argv[1] + '.tmp', 'w') as stream:
         stream.write(f'{os.getpid()} {detached.pid}')
     os.replace(sys.argv[1] + '.tmp', sys.argv[1])
-    time.sleep(float(sys.argv[2]))
+    try:
+        time.sleep(float(sys.argv[2]))
+    except KeyboardInterrupt:
+        open(sys.argv[1] + '.unwound', 'w').close()
+        raise
     sys.exit(int(sys.argv[3]))
 ''')
 # A benchmark of three designs whose second design's build is a real PHASE under run_step.
@@ -309,6 +314,7 @@ class GenerateTests(ScriptedLoop):
             report = self.generate(max_seconds=100, author_seconds=600, review_profile=self.profile())
         self.assertTrue(report['accepted'])
         self.assertEqual(self.seat_options[0]['timeout'], 100)
+        self.assertIn('Return the final envelope within 100 seconds.', self.prompts[0])
         self.assertEqual([(label, seconds) for _, label, seconds in self.steps],
                          [('capture', 70), ('compile', 70), ('build', 70), ('review', 70)])
         review = self.argv['review']
@@ -1052,6 +1058,8 @@ class StopTests(ScriptedLoop):
         pids = recorded_pids(marker)
         self.assertTrue(wait_for(lambda: not any(alive(pid) for pid in pids), 10), pids)
         self.assertEqual(json.loads((attempt / 'build-execution/execution.json').read_text())['execution'], 'interrupted')
+        # The phase was asked to unwind (SIGINT) before its tree was killed.
+        self.assertTrue((self.root / 'pids.unwound').is_file())
 
     def test_finished_phase_keeps_its_exit_status_and_leaves_no_process(self):
         marker, attempt = self.root / 'pids', self.root / 'attempt'
