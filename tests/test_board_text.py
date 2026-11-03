@@ -362,6 +362,19 @@ via.SetFrontTentingMode(k.TENTING_MODE_TENTED)
 assert 'silk_to_mask_clearance' not in evaluate(b,doc,limits)['records'][0]['violations']
 ''')
 
+    def test_mask_opening_remains_an_obstacle_when_through_hole_copper_is_not_flashed(self):
+        self.native('''
+text=next(i for i in fp.GraphicalItems() if i.GetClass()=='PCB_TEXT')
+right=text.GetEffectiveShape().BBox().GetRight()
+q=k.PAD(fp);q.SetNumber('2');q.SetAttribute(k.PAD_ATTRIB_PTH);q.SetShape(k.PAD_SHAPE_RECT)
+q.SetSize(k.VECTOR2I(1000000,1000000));q.SetDrillSize(k.VECTOR2I(200000,200000))
+layers=k.LSET();layers.AddLayer(k.F_Mask);q.SetLayerSet(layers)
+q.SetPosition(k.VECTOR2I(right+149999+500000,text.GetPosition().y));fp.Add(q)
+assert not q.FlashLayer(k.F_Cu) and q.FlashLayer(k.F_Mask)
+assert q.GetEffectiveShape(k.F_Cu).BBox().GetWidth() < q.GetEffectiveShape(k.F_Mask).BBox().GetWidth()
+assert 'silk_to_mask_clearance' in evaluate(b,doc,limits)['records'][0]['violations']
+''')
+
     def test_existing_stock_artwork_is_not_graded_by_generated_text_rules(self):
         self.native('''
 stock=k.PCB_SHAPE(b,k.SHAPE_T_SEGMENT);stock.SetLayer(k.F_SilkS)

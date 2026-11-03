@@ -327,7 +327,6 @@ def _pad_mask_conflicts(text, board, layer, clearance):
     pads. Custom pad erosion needs a separate geometric qualification.
     """
     import pcbnew as k
-    copper = k.F_Cu if layer == k.F_Mask else k.B_Cu
     ink = text.GetEffectiveShape()
     conflicts = []
     for fp in board.GetFootprints():
@@ -343,9 +342,9 @@ def _pad_mask_conflicts(text, board, layer, clearance):
                     continue
                 aperture = k.PAD(pad)
                 aperture.SetSize(layer, size)
-                shape, distance = aperture.GetEffectiveShape(copper), clearance
+                shape, distance = aperture.GetEffectiveShape(layer), clearance
             else:
-                shape, distance = pad.GetEffectiveShape(copper), clearance + margin
+                shape, distance = pad.GetEffectiveShape(layer), clearance + margin
             if ink.Collide(shape, distance):
                 conflicts.append(pad.m_Uuid.AsString())
     return conflicts
