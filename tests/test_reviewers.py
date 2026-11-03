@@ -40,3 +40,20 @@ class StandaloneSeatTests(unittest.TestCase):
                 patch('agent_ee.reviewers.dispatch', side_effect=AssertionError('oversized schema dispatched')):
             with self.assertRaisesRegex(ValueError, 'exceeds 1000 enum values'):
                 reviewer_call(temp, 'shortlist-libraries', {'harness': 'claude'}, '', schema, 10)
+
+    def test_production_call_without_context_refuses_missing_selected_binary(self):
+        for harness in ('claude', 'codex', 'agy'):
+            for label in ('shortlist-libraries', 'extraction-a'):
+                runtime = {harness: {'path': None, 'sha256': None}}
+                with self.subTest(harness=harness, label=label), tempfile.TemporaryDirectory() as temp, \
+                        patch('agent_ee.run_record._runtime_files', return_value=runtime), \
+                        patch('agent_ee.native_run.run', side_effect=AssertionError('native process launched')), \
+                        patch('agent_ee.reviewers.claude_call', side_effect=AssertionError('Claude seat launched')), \
+                        patch('agent_ee.harnesses.native_call', side_effect=AssertionError('model seat launched')):
+                    definition = dict(harness=harness, model='test', effort='low')
+                    record, value = reviewer_call(temp, label, definition, '', {}, 10)
+                    self.assertEqual(record['execution'], 'not_run')
+                    self.assertIn('missing_binary:' + harness, record['error'])
+                    self.assertIsNone(value)
+                    receipt = read_json(Path(temp) / record['preflight']['path'])
+                    self.assertEqual(receipt['result'], 'refused')

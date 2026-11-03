@@ -435,12 +435,18 @@ external checkout of `https://github.com/HZou9/PCBSchemaGen_v2` at
 `framework/task_config.yaml`, `component.json`, `kg_component.json` and
 `kg/kg_open_schematics.json`. Install the checkout's Python requirements in
 the test environment. Agent-ee does not vendor this verifier or its graphs.
-Provision it outside the image and mount it read-only into the test container,
-then set `PCBSCHEMAGEN_ROOT` to that container path. The default is
+Provision it outside the image, with the checkout and its Git metadata owned by
+the UID/GID of the user that runs the tests inside the container. As with the
+fome-mc store in `ci.yml`, Git refuses a checkout owned by another user. Mount
+it read-only into the test container, then set `PCBSCHEMAGEN_ROOT` to that
+container path. The default is
 `~/git/PCBSchemaGen_v2`. See the
 [benchmarking guide](benchmarking-guide.md#executing-pcbschemagen-benchmarks).
-The current image and CI workflow do not provision it automatically. Adapter
-translation and dependency-refusal tests run without it.
+The CI runner and `ae-ci-exec` do not provision this input yet. A full strict
+suite therefore reports the 12 real-verifier tests as not executed and fails
+until the input is supplied. Adapter translation and dependency-refusal tests
+run without it. The checkout check requires tracked files to match the pin;
+untracked import bytecode does not make the checkout dirty.
 
 [test_pod_j1_courtyard.py](../tests/test_pod_j1_courtyard.py) uses committed
 fixtures and needs only the public TE drawing of the AMPSEAL connector, which

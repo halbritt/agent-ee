@@ -35,7 +35,7 @@ class PCBSchemaGenUnavailable(PCBSchemaGenInputError):
 
 
 def check_pcbschemagen_checkout(root: Union[str, Path]) -> Path:
-    """Require the pinned, clean external verifier and its knowledge graphs."""
+    """Require the pinned external verifier with unchanged tracked inputs."""
     root = Path(root).expanduser().resolve()
     if not root.is_dir():
         raise PCBSchemaGenUnavailable(
@@ -50,7 +50,8 @@ def check_pcbschemagen_checkout(root: Union[str, Path]) -> Path:
         return result.stdout.strip()
     if git('rev-parse', 'HEAD') != PCBSCHEMAGEN_COMMIT:
         raise PCBSchemaGenInputError(f"PCBSchemaGen checkout must be at {PCBSCHEMAGEN_COMMIT}: {root}")
-    if git('status', '--porcelain', '--untracked-files=all'):
+    # Imports can write untracked bytecode even within the first verification.
+    if git('status', '--porcelain', '--untracked-files=no'):
         raise PCBSchemaGenInputError(f"PCBSchemaGen checkout must be clean: {root}")
     for name in ('framework/topo/kg_loader.py', 'framework/task_config.yaml',
                  'component.json', 'kg_component.json', 'kg/kg_open_schematics.json'):

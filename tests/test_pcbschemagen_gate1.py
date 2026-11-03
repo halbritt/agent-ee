@@ -3,9 +3,12 @@
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 
 from agent_ee.pcbschemagen_gate1 import (
@@ -359,6 +362,57 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
 
 
 class TestVerifierBoundary(unittest.TestCase):
+    def test_bytecode_imports_allow_repeat_loads_but_tracked_edits_are_refused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            files = {
+                'framework/topo/kg_loader.py': (
+                    'class KGStore:\n'
+                    '    def __init__(self, base_dir):\n'
+                    '        self.component_map = {}\n'
+                    '        self.kg_component_map = {}\n'),
+                'framework/task_config.yaml': '{}',
+                'component.json': '{"components": []}',
+                'kg_component.json': '{"components": []}',
+                'kg/kg_open_schematics.json': '{"components": []}',
+                'yaml.py': '# Owned availability fixture, not a YAML parser.\n',
+                'networkx.py': '# Owned availability fixture, not a graph implementation.\n',
+            }
+            for name, contents in files.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(contents)
+            def git(*args):
+                return subprocess.run(['git', '-C', str(root), *args], check=True,
+                                      capture_output=True, text=True).stdout.strip()
+            git('init', '-q')
+            git('add', '.')
+            git('-c', 'user.name=fixture', '-c', 'user.email=fixture@invalid',
+                'commit', '-q', '-m', 'Owned verifier import fixture')
+            commit = git('rev-parse', 'HEAD')
+            script = textwrap.dedent('''
+                import sys
+                import unittest
+                from pathlib import Path
+                from agent_ee import pcbschemagen_gate1 as adapter
+                root = Path(sys.argv[1])
+                adapter.PCBSCHEMAGEN_COMMIT = sys.argv[2]
+                assert not sys.dont_write_bytecode, 'bytecode must be enabled'
+                sys.path.insert(0, str(root))
+                for _ in range(2):
+                    adapter._ensure_topo_imports(root)
+                    adapter.Gate1KGStore(root)
+                assert list(root.glob('framework/topo/__pycache__/*.pyc')), 'no bytecode written'
+                (root / 'component.json').write_text('{"components": [], "modified": true}')
+                with unittest.TestCase().assertRaisesRegex(adapter.PCBSchemaGenInputError, 'must be clean'):
+                    adapter.check_pcbschemagen_checkout(root)
+            ''')
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ('PYTHONDONTWRITEBYTECODE', 'PYTHONPYCACHEPREFIX')}
+            result = subprocess.run([sys.executable, '-c', script, str(root), commit],
+                                    env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_missing_checkout_is_explicit_even_after_a_verifier_was_loaded(self):
         with tempfile.TemporaryDirectory() as temp:
             missing = Path(temp) / 'absent'

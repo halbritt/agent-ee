@@ -183,7 +183,7 @@ export PCBSCHEMAGEN_ROOT="$HOME/git/PCBSchemaGen_v2"
 Install that checkout's `requirements.txt` in the Python environment used for
 the benchmark (`networkx>=3.0` and `pyyaml>=6.0`). Both CLIs also accept
 `--pcbschemagen-root DIR`; the default is `$PCBSCHEMAGEN_ROOT` or
-`~/git/PCBSchemaGen_v2`. The adapter verifies the revision and clean worktree,
+`~/git/PCBSchemaGen_v2`. The adapter verifies the revision and unchanged tracked files,
 requires the knowledge graphs and task configuration, and records the verifier
 commit in Gate 1 reports. It never fetches a checkout or falls back to another
 one. A missing or invalid verifier produces a CLI input error (exit 2), without

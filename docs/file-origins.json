@@ -4438,6 +4438,16 @@
         "AE"
       ],
       "reviewed": "Original synthetic KiCad syntax, EasyEDA fixture geometry and PDF envelope bytes for offline compiler tests; no supplier CAD or vendor document is copied."
+    },
+    {
+      "paths": [
+        "tests/fixtures/pcbschemagen-adapter.xml"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original minimal XML inventory for the PCBSchemaGen adapter tests; pin names and numbers are facts, with no upstream implementation or descriptive text copied."
     }
   ]
 }
