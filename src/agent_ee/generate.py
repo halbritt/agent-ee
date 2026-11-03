@@ -69,7 +69,33 @@ CATALOG_HEADER_SCHEMAS = {
     'five_column': CATALOG_COLUMNS,
     'four_column': CATALOG_COLUMNS_4,
 }
-PACKAGE_MAP_PATH = REPO_ROOT / 'references/package-map/kicad-10.0.7-lcsc-1.json'
+PACKAGE_MAPS = REPO_ROOT / 'references/package-map'
+
+
+def package_map_path():
+    """The package map derived from the installed footprint library release.
+
+    Tables are references/package-map/kicad-<release>-lcsc-1.json. The image install
+    record names the installed kicad-footprints release; without a record, or without a
+    table for that release, the table of the newest release is used. Either way the run
+    records the table's version (package_consistency details.mapping)."""
+    from .kicad_install import read_install_record, release, upstream_version
+    tables = {release(p.name[len('kicad-'):-len('-lcsc-1.json')]): p
+              for p in PACKAGE_MAPS.glob('kicad-*-lcsc-1.json')}
+    tables.pop(None, None)
+    if not tables:
+        return PACKAGE_MAPS / 'missing-package-map.json'
+    try:
+        installed = read_install_record()
+    except (OSError, ValueError):
+        installed = None
+    if installed is not None:
+        wanted = release(upstream_version(installed['record']['packages']['kicad-footprints']))
+        if wanted in tables:
+            return tables[wanted]
+    return tables[max(tables)]
+
+
 # Captured footprint library map for library-less footprints in the 4-column fome-mc BOM
 # (from fome-mc 11f03c8/e7f5ae3 libs/footprints/<Library>.pretty/<Footprint>.kicad_mod).
 FOME_FOOTPRINT_MAP = {
@@ -609,8 +635,9 @@ def captured_footprint_map():
     if _CAPTURED_FOOTPRINT_MAP is not None:
         return dict(_CAPTURED_FOOTPRINT_MAP)
     table = dict(FOME_FOOTPRINT_MAP)
-    if PACKAGE_MAP_PATH.is_file():
-        package_map = json.loads(PACKAGE_MAP_PATH.read_text())
+    package_map_file = package_map_path()
+    if package_map_file.is_file():
+        package_map = json.loads(package_map_file.read_text())
         for full_name in package_map.get('footprints', {}):
             library, _, short_name = full_name.partition(':')
             if not library or not short_name:

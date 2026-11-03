@@ -1,8 +1,14 @@
 """Derive the explicit KiCad footprint / LCSC package-name table.
 
-Usage: python3 -I generate.py <kicad footprint root> <output.json>
+Usage: python3 -I generate.py <kicad footprint root> <output.json> [<release>]
 
-Footprint IDs come only from file names present in the pinned KiCad library
+<release> is the kicad-footprints release of that root, by default the one the
+image install record (/opt/kicad.install.json) names. The table is named for it,
+kicad-<release>-lcsc-1, and agent-ee selects the table of the installed release
+(generate.package_map_path). After a KiCad update, run this in the rebuilt image
+and commit the new table.
+
+Footprint IDs come only from file names present in that KiCad library
 directory; each is parsed by KiCad library-convention names (imperial/metric
 chip codes, body WxL, pitch, pin count) and kept only when every dimension
 agrees with the rule below. LCSC package names are an original declared
@@ -12,6 +18,7 @@ fixed (for example "SOP-8") are deliberately absent, so they stay unknown.
 The check reads only the generated table; it never parses names at run time.
 """
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -113,11 +120,24 @@ def packages(footprint_table):
     return table
 
 
-def main(root, output):
+def installed_release():
+    """The kicad-footprints release the image install record names."""
+    record = Path(os.environ.get('AGENT_EE_KICAD_INSTALL_RECORD') or '/opt/kicad.install.json')
+    package = json.loads(record.read_text())['packages']['kicad-footprints']
+    match = re.fullmatch(r'(?:\d+:)?(\d+\.\d+\.\d+)(?:[~+-].*)?', package)
+    if match is None:
+        raise SystemExit(f'kicad-footprints {package!r} names no release')
+    return match[1]
+
+
+def main(root, output, release=None):
     root = Path(root)
+    release = installed_release() if release is None else release
+    if not re.fullmatch(r'\d+\.\d+\.\d+', release):
+        raise SystemExit(f'{release!r} is not a MAJOR.MINOR.PATCH release')
     footprint_table = footprints(root)
-    table = {'schema': 'agent-ee.package-map/1', 'version': 'kicad-10.0.7-lcsc-1',
-             'derivation': {'footprint_library': 'kicad-footprints 10.0.7',
+    table = {'schema': 'agent-ee.package-map/1', 'version': f'kicad-{release}-lcsc-1',
+             'derivation': {'footprint_library': f'kicad-footprints {release}',
                             'generator': 'references/package-map/generate.py',
                             'observations': OBSERVED},
              'rules': RULES, 'footprints': footprint_table, 'packages': packages(footprint_table)}

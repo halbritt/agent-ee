@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_ee import kicad_install
+from agent_ee import generate, kicad_install
 from agent_ee.kicad_install import check_install_record, line_release, read_install_record, upstream_version
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -125,6 +125,28 @@ class InstallerStageTests(unittest.TestCase):
             spec.loader.exec_module(installer)
             self.assertEqual(installer.contract.INSTALL_RECORD_SCHEMA, kicad_install.INSTALL_RECORD_SCHEMA)
             self.assertEqual(installer.board_counts(installer.BOARD.read_text()), (2, 1))
+
+
+class PackageMapSelectionTests(unittest.TestCase):
+    """The package map of the installed footprint release, else the newest table; the run records which."""
+
+    def test_selection_follows_the_recorded_footprint_release(self):
+        tables = sorted(p.name for p in generate.PACKAGE_MAPS.glob('kicad-*-lcsc-1.json'))
+        self.assertIn('kicad-10.0.7-lcsc-1.json', tables)
+        newest = max(tables, key=lambda name: kicad_install.release(name[len('kicad-'):-len('-lcsc-1.json')]))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'kicad.install.json'
+            with patch.dict(os.environ, {kicad_install.RECORD_ENV: str(path)}):
+                self.assertEqual(generate.package_map_path().name, newest)
+                for version, expected in (('10.0.7', 'kicad-10.0.7-lcsc-1.json'), ('10.0.99', newest)):
+                    with self.subTest(version=version):
+                        path.write_text(json.dumps(record(version)))
+                        selected = generate.package_map_path()
+                        self.assertEqual(selected.name, expected)
+                        table = json.loads(selected.read_text())
+                        self.assertEqual(table['version'], selected.name[:-len('.json')])
+                        self.assertEqual(table['derivation']['footprint_library'],
+                                         'kicad-footprints ' + selected.name[len('kicad-'):-len('-lcsc-1.json')])
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-"""Native footprint/LCSC package names against a pinned catalog and captured table."""
+"""Native footprint/LCSC package names against a captured catalog snapshot and table."""
 import copy
 import hashlib
 import importlib.util
@@ -15,12 +15,14 @@ from agent_ee.baseline import freeze_evidence, load_baseline, validate_witnesses
 from agent_ee.candidate import capture, verify_snapshot
 from agent_ee.catalog import capture_catalog
 from agent_ee.checks import CheckError, Ctx, parse_xml_netlist, run_checks
+from agent_ee.generate import package_map_path
 from agent_ee.package_consistency import check_package_consistency, evaluate, load_table, validate_table
 from agent_ee.storage import canonical, digest, read_json, write_json
 from toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
-TABLE = ROOT / 'references/package-map/kicad-10.0.7-lcsc-1.json'
+# The table of the installed footprint release (newest committed one without an install record).
+TABLE = package_map_path()
 FIXTURE = ROOT / 'fixtures/package-consistency'
 
 
@@ -55,13 +57,16 @@ class TableTests(unittest.TestCase):
         self.assertNotIn('Package_TO_SOT_SMD:SOT-23W', footprints)
         self.assertNotIn('Package_DFN_QFN:QFN-16-1EP_4x4mm_P0.65mm_EP2.1x2.1mm', footprints)
 
-    def test_committed_table_is_generated_from_pinned_library_names(self):
+    def test_committed_table_is_generated_from_the_installed_library_names(self):
+        # The installed footprint release, named by the install record, has its own committed table.
         require_toolchain(native=True)
+        release = table_generator.installed_release()
+        self.assertEqual(TABLE.name, f'kicad-{release}-lcsc-1.json')
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / 'table.json'
             table_generator.main('/usr/share/kicad/footprints', output)
             self.assertEqual(output.read_bytes(), TABLE.read_bytes(),
-                             'installed footprint library differs from the pinned table derivation')
+                             f'installed footprint library {release} differs from its committed table')
 
     def test_invalid_tables_are_refused(self):
         base = json.loads(TABLE.read_text())
@@ -223,7 +228,7 @@ class NativePackageTests(unittest.TestCase):
         self.assertEqual(records['H1']['reason'], 'native exclude_from_bom')
         details = result['details']
         self.assertEqual(details['mapping']['sha256'], hashlib.sha256(TABLE.read_bytes()).hexdigest())
-        self.assertEqual(details['mapping']['version'], 'kicad-10.0.7-lcsc-1')
+        self.assertEqual(details['mapping']['version'], read_json(TABLE)['version'])
         self.assertEqual(details['catalog']['snapshot_manifest_sha256'], digest(self.catalog / 'manifest.json'))
         self.assertEqual(details['native_xml_sha256'], digest(run / 'work/netlist/design.xml'))
         self.assertEqual(read_json(run / 'work/packages/packages.json')['mapping'], details['mapping'])

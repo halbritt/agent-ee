@@ -398,7 +398,7 @@ def write_scaffold(rundir, prep):
         mapping = scaffold / 'rung1-package-map.json'
         if mapping.exists():
             raise PrepareFailure('parts bundle uses reserved package-map path')
-        shutil.copyfile(REPO_ROOT / 'references/package-map/kicad-10.0.7-lcsc-1.json', mapping)
+        shutil.copyfile(g.package_map_path(), mapping)
     write_json(generation / 'footprints.json', footprints)
     write_json(generation / 'placement-policy.json', packing_policy(prep['params'], outline))
     golden, golden_record = golden_netlist(rundir / 'golden-export')
