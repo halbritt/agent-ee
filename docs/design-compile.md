@@ -86,11 +86,11 @@ Optional `rotation_deg` defaults to zero and must be a multiple of 90. Attached
 labels move and rotate with their part, including the placer's left-right side
 flip. Keep-upright is disabled: declared 180 and 270 degree text retains those
 orientations instead of being rendered as 0 or 90. Optional
-`height_mm` and `stroke_mm` default to the sourced legend fabrication profile's
+`height_mm` and `stroke_mm` default to the published JLCPCB legend data's
 1.0 mm and 0.15 mm minima; smaller sizes are refused. The native font size is
 `[height_mm, height_mm]`, so width scales with height using KiCad's proportional
 stroke-font glyph widths. There is no independent width compression or wrapping.
-Compilation retains the complete four-limit legend profile, its advisories and
+Compilation retains the complete four-limit legend data, its advisories and
 source facts separately from the structural fabrication profile.
 The generated `board-text.json` and build plan cause native emission after
 forward annotation. In the build placer, free text is a fixed-body keep-out;
@@ -103,19 +103,26 @@ by another part's same-side courtyard (or native bounds when no courtyard exists
 The final `board_text` file check verifies content, visibility, attachment, side,
 position, angle, font and size on the saved board. It requires the full native
 text bounds inside the outline. Native stroke shapes must not overlap other
-silk or pad mask openings and must clear same-side pad copper by the sourced
-0.15 mm pad-clearance floor.
+silk. Generated text must clear same-side pad copper and resolved mask openings
+by 0.15 mm each. Native pad shapes resolve mask expansion and contraction;
+custom pads with negative mask expansion are refused. Other mask geometry
+includes exposed tracks and vias, mask graphics and filled zones, using
+conservative outside polygons with at most 0.001 mm contour error. A borderline
+curved non-pad aperture may therefore be refused conservatively. Size and
+clearance boundaries are inclusive.
 Native DRC also runs on the complete
 board; no label is hidden, clipped or moved to a fabrication layer to pass.
 Neither check establishes physical printing or readability after assembly.
 
-The generated `board-text-fab` check uses the existing `fab_profile` path for
-all four legend limits, including the recorded 0.15 mm silk-to-mask minimum.
-It retains order-selection and supplier-applicability gates. The packaged
-profile has no captured target order and the existing path cannot measure the
-silk-to-mask limit: those records remain unknown and prevent file release.
-A passing `board_text` geometry check therefore does not claim complete legend
-fabrication qualification. No order or applicability evidence is invented.
+These four published supplier minima are the generator's design rules for its
+declared labels: 1.0 mm text height, 0.15 mm stroke width, 0.15 mm pad clearance
+and 0.15 mm mask clearance. The `board_text` output records this basis, each
+sourced rule and advisories retaining the supplier scope and order limitations.
+It does not give a qualified fabrication-profile grade. Missing fabrication
+order or supplier applicability does not block this generated-text check.
+Compilation adds no `board-text-fab` gate. Existing stock-footprint artwork's
+own dimensions and clearances are not graded by this feature; it remains an
+obstacle to the new labels. Other existing package checks still run.
 
 The initial sourced fab template supports conventional FR-4, two copper layers,
 1 oz outer copper and nominal 1.2 mm thickness. Other layer counts and nominal

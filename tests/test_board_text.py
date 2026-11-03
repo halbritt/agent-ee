@@ -72,7 +72,7 @@ class StatementTests(unittest.TestCase):
         doc = board_text.load_document(self.root / 'capture/board-text.json')
         source = self.root / 'capture/fab-sources/board-text-facts.txt'
         source.write_text('Unverified limits')
-        with self.assertRaisesRegex(ValueError, 'sourced'):
+        with self.assertRaisesRegex(ValueError, 'source capture hash mismatch'):
             board_text.profile_limits(self.root / 'capture', doc, input_inventory(self.root / 'capture'))
 
     def test_pin_label_refuses_repeated_physical_lands(self):
@@ -96,7 +96,7 @@ class StatementTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaisesRegex(DesignError, 'literal'):
                 validate(self.design)
 
-    def test_compiler_retains_all_silk_limits_and_the_existing_fab_gate(self):
+    def test_compiler_uses_all_four_generator_rules_without_a_fab_grade_gate(self):
         self.design['markings'] = [label()]
         compile_design(self.design, self.root / 'capture', self.root / 'bundle')
         root = self.root / 'bundle/inputs'
@@ -105,15 +105,32 @@ class StatementTests(unittest.TestCase):
             'min_silk_text_height_mm', 'min_silk_line_width_mm', 'min_pad_to_silk_mm', 'min_silk_to_mask_mm'})
         mapped = read_json(root / 'requirement-map.json')
         delivery = next(r for r in mapped['requirements'] if r['id'] == 'TEST-DELIV-2')
-        self.assertIn(dict(id='board-text-fab', kind='fab_profile',
-                          params=dict(fab_profile='board-text-profile.json'), stage='verification'), delivery['checks'])
-        from agent_ee.fab_profile import compile_profile, silk_applicability
+        self.assertEqual([c['kind'] for c in delivery['checks']], ['board_text'])
+        self.assertNotIn('board-text-fab', {c['id'] for r in mapped['requirements'] for c in r.get('checks', [])})
         from agent_ee.requirement_map import input_inventory
-        records = compile_profile(profile, input_inventory(root), root)['constraints']
-        self.assertEqual(next(r for r in records if r['id'] == 'silk-to-mask')['execution'], 'unsupported')
-        pad = next(r for r in records if r['id'] == 'pad-to-silk')
-        missing = silk_applicability(pad.get('applicability'), {})
-        self.assertIn('silk_order_unsourced', [r[0] for r in missing])
+        rules = board_text.design_rules(root, read_json(root / 'board-text.json'), input_inventory(root))
+        self.assertEqual(rules['limits']['min_silk_to_mask_mm'], .15)
+        self.assertEqual(rules['basis']['kind'], 'generator_design_rule')
+        self.assertEqual(rules['basis']['scope'], 'declared_labels_only')
+        self.assertFalse(rules['basis']['qualified_fabrication_profile_grade'])
+        self.assertEqual(len(rules['basis']['limits']), 4)
+        advisories = {r['code']: r for r in rules['advisories']}
+        self.assertIn('supplier_applicability_not_qualified', advisories)
+        self.assertIn('fabrication_order_not_qualified', advisories)
+        self.assertEqual(advisories['fabrication_order_not_qualified']['recorded'], [])
+        self.assertTrue(advisories['supplier_applicability_not_qualified']['recorded'])
+
+    def test_mask_rule_source_and_value_must_be_verified(self):
+        from agent_ee.requirement_map import input_inventory
+        from agent_ee.storage import write_json
+        self.design['markings'] = [label()]
+        compile_design(self.design, self.root / 'capture', self.root / 'bundle')
+        root = self.root / 'bundle/inputs'
+        profile = read_json(root / 'board-text-profile.json')
+        next(r for r in profile['limits'] if r['key'] == 'min_silk_to_mask_mm')['value'] = .01
+        write_json(root / 'board-text-profile.json', profile)
+        with self.assertRaisesRegex(ValueError, 'sourced|differs'):
+            board_text.design_rules(root, read_json(root / 'board-text.json'), input_inventory(root))
 
 
 GEOMETRY = '''
@@ -291,6 +308,71 @@ for gap,conflict in ((150001,False),(150000,False),(149999,True)):
     fp.Remove(q)
 ''')
 
+    def test_each_text_size_rule_at_and_below_the_boundary(self):
+        self.native('''
+text=next(i for i in fp.GraphicalItems() if i.GetClass()=='PCB_TEXT')
+for key,bound in (('height_mm',1000000),('stroke_mm',150000)):
+    for value,defect in ((bound,False),(bound-1,True)):
+        doc['items'][0][key]=value/1000000
+        if key=='height_mm': text.SetTextSize(k.VECTOR2I(value,value))
+        else: text.SetTextThickness(value)
+        row=evaluate(b,doc,limits)['records'][0]
+        assert ('text_below_fabrication_minimum' in row['violations'])==defect, row
+    doc['items'][0].pop(key)
+    text.SetTextSize(k.VECTOR2I(1000000,1000000));text.SetTextThickness(150000)
+''')
+
+    def test_mask_clearance_uses_expanded_and_contracted_apertures_on_both_sides(self):
+        self.native('''
+text=next(i for i in fp.GraphicalItems() if i.GetClass()=='PCB_TEXT')
+for side,mask in ((k.F_Cu,k.F_Mask),(k.B_Cu,k.B_Mask)):
+    text.SetLayer(k.F_SilkS if side==k.F_Cu else k.B_SilkS)
+    doc['items'][0]['layer']='F.SilkS' if side==k.F_Cu else 'B.SilkS'
+    text.SetMirrored(side==k.B_Cu)
+    right=text.GetEffectiveShape().BBox().GetRight()
+    # A mask-only pad isolates this rule from the pad-copper floor. Normal
+    # copper pads additionally exercise the native resolved expansion.
+    for margin,copper in ((0,False),(100000,True),(-100000,True)):
+        q=k.PAD(fp);q.SetNumber('2');q.SetAttribute(k.PAD_ATTRIB_SMD);q.SetShape(k.PAD_SHAPE_RECT)
+        q.SetSize(k.VECTOR2I(1000000,1000000));q.SetLocalSolderMaskMargin(margin)
+        layers=k.LSET();layers.AddLayer(mask)
+        if copper: layers.AddLayer(side)
+        q.SetLayerSet(layers);fp.Add(q)
+        for gap,defect in ((150001,False),(150000,False),(149999,True)):
+            q.SetPosition(k.VECTOR2I(right+margin+gap+500000,text.GetPosition().y))
+            row=evaluate(b,doc,limits)['records'][0]
+            assert q.GetSolderMaskExpansion(mask)==margin
+            assert ('silk_to_mask_clearance' in row['violations'])==defect, (side,margin,gap,row)
+        fp.Remove(q)
+''')
+
+    def test_mask_graphics_and_exposed_vias_are_obstacles_but_tented_vias_are_not(self):
+        self.native('''
+text=next(i for i in fp.GraphicalItems() if i.GetClass()=='PCB_TEXT')
+right=text.GetEffectiveShape().BBox().GetRight()
+opening=k.PCB_SHAPE(b,k.SHAPE_T_RECT);opening.SetLayer(k.F_Mask);opening.SetFilled(True)
+opening.SetStart(k.VECTOR2I(right+149999,text.GetPosition().y-500000))
+opening.SetEnd(k.VECTOR2I(right+1149999,text.GetPosition().y+500000));opening.SetWidth(0);b.Add(opening)
+assert 'silk_to_mask_clearance' in evaluate(b,doc,limits)['records'][0]['violations']
+b.Remove(opening)
+via=k.PCB_VIA(b);via.SetWidth(1000000);via.SetDrill(500000)
+via.SetPosition(text.GetPosition());via.SetLayerPair(k.F_Cu,k.B_Cu);via.SetFrontTentingMode(k.TENTING_MODE_NOT_TENTED);b.Add(via)
+assert 'silk_to_mask_clearance' in evaluate(b,doc,limits)['records'][0]['violations']
+via.SetFrontTentingMode(k.TENTING_MODE_TENTED)
+assert 'silk_to_mask_clearance' not in evaluate(b,doc,limits)['records'][0]['violations']
+''')
+
+    def test_existing_stock_artwork_is_not_graded_by_generated_text_rules(self):
+        self.native('''
+stock=k.PCB_SHAPE(b,k.SHAPE_T_SEGMENT);stock.SetLayer(k.F_SilkS)
+stock.SetStart(k.VECTOR2I(30000000,20000000));stock.SetEnd(k.VECTOR2I(32000000,20000000))
+stock.SetWidth(50000);b.Add(stock)
+q=k.PAD(fp);q.SetNumber('2');q.SetAttribute(k.PAD_ATTRIB_SMD);q.SetShape(k.PAD_SHAPE_RECT)
+q.SetSize(k.VECTOR2I(1000000,1000000));q.SetLayerSet(ls)
+q.SetPosition(k.VECTOR2I(31000000,20640000));fp.Add(q)
+assert evaluate(b,doc,limits)['outcome']=='pass'
+''')
+
     def test_native_shapes_allow_hollow_silk_frames_and_apply_pad_floor_only_to_pads(self):
         self.native('''
 text=next(i for i in fp.GraphicalItems() if i.GetClass()=='PCB_TEXT')
@@ -343,7 +425,12 @@ assert k.SaveBoard('/work/source.kicad_pcb',b)
             '--board', '/candidate/source.kicad_pcb', '--declaration', '/candidate/board-text.json',
             '--inputs', '/candidate', '--out', '/work/board-text.json'])
         self.assertEqual((result['execution'], result['exit_code']), ('ok', 0), (checked / 'console.log').read_text())
-        self.assertEqual(read_json(checked / 'board-text.json')['outcome'], 'pass')
+        report = read_json(checked / 'board-text.json')
+        self.assertEqual(report['outcome'], 'pass')
+        self.assertEqual(report['basis']['kind'], 'generator_design_rule')
+        self.assertFalse(report['basis']['qualified_fabrication_profile_grade'])
+        self.assertEqual(len(report['basis']['limits']), 4)
+        self.assertIn('fabrication_order_not_qualified', {a['code'] for a in report['advisories']})
 
     def test_final_check_rejects_overlap_outside_edge_small_text_and_changed_pose(self):
         self.native('''

@@ -15,7 +15,7 @@ from .symbol_library import nanometres as _nanometres
 
 SCHEMA = 'agent-ee.board-text/1'
 DATA = Path(__file__).parent / 'data'
-KEYS = ('min_silk_text_height_mm', 'min_silk_line_width_mm', 'min_pad_to_silk_mm')
+KEYS = ('min_silk_text_height_mm', 'min_silk_line_width_mm', 'min_pad_to_silk_mm', 'min_silk_to_mask_mm')
 PLACEMENT_FIELD = 'agent_ee_board_text_placement'
 LITERAL_CONSTRUCTS = ('${', '@{', '~{', '_{', '^{')
 
@@ -102,17 +102,41 @@ def load_document(path):
     return doc
 
 
-def profile_limits(root, doc, files):
-    """Read only captured, source-verified minimum-tier fabrication limits."""
-    from .fab_profile import compile_profile
+def design_rules(root, doc, files):
+    """Adopt verified published minima for generated text, without a fab grade."""
+    from .fab_profile import compile_profile, verify_source, silk_fact, FACT_ROLES
     from .routing_rules import captured_file
     path = captured_file(root, files, doc['fab_profile'])
     compiled = compile_profile(read_json(path), files, root)
-    limits = {c['expected']['key']: c['expected']['value'] for c in compiled['constraints']
-              if c['execution'] == 'ready' and c['expected'].get('tier') == 'minimum'}
-    if any(key not in limits for key in KEYS):
-        raise ValueError('board text needs sourced height, stroke and pad-clearance minima')
-    return limits, sorted({doc['fab_profile'], *compiled['immutable_inputs']})
+    records = [c['expected'] for c in compiled['constraints']]
+    if {r.get('key') for r in records} != set(KEYS) or len(records) != len(KEYS):
+        raise ValueError('board text needs all four sourced legend minima')
+    for record in records:
+        verify_source(record['source'], root, files, compiled['as_of'])
+        problem = silk_fact(record['source'], record['key'], record['value'], FACT_ROLES['limit'], root, files)
+        if record['tier'] != 'minimum' or problem:
+            raise ValueError('board text needs sourced minima: ' + (problem[1] if problem else 'minimum tier required'))
+    return dict(limits={r['key']: r['value'] for r in records},
+                immutable_inputs=sorted({doc['fab_profile'], *compiled['immutable_inputs']}),
+                basis=dict(kind='generator_design_rule', scope='declared_labels_only',
+                    description='Published JLCPCB legend minima adopted as generated-text design rules.',
+                    qualified_fabrication_profile_grade=False, name=compiled['name'],
+                    as_of=compiled['as_of'], limits=records),
+                advisories=[
+                    dict(code='supplier_applicability_not_qualified',
+                         description='Supplier scope is recorded; this check does not qualify applicability.',
+                         recorded=compiled.get('applicability', [])),
+                    dict(code='fabrication_order_not_qualified',
+                         description='This check does not establish a verified fabrication order.',
+                         recorded=compiled.get('order', [])),
+                    dict(code='published_supplier_advisories',
+                         description='Published supplier recommendations retained as advisories.',
+                         recorded=compiled.get('advisories', []))])
+
+
+def profile_limits(root, doc, files):
+    rules = design_rules(root, doc, files)
+    return rules['limits'], rules['immutable_inputs']
 
 
 def _rotate(x, y, angle):
@@ -254,6 +278,79 @@ def _conflicts(text, items, pad_clearance):
     return conflicts
 
 
+def _mask_contours(board, layer):
+    """Non-pad apertures, conservatively bounded to one micrometre.
+
+    Track conversion resolves exposed tracks; vias need their margin explicitly.
+    Native layer membership excludes tented vias. These are generator geometry
+    rules, not a qualification of the supplier's mask process.
+    """
+    import pcbnew as k
+    poly = k.SHAPE_POLY_SET()
+    for track in board.GetTracks():
+        if track.IsOnLayer(layer):
+            margin = track.GetSolderMaskExpansion() if track.GetClass() == 'PCB_VIA' else 0
+            track.TransformShapeToPolygon(poly, layer, margin, 1000, k.ERROR_OUTSIDE)
+    graphics = list(board.GetDrawings())
+    zones = list(board.Zones())
+    for fp in board.GetFootprints():
+        graphics.extend([*fp.GraphicalItems(), *fp.GetFields()])
+        zones.extend(fp.Zones())
+    for item in graphics:
+        if not item.IsOnLayer(layer):
+            continue
+        kind = item.GetClass()
+        if kind in ('PCB_TEXT', 'PCB_FIELD'):
+            if item.IsVisible():
+                item.TransformTextToPolySet(poly, 0, 1000, k.ERROR_OUTSIDE)
+        elif kind == 'PCB_TEXTBOX':
+            if item.IsBorderEnabled():
+                item.TransformShapeToPolygon(poly, layer, 0, 1000, k.ERROR_OUTSIDE)
+            item.TransformTextToPolySet(poly, 0, 1000, k.ERROR_OUTSIDE)
+        elif kind == 'PCB_SHAPE':
+            margin = item.GetSolderMaskExpansion() if item.GetLayer() != layer else 0
+            item.TransformShapeToPolySet(poly, layer, margin, 1000, k.ERROR_OUTSIDE)
+        else:
+            raise ValueError('unsupported mask graphic for generated text: ' + kind)
+    for zone in zones:
+        if zone.IsOnLayer(layer) and not zone.GetIsRuleArea():
+            zone.TransformSolidAreasShapesToPolygon(layer, poly)
+    poly.Simplify()
+    return poly
+
+
+def _pad_mask_conflicts(text, board, layer, clearance):
+    """Use native pad shapes so polygon collision rounding cannot hide a gap.
+
+    Positive margins expand the clearance around the original shape. Negative
+    margins follow KiCad's TransformPadsToPolySet size reduction for ordinary
+    pads. Custom pad erosion needs a separate geometric qualification.
+    """
+    import pcbnew as k
+    copper = k.F_Cu if layer == k.F_Mask else k.B_Cu
+    ink = text.GetEffectiveShape()
+    conflicts = []
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if not pad.FlashLayer(layer):
+                continue
+            margin = pad.GetSolderMaskExpansion(layer)
+            if margin < 0:
+                if pad.GetShape(layer) == k.PAD_SHAPE_CUSTOM:
+                    raise ValueError('generated text cannot qualify a custom pad with negative mask expansion')
+                size = pad.GetSize(layer) + k.VECTOR2I(2 * margin, 2 * margin)
+                if size.x <= 0 or size.y <= 0:
+                    continue
+                aperture = k.PAD(pad)
+                aperture.SetSize(layer, size)
+                shape, distance = aperture.GetEffectiveShape(copper), clearance
+            else:
+                shape, distance = pad.GetEffectiveShape(copper), clearance + margin
+            if ink.Collide(shape, distance):
+                conflicts.append(pad.m_Uuid.AsString())
+    return conflicts
+
+
 def evaluate(board, doc, limits):
     """Labels must fit the board, retain their pose and clear native silk/pad shapes.
 
@@ -269,7 +366,7 @@ def evaluate(board, doc, limits):
     for item in items:
         by_id.setdefault(item.m_Uuid.AsString(), []).append(item)
     contained = set(contained_markings(board))
-    records = []
+    records, masks = [], {}
     for row in doc['items']:
         uid = label_uuid(doc['namespace'], row['id'])
         defects = []
@@ -302,6 +399,19 @@ def evaluate(board, doc, limits):
         if conflicts:
             defects.append('silk_overlap_or_pad_clearance')
         record['conflicts'] = conflicts
+        mask = k.F_Mask if layer == k.F_SilkS else k.B_Mask
+        if mask not in masks:
+            masks[mask] = _mask_contours(board, mask)
+        mask_minimum = nanometres(limits[KEYS[3]])
+        pad_mask_conflicts = _pad_mask_conflicts(text, board, mask, mask_minimum)
+        contour_conflict = bool(text.GetEffectiveShape().Collide(masks[mask], mask_minimum))
+        mask_conflict = bool(pad_mask_conflicts) or contour_conflict
+        if mask_conflict:
+            defects.append('silk_to_mask_clearance')
+        record['mask_clearance'] = dict(layer=board.GetLayerName(mask),
+            minimum_nm=mask_minimum, outcome='defect' if mask_conflict else 'pass',
+            pad_conflicts=pad_mask_conflicts, non_pad_contour_conflict=contour_conflict,
+            non_pad_contour_error_nm=1000, non_pad_contour_bound='outside')
         covered = []
         for fp in board.GetFootprints():
             if ((owner is not None and fp.m_Uuid.AsString() == owner.m_Uuid.AsString())
@@ -372,7 +482,8 @@ def main():
     path = Path(args.declaration)
     doc = load_document(path)
     root = Path(args.inputs)
-    limits, _ = profile_limits(root, doc, input_inventory(root))
+    rules = design_rules(root, doc, input_inventory(root))
+    limits = rules['limits']
     board = k.LoadBoard(args.board)
     if board is None:
         raise ValueError('native board text input failed to load')
@@ -382,7 +493,8 @@ def main():
             raise ValueError('native board text save failed')
     else:
         report = evaluate(board, doc, limits)
-        report.update(board_sha256=digest(args.board), declaration_sha256=digest(path))
+        report.update(board_sha256=digest(args.board), declaration_sha256=digest(path),
+                      basis=rules['basis'], advisories=rules['advisories'])
         write_json(args.out, report)
 
 

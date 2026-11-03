@@ -1021,8 +1021,7 @@ def requirements(design, root, record, suppliers):
     ]
     if design.get("markings"):
         rows.append(req("DELIV-2", [
-            check("board-text", "board_text", markings="board-text.json"),
-            check("board-text-fab", "fab_profile", fab_profile="board-text-profile.json")]))
+            check("board-text", "board_text", markings="board-text.json")]))
     rows += [
         req(
             "MECH-1",
