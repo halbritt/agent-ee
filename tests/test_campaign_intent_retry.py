@@ -3,11 +3,66 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 import shutil
+import tempfile
 import time
 
 from tests import test_campaign as campaign_tests
 from agent_ee.campaign import verify_campaign
 from agent_ee.storage import read_json, write_json
+
+
+class FrozenPackagePolicyTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(patch.dict('os.environ', {'AGENT_EE_TOOL_SOURCE_CACHE': str(self.root / 'cache')}))
+
+    def package(self, root):
+        root.mkdir(parents=True)
+        (root / 'run_record.py').write_text('# synthetic root policy module\n')
+        (root / 'acquisition').mkdir()
+        (root / 'acquisition/addr_repair.py').write_text('VALUE = 1\n')
+        (root / 'data').mkdir()
+        (root / 'data/policy.json').write_text('{"value": 1}\n')
+        return root
+
+    def policy(self, package):
+        from agent_ee import run_record
+        with patch.object(run_record, '__file__', str(package / 'run_record.py')):
+            return run_record.policy_files()
+
+    def captured(self, package):
+        from agent_ee.stage_receipts import file_tree
+        from agent_ee.tool_source import snapshot
+        files, other = file_tree(snapshot(package.parent))
+        self.assertEqual(other, [])
+        return dict(schema='agent-ee.intent-producer-source/1', files=files)
+
+    def test_frozen_policy_refuses_nested_module_changes_and_additions(self):
+        from agent_ee.intent_retry import _source_identity
+        for change in ('edit', 'add'):
+            with self.subTest(change=change):
+                package = self.package(self.root / change / 'src/agent_ee')
+                frozen = self.policy(package)
+                self.assertIn('acquisition/addr_repair.py', frozen)
+                _source_identity(self.captured(package), frozen)
+                target = package / ('acquisition/addr_repair.py' if change == 'edit'
+                                    else 'acquisition/new_producer.py')
+                target.write_text('VALUE = 2\n')
+                with self.assertRaisesRegex(ValueError, 'source differs from frozen campaign policy'):
+                    _source_identity(self.captured(package), frozen)
+
+    def test_checkout_named_pycache_still_binds_python_and_package_data(self):
+        package = self.package(self.root / '__pycache__/checkout/src/agent_ee')
+        for rel in ('acquisition/__pycache__/ignored.py', 'data/__pycache__/ignored.json'):
+            target = package / rel
+            target.parent.mkdir(parents=True)
+            target.write_text('ignored')
+        frozen = self.policy(package)
+        self.assertEqual(set(frozen), {'run_record.py', 'acquisition/addr_repair.py', 'data/policy.json'})
+        for rel in ('acquisition/addr_repair.py', 'data/policy.json'):
+            with self.subTest(module=rel):
+                (package / rel).write_text('changed')
+                self.assertNotEqual(self.policy(package)[rel], frozen[rel])
 
 
 class IntentRetryTests(unittest.TestCase):
