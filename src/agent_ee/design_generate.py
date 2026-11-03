@@ -648,14 +648,14 @@ def code_identity():
         tree.update(f'{path.relative_to(package).as_posix()}\0{digest(path)}\n'.encode())
     commit = dirty = None
     try:
-        head = subprocess.run(['git', '-C', str(package), 'rev-parse', '--show-toplevel', 'HEAD'],
-                              capture_output=True, text=True, timeout=30)
+        head = subprocess.run(['git', '--no-optional-locks', '-C', str(package), 'rev-parse', '--show-toplevel',
+                               'HEAD'], capture_output=True, text=True, timeout=30)
         lines = head.stdout.split()
         if (head.returncode == 0 and len(lines) == 2 and Path(lines[0]).resolve() == package.parents[1]
                 and re.fullmatch(r'[0-9a-f]{40}', lines[1])):
             commit = lines[1]
-            status = subprocess.run(['git', '-C', str(package), 'status', '--porcelain', '--', '.'],
-                                    capture_output=True, text=True, timeout=30)
+            status = subprocess.run(['git', '--no-optional-locks', '-C', str(package), 'status', '--porcelain',
+                                     '--', '.'], capture_output=True, text=True, timeout=30)
             dirty = bool(status.stdout.strip()) if status.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
         pass
