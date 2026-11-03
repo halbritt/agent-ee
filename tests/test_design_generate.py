@@ -1311,6 +1311,23 @@ class ProcessTreeTests(ScriptedLoop):
             self.assertTrue(loop.process_tree.stop_tree())
         self.assertIsNone(own.poll())
 
+    def test_a_child_that_refuses_the_signal_leaves_the_tree_not_empty(self):
+        kept, stopped = (subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']) for _ in range(2))
+        for child in (kept, stopped):
+            self.addCleanup(child.wait)
+            self.addCleanup(child.kill)
+        listed = [(child.pid, loop.process_tree.stat(child.pid)[2]) for child in (kept, stopped)]
+        real_kill = os.kill
+        def kill(pid, number):
+            if pid == kept.pid:
+                raise PermissionError(1, 'simulated setuid child')
+            return real_kill(pid, number)
+        with patch.object(loop.process_tree, 'children', return_value=listed), \
+             patch.object(loop.process_tree, 'reap'), patch.object(loop.process_tree.os, 'kill', side_effect=kill):
+            self.assertFalse(loop.process_tree.stop_tree(rounds=3))
+        self.assertEqual(stopped.wait(timeout=10), -signal.SIGKILL)
+        self.assertIsNone(kept.poll())
+
     def test_without_a_readable_proc_the_phase_is_not_launched(self):
         for name in [*map(int, loop.process_tree.STOP_SIGNALS), int(signal.SIGCHLD)]:
             self.addCleanup(signal.signal, name, signal.getsignal(name))
