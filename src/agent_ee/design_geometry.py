@@ -7,8 +7,41 @@ from decimal import Decimal
 from .symbol_library import children
 
 
+# The generated rectangular outline runs clockwise as seen from the front (design_compile envelope):
+# each edge's start corner, end corner, direction, and unit vector in board coordinates (y down).
+EDGE_RUNS = dict(
+    top=("top-left", "top-right", "east", (1, 0)),
+    right=("top-right", "bottom-right", "south", (0, 1)),
+    bottom=("bottom-right", "bottom-left", "west", (-1, 0)),
+    left=("bottom-left", "top-left", "north", (0, -1)),
+)
+# (cosine, sine) of each quarter turn of a footprint, in KiCad's board frame (y down).
+QUARTER_TURNS = {0: (1, 0), 90: (0, 1), 180: (-1, 0), 270: (0, -1)}
+# Land shapes whose centre is the pad position when the pad has no offset or chamfer.
+CENTRED_LANDS = ("rect", "roundrect", "circle", "oval")
+
+
+def connector_edge_span(node, connector):
+    """Where the rotated front courtyard starts and ends along the declared edge, as exact mm
+    offsets from the connector's anchor (its position along the edge)."""
+    ux, uy = EDGE_RUNS[connector["edge"]][3]
+    along = [x * ux + y * uy for x, y in _rotated_courtyard(node, connector)]
+    return min(along), max(along)
+
+
 def connector_edge_gap(node, connector):
     """Inward gap from the rotated front courtyard to the declared edge, in mm."""
+    ox, oy = {"left": (-1, 0), "right": (1, 0), "top": (0, -1), "bottom": (0, 1)}[
+        connector["edge"]
+    ]
+    return float(
+        Decimal(str(connector["inset_mm"]))
+        - max(x * ox + y * oy for x, y in _rotated_courtyard(node, connector))
+    )
+
+
+def _rotated_courtyard(node, connector):
+    """Front courtyard line and rectangle endpoints, turned to the connector's board rotation."""
     points = []
     for graphic in node:
         if not isinstance(graphic, list) or not graphic:
@@ -27,22 +60,7 @@ def connector_edge_gap(node, connector):
         raise ValueError(
             "connector footprint needs a front courtyard to establish edge proximity"
         )
-    cosine, sine = {0: (1, 0), 90: (0, 1), 180: (-1, 0), 270: (0, -1)}[
-        int(connector["rotation_deg"] % 360)
-    ]
-    rotated = [(x * cosine + y * sine, -x * sine + y * cosine) for x, y in points]
-    ox, oy = {"left": (-1, 0), "right": (1, 0), "top": (0, -1), "bottom": (0, 1)}[
-        connector["edge"]
-    ]
-    return float(
-        Decimal(str(connector["inset_mm"])) - max(x * ox + y * oy for x, y in rotated)
-    )
-
-
-# (cosine, sine) of each quarter turn, applied as in connector_edge_gap.
-QUARTER_TURNS = {0: (1, 0), 90: (0, 1), 180: (-1, 0), 270: (0, -1)}
-# Land shapes whose centre is the pad position when the pad has no offset or chamfer.
-CENTRED_LANDS = ("rect", "roundrect", "circle", "oval")
+    return [_turn(point, int(connector["rotation_deg"] % 360)) for point in points]
 
 
 def _turn(point, rotation):

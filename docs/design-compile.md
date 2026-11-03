@@ -38,7 +38,7 @@ Unknown fields are refused.
 | `no_connects` | List of `REF.PIN` strings. Every symbol pin needs one net or a no-connect entry. |
 | `power_flags` | Unique net names that need virtual `PWR_FLAG` symbols. |
 | `ground` | The declared ground net; currently `GND`. A virtual GND symbol supplies its native power name. |
-| `connectors` | List of `{reference, edge, position_mm, inset_mm, rotation_deg, insertion}` plus `local_mating_axis` for `through_edge`. Edges are `top`, `right`, `bottom`, `left`; insertion is `from_top` or `through_edge`. Position is measured along the envelope edge's direction. Rotations are multiples of 90 degrees and are normalized modulo 360. |
+| `connectors` | List of `{reference, edge, position_mm, inset_mm, rotation_deg, insertion}` plus `local_mating_axis` for `through_edge`. Edges are `top`, `right`, `bottom`, `left`; insertion is `from_top` or `through_edge`. `position_mm` is measured from the edge's start corner along its direction. Seen from the front, the edges run clockwise: `top` starts at the top-left corner and runs east, `right` starts at the top-right corner and runs south, `bottom` starts at the bottom-right corner and runs west, and `left` starts at the bottom-left corner and runs north. Rotations are multiples of 90 degrees and are normalized modulo 360. |
 | `decoupling` | List of `{capacitor, device, supply, return, max_distance_mm}`. Each pair is `[DEVICE.PIN, CAPACITOR.PIN]`; both endpoints must share a net. |
 | `groups` | List of `{name, anchor, title}`. Members come from the parts' `group` fields. |
 | `plane` | `{net, layer}`; choose a declared net and `F.Cu` or `B.Cu`. |
@@ -229,7 +229,10 @@ courtyard, or a land with a drill offset, chamfer or other shape, gets no
 check.
 
 A connector's rotated front courtyard must reach within 1 mm of its declared
-edge. The fixed-pose gate checks position, rotation and insertion side. Through-edge
+edge. Along the edge, the courtyard must stay between the edge's two corners.
+Compile refuses a courtyard that runs past either corner. The message names
+the edge's start corner and direction and gives the range of `position_mm`
+values that fit. The fixed-pose gate checks position, rotation and insertion side. Through-edge
 connectors require `local_mating_axis` (`x+`, `x-`, `y+`, `y-`) in the footprint
 local frame. Compile refuses a rotation that does not face the declared edge; the
 retained predicate also checks facing. The axis is a design declaration checked

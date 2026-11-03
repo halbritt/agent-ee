@@ -992,6 +992,39 @@ class DesignCompileTests(unittest.TestCase):
                     with self.assertRaisesRegex(DesignError, r"connectors\[0\].inset_mm"):
                         compile_design(d, self.captures, out)
 
+    def test_connector_courtyard_past_an_edge_corner_is_refused_naming_the_start_corner(self):
+        # Benchmark r4 led-flasher attempt-003: a 16.5 mm courtyard at position 10.4 on the bottom
+        # edge of a 28 mm board. The bottom edge starts at the bottom-right corner and runs west, so
+        # the fixed connector overhung the east edge by 1.45 mm and no placement could succeed.
+        path = self.captures / "cad/Owned.pretty/R2.kicad_mod"
+        path.write_bytes(path.read_bytes().replace(b"(start -2 -1)", b"(start -4.65 -4.6)")
+                         .replace(b"(end 2 1)", b"(end 11.85 4.6)"))
+        seal_capture(self.captures)
+        self.design["board"].update(width_mm=28, height_mm=24)
+        for position, refusal in ((10.4, "runs 1.45 mm past the bottom-right corner"), (11.85, None),
+                                  (23.35, None), (23.4, "runs 0.05 mm past the bottom-left corner")):
+            d = copy.deepcopy(self.design)
+            d["connectors"] = [dict(reference="R1", edge="bottom", position_mm=position, inset_mm=5.3,
+                                    rotation_deg=0, insertion="from_top")]
+            with self.subTest(position=position):
+                out = self.root / f"edge-{position}"
+                if refusal is None:
+                    compile_design(d, self.captures, out)
+                    continue
+                with self.assertRaises(DesignError) as caught:
+                    compile_design(d, self.captures, out)
+                message = str(caught.exception)
+                self.assertIn(f"connectors[0].position_mm: R1: rotated courtyard {refusal}", message)
+                self.assertIn("The bottom edge starts at the bottom-right corner and runs west", message)
+                self.assertIn("use position_mm from 11.85 to 23.35", message)
+
+    def test_doc_states_where_each_connector_edge_starts_and_which_way_it_runs(self):
+        from agent_ee.design_geometry import EDGE_RUNS
+        doc = (Path(__file__).resolve().parents[1] / "docs/design-compile.md").read_text()
+        doc = " ".join(doc.split())
+        for edge, (start, _, direction, _) in EDGE_RUNS.items():
+            self.assertIn(f"`{edge}` starts at the {start} corner and runs {direction}", doc)
+
     def test_through_edge_requires_local_axis_and_refuses_reversed_pose(self):
         d = copy.deepcopy(self.design)
         d["connectors"] = [dict(reference="R1", edge="right", position_mm=10,

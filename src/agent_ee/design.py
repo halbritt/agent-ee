@@ -468,7 +468,9 @@ def validate(design, captures=None, *, cad_only=False):
             and not c["rotation_deg"] % 90
             and number(c["inset_mm"])
         ):
-            from .design_geometry import connector_edge_gap
+            from decimal import Decimal
+
+            from .design_geometry import EDGE_RUNS, connector_edge_gap, connector_edge_span
 
             try:
                 gap = connector_edge_gap(footprints[ref], c)
@@ -477,6 +479,33 @@ def validate(design, captures=None, *, cad_only=False):
                         path + ".inset_mm",
                         f"rotated courtyard is {gap:g} mm from the edge; bring it within 1 mm",
                     )
+                start, end = connector_edge_span(footprints[ref], c)
+                length = board.get("width_mm" if c["edge"] in ("top", "bottom") else "height_mm")
+                if number(c["position_mm"]) and number(length):
+                    position, length = Decimal(str(c["position_mm"])), Decimal(str(length))
+                    first, last, direction, _ = EDGE_RUNS[c["edge"]]
+
+                    def mm(value):
+                        return f"{float(value) + 0.0:g}"
+
+                    # A position off the edge is refused above; this names the courtyard's overrun.
+                    if 0 <= position <= length and (position + start < 0 or position + end > length):
+                        past = (
+                            f"{mm(-(position + start))} mm past the {first} corner"
+                            if position + start < 0
+                            else f"{mm(position + end - length)} mm past the {last} corner"
+                        )
+                        fits = (
+                            f"use position_mm from {mm(-start)} to {mm(length - end)}"
+                            if -start <= length - end
+                            else f"its {mm(end - start)} mm along the edge do not fit the {mm(length)} mm edge"
+                        )
+                        fail(
+                            path + ".position_mm",
+                            f"{ref}: rotated courtyard runs {past}. The {c['edge']} edge starts at the "
+                            f"{first} corner and runs {direction}, and position_mm is measured from that "
+                            f"corner; {fits}",
+                        )
             except ValueError as exc:
                 fail(path + ".reference", str(exc))
         from .placement_predicates import AXES, board_axis
