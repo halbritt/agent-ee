@@ -24,9 +24,10 @@ value is exactly {'commit': M}; the consumer's run_step, verify and adopt layers
 not-called records; the design is unchanged and the run_step was executed. A refusal for any other
 reason, a dirty runtime among them, never refuses control A here.
 
-Every other control is judged by k91_classify exactly as before; A2 first asks the v2 contract and
-adds its path only for control A where v2 did not already refuse. Without identities the A2 path
-never applies. The low-level observation of control A (run_step executed directly on M) is reported
+Every other control is judged by k91_classify exactly as before. Control A is judged by the
+continuation path alone: v2's control-A contract (the retired table's refusal reasons) is never
+accepted under A2, whatever it matches, so A2 cannot refuse control A without both new conditions.
+Without identities control A is never refused. The low-level observation of control A (run_step executed directly on M) is reported
 as fresh_run_state: under the retired premise it was a refusal, now it is a fresh run that records M.
 Nothing here runs a router, writes a record or reads anything but the dicts it is given.
 """
@@ -88,12 +89,10 @@ def continuation_problems(record, identities):
 
 
 def contract_match(name, record, identities=None):
-    """k91_classify.contract_match, plus A2's continuation path for control A only."""
-    problems = v2.contract_match(name, record)
-    if name != CONTROL or not problems:
-        return problems
-    amended = continuation_problems(record, identities)
-    return [] if not amended else problems + [f'A2: {p}' for p in amended]
+    """k91_classify.contract_match for every control but A; control A only by the continuation path."""
+    if name != CONTROL:
+        return v2.contract_match(name, record)
+    return [f'A2: {p}' for p in continuation_problems(record, identities)]
 
 
 def consumer_state(record, name=None, identities=None):

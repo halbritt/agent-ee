@@ -166,5 +166,29 @@ class AmendmentA2Test(unittest.TestCase):
                 self.assertEqual(a2.fresh_run_state(record['low_level'], self.ids), v2.INCOMPLETE)
 
 
+class LegacyContractTest(unittest.TestCase):
+    """verdict-2r4's control-A contract never refuses control A under A2 (review of fcfb4385, finding 2)."""
+
+    def test_the_retired_table_refusal_does_not_refuse_control_a(self):
+        # The reviewer's a2_legacy_bypass probe: a schema-valid refusal for the retired table's reason,
+        # with the fresh binding refused, which the frozen v2 contract accepts.
+        message = 'kicad-route does not qualify: owned engine source digest differs'
+        link = dict(type='ValueError', message=message, frames=list(v2.CONTRACTS[A]['path']), link=None,
+                    origin=dict(file='routing_adapter.py', function='validate_campaign_step', line=1))
+        refused = dict(attempted=True, accepted=False, error='ValueError: ' + message, exception=[link])
+        skipped = dict(attempted=False, reason='not reached')
+        record = dict(consumer_design='consumer', direct_design='direct', consumer=copy.deepcopy(refused),
+                      host_binding=copy.deepcopy(refused), consumer_run_step=skipped, consumer_verify=skipped,
+                      consumer_adopt=skipped, direct_adopt=skipped, design_before='a' * 64, design_after='a' * 64,
+                      run_step='executed')
+        self.assertEqual(v2.schema_problems(record), [])
+        self.assertEqual(v2.consumer_state(record, A), v2.REFUSED)
+        for identities in (None, {'binding_commit': '1' * 40, 'runtime_commit': '2' * 40}):
+            with self.subTest(identities=identities):
+                self.assertEqual(a2.consumer_state(record, A, identities), v2.INCOMPLETE)
+                self.assertTrue(a2.contract_match(A, record, identities))
+                self.assertFalse(a2.v2a2_verdict({'controls': {A: record}}, identities)['controls_refused'])
+
+
 if __name__ == '__main__':
     unittest.main()
