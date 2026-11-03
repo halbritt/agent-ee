@@ -224,6 +224,43 @@ class ScriptedLoop(unittest.TestCase):
 
 
 class GenerateTests(ScriptedLoop):
+    def partial_response(self, envelope='ready'):
+        response = self.response()
+        response['trace'] = response['trace'][:2]
+        response['untraced'] = [dict(quote='Measure it on hardware', status='unsupported', reason='Synthetic capability gap.')]
+        response['status'] = envelope
+        if envelope == 'unsupported':
+            response['reason'] = 'Synthetic capability gap; the divider can still build.'
+        return response
+
+    def test_partial_gaps_build_for_both_envelopes_and_are_never_plain_accepted(self):
+        for envelope in ('ready', 'unsupported'):
+            with self.subTest(envelope=envelope):
+                response = self.partial_response(envelope)
+                self.responses = [response]
+                report = loop.generate(self.requirements, self.root / envelope, max_attempts=1, context_root=ROOT)
+                self.assertEqual(report['status'], 'accepted_partial')
+                self.assertFalse(report['accepted'])
+                self.assertTrue(report['claims']['file_release'])
+                self.assertEqual(report['attempts'][0]['untraced'], response['untraced'])
+                self.assertEqual(report['attempts'][0]['status'], 'accepted_partial')
+                self.assertTrue((self.root / envelope / 'attempt-001/build/build-report.json').is_file())
+                row = loop.design_row(self.requirements, self.root / envelope)
+                self.assertEqual(row['status'], 'accepted_partial')
+                self.assertEqual(row['untraced_requirements'], response['untraced'])
+                self.assertIsNone(row['attempts_to_accepted'])
+
+    def test_untraced_items_survive_unsupported_empty_statement_and_invalid_statement(self):
+        for mode in ('unsupported', 'invalid'):
+            response = self.partial_response('unsupported' if mode == 'unsupported' else 'ready')
+            response['statement_json'] = '' if mode == 'unsupported' else '{invalid json'
+            self.responses = [response]
+            report = loop.generate(self.requirements, self.root / mode, max_attempts=1, context_root=ROOT)
+            self.assertEqual(report['status'], 'unsupported' if mode == 'unsupported' else 'attempts_exhausted')
+            self.assertEqual(report['attempts'][0]['untraced'], response['untraced'])
+            self.assertEqual(loop.design_row(self.requirements, self.root / mode)['untraced_requirements'], response['untraced'])
+            self.assertFalse(self.steps)
+
     def test_refusal_feedback_retained_attempts_and_typed_report(self):
         bad = copy.deepcopy(self.statement)
         bad['board']['copper_layers'] = 4
@@ -1112,6 +1149,19 @@ class TraceTests(ScriptedLoop):
 
 
 class BenchmarkTests(ScriptedLoop):
+    def test_partial_design_is_qualified_in_benchmark_and_does_not_stop_next_design(self):
+        directory = self.root / 'requirements'
+        directory.mkdir()
+        for name in ('a', 'b'):
+            (directory / (name + '.md')).write_text(REQUIREMENTS)
+        partial = self.response()
+        partial['trace'] = partial['trace'][:2]
+        partial['untraced'] = [dict(quote='Measure it on hardware', status='unsupported', reason='Synthetic gap.')]
+        self.responses = [partial, self.response()]
+        report = loop.benchmark(directory, self.root / 'benchmark', max_attempts=1, context_root=ROOT)
+        self.assertEqual(report['status'], 'complete')
+        self.assertEqual([row['status'] for row in report['designs']], ['accepted_partial', 'accepted'])
+        self.assertEqual(report['designs'][0]['untraced_requirements'], partial['untraced'])
     def test_author_timeout_does_not_skip_unrelated_benchmark_designs(self):
         directory = self.make_dir([('a', REQUIREMENTS), ('b', REQUIREMENTS)])
         self.responses = [(dict(execution='timeout', error='time limit'), None), self.response()]

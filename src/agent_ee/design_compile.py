@@ -21,6 +21,7 @@ from .storage import digest, identity, write_json
 from .symbol_library import children, parse_sexpr
 
 DATA = Path(__file__).parent / "data"
+BOARD_ORIGIN_MM = (100, 100)
 CODES = {
     "Design intent": "INTENT",
     "Native verification": "NATIVE",
@@ -90,6 +91,10 @@ def spec(design):
     if not design["connectors"]:
         sections["Placement and mechanics"][1] = (
             "The board shall retain the declared nominal stackup."
+        )
+    if design.get("markings"):
+        sections["Manufacturing"].append(
+            "Every declared board marking shall retain its text, side, attachment and placement, fit inside the board, and meet the sourced legend height, stroke and pad-clearance minima without silkscreen overlap."
         )
     return "".join(
         "# "
@@ -359,7 +364,7 @@ def envelope(design, root):
         limit["requirement"] = f"R-envelope-{design['name']}-fab-profile"
     write_json(root / "fab-profile.json", profile)
     b = design["board"]
-    x, y = 100, 100
+    x, y = BOARD_ORIGIN_MM
     w, h = b["width_mm"], b["height_mm"]
     right = float(Decimal(x) + Decimal(str(w)))
     bottom = float(Decimal(y) + Decimal(str(h)))
@@ -910,6 +915,24 @@ def topology_rules(design, root):
     write_json(root / "topology-rules.json", document)
 
 
+def board_markings(design, root):
+    """Retain legend limits separately from the structural fabrication profile."""
+    if not design.get("markings"):
+        return
+    from .board_text import SCHEMA
+    profile = load(DATA / "board-text-fab-profile.json")
+    facts_path = "fab-sources/board-text-facts.txt"
+    (root / facts_path).write_bytes((DATA / "board-text-fab-facts.txt").read_bytes())
+    for row in [*profile["limits"], *profile.get("applicability", []), *profile.get("order", [])]:
+        row["source"]["path"] = facts_path
+        row["source"]["sha256"] = digest(root / facts_path)
+    for row in profile["limits"]:
+        row["requirement"] = design["requirement_prefix"] + "-DELIV-2"
+    write_json(root / "board-text-profile.json", profile)
+    write_json(root / "board-text.json", dict(schema=SCHEMA, namespace=design["name"],
+        origin_mm=list(BOARD_ORIGIN_MM), fab_profile="board-text-profile.json", items=design["markings"]))
+
+
 def requirements(design, root, record, suppliers):
     prefix = design["requirement_prefix"]
     name = design["name"]
@@ -995,6 +1018,8 @@ def requirements(design, root, record, suppliers):
     rows += [
         req(f"FUNC-{i}", [rule_check]) for i in range(1, len(design["functional"]) + 1)
     ]
+    if design.get("markings"):
+        rows.append(req("DELIV-2", [check("board-text", "board_text", markings="board-text.json")]))
     rows += [
         req(
             "MECH-1",
@@ -1331,6 +1356,7 @@ def _compile_design(design, captures, out):
         selected_parts(design, root, record, members_sha)
         circuit(design, root, libraries)
         envelope(design, root)
+        board_markings(design, root)
         placement(design, root)
         mechanics(design, root)
         suppliers = cpl_policy(design, root)
@@ -1371,6 +1397,8 @@ def _compile_design(design, captures, out):
         )
         if "mechanics" in design:
             plan["placement"]["mechanics"] = "placement-mechanics.json"
+        if design.get("markings"):
+            plan["board_text"] = "board-text.json"
         write_json(bundle / "build-plan.json", plan)
         from .build_plan import validate_plan
 

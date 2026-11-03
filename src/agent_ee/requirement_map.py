@@ -39,7 +39,7 @@ KIND_CLASS = {
     **dict.fromkeys(('erc', 'drc', 'geometry', 'placement', 'board_envelope', 'fab_profile', 'fab_package',
                      'fab_export', 'fab_roundtrip', 'assembly_readiness', 'parts_subset', 'cpl_rotation',
                      'land_pattern', 'footprint_assignment', 'design_rules', 'routing_rules',
-                     'fab_consistency', 'package_consistency'), 'native'),
+                     'fab_consistency', 'package_consistency', 'board_text'), 'native'),
     **dict.fromkeys(('netlist', 'netlist_parity', 'topology_rules', 'hardware_interface', 'net_names',
                      'block_provenance', 'pin_map', 'pin_contracts', 'symbol_pins'), 'topology'),
     **dict.fromkeys(('interval_assertions', 'active_spice', 'rc_transient', 'dc_path'), 'model'),

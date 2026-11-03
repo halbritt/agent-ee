@@ -19,7 +19,7 @@ def _keys(value, required, optional=()):
 
 def validate_plan(plan):
     _keys(plan, ('schema', 'source', 'requirements', 'parts', 'envelope', 'placement'),
-          ('verification_timeout_s', 'judgments', 'review_profile'))
+          ('verification_timeout_s', 'judgments', 'review_profile', 'board_text'))
     if plan['schema'] not in (SCHEMA, TYPED_SCHEMA) or not isinstance(plan['source'], str) or not plan['source']:
         raise ValueError('expected agent-ee.build-plan/1 or /2 with a source directory')
     typed = plan['schema'] == TYPED_SCHEMA
@@ -38,6 +38,8 @@ def validate_plan(plan):
         raise ValueError('block_contract and block_source are mutually exclusive')
     paths = [plan['envelope'], *plan['requirements'].values(), *plan['parts'].values(),
              plan['placement']['intent'], plan['placement']['groups']]
+    if 'board_text' in plan:
+        paths.append(plan['board_text'])
     if 'planes' in plan['placement']:
         paths.append(plan['placement']['planes'])
     if 'review_profile' in plan:

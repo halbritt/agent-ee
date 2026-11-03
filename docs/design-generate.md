@@ -119,7 +119,12 @@ an author may need a correction turn to quote such items.
 as agent-authored and not owner or datasheet rulings. They are text
 traceability, not proof that the prose or engineering is correct. A whole design
 the compiler subset cannot express is reported with envelope status
-`unsupported`.
+`unsupported` and an empty `statement_json`. For partial gaps, supply the useful
+statement with `ready` and list every unsupported item in `untraced`. A nonempty
+statement in an `unsupported` envelope is also validated, traced, captured,
+compiled and built. The envelope reason remains on the attempt. Untraced items
+are retained before validation or any early exit, including a wholly unsupported
+response, and carried into benchmark rows.
 
 ## Helpers in the author seat
 
@@ -200,6 +205,15 @@ false and `engineering_review` is `not_claimed` when a review ran on a rejected
 attempt, else `not_run`; each attempt row keeps its own results. Supplier
 preview and physical test are never claimed.
 
+An attempt that passes those file/review gates but has any `unsupported`
+untraced item, or an `unsupported` envelope, ends `accepted_partial`. Its
+`accepted` flag is false, and the CLI exits 1: it does not satisfy all the
+requirements. `claims.file_release` still records that the implemented subset
+passed file release; the untraced entries and reasons describe the gap.
+`not_applicable` entries alone do not require this qualifier. Benchmarks continue
+after `accepted_partial`, retain the untraced items, and never count it as plain
+`accepted` or populate `attempts_to_accepted` for it.
+
 ## Final states
 
 `generate-report.json` has schema `agent-ee.design-generate/1`, one row per
@@ -209,6 +223,7 @@ one of these final states:
 | State | Meaning | Benchmark |
 |---|---|---|
 | `accepted` | An attempt passed file release (and review when requested). | continues |
+| `accepted_partial` | The expressible subset passed file release/review; unsupported requirements remain. | continues |
 | `unsupported` | The author reported that the compiler subset cannot express the requirements. | continues |
 | `author_timeout` | The last author turn timed out and no attempt or time was left. | continues |
 | `review_incomplete` | The engineering review ended without a usable outcome and no review seat failed; no further seat was called. | continues |
@@ -220,7 +235,7 @@ one of these final states:
 | `interrupted` | SIGINT or SIGTERM stopped the run. | stops; see below |
 
 Attempt rows use `refused`, `failed`, `author_timeout`, `seat_failed`,
-`unsupported`, `review_incomplete`, `time_exhausted`, `accepted`, `interrupted`
+`unsupported`, `review_incomplete`, `time_exhausted`, `accepted`, `accepted_partial`, `interrupted`
 and `error`.
 
 ## Benchmark

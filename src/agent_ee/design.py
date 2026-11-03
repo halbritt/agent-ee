@@ -170,7 +170,7 @@ def validate(design, captures=None, *, cad_only=False):
             "functional",
             "bench",
         ),
-        ("placement", "mechanics"),
+        ("placement", "mechanics", "markings"),
         "design",
     ):
         raise DesignError(errors)
@@ -381,6 +381,25 @@ def validate(design, captures=None, *, cad_only=False):
         elif pads and ref in pads and pin not in pads[ref]:
             fail(path, f"pin {pin} absent from captured footprint; select matching CAD")
         return ref, pin
+
+    from .board_text import validate_items, default_limits
+    try:
+        markings = validate_items(design.get("markings", []), parts, pins or None)
+        floors = default_limits()
+        for i, marking in enumerate(markings):
+            for key, floor in (("height_mm", "min_silk_text_height_mm"), ("stroke_mm", "min_silk_line_width_mm")):
+                if marking.get(key, floors[floor]) < floors[floor]:
+                    fail(f"markings[{i}].{key}", f"must be at least {floors[floor]} mm from the fabrication profile")
+            if "at_mm" in marking["anchor"]:
+                x, y = marking["anchor"]["at_mm"]
+                if not (0 <= x <= design["board"]["width_mm"] and 0 <= y <= design["board"]["height_mm"]):
+                    fail(f"markings[{i}].anchor.at_mm", "must be within the declared board")
+            elif captures is not None and "pin" in marking["anchor"]:
+                ref, pin = marking["anchor"]["reference"], marking["anchor"]["pin"]
+                if ref in pads and pads[ref].count(pin) != 1:
+                    fail(f"markings[{i}].anchor.pin", "must select exactly one physical pad")
+    except (ValueError, TypeError) as exc:
+        fail("markings", str(exc))
 
     nets = design["nets"]
     if not isinstance(nets, dict) or not nets:

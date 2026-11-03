@@ -269,10 +269,15 @@ def execute(attempt, plan, previous, *, diagnostic=False):
             intent=GENERATED, layout=plan['parts']['layout'])
         for index, step in enumerate([content, *native['implementation_steps']]):
             _step(directory, candidate, step, index)
+        next_step = len(native['implementation_steps']) + 1
+        if 'board_text' in plan:
+            from . import board_text
+            _step(directory, candidate, board_text.step(REPOSITORY, scope['board'], plan['board_text']), next_step)
+            next_step += 1
         if 'block_source' in plan['placement']:
             from . import block_source_stage
             step = block_source_stage.configuration(SOURCE_ROOT, candidate, scope, plan)
-            _step(directory, candidate, step, len(native['implementation_steps']) + 1)
+            _step(directory, candidate, step, next_step)
     elif stage == 'placement-routing':
         from . import placement_job
         accounting = retained_run.accounting(out)['requirements']

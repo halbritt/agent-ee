@@ -83,7 +83,7 @@ def overhang_orientation_mark(board, fp, record, rotation):
 
 
 def reserve_imu_markings(board, policy):
-    """Reserve visible IMU and assembly callout boxes plus 0.2 mm.
+    """Reserve all visible board text boxes plus 0.2 mm.
 
     The effective packing policy retains the UUID and exact reservation geometry.
     The board itself and the captured policy are not modified.
@@ -95,7 +95,6 @@ def reserve_imu_markings(board, policy):
     obstacles = list(policy['obstacles'])
     for item in sorted(board.GetDrawings(), key=lambda x: x.m_Uuid.AsString()):
         if (item.GetClass() != 'PCB_TEXT' or not item.IsVisible() or
-                item.GetText().split()[:1] not in (['IMU_AXES'], ['ASM']) or
                 item.GetLayer() not in (k.F_SilkS, k.B_SilkS)):
             continue
         box = item.GetBoundingBox()
@@ -104,5 +103,5 @@ def reserve_imu_markings(board, policy):
         x1, y1 = box.GetRight() + margin, box.GetBottom() + margin
         obstacles.append(dict(side='F' if item.GetLayer() == k.F_SilkS else 'B',
             polygons=[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]],
-            source=item.GetText().split()[0] + '/' + item.m_Uuid.AsString()))
+            source=(item.GetText().split()[:1] or ['board-text'])[0] + '/' + item.m_Uuid.AsString()))
     return {**policy, 'obstacles': obstacles}

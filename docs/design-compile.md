@@ -46,6 +46,51 @@ Unknown fields are refused.
 | `bench` | Nonempty list of physical follow-ups. These remain physical obligations, separate from executable file checks. |
 | `placement` | Optional `{budget_s, seeds, steps_per_seed}`; defaults are 600 seconds, 4 seeds, and 100000 steps per seed. |
 | `mechanics` | Optional `{access_owners, packages}`; see below. Omitted means no declared body/access model. |
+| `markings` | Optional list of visible silkscreen labels; see Board text below. |
+
+## Board text
+
+Use `markings` for board names, connector pin names and polarity marks. Values
+on fabrication layers do not satisfy a printed-label requirement.
+
+```json
+"markings": [
+  {"id": "board-name", "text": "Sensor", "layer": "F.SilkS",
+   "anchor": {"at_mm": [15, 4]}},
+  {"id": "supply", "text": "+", "layer": "F.SilkS",
+   "anchor": {"reference": "J1", "pin": "1", "offset_mm": [3, 0]}},
+  {"id": "connector", "text": "POWER", "layer": "F.SilkS",
+   "anchor": {"reference": "J1", "offset_mm": [0, 5]}, "rotation_deg": 90}
+]
+```
+
+Each label needs a unique `id`, literal `text`, `layer` and `anchor`. Text is
+one nonblank line of at most 256 printable characters; KiCad `${...}` text
+variables are refused. Layers are `F.SilkS` and `B.SilkS`. Free `at_mm` coordinates
+are measured from the board's top-left corner, with x right and y down.
+Attached `offset_mm` is measured from the part origin or the named physical pad,
+in the footprint's local front-side frame. A pin must select exactly one pad;
+repeated pad numbers are refused. Attached labels are footprint graphics and
+follow translation, rotation and side flips. Their layer is relative to the
+part's original front side: `F.SilkS` follows the component side and `B.SilkS`
+follows its opposite side. Back text is mirrored for reading from the back.
+
+Optional `rotation_deg` defaults to zero and must be a multiple of 90. Optional
+`height_mm` and `stroke_mm` default to the sourced legend fabrication profile's
+1.0 mm and 0.15 mm minima; smaller sizes are refused. Compilation retains this
+profile and its source facts separately from the structural fabrication profile.
+The generated `board-text.json` and build plan cause native emission after
+forward annotation. Free text reserves placement space. Attached text retains
+its declared offset; the artwork mover does not relocate it.
+
+The final `board_text` file check verifies content, visibility, attachment, side,
+position, angle, font and size on the saved board. It requires the full native
+text bounds inside the outline. Native stroke shapes must not overlap other
+silk or pad mask openings and must clear same-side pad copper by the sourced
+0.15 mm pad-clearance floor.
+Native DRC also runs on the complete
+board; no label is hidden, clipped or moved to a fabrication layer to pass.
+Neither check establishes physical printing or readability after assembly.
 
 The initial sourced fab template supports conventional FR-4, two copper layers,
 1 oz outer copper and nominal 1.2 mm thickness. Other layer counts and nominal

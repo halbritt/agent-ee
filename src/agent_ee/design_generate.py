@@ -366,8 +366,11 @@ requirements below. Read /candidate/design-compile.md, /candidate/examples/*.jso
 /candidate/design_shape.py and /candidate/design.py: these are the current statement
 schema/validators. Return the response envelope from /candidate/author-schema.json;
 statement_json contains the complete design as JSON text. Never write a build bundle.
-Use status=unsupported and explain the requirement when this compiler subset cannot
-satisfy it. Never silently weaken or change a requirement (e.g. four layers).
+Build the expressible subset when some items are unsupported: return status=ready
+with those items in untraced, status=unsupported and a reason. Use envelope
+status=unsupported only when no useful statement can be supplied (empty statement_json).
+An unsupported envelope with a nonempty statement is also validated and built as
+a partial design. Never silently weaken or change a requirement (e.g. four layers).
 
 Choose a compact practical outline unless requirements constrain it. Keep functional
 blocks together. All discretionary choices (including dimensions, values, thresholds,
@@ -888,11 +891,17 @@ def _generate(requirements_path, out, options, identity=None):
                         row.update(status='seat_failed', reason=record.get('error', 'Author returned no valid response'))
                         report['status'] = 'seat_failed'
                         break  # Auth/quota/transport failures never trigger a fallback or another seat.
-                    if response['status'] == 'unsupported':
+                    capture, text = attempt / 'capture', response['statement_json']
+                row['untraced'] = response['untraced']
+                write_json(attempt / 'provenance.json', dict(requirements_sha256=report['requirements_sha256'],
+                    trace=response['trace'], untraced=response['untraced'], agent_selected=response['agent_selected'],
+                    authority='Agent-authored choices and requirement quotations; not owner or datasheet rulings.'))
+                if response['status'] == 'unsupported':
+                    row['unsupported_reason'] = response['reason']
+                    if not text.strip():
                         row.update(status='unsupported', reason=response['reason'])
                         report['status'] = 'unsupported'
                         break
-                    capture, text = attempt / 'capture', response['statement_json']
                 (attempt / 'statement.json').write_text(text, encoding='utf-8')
                 current = text
                 try:
@@ -903,10 +912,6 @@ def _generate(requirements_path, out, options, identity=None):
                 problems = trace_problems(response, current, requirements)
                 if problems:
                     raise design.DesignError(problems)
-                row['untraced'] = response['untraced']
-                write_json(attempt / 'provenance.json', dict(requirements_sha256=report['requirements_sha256'],
-                    trace=response['trace'], untraced=response['untraced'], agent_selected=response['agent_selected'],
-                    authority='Agent-authored choices and requirement quotations; not owner or datasheet rulings.'))
                 row['capture'] = str(capture)
                 if not capture.exists():
                     record = run_step(attempt, 'capture', [sys.executable, '-B', '-m', 'agent_ee.cli',
@@ -976,8 +981,13 @@ def _generate(requirements_path, out, options, identity=None):
                             report['status'] = 'review_incomplete'
                             break
                         raise PhaseFailure('review', review_reason(row['review_findings'], reviewed, attempt, record), record)
-                row['status'] = 'accepted'
-                report.update(status='accepted', accepted=True, selected_attempt=number)
+                partial = response['status'] == 'unsupported' or any(
+                    item['status'] == 'unsupported' for item in response['untraced'])
+                row['status'] = 'accepted_partial' if partial else 'accepted'
+                if partial:
+                    row['reason'] = ('File release passed for the expressible subset; unsupported requirement items remain. '
+                                     + (response['reason'] if response['status'] == 'unsupported' else '')).strip()
+                report.update(status=row['status'], accepted=not partial, selected_attempt=number)
                 report['claims'].update(file_release=True, engineering_review=row['engineering_review'])
                 break
             except native_run.DeadlineExhausted as exc:
@@ -1040,7 +1050,7 @@ def _generate(requirements_path, out, options, identity=None):
         raise
     finally:
         with held_stops():
-            if not report['accepted']:
+            if not report['accepted'] and report['status'] != 'accepted_partial':
                 # Claims describe the final outcome: nothing is claimed without an accepted attempt.
                 reviewed = any(r.get('engineering_review', 'not_run') != 'not_run' for r in report['attempts'])
                 report['claims'].update(file_release=False, engineering_review='not_claimed' if reviewed else 'not_run')

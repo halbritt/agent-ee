@@ -96,14 +96,14 @@ assert shape.GetLayer()==k.F_Fab and fp.Reference().GetLayer()==k.B_Fab
 assert pad.GetSize()==before
 ''')
 
-    def test_imu_reservation_blocks_same_side_and_keeps_policy(self):
+    def test_board_text_reservation_blocks_same_side_and_keeps_policy(self):
         work = self.native('''
 import pcbnew as k
 from agent_ee.silkscreen import reserve_imu_markings
 from agent_ee.storage import write_json
 b=k.BOARD()
 for i, (label,layer) in enumerate([('IMU_AXES X forward Y left Z up',k.F_SilkS),
-                                  ('IMU_AXES back',k.B_SilkS),('unrelated',k.F_SilkS)]):
+                                  ('IMU_AXES back',k.B_SilkS),('board name',k.F_SilkS)]):
     t=k.PCB_TEXT(b);t.SetText(label);t.SetLayer(layer);t.SetPosition(k.VECTOR2I(10000000,10000000))
     t.SetTextSize(k.VECTOR2I(800000,800000));t.SetTextThickness(120000);b.Add(t)
 for invalid in (None, {}, {'obstacles':None}):
@@ -111,7 +111,8 @@ for invalid in (None, {}, {'obstacles':None}):
 policy={'obstacles':[]}
 a=reserve_imu_markings(b,policy)
 assert policy=={'obstacles':[]}
-assert a==reserve_imu_markings(b,policy) and len(a['obstacles'])==2
+assert a==reserve_imu_markings(b,policy) and len(a['obstacles'])==3
+assert any(o['source'].startswith('board/') for o in a['obstacles'])
 assert {o['side'] for o in a['obstacles']}=={'F','B'}
 write_json('/work/reserved.json',a)
 ''')
