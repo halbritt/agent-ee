@@ -140,7 +140,7 @@ MUTANTS = {'baseline': ([],
                             ['test_local_decoupling']),
  'C10_unknown_aggregates_to_info': ([('src/agent_ee/decoupling_loops.py',
                                       "                         'unknown' if any(r['outcome'] == 'unknown' "
-                                      'for r in records) else\n',
+                                      'for r in records + bank_records) else\n',
                                       '')],
                                     ['test_local_decoupling']),
  'C11_cap_plane_access_ignored': ([('src/agent_ee/decoupling_loops.py',
@@ -219,6 +219,23 @@ MUTANTS = {'baseline': ([],
                                       "mechanics.known_revision(recipe['declaration']['sources']['analysis/geometry-model.json']))\n")],
                                     ['test_local_return_seed'])}
 
+# Bank-specific faults complement the original 31 reviewer mutations.
+MUTANTS.update({
+    'B1_partition_ignores_shared_return': ([(LD,
+        "terminals = {endpoint_key(relation[leg][0]) for leg in ('supply', 'return')}",
+        "terminals = {endpoint_key(relation['supply'][0])}")], T_LOCAL),
+    'B2_partition_ignores_shared_supply': ([(LD,
+        "terminals = {endpoint_key(relation[leg][0]) for leg in ('supply', 'return')}",
+        "terminals = {endpoint_key(relation['return'][0])}")], T_LOCAL),
+    'B3_block_only_one_bank_capacitor': ([(DL,
+        "return [pad(board, endpoint) for endpoint in endpoints.values()]",
+        "return [pad(board, endpoint) for endpoint in endpoints.values()][:1]")], T_LOCAL),
+    'B4_bank_bypass_always_false': ([(DL,
+        "pin_bypasses_bank=graph.bypass(first, capacitors),",
+        "pin_bypasses_bank=False,")], T_LOCAL),
+})
+
+
 def run(name):
     edits, tests = MUTANTS[name]
     work = WORK / name
@@ -255,3 +272,10 @@ class Mutations(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=3) as pool:
             results = list(pool.map(run, MUTANTS))
         (OUT / 'results.json').write_text(json.dumps(results, indent=1))
+        self.assertEqual(next(r for r in results if r['name'] == 'baseline')['status'], 'GREEN')
+        equivalent = {'G5_via_may_sit_in_own_land', 'C7_islands_merged',
+                      'F6_route_unlocked_policy', 'R2_has_loops_from_fields_again'}
+        for row in results:
+            if row['name'] != 'baseline':
+                allowed = ('KILLED', 'SURVIVED') if row['name'] in equivalent else ('KILLED',)
+                self.assertIn(row['status'], allowed, row)
