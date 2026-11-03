@@ -27,15 +27,6 @@ class LocalReturnSeedTests(unittest.TestCase):
             'model': {'custody': 'design-declared'}
         }))
 
-        # Design-declared model with declared decoupling loops
-        self.assertTrue(local_return_seed.applies({
-            'custody': 'design-declared',
-            'model': {
-                'custody': 'design-declared',
-                'decoupling_loops': [{'component': 'U1', 'pin': '1'}]
-            }
-        }))
-
         # Design-declared model with declared ground ties
         self.assertTrue(local_return_seed.applies({
             'custody': 'design-declared',
@@ -44,6 +35,26 @@ class LocalReturnSeedTests(unittest.TestCase):
                 'ground_ties': [{'point_mm': [10.0, 10.0]}]
             }
         }))
+
+    def test_design_declared_loop_fields_refuse_by_name(self):
+        for field in ('connections', 'local_loops', 'decoupling_loops'):
+            for carrier in ('recipe', 'model'):
+                with self.subTest(field=field, carrier=carrier):
+                    recipe = {'model': {field: []}}
+                    target = recipe['model'] if carrier == 'model' else recipe
+                    target['custody'] = 'design-declared'
+                    with self.assertRaisesRegex(JobRefusal, 'mechanics field ' + field):
+                        local_return_seed.applies(recipe)
+                    with self.assertRaisesRegex(JobRefusal, 'mechanics field ' + field):
+                        local_return_seed.produce(self.tmp, self.tmp / 'output', expected_inputs={},
+                            mechanics_binding={'recipe': recipe}, planes=b'', clock=None)
+                    self.assertFalse((self.tmp / 'output').exists())
+
+    def test_known_acquisition_revision_keeps_legacy_loop_selection(self):
+        from agent_ee import source_mechanics
+        recipe = {'model': {'connections': []}, 'declaration': {'sources': {
+            'analysis/geometry-model.json': source_mechanics.MODEL}}}
+        self.assertTrue(local_return_seed.applies(recipe))
 
     def test_capture_and_identity(self):
         # Missing required files raises JobRefusal

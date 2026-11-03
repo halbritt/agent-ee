@@ -42,6 +42,11 @@ an unknown measurement or an exceeded declared loop limit. The package check
 repeats the measurement on its saved board. Seeding and its DRC share the
 candidate's routing time allocation; a local deadline can advance the portfolio.
 The acquisition recipe retains its original producer and evidence identity.
+`local_return_seed` refuses `connections`, `local_loops` and `decoupling_loops`
+in design-declared mechanics models, naming the field. Those fields cannot
+select the acquisition board's fixed endpoints. Use the separate
+`local_decoupling` contract for declared electrical relations; this keeps
+mechanics custody and the historical acquisition recipe distinct.
 
 The check loads the final saved board and uses native KiCad
 `GetConnectedTracks` and `GetConnectedPads`, plus collisions with saved filled

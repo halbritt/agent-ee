@@ -117,7 +117,7 @@ def _track(board, points, net, layer, width):
 
 
 def _leg(board, first, second, *, clock, cancel_dir):
-    from .acquisition_local_return import _obstacle_path
+    from .acquisition.local_return import _obstacle_path
     layer = _surface(board, first)
     if _surface(board, second) != layer:
         raise ValueError('local leg endpoints must share a copper face')
@@ -167,7 +167,7 @@ def _tie(board, terminal, plane, *, clock, cancel_dir):
                 continue
             # Reuse the same visibility primitive for a short escape, and keep
             # its bound tighter than the general leg's bounded search.
-            from .acquisition_local_return import _obstacle_path
+            from .acquisition.local_return import _obstacle_path
             path = _obstacle_path(a, b, front, clock=clock, cancel_dir=cancel_dir)
             if path is None or sum(math.dist(p, q) for p, q in zip(path, path[1:])) > 2_000_000:
                 continue

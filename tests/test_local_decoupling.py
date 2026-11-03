@@ -192,7 +192,7 @@ class LocalCopperTests(unittest.TestCase):
 
     def test_no_local_escape_names_the_relation(self):
         from unittest.mock import patch
-        with patch('agent_ee.acquisition_local_return._obstacle_path', return_value=None):
+        with patch('agent_ee.acquisition.local_return._obstacle_path', return_value=None):
             self.assertRaisesRegex(JobRefusal, 'local decoupling cell:', self.seed)
 
     def test_foreign_pad_obstacle_forces_a_detour(self):

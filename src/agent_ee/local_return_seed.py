@@ -1,7 +1,8 @@
 """Data-driven local routing seed, ground ties, and reservation contracts.
 
-Supports both design-declared models (accepting decoupling loop definitions, ground ties,
-and B.Cu thermal bars in geometry-model.json) and legacy historical revisions.
+Design-declared models may supply ground ties and B.Cu thermal bars. Declared
+decoupling relations use local_decoupling; loop fields in a mechanics model are
+refused. Known acquisition revisions retain their historical loop recipe.
 """
 import hashlib
 from pathlib import Path
@@ -61,10 +62,19 @@ _capture = capture
 _identity = identity
 
 
+def _refuse_declared_loops(recipe):
+    if mechanics.is_design_declared(recipe):
+        for field in ('connections', 'local_loops', 'decoupling_loops'):
+            if field in recipe.get('model', {}):
+                raise JobRefusal(f'local routing: design-declared mechanics field {field} is unsupported; '
+                                 'declare decoupling relations in the local_decoupling contract')
+
+
 def applies(recipe):
     """Whether local routing seeding applies to this recipe."""
     if not isinstance(recipe, dict):
         return False
+    _refuse_declared_loops(recipe)
     model = recipe.get('model', {})
     if any(k in model for k in ('connections', 'local_loops', 'decoupling_loops', 'ground_ties', 'thermal_bars', 'local_plane_returns', 'ground_strips')):
         return True
@@ -343,6 +353,7 @@ def seed_ground_ties(board_path, data, policy):
 
 
 def produce(candidate_dir, destination, *, expected_inputs, mechanics_binding, planes, clock, cancel_dir=None):
+    _refuse_declared_loops(mechanics_binding['recipe'])
     import importlib
     try:
         ground = importlib.import_module("agent_ee.acquisition.ground_ties")
@@ -377,10 +388,9 @@ def produce(candidate_dir, destination, *, expected_inputs, mechanics_binding, p
 
     try:
         write_json(destination / 'record.json', record)
-        # Determine whether decoupling loops are declared or legacy
+        # Only authenticated acquisition revisions may select the historical loops.
         model = recipe.get('model', {})
-        has_loops = ('local_loops' in model or 'connections' in model
-                     or mechanics.known_revision(recipe['declaration']['sources']['analysis/geometry-model.json']))
+        has_loops = mechanics.known_revision(recipe['declaration']['sources']['analysis/geometry-model.json'])
         current = source
         baseline_raw = local._report_bytes(current)
         baseline = strict_json(baseline_raw)
