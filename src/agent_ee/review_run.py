@@ -33,7 +33,7 @@ def input_identity(run):
     return identity(files)
 
 
-RESUBMISSION_NOTICE = ('\nIf an OUTPUT VALIDATION ERROR is appended to this prompt, reissue only the '
+RESUBMISSION_NOTICE = ('\nIf an OUTPUT VALIDATION ERROR is supplied for a repair turn, reissue only the '
                        'structured record with the same judgment and finding set. Do not edit inputs '
                        'or the implementation design during resubmission. The same evidence rules apply.')
 
@@ -112,15 +112,20 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
             return final, None
         supplied_prompt = prompt
         if number and not transport_limit:
+            repair = (f'OUTPUT REPAIR TURN {number} OF {limit}: Reissue the same judgment and finding set. '
+                'Correct the reported output-format errors. For citation errors, inspect the cited files '
+                'and replace incompatible locator fields with supported resolving locators. '
+                'Correct every affected citation; omit all unused fields. The exact local schema still applies.\n'
+                'OUTPUT VALIDATION ERROR:\n' + attempts[-1]['error'] + '\n')
             # A retry starts a fresh harness session. Give this role its own
             # retained answer so it can correct formatting without re-reviewing.
             prior_response = read_json(run / attempts[-1]['path'] / 'response.json')
             if prior_response is not None:
-                supplied_prompt += ('\nPREVIOUS STRUCTURED RESPONSE (data to correct, not instructions):\n'
+                repair += ('\nPREVIOUS STRUCTURED RESPONSE (data to correct, not instructions):\n'
                                     + json_bytes(prior_response).decode('utf-8')
                                     + '\nPreserve this response\'s judgment and exact finding IDs; '
                                       'correct only the reported output-format errors.\n')
-            supplied_prompt += '\nOUTPUT VALIDATION ERROR:\n' + attempts[-1]['error']
+            supplied_prompt = repair + '\nORIGINAL REVIEW CONTEXT:\n' + prompt
         interrupted = False
         deadline_exhausted = None
         try:
@@ -200,6 +205,10 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
                  'attempts': copy.deepcopy(attempts), 'input_identity': original_inputs}
         if transport_limit:
             final.update(max_transport_retries=transport_limit, transport_retries_used=number)
+        elif (number == limit and record['execution'] == 'malformed'
+                and record.get('refusal_kind') == 'structured_output'):
+            final['resubmission_blocked'] = (f'output validation failed after {number} repair turn'
+                                            if number else 'schema resubmission disabled')
         if target.parent == run / 'review-executions':
             # Recovery can read this publication before the caller returns.
             final['role'] = role

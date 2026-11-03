@@ -94,14 +94,30 @@ factored literal path expression. This preserves exactly the same finite path
 set and locator-format partitions. The complete producer schema must still fit
 the 120 KiB transport limit, including RF and adjudicator fields; an inventory
 that cannot fit is refused without dropping paths or increasing that limit.
-The provider copy omits only the finite path patterns, retaining path lengths,
-types, locator branches and the short own-experiment pattern. Large finite
-patterns failed the subscription transport even with a tiny prompt. Local
+The provider copy replaces oversized finite path patterns with short constraints
+that keep captured locator-format groups disjoint. A suffix unique to one format
+group uses a suffix constraint. Shared or misleading suffixes use exact filenames;
+filenames shared across formats use exact full paths. Name/path alternatives are
+split into small patterns. This prevents a captured lines-only file from matching
+a pointer or XPath branch, even if generation has already chosen its first field.
+The exact finite path language stays in the local schema; no nullable unused
+locator fields are added. Large finite patterns failed the subscription transport
+even with a tiny prompt. Local
 admission checks exact raw path membership and locator field sets against the
 complete archived schema before semantic resolution. Successful attempt replay
 repeats that check against its original schema and response. Existing but
 uncaptured files and peer experiments cannot enter through the simpler provider
 schema; the adjudicator retains only its explicitly captured peer evidence.
+
+Every review seat also receives a compact `CITATION LOCATOR TABLE` in its
+prompt. It comes from the same captured inventory as the local schema, including
+the adjudicator's retained reviewer experiments. Suffix rows give the common
+locator fields; exact-path overrides cover files whose actual bytes differ
+from that common format. An empty suffix means no extension; an empty field
+list means binary evidence that needs a captured text extraction. These rows
+guide locator selection and grant no additional path access. New own experiments
+still require line citations. Exact local admission and resolution remain the
+authority, including on a repair turn.
 
 Initial `investigate` reviewers can save a complete draft to `/work/draft.json`
 and run `python3 -m agent_ee.review_draft /work/draft.json` before submission.
@@ -175,9 +191,13 @@ Cancellation is checked during launch and at 50 ms intervals while waiting;
 output draining and worker cleanup have one- and two-second bounds respectively.
 A cleanup overrun is retained explicitly rather than reported as a clean review.
 A malformed initial response stays invalid while the other role may still run.
-Campaigns can request a separately recorded [bounded resubmission](campaign-guide.md#bounded-output-resubmission)
-with the same profile and exact validation error; standalone CLI reviews keep a
-single call.
+Initial reviewers and the adjudicator default to one separately recorded
+[bounded resubmission](campaign-guide.md#bounded-output-resubmission), with the
+same profile and exact validation error. An explicit `max_schema_resubmissions=0`
+retains a single call. The repair prompt starts with the validation error and
+repair instructions, followed by the refused response and original context.
+A second invalid response stops with its exact validation error and
+`resubmission_blocked: "output validation failed after 1 repair turn"`.
 Returned reviews and execution records follow profile role order, regardless of
 completion order. Every call is bounded by its profile timeout and the remaining
 shared deadline at admission. Adjudication begins only after all initial roles

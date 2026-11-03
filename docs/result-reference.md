@@ -221,7 +221,10 @@ retaining an invalid pointer or XPath still fails. Each refused response remains
 in its own attempt archive. Campaigns, standalone `run_review` calls and the
 `review` CLI default to one resubmission per role. `run_review` callers can pass
 `max_schema_resubmissions=0` to retain a single call. The original prompt carries
-the resubmission notice; the second call appends the exact validation error.
+the resubmission notice; the second call starts with repair instructions and
+the exact validation error, before the refused response and original context.
+If that call also fails validation, the execution projection retains the exact
+error and `resubmission_blocked: "output validation failed after 1 repair turn"`.
 
 Citations may name `baseline.json` when its raw file bytes match the canonical
 serialized bytes of the captured scope/2 or scope/3 immutable baseline (never

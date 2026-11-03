@@ -8,6 +8,7 @@ from agent_ee import reviewers
 from agent_ee.candidate import capture
 from agent_ee.executor import sandbox_argv
 from agent_ee.harnesses import evidence_mounts
+from agent_ee.review_run import RESUBMISSION_NOTICE
 from agent_ee.reviewers import PROMPT_PACKET_CHARS, adjudicator_call, initial_reviews, prompt_packet
 from agent_ee.storage import digest, identity, read_json, write_json
 from tests import test_findings as fixture
@@ -116,6 +117,8 @@ class PacketTransportTests(unittest.TestCase):
         self.assertEqual(len(reviews), 2, records)
         self.assertEqual(record['execution'], 'ok')
         for role, (prompt, schema, mode) in prompts.items():
+            self.assertTrue(prompt.endswith(RESUBMISSION_NOTICE))
+            prompt = prompt.removesuffix(RESUBMISSION_NOTICE)
             self.assertEqual(mode, 'investigate')
             self.assertLess(len(prompt), 1_048_576, role)
             self.assertIn('PACKET TRANSPORT', prompt)
@@ -150,6 +153,8 @@ class PacketTransportTests(unittest.TestCase):
             reviews, records = initial_reviews(self.run_dir, packet, time.monotonic() + 30)
         self.assertEqual(len(reviews), 2, records)
         for prompt, mode in prompts.values():
+            self.assertTrue(prompt.endswith(RESUBMISSION_NOTICE))
+            prompt = prompt.removesuffix(RESUBMISSION_NOTICE)
             self.assertEqual(mode, 'fixed_packet')
             self.assertNotIn('PACKET TRANSPORT', prompt)
             self.assertEqual(json.loads(prompt.split('PACKET:\n', 1)[1]), packet)

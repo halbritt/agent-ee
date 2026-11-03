@@ -59,18 +59,25 @@ file or criterion requires a deliberately revised scope and a new campaign.
 
 ## Bounded output resubmission
 
-A successful reviewer, adjudicator or writer call whose structured output fails
-validation may make one separately recorded resubmission. The new call uses the
-same captured inputs, profile, schema and prompt, with the exact validation error
-appended. The original output remains refused. Witness and citation validators
-apply unchanged; the coordinator never repairs or drops a finding. When the
+A reviewer, adjudicator or writer call whose structured output fails validation,
+or whose provider explicitly rejects the request schema or output-token limit,
+may make one separately recorded resubmission. The new call uses the
+same captured inputs, profile and schema. Its prompt starts with the exact
+validation error and repair instructions, followed by the refused response and
+original context. The original output remains refused. Witness and citation
+validators apply unchanged; the coordinator never repairs or drops a finding. When the
 first output has identifiable findings, a resubmission must preserve their IDs.
 The adjudicator always receives the same supplied finding set.
 
 Each call has a new preflight receipt against the original pinned environment.
 Runtime or policy drift stops the resubmission before dispatch. Authentication,
-quota, process failure, timeout, cancellation and incomplete harness streams
-are terminal; they never select another provider or account. A second invalid
+quota, unknown process failures, timeout, cancellation and incomplete harness
+streams are terminal; they never select another provider or account. Explicit
+provider schema/output-token errors are classified as `malformed` with
+`refusal_kind=structured_output` even when the process exits nonzero, so they
+can use the one resubmission. A locally constructed oversized schema is a
+terminal `failed` tool defect (`failure_kind=tool_defect`); retrying that identical
+schema cannot help and no seat is launched. A second invalid
 output leaves the role malformed and the review incomplete. Native checks never
 use this mechanism. The existing campaign deadline bounds both calls. If file inputs change between
 archival and the next launch, the original refusal stays terminal and its

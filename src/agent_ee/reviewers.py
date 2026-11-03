@@ -32,8 +32,7 @@ EVIDENCE_SCHEMA = {"type": "array", "items": {"anyOf": [
     for size in range(1, 4) for fields in combinations(("pointer", "lines", "xpath"), size)]}}
 
 
-def evidence_schema(run_dir, packet, role):
-    """Bind producer locator choices to captured bytes, before semantic resolution."""
+def _citation_inventory(run_dir, packet, role):
     if not isinstance(role,str) or re.fullmatch(r'[a-z][a-z0-9_-]{0,63}',role) is None:
         raise ValueError('citation schema requires an admitted review role')
     from .findings import citation_format, validate_citation_path
@@ -63,6 +62,15 @@ def evidence_schema(run_dir, packet, role):
                 rel = path.relative_to(run).as_posix()
                 validate_citation_path(rel, run)
                 inventory.append(dict(path=rel, **citation_format(read_captured(run, rel))))
+    return inventory
+
+
+def evidence_schema(run_dir, packet, role):
+    """Bind producer locator choices to captured bytes, before semantic resolution."""
+    return _inventory_evidence_schema(_citation_inventory(run_dir, packet, role), role)
+
+
+def _inventory_evidence_schema(inventory, role):
     # Partition by exact membership so each path occurs in only one enum, even
     # though JSON/XML paths support both structural and line citations.
     memberships = {}
@@ -100,20 +108,46 @@ def evidence_schema(run_dir, packet, role):
     return {'type': 'array', 'items': {'anyOf': branches}, '$defs': definitions}
 
 
+def citation_locator_instructions(inventory):
+    """Describe the byte-derived policy compactly without assuming suffixes imply formats."""
+    groups = {}
+    for row in inventory:
+        suffix = Path(row['path']).suffix
+        kinds = tuple(sorted(row['locator_kinds']))
+        groups.setdefault(suffix, {}).setdefault(kinds, set()).add(row['path'])
+    suffixes, overrides = {}, {}
+    for suffix, choices in sorted(groups.items()):
+        common = max(choices, key=lambda kinds: (len(choices[kinds]), kinds))
+        suffixes[suffix] = list(common)
+        for kinds, paths in sorted(choices.items()):
+            if kinds != common:
+                overrides.update((path, list(kinds)) for path in sorted(paths))
+    return ('CITATION LOCATOR POLICY: For captured files, look up the exact path in path_overrides first; '
+        'otherwise use its final suffix in suffixes (empty suffix means no extension). '
+        'Each list names the ONLY allowed structured locator fields: choose one or more and OMIT all others. '
+        'An empty list means binary evidence: cite a captured text extraction. '
+        'This table is classified from captured bytes, including misleading extensions; it does not admit new paths. '
+        'Native KiCad S-expressions accept lines only: never pointer or xpath. '
+        'New own experiments require lines only, including JSON/XML; captured peer experiments follow this table. '
+        'Inspect each cited file to obtain a resolving locator. Exact local validation remains authoritative.\n'
+        'CITATION LOCATOR TABLE (JSON):\n' + json.dumps(
+            dict(suffixes=suffixes, path_overrides=overrides), separators=(',', ':')) + '\n')
+
+
 def citation_transport_schema(schema):
     """Keep finite path membership in the archived/local contract, not the provider grammar.
 
     Large finite regexes fail on the real subscription route even with a tiny
-    prompt. Only their provider copy loses the pattern; local admission and
-    replay evaluate the complete original schema before semantic resolution.
+    prompt. The provider copy uses short format partitions; local admission and
+    replay evaluate the exact finite language before semantic resolution.
     """
     wire = json.loads(json.dumps(schema))
     for name, definition in wire.get('$defs', {}).items():
         if name.startswith('citation_paths_'):
-            for shape in definition.get('anyOf', []):
-                if set(shape) != {'type', 'pattern', 'minLength', 'maxLength'} or shape['type'] != 'string':
+            if 'allOf' in definition:
+                if set(definition) != {'allOf'} or len(definition['allOf']) != 2:
                     raise ValueError('unsupported finite citation transport definition')
-                del shape['pattern']
+                wire['$defs'][name] = definition['allOf'][1]
     return wire
 
 
@@ -161,6 +195,9 @@ def validate_evidence_paths(value, schema):
         if set(shape) == {'anyOf'} and isinstance(shape['anyOf'], list) and shape['anyOf']:
             choices = [compile_path(branch, seen) for branch in shape['anyOf']]
             return lambda path: any(match(path) for match in choices)
+        if set(shape) == {'allOf'} and isinstance(shape['allOf'], list) and shape['allOf']:
+            constraints = [compile_path(branch, seen) for branch in shape['allOf']]
+            return lambda path: all(match(path) for match in constraints)
         if (shape.get('type') != 'string' or set(shape)-{'type','enum','pattern','minLength','maxLength','description'}
                 or not ('enum' in shape or 'pattern' in shape)):
             raise ValueError('unsupported exact citation path schema')
@@ -245,6 +282,49 @@ def literal_path_set(paths):
                           minLength=min(map(len, paths)), maxLength=max(map(len, paths)))]}
 
 
+def provider_path_sets(groups):
+    """Keep captured format groups disjoint using suffixes, names, then full paths.
+
+    A suffix shared by formats needs exact names. A name shared by formats needs
+    full paths. Repeated captures can share a name without enumerating directories.
+    Exact local inventory membership still rejects uncaptured paths.
+    """
+    suffix_groups, name_groups = {}, {}
+    for group, paths in groups.items():
+        for path in paths:
+            suffix_groups.setdefault(Path(path).suffix, set()).add(group)
+            name_groups.setdefault(Path(path).name, set()).add(group)
+
+    def patterns(values, prefix):
+        chunk = []
+        for value in sorted(set(values)):
+            trial = chunk + [value]
+            expression = literal_path_set(trial)['anyOf'][0]['pattern'][1:-1]
+            if chunk and len(prefix + expression + '$') > 384:
+                yield prefix + literal_path_set(chunk)['anyOf'][0]['pattern'][1:-1] + '$'
+                chunk = [value]
+            else:
+                chunk = trial
+        if chunk:
+            yield prefix + literal_path_set(chunk)['anyOf'][0]['pattern'][1:-1] + '$'
+
+    definitions = {}
+    for group, paths in groups.items():
+        suffixes, names, exact = set(), set(), set()
+        for path in paths:
+            suffix, name = Path(path).suffix, Path(path).name
+            if suffix and len(suffix_groups[suffix]) == 1:
+                suffixes.add(suffix)
+            elif len(name_groups[name]) == 1:
+                names.add(name)
+            else:
+                exact.add(path)
+        expressions = [*patterns(suffixes, r'^(?:[\s\S]*/)?[^/]+'),
+                       *patterns(names, r'^(?:[\s\S]*/)?'), *patterns(exact, '^')]
+        definitions[group] = {'anyOf': [dict(type='string', pattern=expression) for expression in expressions]}
+    return definitions
+
+
 def _schema_enums(node):
     if isinstance(node, dict):
         if 'enum' in node:
@@ -287,7 +367,8 @@ def _check_schema_limits(schema):
 
 
 def bind_evidence_schema(schema, collection, run_dir, packet, role):
-    evidence = evidence_schema(run_dir, packet, role)
+    inventory = _citation_inventory(run_dir, packet, role)
+    evidence = _inventory_evidence_schema(inventory, role)
     schema['$defs'] = evidence.pop('$defs')
     schema['properties'][collection]['items']['properties']['evidence'] = evidence
     # Count the complete producer schema, including identity/finding enums.
@@ -303,7 +384,9 @@ def bind_evidence_schema(schema, collection, run_dir, packet, role):
             group = name.rsplit('_', 1)[0]
             groups.setdefault(group, []).extend(definition['enum'])
             redirects['#/$defs/' + name] = '#/$defs/' + group
-        schema['$defs'] = {group: literal_path_set(paths) for group, paths in groups.items()}
+        transport = provider_path_sets(groups)
+        schema['$defs'] = {group: {'allOf': [literal_path_set(paths), transport[group]]}
+                           for group, paths in groups.items()}
         for branch in evidence['items']['anyOf']:
             path = branch['properties']['path']
             if 'anyOf' in path:
@@ -311,6 +394,7 @@ def bind_evidence_schema(schema, collection, run_dir, packet, role):
         if sum(len(group) for group in _schema_enums(schema)) > 1000:
             raise ValueError('complete citation producer schema exceeds 1000 non-path enum values')
     _check_schema_limits(schema)
+    return citation_locator_instructions(inventory)
 CITATION_INSTRUCTIONS = (
     "Every evidence citation MUST include path, a nonempty descriptive locator, and at least one structured field: "
     "pointer (RFC 6901 JSON pointer, e.g. /details/violations; escape ~ as ~0 and / as ~1 in keys), "
@@ -476,11 +560,11 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
     record = {"backend": "claude", "model_requested": model, "billing_route": "subscription",
               "execution": "unavailable", "effort": effort, "limitations": []}
     try:
-        from .harnesses import validate_provider_schema, provider_output_refusal
+        from .harnesses import ProviderSchemaError, validate_provider_schema, provider_output_refusal
         try:
             validate_provider_schema(schema)
-        except OutputFormatRefusal as exc:
-            record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
+        except ProviderSchemaError as exc:
+            record.update(execution='failed', failure_kind='tool_defect', error=str(exc))
             return record, None
         if not credentials.is_file():
             record["error"] = "Claude subscription credential file unavailable; no fallback attempted"
@@ -515,7 +599,7 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
         if execution["execution"] != "ok":
             record["error"] = "reviewer execution failed; inspect raw console; no fallback attempted"
             if execution['execution'] == 'failed':
-                refusal = provider_output_refusal((work / 'stdout.log').read_text())
+                refusal = provider_output_refusal((work / 'stdout.log').read_text(encoding='utf-8', errors='replace'))
                 if refusal is not None:
                     record.update(execution='malformed', refusal_kind='structured_output', error=refusal)
             return record, None
@@ -805,7 +889,7 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=Non
                 from .rf_review import ASSESSMENT_KEY, assessment_schema
                 schema["properties"][ASSESSMENT_KEY] = assessment_schema(packet["rf_review"]["binding_sha256"])
                 schema["required"].append(ASSESSMENT_KEY)
-            bind_evidence_schema(schema, 'findings', run_dir, packet, role)
+            prompt = bind_evidence_schema(schema, 'findings', run_dir, packet, role) + prompt
             # Admission and failure publication share one lock. Admitted calls may
             # settle after a peer fails; queued calls cannot restart that harness.
             with launch_lock:
@@ -853,7 +937,7 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None, roles=Non
                             stopped.add(definition["harness"])
                     return execution, value
                 record, review = structured_call(run_dir, role, prompt, schema, call, validate,
-                    limit=context.get('max_schema_resubmissions', 0),
+                    limit=context.get('max_schema_resubmissions', 1),
                     execution_path=Path(run_dir) / 'review-executions' / f'{role}.json')
             except KeyboardInterrupt:
                 retained = Path(run_dir) / 'review-executions' / f'{role}.json'
@@ -955,8 +1039,8 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline, *, launch_con
         schema["properties"][key] = {"type": "string", "enum": [expected]}
     if findings:
         schema["properties"]["decisions"]["items"]["properties"]["finding_id"]["enum"] = [f["id"] for f in findings]
-    bind_evidence_schema(schema, 'decisions', run_dir, packet, 'adjudicator')
-    prompt = workspace_instructions("adjudicator") + CITATION_INSTRUCTIONS + (brief(purpose) if purpose is not None else '') + prompt
+    locator_policy = bind_evidence_schema(schema, 'decisions', run_dir, packet, 'adjudicator')
+    prompt = locator_policy + workspace_instructions("adjudicator") + CITATION_INSTRUCTIONS + (brief(purpose) if purpose is not None else '') + prompt
     if definition['tool_mode'] == 'investigate':
         from .review_draft import INSTRUCTIONS, prepare
         prepare(run_dir, 'adjudicator', packet, schema, findings=findings)
@@ -974,4 +1058,4 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline, *, launch_con
     return structured_call(run_dir, "adjudicator", prompt, schema,
         lambda supplied: reviewer_call(run_dir, "adjudicator", definition, supplied, schema,
             min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
-            launch_context=context), validate, limit=context.get('max_schema_resubmissions', 0))
+            launch_context=context), validate, limit=context.get('max_schema_resubmissions', 1))

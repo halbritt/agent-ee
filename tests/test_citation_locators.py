@@ -1,5 +1,6 @@
 """Locator formats and bounded correction of native-text citations (AGENTEE-204)."""
 import copy
+import json
 import re
 from pathlib import Path
 import shutil
@@ -10,7 +11,7 @@ from unittest.mock import patch
 from agent_ee.findings import citation_format, validate_citation
 from agent_ee.reviewers import build_packet, initial_reviews
 from agent_ee.candidate import capture
-from agent_ee.storage import digest, read_json, write_json
+from agent_ee.storage import digest, json_bytes, read_json, write_json
 from tests import test_findings as fixture
 
 
@@ -27,10 +28,151 @@ def ecma_search(pattern, text):
     return re.search(pattern, text)
 
 
+def accepts_path(path, shape, definitions):
+    if '$ref' in shape:
+        return accepts_path(path, definitions[shape['$ref'].removeprefix('#/$defs/')], definitions)
+    if 'anyOf' in shape:
+        return any(accepts_path(path, branch, definitions) for branch in shape['anyOf'])
+    if 'allOf' in shape:
+        return all(accepts_path(path, branch, definitions) for branch in shape['allOf'])
+    return (shape.get('minLength', 0) <= len(path) <= shape.get('maxLength', len(path))
+            and ('enum' not in shape or path in shape['enum'])
+            and ('pattern' not in shape or ecma_search(shape['pattern'], path) is not None))
+
+
 class CitationLocatorTests(unittest.TestCase):
     setUp = fixture.FindingsTests.setUp
     _review = fixture.FindingsTests._review
     _finding = fixture.FindingsTests._finding
+
+    def locator_table(self, prompt):
+        return json.loads(prompt.split('CITATION LOCATOR TABLE (JSON):\n', 1)[1].splitlines()[0])
+
+    def test_provider_compaction_keeps_captured_locator_groups_disjoint(self):
+        from agent_ee.harnesses import strict_schema
+        from agent_ee.reviewers import REVIEW_SCHEMA, DECISIONS_SCHEMA, bind_evidence_schema, review_transport_schema
+        inventory = [dict(path=f'inputs/source-{i}.kicad_pcb', locator_kinds=['lines']) for i in range(1100)]
+        inventory += [dict(path='inputs/report.json', locator_kinds=['lines', 'pointer']),
+                      dict(path='inputs/' + 'j' * 50 + '.json', locator_kinds=['lines', 'pointer']),
+                      dict(path='inputs/netlist.xml', locator_kinds=['lines', 'xpath']),
+                      dict(path='inputs/' + 'x' * 50 + '.xml', locator_kinds=['lines', 'xpath']),
+                      dict(path='inputs/odd.kicad_pcb', locator_kinds=['lines', 'pointer']),
+                      dict(path='inputs/other/report.json', locator_kinds=['lines']),
+                      dict(path='inputs/.json', locator_kinds=['lines'])]
+        for role, collection, template in [('circuit', 'findings', REVIEW_SCHEMA),
+                                            ('adjudicator', 'decisions', DECISIONS_SCHEMA)]:
+            with self.subTest(role=role):
+                local = copy.deepcopy(template)
+                bind_evidence_schema(local, collection, self.run_dir, dict(citation_files=inventory), role)
+                wire = json.loads(json_bytes(strict_schema(review_transport_schema(local))))
+                items = wire['properties'][collection]['items']
+                variants = items.get('anyOf', [items])
+                for variant in variants:
+                    branches = variant['properties']['evidence']['items']['anyOf']
+                    field_sets = {frozenset(branch['required']) - {'path', 'locator'} for branch in branches}
+                    for row in inventory:
+                        for fields in field_sets:
+                            matched = any(accepts_path(row['path'], branch['properties']['path'], wire['$defs'])
+                                for branch in branches if set(branch['required']) - {'path', 'locator'} == fields)
+                            self.assertEqual(matched, fields <= set(row['locator_kinds']), (row, fields))
+
+    def adjudicator_repair(self, correct):
+        from agent_ee.reviewers import adjudicator_call
+        for number in range(1005):
+            (self.run_dir / f'work/rc_transient/observation-{number:04}.txt').write_text('Observation\n')
+        (self.run_dir / 'work/rc_transient/odd.txt').write_text('{"value":1}\n')
+        (self.run_dir / 'work/rc_transient/export.txt').write_text('<export/>\n')
+        (self.run_dir / 'work/rc_transient/image.txt').write_bytes(b'\x00\xff')
+        (self.run_dir / 'work/rc_transient/record').write_text('{"value":3}\n')
+        peer = self.run_dir / 'review-work/circuit/experiments/memo.txt'
+        peer.parent.mkdir(parents=True)
+        peer.write_text('{"value":2}\n')
+        packet = build_packet(self.run_dir, [self.erc_check, self.rc_check], self.run_id)
+        citation = dict(path='inputs/project/rc.kicad_pcb', locator='Native board source', pointer='')
+        response = dict(schema='agent-ee.decisions/2', candidate_id=packet['candidate_id'],
+                        run_id=packet['run_id'], decisions=[dict(finding_id='circuit/f1',
+                        disposition='accepted', reason='Native source observation', evidence=[citation])])
+        calls = []
+        def transport(run, role, definition, prompt, schema, timeout, **kwargs):
+            calls.append(prompt)
+            branches = schema['properties']['decisions']['items']['properties']['evidence']['items']['anyOf']
+            self.assertFalse(any(accepts_path(citation['path'], branch['properties']['path'], schema['$defs'])
+                for branch in branches if 'pointer' in branch['required'] or 'xpath' in branch['required']))
+            table = self.locator_table(prompt)
+            self.assertEqual(table['suffixes']['.kicad_pcb'], ['lines'])
+            self.assertEqual(table['suffixes']['.txt'], ['lines'])
+            self.assertEqual(table['path_overrides']['work/rc_transient/odd.txt'], ['lines', 'pointer'])
+            self.assertEqual(table['path_overrides']['work/rc_transient/export.txt'], ['lines', 'xpath'])
+            self.assertEqual(table['path_overrides']['work/rc_transient/image.txt'], [])
+            self.assertEqual(table['suffixes'][''], ['lines', 'pointer'])
+            self.assertEqual(table['path_overrides'][peer.relative_to(run).as_posix()], ['lines', 'pointer'])
+            self.assertIn('New own experiments require lines only', prompt)
+            value = copy.deepcopy(response)
+            if len(calls) == 2:
+                self.assertTrue(prompt.startswith('OUTPUT REPAIR TURN 1 OF 1'))
+                self.assertLess(prompt.index('OUTPUT VALIDATION ERROR:'), prompt.index('ORIGINAL REVIEW CONTEXT:'))
+                self.assertIn(read_json(run / 'review-attempts/adjudicator/0/execution.json')['error'], prompt)
+                self.assertIn('locator kind(s) used pointer', prompt)
+                self.assertIn('requires locator kind(s) lines', prompt)
+                self.assertIn('every affected citation', prompt)
+                if correct:
+                    value['decisions'][0]['evidence'][0] = dict(path=citation['path'], locator=citation['locator'],
+                                                             lines=[1, 9999 if correct == 'out-of-range' else 1])
+            return {'execution': 'ok'}, value
+        with patch('agent_ee.preflight.guard', return_value=({'result': 'ok'}, {}, '/usr/bin/true')), \
+             patch('agent_ee.reviewers.dispatch', side_effect=transport):
+            record, accepted = adjudicator_call(self.run_dir, packet, [self._finding('circuit/f1')], [],
+                                               time.monotonic() + 30)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(record['resubmissions_used'], 1)
+        first = self.run_dir / record['attempts'][0]['path']
+        self.assertEqual(read_json(first / 'response.json'), response)
+        self.assertEqual(read_json(first / 'execution.json')['execution'], 'malformed')
+        return record, accepted
+
+    def test_adjudicator_wrong_locator_gets_one_repair_and_corrected_response_is_accepted(self):
+        record, accepted = self.adjudicator_repair(correct=True)
+        self.assertEqual(record['execution'], 'ok')
+        self.assertEqual(accepted['decisions'][0]['evidence'][0]['lines'], [1, 1])
+        self.assertNotIn('resubmission_blocked', record)
+
+    def test_adjudicator_second_wrong_locator_stops_with_validation_reason(self):
+        record, accepted = self.adjudicator_repair(correct=False)
+        self.assertIsNone(accepted)
+        self.assertEqual(record['execution'], 'malformed')
+        self.assertIn('requires locator kind(s) lines', record['error'])
+        self.assertEqual(record['resubmission_blocked'], 'output validation failed after 1 repair turn')
+        self.assertEqual([row['execution'] for row in record['attempts']], ['malformed', 'malformed'])
+
+    def test_adjudicator_repair_still_rejects_unresolved_line_ranges(self):
+        record, accepted = self.adjudicator_repair(correct='out-of-range')
+        self.assertIsNone(accepted)
+        self.assertEqual(record['execution'], 'malformed')
+        self.assertIn('out of range', record['error'])
+        self.assertEqual(record['resubmission_blocked'], 'output validation failed after 1 repair turn')
+
+    def test_initial_reviewers_get_locator_policy_and_the_same_default_repair(self):
+        packet = build_packet(self.run_dir, [self.erc_check, self.rc_check], self.run_id)
+        calls = {}
+        def transport(run, role, definition, prompt, schema, timeout, **kwargs):
+            calls[role] = calls.get(role, 0) + 1
+            self.assertEqual(self.locator_table(prompt)['suffixes']['.kicad_sch'], ['lines'])
+            citation = dict(path='inputs/project/rc.kicad_sch', locator='Native schematic source')
+            if calls[role] == 1:
+                citation['pointer'] = ''
+            else:
+                citation['lines'] = [1, 1]
+            if calls[role] == 2:
+                self.assertTrue(prompt.startswith('OUTPUT REPAIR TURN 1 OF 1'))
+            response = dict(self._review(role, findings=[self._finding(evidence=[citation])]),
+                            schema='agent-ee.review/2', **{k: packet[k] for k in ('candidate_id', 'run_id', 'packet_sha256')})
+            return {'execution': 'ok'}, response
+        with patch('agent_ee.preflight.guard', return_value=({'result': 'ok'}, {}, '/usr/bin/true')), \
+             patch('agent_ee.reviewers.dispatch', side_effect=transport):
+            reviews, records = initial_reviews(self.run_dir, packet, time.monotonic() + 30)
+        self.assertEqual(calls, {'circuit': 2, 'physical': 2})
+        self.assertEqual(len(reviews), 2, records)
+        self.assertTrue(all(row['resubmissions_used'] == 1 for row in records))
 
     def test_compact_provider_paths_keep_exact_local_membership_and_locator_rules(self):
         from agent_ee.reviewers import (REVIEW_SCHEMA, bind_evidence_schema,
@@ -44,7 +186,7 @@ class CitationLocatorTests(unittest.TestCase):
         self.assertEqual({k:v for k,v in wire.items() if k!='$defs'},
                          {k:v for k,v in schema.items() if k!='$defs'})
         for definition in wire['$defs'].values():
-            self.assertTrue(all('pattern' not in shape for shape in definition['anyOf']))
+            self.assertTrue(all(len(shape['pattern']) <= 256 for shape in definition['anyOf']))
         def admit(path,**fields):
             return validate_evidence_paths(dict(findings=[dict(evidence=[dict(path=path,locator='actual source',**fields)])]),schema)
         for row in inventory:
@@ -334,7 +476,8 @@ class CitationLocatorTests(unittest.TestCase):
              patch('agent_ee.reviewers.dispatch', side_effect=transport) as dispatch:
             record, accepted = adjudicator_call(self.run_dir, packet, [self._finding('circuit/f1')], [],
                                                time.monotonic() + 30)
-        dispatch.assert_called_once()
+        self.assertEqual(dispatch.call_count, 2)
+        self.assertEqual(record['resubmissions_used'], 1)
         self.assertEqual((record['execution'], record['refusal_kind']), ('malformed', 'structured_output'))
         self.assertIn('path not captured', record['error'])
         self.assertIsNone(accepted)
@@ -361,11 +504,9 @@ class CitationLocatorTests(unittest.TestCase):
                 if set(branch['required']) - {'path', 'locator'} != fields:
                     continue
                 for ref in branch['properties']['path'].get('anyOf', []):
-                    patterns = outgoing['$defs'][ref['$ref'].removeprefix('#/$defs/')]['anyOf']
                     for row in inventory:
                         path = row['path']
-                        if any(p['minLength'] <= len(path) <= p['maxLength'] and ecma_search(p['pattern'], path)
-                               for p in patterns):
+                        if accepts_path(path, ref, outgoing['$defs']):
                             paths.add(path)
             return paths
         self.assertEqual(allowed({'lines'}), {row['path'] for row in inventory})
@@ -451,11 +592,8 @@ class CitationLocatorTests(unittest.TestCase):
         bind_evidence_schema(schema, 'findings', self.run_dir, dict(citation_files=inventory), 'circuit')
         branches = schema['properties']['findings']['items']['properties']['evidence']['items']['anyOf']
         pointer = next(b for b in branches if set(b['required'])=={'path','locator','pointer'})
-        shapes = [schema['$defs'][r['$ref'].removeprefix('#/$defs/')]
-                  for r in pointer['properties']['path']['anyOf']]
         for row in inventory:
-            allowed = any(ecma_search(p['pattern'], row['path'])
-                          for item in shapes for p in item['anyOf'])
+            allowed = accepts_path(row['path'], pointer['properties']['path'], schema['$defs'])
             self.assertEqual(bool(allowed), row['path']==special, row['path'])
 
     def test_incompressible_citation_inventory_keeps_transport_refusal(self):

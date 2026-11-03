@@ -57,7 +57,8 @@ Every review seat, including the adjudicator, sends a compact citation schema
 to its provider. Exact inventory membership and locator rules stay in the
 archived schema and are checked locally before semantic validation. Provider
 adapters refuse patterns longer than 512 characters before launching a seat;
-they do not relax arbitrary constraints to fit the provider.
+this is a terminal `failed` tool defect (`failure_kind=tool_defect`), with no
+schema resubmission. They do not relax arbitrary constraints to fit the provider.
 
 An author turn that reaches `--author-seconds` is not a seat failure. While
 attempts and time remain, another author turn starts with the timed-out turn's

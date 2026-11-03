@@ -346,22 +346,76 @@ class ProviderContractTests(unittest.TestCase):
         from agent_ee import harnesses, reviewers
         schema = {'$defs': {'nested': {'anyOf': [{'type': 'string', 'pattern': 'x' * 513}]}}}
         with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(os.environ, {'HOME': directory, 'AGENT_EE_CODEX_AUTH_HOME': directory}), \
              patch.object(harnesses, 'seat_credential') as credentials, \
              patch.object(harnesses.native_run, 'run') as run:
+            from agent_ee.review_run import structured_call
             root = Path(directory)
             for backend in ('codex', 'agy', 'claude'):
                 with self.subTest(backend=backend):
-                    if backend == 'claude':
-                        record, value = reviewers.claude_call(root, backend, 'test', 'prompt', schema, 10)
-                    else:
-                        record, value = harnesses.native_call(root, backend,
-                            {'harness': backend, 'model': 'test', 'effort': 'high'}, 'prompt', schema, 10)
-                    self.assertEqual((record['execution'], record['refusal_kind']),
-                                     ('malformed', 'structured_output'))
+                    def call(prompt):
+                        if backend == 'claude':
+                            return reviewers.claude_call(root, backend, 'test', prompt, schema, 10)
+                        return harnesses.native_call(root, backend,
+                            {'harness': backend, 'model': 'test', 'effort': 'high'}, prompt, schema, 10)
+                    record, value = structured_call(root, backend, 'prompt', schema, call, lambda v: v, limit=1)
+                    self.assertEqual((record['execution'], record['failure_kind']), ('failed', 'tool_defect'))
                     self.assertIsNone(value)
+                    self.assertEqual(len(record['attempts']), 1)
+                    self.assertEqual(record['resubmissions_used'], 0)
             credentials.assert_not_called()
             run.assert_not_called()
         harnesses.validate_provider_schema({'pattern': 'x' * 512})
+
+
+class ClaudeCallTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        auth = self.root / 'subscription'
+        (auth / '.claude').mkdir(parents=True)
+        (auth / '.claude/.credentials.json').write_text('{"synthetic":true}')
+        self.enterContext(patch.dict(os.environ, {'HOME': str(auth)}))
+
+    def call(self, stdout, exit_code, *, tools=False):
+        from agent_ee import native_run, reviewers
+        transport = native_run.Recorded(lambda call: native_run.Outcome(stdout=stdout, exit_code=exit_code))
+        with native_run.using(transport):
+            record, value = reviewers.claude_call(self.root, 'probe', 'test', 'prompt', {}, 10,
+                                                  tools=tools, executable='/usr/bin/true')
+        self.assertEqual(len(transport.calls), 1)
+        return record, value
+
+    def test_provider_contract_refusals_are_classified_at_both_exit_statuses(self):
+        from agent_ee.design_generate import review_seat_failures
+        message = 'Incomplete response returned, reason: max_output_tokens'
+        result = dict(type='result', is_error=True, subtype='error_during_execution', errors=[message])
+        for tools, exit_code in ((tools, code) for tools in (False, True) for code in (0, 1)):
+            stdout = ('\n'.join(map(json.dumps, [dict(type='system', subtype='init'), result]))
+                      if tools else json.dumps(result, indent=2)).encode()
+            with self.subTest(tools=tools, exit_code=exit_code):
+                record, value = self.call(stdout, exit_code, tools=tools)
+                self.assertEqual((record['execution'], record['refusal_kind']), ('malformed', 'structured_output'))
+                self.assertEqual(record['error'], message)
+                self.assertIsNone(value)
+                self.assertEqual(review_seat_failures(None, record), [])
+
+    def test_unknown_errors_remain_failed_at_both_exit_statuses(self):
+        for message in ('OAuth token has expired', 'You exceeded your current quota', 'Connection reset by peer'):
+            for exit_code in (0, 1):
+                with self.subTest(message=message, exit_code=exit_code):
+                    result = dict(type='result', is_error=True, subtype='error_during_execution', errors=[message])
+                    record, value = self.call(json.dumps(result).encode(), exit_code)
+                    self.assertEqual(record['execution'], 'failed')
+                    self.assertNotIn('refusal_kind', record)
+                    self.assertIsNone(value)
+
+    def test_failed_non_utf8_console_remains_a_failure(self):
+        record, value = self.call(b'\xff\xfe failed console\n', 1)
+        self.assertEqual(record['execution'], 'failed')
+        self.assertNotIn('refusal_kind', record)
+        self.assertIsNone(value)
 
 
 class NativeCallTests(unittest.TestCase):
@@ -379,15 +433,17 @@ class NativeCallTests(unittest.TestCase):
                                             'refresh_token': 'fake-refresh-' + 'b2' * 24}}).encode()
         (auth / 'auth.json').write_bytes(self.login)
         self.enterContext(patch.dict(os.environ, {'AGENT_EE_CODEX_AUTH_HOME': str(auth)}))
+        self.enterContext(patch.dict(os.environ, {'HOME': str(auth)}))
 
-    def call(self, files=None, stream=None, exit_code=0, **options):
+    def call(self, files=None, stream=None, exit_code=0, stdout=None, **options):
         from agent_ee import native_run
         from agent_ee.harnesses import native_call
         stream = stream if stream is not None else [{'type': 'thread.started', 'thread_id': self.session},
                   {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': '{"answer": 1}'}},
                   {'type': 'turn.completed', 'usage': {}}]
         transport = native_run.Recorded(lambda call: native_run.Outcome(
-            stdout='\n'.join(map(json.dumps, stream)).encode(), files=files or {}, exit_code=exit_code))
+            stdout=stdout if stdout is not None else '\n'.join(map(json.dumps, stream)).encode(),
+            files=files or {}, exit_code=exit_code))
         with native_run.using(transport):
             record, value = native_call(self.root, 'probe', {'harness': 'codex', 'model': 'gpt-6.1-sol',
                 'effort': 'high', 'tool_mode': 'read-only'}, 'scripted prompt', {}, 10,
@@ -417,13 +473,21 @@ class NativeCallTests(unittest.TestCase):
 
     def test_unknown_provider_errors_remain_seat_failures(self):
         from agent_ee.design_generate import review_seat_failures
-        for message in ('Login required', 'Quota exhausted', 'Connection reset'):
-            with self.subTest(message=message):
-                _, record, value = self.call(stream=[{'type': 'turn.failed', 'error': {'message': message}}],
-                                             exit_code=1)
+        errors = [dict(code='invalid_api_key', message='Incorrect API key provided'),
+                  dict(code='insufficient_quota', message='You exceeded your current quota'),
+                  dict(code='server_error', message='An error occurred while processing your request')]
+        for error, exit_code in ((error, code) for error in errors for code in (0, 1)):
+            with self.subTest(error=error, exit_code=exit_code):
+                _, record, value = self.call(stream=[{'type': 'turn.failed', 'error': error}], exit_code=exit_code)
                 self.assertEqual(record['execution'], 'failed')
                 self.assertIsNone(value)
                 self.assertTrue(review_seat_failures(None, record))
+
+    def test_failed_non_utf8_console_remains_a_failure(self):
+        _, record, value = self.call(stdout=b'\xff\xfe failed console\n', exit_code=1)
+        self.assertEqual(record['execution'], 'failed')
+        self.assertNotIn('refusal_kind', record)
+        self.assertIsNone(value)
 
     def test_default_call_keeps_an_unbounded_console_and_no_extra_mounts(self):
         call, record, value = self.call()

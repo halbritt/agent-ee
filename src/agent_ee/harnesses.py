@@ -42,11 +42,15 @@ class StreamIdleTimeout(RuntimeError):
     failure_kind = 'stream_idle_timeout'
 
 
+class ProviderSchemaError(RuntimeError):
+    """A deterministic tool defect in the schema constructed before seat launch."""
+
+
 def validate_provider_schema(schema):
     """Refuse expensive provider grammars; never relax arbitrary local constraints."""
     if isinstance(schema, dict):
         if isinstance(schema.get('pattern'), str) and len(schema['pattern']) > 512:
-            raise OutputFormatRefusal('provider schema pattern exceeds 512 characters')
+            raise ProviderSchemaError('provider schema pattern exceeds 512 characters')
         for child in schema.values():
             validate_provider_schema(child)
     elif isinstance(schema, list):
@@ -228,8 +232,8 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
     try:
         try:
             validate_provider_schema(schema)
-        except OutputFormatRefusal as exc:
-            record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
+        except ProviderSchemaError as exc:
+            record.update(execution='failed', failure_kind='tool_defect', error=str(exc))
             return record, None
         executable = executable or executable_for(harness)
         if not executable or not Path(executable).is_file():
@@ -300,7 +304,7 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
         if record['execution'] != 'ok':
             record['error'] = 'harness execution failed; inspect retained console; no fallback attempted'
             if record['execution'] == 'failed':
-                refusal = provider_output_refusal((work / 'stdout.log').read_text())
+                refusal = provider_output_refusal((work / 'stdout.log').read_text(encoding='utf-8', errors='replace'))
                 if refusal is not None:
                     record.update(execution='malformed', refusal_kind='structured_output', error=refusal)
             return record, None
