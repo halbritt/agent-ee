@@ -629,6 +629,67 @@ class ReviewRegressionTests(unittest.TestCase):
             i, j = divmod(n, 73)
             self.add_pad(fp, n+1, 21+i*.25, 21+j*.25, net, 100_000)
 
+    def test_search_keeps_native_floor_from_an_earlier_escape(self):
+        self.board.GetDesignSettings().m_MinClearance = 100_000
+        net = self.board.FindNet('/return').GetNetCode()
+        escape = local._track(self.board,[(31_000_000,31_325_000),(32_000_000,31_325_000)],
+                              net,self.k.F_Cu,100_000)[0]
+        endpoints = [local.pad(self.board,p) for p in contract()['relations'][0]['return']]
+        added = local._leg(self.board,*endpoints,clock=Clock(60),cancel_dir=None)
+        self.assertTrue(added)
+        for item in added:
+            self.assertFalse(item.GetEffectiveShape(self.k.F_Cu).Collide(
+                escape.GetEffectiveShape(self.k.F_Cu),100_000),local.copper_identity(item))
+        via = self.k.PCB_VIA(self.board);via.SetPosition(self.k.VECTOR2I(31_500_000,31_750_000))
+        via.SetWidth(600_000);via.SetDrill(300_000);via.SetLayerPair(self.k.F_Cu,self.k.B_Cu)
+        via.SetNetCode(net)
+        self.assertTrue(local._via_site_blocked(self.board,via,endpoints[0],local._rules(self.board,endpoints[0])))
+
+    def close_pair(self, same_bank=False, escape=False, gap=50_000):
+        from copy import deepcopy
+        self.board.GetDesignSettings().m_MinClearance = 100_000
+        doc = contract();second = deepcopy(doc['relations'][0]);second['id'] = 'second'
+        if same_bank:
+            for kind in ('supply','return'):second[kind][1]['reference'] = 'OTHER'
+        else:
+            for kind in ('supply','return'):second[kind][0]['reference'] = 'OTHER'
+        doc['relations'].append(second)
+        net = self.board.FindNet('/return').GetNetCode()
+        items = [local._track(self.board,[(34_000_000,y),(36_000_000,y)],net,self.k.F_Cu,200_000)[0]
+                 for y in (33_000_000,33_200_000+gap)]
+        rows=[]
+        for index,(relation,item) in enumerate(zip(doc['relations'],items)):
+            kind = 'plane_tie' if escape and index==0 else 'return'
+            endpoints = relation['return'][1:] if kind=='plane_tie' else relation['return']
+            uid=item.m_Uuid.AsString()
+            rows.append(dict(id=relation['id'],copper=[uid],legs=[dict(kind=kind,tracks=[uid],
+                pads=[local.pad(self.board,p).m_Uuid.AsString() for p in endpoints])]))
+        receipt=dict(contract=doc,relations=rows,protected=[local.copper_identity(t) for t in items],other_pads=[])
+        return receipt,items
+
+    def test_geometry_refuses_subfloor_noncontacting_pairs(self):
+        for same_bank,escape in ((False,False),(True,True)):
+            with self.subTest(same_bank=same_bank,escape=escape):
+                receipt,items=self.close_pair(same_bank,escape)
+                self.assertFalse(items[0].GetEffectiveShape(self.k.F_Cu).Collide(items[1].GetEffectiveShape(self.k.F_Cu),1))
+                self.assertRaisesRegex(JobRefusal,'native clearance floor',local.verify_geometry,self.board,receipt)
+                for item in items:self.board.Remove(item)
+        receipt,items=self.close_pair(gap=150_000)
+        self.assertEqual(local.verify_geometry(self.board,receipt)['status'],'pass')
+        # 0.15 mm is above the native 0.1 mm floor, below the 0.2 mm class preference.
+        via=self.k.PCB_VIA(self.board);via.SetPosition(self.k.VECTOR2I(35_000_000,33_475_000))
+        via.SetWidth(600_000);via.SetDrill(300_000);via.SetLayerPair(self.k.F_Cu,self.k.B_Cu)
+        via.SetNetCode(items[0].GetNetCode());via.SetLocked(True);self.board.Add(via)
+        row=receipt['relations'][1];row['copper']=[via.m_Uuid.AsString()];row['legs'][0]['tracks']=row['copper'];row['legs'][0]['kind']='plane_tie'
+        receipt['protected']=[local.copper_identity(items[0]),local.copper_identity(via)]
+        self.assertFalse(via.GetEffectiveShape(self.k.F_Cu).Collide(items[0].GetEffectiveShape(self.k.F_Cu),1))
+        self.assertRaisesRegex(JobRefusal,'native clearance floor',local.verify_geometry,self.board,receipt)
+
+    def test_same_bank_device_legs_remain_exempt_from_floor(self):
+        receipt,items=self.close_pair(same_bank=True)
+        self.assertTrue(items[0].GetEffectiveShape(self.k.F_Cu).Collide(items[1].GetEffectiveShape(self.k.F_Cu),100_000))
+        self.assertEqual(local.verify_geometry(self.board,receipt)['status'],'pass')
+
     def test_shared_return_can_reach_a_small_second_capacitor_without_class_clearance(self):
         from copy import deepcopy
         self.add_fp('CAP2', [('1', 32, 28, '/rail'), ('2', 32, 30.55, '/return')])

@@ -196,15 +196,28 @@ examples this is 0.2 mm. This is an inherited routing preference, not a new
 current-rating or impedance requirement. It creates no rule for router-added
 copper. Local copper has no dependency on a Power class.
 
-Same-net track obstacles keep a 0.025 mm copper gap outside declared shared-pad
-junctions. This positive gap separates generated topology and exceeds the native
-integer geometry resolution; different-net fabrication clearance does not apply
-to same-net copper. Foreign pads, tracks and graphics retain their net-class
-clearance and search margin. Every via retains full effective net-class clearance
-from every pad, including same-net pads, with the same 0.025 mm search margin.
+Generated copper that must stay unjoined keeps at least the native board's
+minimum copper clearance (`BOARD_DESIGN_SETTINGS.m_MinClearance`, serialized as
+`board.design_settings.rules.min_clearance` in the authored project). This is
+0.1 mm on both supplied examples. The fabrication floor replaces round 5's
+0.025 mm topology-only gap; etching can bridge such a small gap even on one net.
+The search retains its 0.025 mm margin **on top of** the floor. It uses the floor
+rather than the net-class preference for same-net separation. Foreign copper
+retains effective class clearance, and vias still keep full effective net-class
+clearance from every pad, including same-net pads.
+
+The floor covers escape tracks/vias against device legs or other relations,
+different banks, and every distinct leg allowed to meet only inside a declared
+shared pad. Same-bank device legs already allowed to share copper remain exempt,
+as do items of the same generated leg. Verification clips allowed shared-pad
+interiors out of conservative native copper polygons before checking the floor.
+Near misses below the floor count as meetings even without geometric contact.
+The saved-board separation report lists every non-exempt pair/layer and its
+conservative minimum distance, plus exemptions and pairs on separate layers.
 
 Via sites are checked using native pad and copper shapes rather than inflated
 rectangular pad corners. A bounded grid resolves windows between the radial
 samples. The far-side restriction, 2 mm escape path bound, 12 mm leg bound,
-verify_geometry guard, locked-copper identity and bank rule are unchanged.
+locked-copper identity and bank rule are unchanged; verify_geometry additionally
+enforces the fabrication separation floor.
 A search refusal is not a proof that no geometrically legal layout exists.

@@ -280,14 +280,28 @@ MUTANTS = {'baseline': ([],
                                     ['test_local_decoupling']),
  'Y1_same_net_uses_different_net_clearance': ([('src/agent_ee/local_decoupling.py',
                                                 '            track_margin = max(0, margin - _rules(board, '
-                                                "item)['clearance'])\n",
+                                                "item)['clearance'] + _separation_floor(board))\n",
                                                 '            track_margin = margin\n')],
                                               ['test_local_decoupling']),
  'Y2_escape_omits_grid_windows': ([('src/agent_ee/local_decoupling.py',
                                     '    grid = [(x, y) for x in range(-20, 21) for y in range(-20, 21) if 0 '
                                     '< x*x + y*y <= 400]\n',
                                     '    grid = []\n')],
-                                  ['test_local_decoupling'])}
+                                  ['test_local_decoupling']),
+ 'Z1_search_replaces_fabrication_floor_with_25um': ([('src/agent_ee/local_decoupling.py',
+                                                      '            track_margin = max(0, margin - '
+                                                      "_rules(board, item)['clearance'] + "
+                                                      '_separation_floor(board))\n',
+                                                      '            track_margin = max(0, margin - '
+                                                      "_rules(board, item)['clearance'] + 25_000)\n"),
+                                                     ('src/agent_ee/local_decoupling.py',
+                                                      '    return _separation_floor(board) + 25_000\n',
+                                                      '    return 25_000 + 25_000\n')],
+                                                    ['test_local_decoupling']),
+ 'Z2_verification_ignores_noncontacting_near_miss': ([('src/agent_ee/local_decoupling.py',
+                                                       '    required_gap = _separation_floor(board)\n',
+                                                       '    required_gap = 1\n')],
+                                                     ['test_local_decoupling'])}
 
 def run(name):
     edits, tests = MUTANTS[name]

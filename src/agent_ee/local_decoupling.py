@@ -124,6 +124,45 @@ def _rules(board, terminal):
                 drill=max(int(rules.m_MinThroughDrill), int(cls.GetViaDrill())))
 
 
+def _separation_floor(board):
+    return int(board.GetDesignSettings().m_MinClearance)
+
+
+def _same_net_search_gap(board):
+    return _separation_floor(board) + 25_000
+
+
+def _separation_shapes(first, second, layer, shared_pads):
+    if not shared_pads:
+        return first.GetEffectiveShape(layer), second.GetEffectiveShape(layer)
+    import pcbnew as k
+    # Outside copper is over-approximated; pad interiors are under-approximated.
+    # This can refuse a boundary case, but cannot approve a sub-floor bridge.
+    inside = k.SHAPE_POLY_SET()
+    for terminal in shared_pads:
+        if terminal.IsOnLayer(layer):
+            terminal.TransformShapeToPolygon(inside, layer, 0, 1, k.ERROR_INSIDE)
+    inside.Simplify()
+    shapes = []
+    for item in (first, second):
+        outside = k.SHAPE_POLY_SET()
+        item.TransformShapeToPolygon(outside, layer, 0, 1, k.ERROR_OUTSIDE)
+        outside.BooleanSubtract(inside)
+        outside.Simplify()
+        if outside.IsEmpty():
+            return None
+        shapes.append(outside)
+    return shapes
+
+
+def _too_close(first, second, layer, shared_pads, gap):
+    gap = max(1, gap)  # A zero native floor still cannot permit contact.
+    if not first.GetEffectiveShape(layer).Collide(second.GetEffectiveShape(layer), gap):
+        return False
+    shapes = _separation_shapes(first, second, layer, shared_pads)
+    return shapes is not None and shapes[0].Collide(shapes[1], gap)
+
+
 def _copper_boxes(item, margin):
     if item.GetClass() != 'PCB_TRACK':
         return [_box(item, margin)]
@@ -154,9 +193,9 @@ def _obstacles(board, net, layer, margin, endpoints=()):
         if not item.IsOnLayer(layer) or item.m_Uuid.AsString() in allowed:
             continue
         track_margin = margin
-        if item.GetClass() == 'PCB_TRACK' and item.GetNetCode() == net:
-            # Same-net separation protects topology, not different-net clearance.
-            track_margin = max(0, margin - _rules(board, item)['clearance'])
+        if item.GetClass() in ('PCB_TRACK', 'PCB_VIA') and item.GetNetCode() == net:
+            # Isolated same-net copper needs the fabrication floor, not the class preference.
+            track_margin = max(0, margin - _rules(board, item)['clearance'] + _separation_floor(board))
         pieces = _copper_boxes(item, track_margin)
         if item.GetClass() == 'PCB_TRACK' and item.GetNetCode() == net:
             # Allow a new branch to leave its declared shared pad. The rest
@@ -276,9 +315,8 @@ def _clear_tie_path(board, path, terminal, layer, width):
         segment.SetWidth(width)
         segment.SetLayer(layer)
         for other in board.GetTracks():
-            if other.IsOnLayer(layer) and segment.GetEffectiveShape(layer).Collide(other.GetEffectiveShape(layer), 1):
-                if not _junction_in_pad(segment, other, terminal, layer):
-                    return False
+            if other.IsOnLayer(layer) and _too_close(segment, other, layer, [terminal], _same_net_search_gap(board)):
+                return False
     return True
 
 
@@ -297,7 +335,7 @@ def _via_site_blocked(board, via, terminal, rules):
     if any(_via_pad_collision(board, via, p, rules) for fp in board.GetFootprints() for p in fp.Pads()):
         return True
     for item in board.GetTracks():
-        gap = 25_000 if item.GetNetCode() == terminal.GetNetCode() else rules['clearance'] + 25_000
+        gap = _same_net_search_gap(board) if item.GetNetCode() == terminal.GetNetCode() else rules['clearance'] + 25_000
         for layer in board.GetEnabledLayers().CuStack():
             if item.IsOnLayer(layer) and via.GetEffectiveShape(layer).Collide(item.GetEffectiveShape(layer), gap):
                 return True
@@ -479,9 +517,7 @@ def verify(board_path, receipt):
     return dict(status='pass', board_sha256=digest(board_path), count=len(receipt['protected']), geometry=geometry)
 
 
-def verify_geometry(board, receipt):
-    """Same-net pad contacts are assembly/topology defects even when DRC permits them."""
-    from .placement_job import JobRefusal
+def _geometry_groups(board, receipt):
     pads = [p for fp in board.GetFootprints() for p in fp.Pads()]
     generated = {r['uuid'] for r in receipt['protected']}
     tracks = {t.m_Uuid.AsString(): t for t in board.GetTracks() if t.m_Uuid.AsString() in generated}
@@ -504,6 +540,14 @@ def verify_geometry(board, receipt):
             allowed.setdefault(uid, set()).add(row['pad'])
             ties[uid] = set(row['copper'])
             groups.setdefault(uid, set()).add(('other', row['pad']))
+    return pads, tracks, allowed, ties, groups, owners
+
+
+def verify_geometry(board, receipt):
+    """Same-net pad contacts are assembly/topology defects even when DRC permits them."""
+    from .placement_job import JobRefusal
+    pads, tracks, allowed, ties, groups, owners = _geometry_groups(board, receipt)
+    required_gap = _separation_floor(board)
     for uid, item in tracks.items():
         via = item.GetClass() == 'PCB_VIA'
         clearance = _rules(board, item)['clearance']
@@ -522,25 +566,71 @@ def verify_geometry(board, receipt):
                     if via or terminal.m_Uuid.AsString() not in allowed.get(uid, set()):
                         raise JobRefusal(label + uid + ' touches/violates pad clearance ' +
                                          terminal.GetParentFootprint().GetReference() + '.' + terminal.GetNumber())
-        if via:
-            for other_uid, other in tracks.items():
-                if other_uid == uid or other_uid in ties.get(uid, set()):
-                    continue
-                for layer in board.GetEnabledLayers().CuStack():
-                    if other.IsOnLayer(layer) and item.GetEffectiveShape(layer).Collide(other.GetEffectiveShape(layer), 1):
-                        raise JobRefusal(label + 'plane via touches another generated leg: ' + uid + ', ' + other_uid)
-        else:
-            layer = item.GetLayer()
-            for other_uid, other in tracks.items():
-                if other_uid == uid or groups.get(uid, set()) & groups.get(other_uid, set()) or not other.IsOnLayer(layer):
-                    continue
-                if item.GetEffectiveShape(layer).Collide(other.GetEffectiveShape(layer), 1):
-                    shared = allowed.get(uid, set()) & allowed.get(other_uid, set())
-                    if not any(p.m_Uuid.AsString() in shared and _junction_in_pad(item, other, p, layer) for p in pads):
-                        raise JobRefusal(label + 'generated legs meet outside a declared shared pad: ' + uid + ', ' + other_uid)
+        for other_uid, other in tracks.items():
+            if (other_uid == uid or groups.get(uid, set()) & groups.get(other_uid, set())
+                    or other_uid in ties.get(uid, set())):
+                continue
+            shared = allowed.get(uid, set()) & allowed.get(other_uid, set())
+            shared_pads = [p for p in pads if p.m_Uuid.AsString() in shared]
+            for layer in board.GetEnabledLayers().CuStack():
+                if (item.IsOnLayer(layer) and other.IsOnLayer(layer)
+                        and _too_close(item, other, layer, shared_pads, required_gap)):
+                    kind = ('plane via touches another generated leg' if via or other.GetClass() == 'PCB_VIA'
+                            else 'generated legs meet outside a declared shared pad')
+                    raise JobRefusal(label + kind + ': ' + uid + ', ' + other_uid +
+                                     '; native clearance floor ' + str(required_gap / 1e6) + ' mm')
     return dict(status='pass', generated_vias=sum(t.GetClass() == 'PCB_VIA' for t in tracks.values()),
                 pad_clearance='effective net-class clearance on every pad, including same-net pads',
-                tracks='declared endpoint pads only')
+                tracks='declared endpoint pads only', separation_floor_mm=required_gap / 1e6,
+                separation_source='native design rules: m_MinClearance')
+
+
+def separation_report(board_path, receipt):
+    """Conservative minimum distance for every non-exempt generated pair/layer."""
+    import pcbnew as k
+    board = k.LoadBoard(str(board_path))
+    pads, tracks, allowed, ties, groups, _ = _geometry_groups(board, receipt)
+    floor = _separation_floor(board)
+    rows, exempt, separate_layers = [], [], []
+    ids = sorted(tracks)
+    for index, uid in enumerate(ids):
+        item = tracks[uid]
+        for other_uid in ids[index + 1:]:
+            other = tracks[other_uid]
+            if groups.get(uid, set()) & groups.get(other_uid, set()) or other_uid in ties.get(uid, set()):
+                exempt.append([uid, other_uid])
+                continue
+            layers = set(item.GetLayerSet().CuStack()) & set(other.GetLayerSet().CuStack())
+            if not layers:
+                separate_layers.append([uid, other_uid])
+            shared = allowed.get(uid, set()) & allowed.get(other_uid, set())
+            terminals = [p for p in pads if p.m_Uuid.AsString() in shared]
+            for layer in sorted(layers):
+                shapes = _separation_shapes(item, other, layer, terminals)
+                low = None
+                if shapes is not None:
+                    a, b = (obj.GetBoundingBox() for obj in (item, other))
+                    high = math.ceil(math.hypot(max(a.GetRight(), b.GetRight()) - min(a.GetLeft(), b.GetLeft()),
+                                               max(a.GetBottom(), b.GetBottom()) - min(a.GetTop(), b.GetTop()))) + 4
+                    if not shapes[0].Collide(shapes[1], high):
+                        raise ValueError('native pair distance could not be bounded')
+                    low = 0
+                    while high - low > 1:
+                        middle = (low + high) // 2
+                        if shapes[0].Collide(shapes[1], middle):
+                            high = middle
+                        else:
+                            low = middle
+                failed = _too_close(item, other, layer, terminals, floor)
+                rows.append(dict(items=[uid, other_uid], layer=board.GetLayerName(layer), shared_pads=sorted(shared),
+                                 minimum_gap_mm_lower_bound=None if low is None else low / 1e6,
+                                 status='defect' if failed else 'pass',
+                                 scope='no copper outside shared pad' if shapes is None else 'outside shared pads'))
+    return dict(schema='agent-ee.local-separation/1', board_sha256=digest(board_path),
+                floor_mm=floor / 1e6, source='native design rules: m_MinClearance',
+                distance_resolution_nm=1, polygon_approximation_nm=1, pairs=rows,
+                exempt_pairs=exempt, separate_layer_pairs=separate_layers,
+                outcome='defect' if any(r['status'] == 'defect' for r in rows) else 'pass')
 
 
 def prepare_stub_trial(request):
