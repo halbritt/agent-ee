@@ -739,15 +739,15 @@ class DesignCompileTests(unittest.TestCase):
         self.assertEqual(roundtrip['params'], dict(package_check=package['id']))
         self.assertLess(checks.index(package), checks.index(roundtrip))
 
-    def test_power_routing_default_is_a_net_class_and_leaves_fabrication_minimum_alone(self):
+    def test_local_copper_does_not_add_a_routing_power_policy(self):
+        self.design['decoupling'] = [dict(capacitor='R2', device='R1',
+            supply=['R1.1','R2.1'], **{'return':['R1.2','R2.2']}, max_distance_mm=6)]
         self.compile()
         root = self.root / 'bundle/inputs'
         project = json.loads((root / 'project/owned.kicad_pro').read_text())
-        classes = {c['name']: c for c in project['net_settings']['classes']}
-        self.assertEqual(classes['Power']['track_width'], .4)
-        self.assertLess(project['board']['design_settings']['rules']['min_track_width'], .4)
-        self.assertEqual(project['net_settings']['netclass_patterns'], [dict(netclass='Power', pattern='GND')])
-        self.assertIn('not a fabrication limit', json.loads((root / 'power-routing-default.json').read_text())['basis'])
+        self.assertEqual([c['name'] for c in project['net_settings']['classes']], ['Default'])
+        self.assertNotIn('netclass_patterns', project['net_settings'])
+        self.assertFalse((root / 'power-routing-default.json').exists())
 
     def test_compile_refuses_intrinsic_local_pad_failures_with_relation_and_pad(self):
         self.design['decoupling'] = [dict(capacitor='R2', device='R1',

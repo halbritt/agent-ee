@@ -471,14 +471,6 @@ def envelope(design, root):
             selected_routing=routing,
         ),
     )
-    power = {design['plane']['net'], *design['power_flags']}
-    power.update(next(n for n, terminals in design['nets'].items() if pair[leg][0] in terminals)
-                 for pair in design['decoupling'] for leg in ('supply', 'return'))
-    from .net_binding import exact_pattern
-    write_json(root / 'power-routing-default.json', dict(
-        schema='agent-ee.power-routing-default/1', nets=sorted(native_net(design, n) for n in power),
-        track_width_mm=0.4,
-        basis='Agent-selected routing default; not a fabrication limit or an owner or datasheet ruling'))
     project = dict(
         board=dict(
             design_settings=dict(
@@ -494,10 +486,8 @@ def envelope(design, root):
                 dict(
                     name="Default",
                     **routing,
-                ),
-                dict(name='Power', **{**routing, 'track_width': 0.4}),
+                )
             ],
-            netclass_patterns=[dict(netclass='Power', pattern=exact_pattern(native_net(design, n))) for n in sorted(power)],
             meta=dict(version=3),
         ),
     )

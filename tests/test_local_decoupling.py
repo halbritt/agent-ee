@@ -629,6 +629,36 @@ class ReviewRegressionTests(unittest.TestCase):
             i, j = divmod(n, 73)
             self.add_pad(fp, n+1, 21+i*.25, 21+j*.25, net, 100_000)
 
+    def test_shared_return_can_reach_a_small_second_capacitor_without_class_clearance(self):
+        from copy import deepcopy
+        self.add_fp('CAP2', [('1', 32, 28, '/rail'), ('2', 32, 30.55, '/return')])
+        for fp in self.board.GetFootprints():
+            if fp.GetReference() == 'CAP2':
+                for p in fp.Pads():p.SetSize(self.k.VECTOR2I(200_000,200_000))
+        doc = contract();second = deepcopy(doc['relations'][0]);second['id'] = 'small-cap'
+        for leg in ('supply','return'):second[leg][1]['reference'] = 'CAP2'
+        doc['relations'].append(second)
+        self.save();receipt = self.seed(doc)
+        self.assertEqual(local.verify(self.path,receipt)['status'],'pass')
+        self.filled();result = measure(self.path,doc)
+        self.assertEqual(result['outcome'],'info',result)
+        self.assertFalse(result['banks'][0]['return']['pin_bypasses_bank'])
+
+    def test_plane_escape_finds_a_window_between_radial_samples(self):
+        net = self.board.FindNet('/foreign')
+        for ref, x, y, w, h in [('LEFT',26.925,30,13.85,20),('RIGHT',39.975,30,10.05,20),
+                                  ('TOP',34.4,25.575,1.1,11.15),('BOTTOM',34.4,36.125,1.1,7.75)]:
+            fp = self.k.FOOTPRINT(self.board);fp.SetReference(ref);self.board.Add(fp)
+            p = self.k.PAD(fp);p.SetNumber('1');p.SetAttribute(self.k.PAD_ATTRIB_SMD)
+            p.SetShape(self.k.PAD_SHAPE_RECT);p.SetSize(self.k.VECTOR2I(round(w*1e6),round(h*1e6)))
+            layers = self.k.LSET();layers.AddLayer(self.k.B_Cu);p.SetLayerSet(layers)
+            p.SetPosition(self.k.VECTOR2I(round(x*1e6),round(y*1e6)));p.SetNet(net);fp.Add(p)
+        self.save();receipt = self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        via = next(t for t in board.GetTracks() if t.GetClass()=='PCB_VIA')
+        self.assertEqual(local.position(via),(34_400_000,31_700_000))
+        self.assertEqual(local.verify(self.path,receipt)['geometry']['status'],'pass')
+
     def test_1100_distant_pads_do_not_exhaust_the_local_search(self):
         self.add_far_pads(1100, None)
         self.save()

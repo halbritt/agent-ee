@@ -153,13 +153,17 @@ def _obstacles(board, net, layer, margin, endpoints=()):
     for item in items:
         if not item.IsOnLayer(layer) or item.m_Uuid.AsString() in allowed:
             continue
-        pieces = _copper_boxes(item, margin)
+        track_margin = margin
+        if item.GetClass() == 'PCB_TRACK' and item.GetNetCode() == net:
+            # Same-net separation protects topology, not different-net clearance.
+            track_margin = max(0, margin - _rules(board, item)['clearance'])
+        pieces = _copper_boxes(item, track_margin)
         if item.GetClass() == 'PCB_TRACK' and item.GetNetCode() == net:
             # Allow a new branch to leave its declared shared pad. The rest
             # of this track, including an escape's interior, remains blocked.
             for terminal in endpoints:
                 if item.GetEffectiveShape(layer).Collide(terminal.GetEffectiveShape(layer), 1):
-                    pieces = [part for box in pieces for part in _subtract_box(box, _box(terminal, margin))]
+                    pieces = [part for box in pieces for part in _subtract_box(box, _box(terminal, track_margin))]
         boxes.extend(pieces)
     return boxes
 
@@ -278,6 +282,53 @@ def _clear_tie_path(board, path, terminal, layer, width):
     return True
 
 
+def _via_pad_collision(board, via, terminal, rules):
+    gap = max(rules['clearance'], _rules(board, terminal)['clearance']) + 25_000
+    for layer in board.GetEnabledLayers().CuStack():
+        if terminal.IsOnLayer(layer):
+            shape = terminal.GetEffectiveShape(layer)
+            if (via.GetEffectiveShape(layer).Collide(shape, gap)
+                    or shape.Collide(via.GetPosition(), rules['drill'] // 2 + gap)):
+                return True
+    return False
+
+
+def _via_site_blocked(board, via, terminal, rules):
+    if any(_via_pad_collision(board, via, p, rules) for fp in board.GetFootprints() for p in fp.Pads()):
+        return True
+    for item in board.GetTracks():
+        gap = 25_000 if item.GetNetCode() == terminal.GetNetCode() else rules['clearance'] + 25_000
+        for layer in board.GetEnabledLayers().CuStack():
+            if item.IsOnLayer(layer) and via.GetEffectiveShape(layer).Collide(item.GetEffectiveShape(layer), gap):
+                return True
+    point = position(via)
+    for item in board.GetDrawings():
+        if any(item.IsOnLayer(layer) for layer in board.GetEnabledLayers().CuStack()):
+            x, y, u, v = _box(item, rules['clearance'] + rules['diameter'] // 2 + 25_000)
+            if x < point[0] < u and y < point[1] < v:
+                return True
+    return False
+
+
+def _via_centres(a, angles):
+    seen = set()
+    for distance in (600_000, 800_000, 1_000_000, 1_250_000, 1_500_000, 2_000_000):
+        for angle in angles:
+            t = math.radians(angle)
+            point = (a[0] + round(distance * math.cos(t)), a[1] + round(distance * math.sin(t)))
+            if point not in seen:
+                seen.add(point)
+                yield point
+    # Resolve narrow windows between the original radial samples, within the
+    # same disk. Native shapes, clearance and the full path guard still decide.
+    grid = [(x, y) for x in range(-20, 21) for y in range(-20, 21) if 0 < x*x + y*y <= 400]
+    for x, y in sorted(grid, key=lambda p: (p[0]*p[0]+p[1]*p[1], p)):
+        point = (a[0] + x*100_000, a[1] + y*100_000)
+        if point not in seen:
+            seen.add(point)
+            yield point
+
+
 def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None, reusable=()):
     import pcbnew as k
     from .placement_job import _check_stop
@@ -288,53 +339,38 @@ def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None, reusable=
     width = max(int(board.GetDesignSettings().m_TrackMinWidth),
                 min(rules['width'], terminal.GetSize().x, terminal.GetSize().y))
     a = position(terminal)
-    box = terminal.GetBoundingBox()
-    # Place the drill outside the solder land. Search short radial escapes;
-    # all copper layers constrain a through-via, not only the pad's face.
-    radius = rules['diameter'] // 2
-    margin = rules['clearance'] + radius + 25_000
-    obstacles = [_box(p, max(rules['clearance'], _rules(board, p)['clearance']) + radius + 25_000)
-                 for fp in board.GetFootprints() for p in fp.Pads()]
-    obstacles += [box for t in board.GetTracks() for box in _copper_boxes(t, margin)]
-    obstacles += [b for l in board.GetEnabledLayers().CuStack()
-                  for b in _obstacles(board, terminal.GetNetCode(), l, margin)]
+    margin = rules['clearance'] + rules['diameter'] // 2 + 25_000
     front = _obstacles(board, terminal.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000, (terminal,))
     edge = board.GetBoardEdgesBoundingBox()
     angles = sorted(set(range(0, 360, 10)) | set(range(0, 360, 45)), key=lambda angle: (
         0 if away_from is None else (away_from[0]-a[0])*math.cos(math.radians(angle))
         + (away_from[1]-a[1])*math.sin(math.radians(angle)), angle))
-    for distance in (600_000, 800_000, 1_000_000, 1_250_000, 1_500_000, 2_000_000):
-        for angle in angles:
-            _check_stop(clock, cancel_dir)
-            t = math.radians(angle)
-            b = (a[0] + round(distance * math.cos(t)), a[1] + round(distance * math.sin(t)))
-            if away_from is not None and sum((v-u)*(w-u) for u, v, w in zip(a, b, away_from)) >= 0:
-                continue
-            if (box.GetLeft() - radius - rules['clearance'] < b[0] < box.GetRight() + radius + rules['clearance']
-                    and box.GetTop() - radius - rules['clearance'] < b[1] < box.GetBottom() + radius + rules['clearance']):
-                continue
-            if any(x < b[0] < u and y < b[1] < v for x, y, u, v in obstacles):
-                continue
-            if not (edge.GetLeft() + margin < b[0] < edge.GetRight() - margin
-                    and edge.GetTop() + margin < b[1] < edge.GetBottom() - margin):
-                continue
-            # Reuse the same visibility primitive for a short escape, and keep
-            # its bound tighter than the general leg's bounded search.
-            path = _local_path(a, b, front, clock=clock, cancel_dir=cancel_dir)
-            if path is None or sum(math.dist(p, q) for p, q in zip(path, path[1:])) > 2_000_000:
-                continue
-            if not _clear_tie_path(board, path, terminal, layer, width):
-                continue
-            via = k.PCB_VIA(board)
-            via.SetPosition(k.VECTOR2I(*b))
-            via.SetWidth(rules['diameter'])
-            via.SetDrill(rules['drill'])
-            via.SetViaType(k.VIATYPE_THROUGH)
-            via.SetLayerPair(k.F_Cu, k.B_Cu)
-            via.SetNetCode(terminal.GetNetCode())
-            via.SetLocked(True)
-            board.Add(via)
-            return [*_track(board, path, terminal.GetNetCode(), layer, width, reusable=reusable), via]
+    for b in _via_centres(a, angles):
+        _check_stop(clock, cancel_dir)
+        if away_from is not None and sum((v-u)*(w-u) for u, v, w in zip(a, b, away_from)) >= 0:
+            continue
+        via = k.PCB_VIA(board)
+        via.SetPosition(k.VECTOR2I(*b))
+        via.SetWidth(rules['diameter'])
+        via.SetDrill(rules['drill'])
+        via.SetViaType(k.VIATYPE_THROUGH)
+        via.SetLayerPair(k.F_Cu, k.B_Cu)
+        via.SetNetCode(terminal.GetNetCode())
+        if _via_pad_collision(board, via, terminal, rules):
+            continue
+        if _via_site_blocked(board, via, terminal, rules):
+            continue
+        if not (edge.GetLeft() + margin < b[0] < edge.GetRight() - margin
+                and edge.GetTop() + margin < b[1] < edge.GetBottom() - margin):
+            continue
+        path = _local_path(a, b, front, clock=clock, cancel_dir=cancel_dir)
+        if path is None or sum(math.dist(p, q) for p, q in zip(path, path[1:])) > 2_000_000:
+            continue
+        if not _clear_tie_path(board, path, terminal, layer, width):
+            continue
+        via.SetLocked(True)
+        board.Add(via)
+        return [*_track(board, path, terminal.GetNetCode(), layer, width, reusable=reusable), via]
     raise ValueError('no local plane tie outside the land within 2 mm')
 
 

@@ -54,19 +54,15 @@ MUTANTS = {'baseline': ([],
                                  "raise JobRefusal('local decoupling: ' + str(exc)) from exc")],
                                ['test_local_decoupling']),
  'G5_via_may_sit_in_own_land': ([('src/agent_ee/local_decoupling.py',
-                                  "            if (box.GetLeft() - radius - rules['clearance'] < b[0] < "
-                                  "box.GetRight() + radius + rules['clearance']\n"
-                                  "                    and box.GetTop() - radius - rules['clearance'] < b[1] "
-                                  "< box.GetBottom() + radius + rules['clearance']):\n"
-                                  '                continue\n',
+                                  '        if _via_pad_collision(board, via, terminal, rules):\n'
+                                  '            continue\n',
                                   '')],
                                 ['test_local_decoupling']),
  'G6_no_board_edge_margin': ([('src/agent_ee/local_decoupling.py',
-                               '            if not (edge.GetLeft() + margin < b[0] < edge.GetRight() - '
-                               'margin\n'
-                               '                    and edge.GetTop() + margin < b[1] < edge.GetBottom() - '
+                               '        if not (edge.GetLeft() + margin < b[0] < edge.GetRight() - margin\n'
+                               '                and edge.GetTop() + margin < b[1] < edge.GetBottom() - '
                                'margin):\n'
-                               '                continue\n',
+                               '            continue\n',
                                '')],
                              ['test_local_decoupling']),
  'G7_verify_ignores_changed_copper': ([('src/agent_ee/local_decoupling.py',
@@ -86,9 +82,8 @@ MUTANTS = {'baseline': ([],
                                    'second))\n')],
                                  ['test_local_decoupling']),
  'G10_tie_ignores_other_net_obstacles': ([('src/agent_ee/local_decoupling.py',
-                                           '            if any(x < b[0] < u and y < b[1] < v for x, y, u, v '
-                                           'in obstacles):\n'
-                                           '                continue\n',
+                                           '        if _via_site_blocked(board, via, terminal, rules):\n'
+                                           '            continue\n',
                                            '')],
                                          ['test_local_decoupling']),
  'C1_bypass_always_false': ([('src/agent_ee/decoupling_loops.py',
@@ -282,7 +277,17 @@ MUTANTS = {'baseline': ([],
                                       "leg['kind'], tracks[uid].GetNetname()))",
                                       "groups[uid].add(('bank-leg', leg['kind'], "
                                       'tracks[uid].GetNetname()))')],
-                                    ['test_local_decoupling'])}
+                                    ['test_local_decoupling']),
+ 'Y1_same_net_uses_different_net_clearance': ([('src/agent_ee/local_decoupling.py',
+                                                '            track_margin = max(0, margin - _rules(board, '
+                                                "item)['clearance'])\n",
+                                                '            track_margin = margin\n')],
+                                              ['test_local_decoupling']),
+ 'Y2_escape_omits_grid_windows': ([('src/agent_ee/local_decoupling.py',
+                                    '    grid = [(x, y) for x in range(-20, 21) for y in range(-20, 21) if 0 '
+                                    '< x*x + y*y <= 400]\n',
+                                    '    grid = []\n')],
+                                  ['test_local_decoupling'])}
 
 def run(name):
     edits, tests = MUTANTS[name]

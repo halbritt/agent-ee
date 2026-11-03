@@ -40,8 +40,9 @@ the optional policy for a separately measured workload.
 
 The local search uses effective native net-class routing sizes and clearance,
 bounded visibility paths around copper and every undeclared pad, including
-same-net pads, and radial via escapes outside all solder lands. The search retains all eight original radial directions and adds a 10-degree grid,
-for 40 directions at six fixed radii and at most 240 centres before the far-side filter;
+same-net pads, and radial via escapes outside all solder lands. The search retains 40 radial directions at six fixed radii, followed by a
+0.1 mm grid inside the same 2 mm disk (at most 1,496 centres before deduplication
+and the far-side filter);
 paths still stay within 2 mm and every pad, edge and copper rule remains in force. Each generated
 via keeps effective net-class clearance from every pad on every copper layer.
 Generated tracks may touch only their declared endpoint pads. Same-net
@@ -184,3 +185,26 @@ process prepares a disposable trial. The trial is adopted only with unchanged
 protected native content and generated items, zero errors, zero opens and no
 dangling-track warning. Every ordinary final plane, locality, loop, length and
 impedance check still runs on the resulting board. Kicad-route is unchanged.
+
+Round-5 routing policy and geometry
+
+The compiler emits the same routing net classes as main: only its derived Default
+class, without an agent-selected Power class or power-routing-default.json.
+Local tracks use that class's preferred width, capped by their endpoint land
+widths and bounded below by the unchanged fabrication minimum. On the supplied
+examples this is 0.2 mm. This is an inherited routing preference, not a new
+current-rating or impedance requirement. It creates no rule for router-added
+copper. Local copper has no dependency on a Power class.
+
+Same-net track obstacles keep a 0.025 mm copper gap outside declared shared-pad
+junctions. This positive gap separates generated topology and exceeds the native
+integer geometry resolution; different-net fabrication clearance does not apply
+to same-net copper. Foreign pads, tracks and graphics retain their net-class
+clearance and search margin. Every via retains full effective net-class clearance
+from every pad, including same-net pads, with the same 0.025 mm search margin.
+
+Via sites are checked using native pad and copper shapes rather than inflated
+rectangular pad corners. A bounded grid resolves windows between the radial
+samples. The far-side restriction, 2 mm escape path bound, 12 mm leg bound,
+verify_geometry guard, locked-copper identity and bank rule are unchanged.
+A search refusal is not a proof that no geometrically legal layout exists.
