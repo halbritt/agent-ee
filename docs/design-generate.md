@@ -44,10 +44,20 @@ The same holds for review seats: with `--review-profile`, a reviewer execution i
 the review result, or the adjudicator's execution, that is not ok also ends the
 design `seat_failed`. For either
 seat, a timeout, a seat the stopped run never reached and a structured-output
-refusal are not seat failures. The retained consoles of the first benchmark
-rounds held no login or quota failure, and the harness reports any provider
-error as the same generic failure, so the tool cannot tell a login or quota
-failure from another stream failure. It therefore stops on every seat failure.
+refusal are not seat failures. Explicit provider request-schema rejections and
+output-token limits (including `max_output_tokens`) are recorded as
+`execution=malformed`, `refusal_kind=structured_output`, with the provider's
+error retained. These concern the request/output contract, not seat availability;
+they follow the bounded schema-resubmission policy. If review still cannot
+complete, the design ends `review_incomplete` and the benchmark continues.
+Unknown provider errors, including login, quota and transport errors, remain
+seat failures and stop the benchmark; no fallback is attempted.
+
+Every review seat, including the adjudicator, sends a compact citation schema
+to its provider. Exact inventory membership and locator rules stay in the
+archived schema and are checked locally before semantic validation. Provider
+adapters refuse patterns longer than 512 characters before launching a seat;
+they do not relax arbitrary constraints to fit the provider.
 
 An author turn that reaches `--author-seconds` is not a seat failure. While
 attempts and time remain, another author turn starts with the timed-out turn's

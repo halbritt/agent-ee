@@ -299,6 +299,53 @@ class CitationLocatorTests(unittest.TestCase):
         self.assertEqual(execution['execution'], 'ok')
         self.assertEqual(seen, {'circuit', 'physical', 'adjudicator'})
 
+    def test_adjudicator_compacts_large_inventory_on_real_transport_path(self):
+        from agent_ee.harnesses import strict_schema
+        from agent_ee.reviewers import adjudicator_call, validate_evidence_paths
+        for number in range(1005):
+            (self.run_dir / f'work/rc_transient/observation-{number:04}.txt').write_text('Observation\n')
+        packet = build_packet(self.run_dir, [self.erc_check, self.rc_check], self.run_id)
+        self.assertGreater(len(packet['citation_files']), 1000)
+        # This file exists and resolves, but was created after the inventory froze.
+        unknown = 'work/rc_transient/observation-9999.txt'
+        (self.run_dir / unknown).write_text('Uncaptured observation\n')
+        citation = dict(path=unknown, locator='Observation', lines=[1, 1])
+        validate_citation(citation, self.run_dir, require_structured=True)
+        response = dict(schema='agent-ee.decisions/2', candidate_id=packet['candidate_id'],
+                        run_id=packet['run_id'], decisions=[dict(finding_id='circuit/f1',
+                        disposition='accepted', reason='Source observation', evidence=[citation])])
+
+        def patterns(node):
+            if isinstance(node, dict):
+                if 'pattern' in node:
+                    yield node['pattern']
+                for child in node.values():
+                    yield from patterns(child)
+            elif isinstance(node, list):
+                for child in node:
+                    yield from patterns(child)
+
+        def transport(run, role, definition, prompt, schema, timeout, **kwargs):
+            self.assertEqual(role, 'adjudicator')
+            self.assertLessEqual(max(map(len, patterns(strict_schema(schema))), default=0), 256)
+            return {'execution': 'ok'}, response
+
+        with patch('agent_ee.preflight.guard', return_value=({'result': 'ok'}, {}, '/usr/bin/true')), \
+             patch('agent_ee.reviewers.dispatch', side_effect=transport) as dispatch:
+            record, accepted = adjudicator_call(self.run_dir, packet, [self._finding('circuit/f1')], [],
+                                               time.monotonic() + 30)
+        dispatch.assert_called_once()
+        self.assertEqual((record['execution'], record['refusal_kind']), ('malformed', 'structured_output'))
+        self.assertIn('path not captured', record['error'])
+        self.assertIsNone(accepted)
+        local = read_json(self.run_dir / record['attempts'][0]['path'] / 'schema.json')
+        self.assertGreater(max(map(len, patterns(local))), 256)
+        with self.assertRaisesRegex(ValueError, 'path not captured'):
+            validate_evidence_paths(response, local)
+        good = copy.deepcopy(response)
+        good['decisions'][0]['evidence'][0]['path'] = 'work/rc_transient/observation-0000.txt'
+        validate_evidence_paths(good, local)
+
     def test_over_enum_limit_keeps_exact_literal_paths_and_format_binding(self):
         from agent_ee.reviewers import REVIEW_SCHEMA, bind_evidence_schema
         from agent_ee.harnesses import strict_schema

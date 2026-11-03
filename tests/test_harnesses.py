@@ -313,6 +313,57 @@ class UnstrictValueTests(unittest.TestCase):
         self.assertIsNone(unstrict['circuit'])
 
 
+class ProviderContractTests(unittest.TestCase):
+    def test_output_refusal_requires_explicit_error_evidence(self):
+        from agent_ee.harnesses import provider_output_refusal
+        message = 'Incomplete response returned, reason: max_output_tokens'
+        for event in (
+            {'type': 'error', 'message': message},
+            {'event': 'result', 'result': {'status': 'ERROR', 'error': message}},
+            {'type': 'result', 'is_error': True, 'errors': [message]},
+        ):
+            with self.subTest(event=event):
+                self.assertEqual(provider_output_refusal(json.dumps(event)), message)
+                self.assertEqual(provider_output_refusal(json.dumps(event, indent=2)), message)
+        for event in (
+            {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': message}},
+            {'type': 'item.completed', 'item': {'type': 'command_execution', 'output': message}},
+            {'type': 'result', 'subtype': 'success', 'result': message},
+            {'event': 'result', 'result': {'status': 'SUCCESS', 'response': message}},
+            {'type': 'error', 'message': 'Invalid schema in the design file'},
+            {'type': 'result', 'is_error': True, 'errors': None},
+        ):
+            with self.subTest(event=event):
+                self.assertIsNone(provider_output_refusal(json.dumps(event)))
+        self.assertIsNone(provider_output_refusal('truncated non-JSON console'))
+        mixed = [{'type': 'error', 'message': message},
+                 {'type': 'turn.failed', 'error': {'message': 'Quota exhausted'}}]
+        self.assertIsNone(provider_output_refusal('\n'.join(map(json.dumps, mixed))))
+
+    def test_all_provider_adapters_refuse_oversized_patterns_before_launch(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee import harnesses, reviewers
+        schema = {'$defs': {'nested': {'anyOf': [{'type': 'string', 'pattern': 'x' * 513}]}}}
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(harnesses, 'seat_credential') as credentials, \
+             patch.object(harnesses.native_run, 'run') as run:
+            root = Path(directory)
+            for backend in ('codex', 'agy', 'claude'):
+                with self.subTest(backend=backend):
+                    if backend == 'claude':
+                        record, value = reviewers.claude_call(root, backend, 'test', 'prompt', schema, 10)
+                    else:
+                        record, value = harnesses.native_call(root, backend,
+                            {'harness': backend, 'model': 'test', 'effort': 'high'}, 'prompt', schema, 10)
+                    self.assertEqual((record['execution'], record['refusal_kind']),
+                                     ('malformed', 'structured_output'))
+                    self.assertIsNone(value)
+            credentials.assert_not_called()
+            run.assert_not_called()
+        harnesses.validate_provider_schema({'pattern': 'x' * 512})
+
+
 class NativeCallTests(unittest.TestCase):
     """A scripted transport and a fake login: no model, network or real credential."""
 
@@ -329,19 +380,50 @@ class NativeCallTests(unittest.TestCase):
         (auth / 'auth.json').write_bytes(self.login)
         self.enterContext(patch.dict(os.environ, {'AGENT_EE_CODEX_AUTH_HOME': str(auth)}))
 
-    def call(self, files=None, **options):
+    def call(self, files=None, stream=None, exit_code=0, **options):
         from agent_ee import native_run
         from agent_ee.harnesses import native_call
-        stream = [{'type': 'thread.started', 'thread_id': self.session},
+        stream = stream if stream is not None else [{'type': 'thread.started', 'thread_id': self.session},
                   {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': '{"answer": 1}'}},
                   {'type': 'turn.completed', 'usage': {}}]
         transport = native_run.Recorded(lambda call: native_run.Outcome(
-            stdout='\n'.join(map(json.dumps, stream)).encode(), files=files or {}))
+            stdout='\n'.join(map(json.dumps, stream)).encode(), files=files or {}, exit_code=exit_code))
         with native_run.using(transport):
             record, value = native_call(self.root, 'probe', {'harness': 'codex', 'model': 'gpt-6.1-sol',
                 'effort': 'high', 'tool_mode': 'read-only'}, 'scripted prompt', {}, 10,
                 executable='/usr/bin/true', **options)
         return transport.calls[0], record, value
+
+    def test_provider_schema_and_output_limits_are_not_seat_failures(self):
+        from agent_ee.design_generate import review_seat_failures
+        errors = [
+            {'message': 'Incomplete response returned, reason: max_output_tokens'},
+            {'code': 'invalid_json_schema', 'message': 'Unsupported grammar'},
+            {'message': "Invalid schema for response_format 'review': pattern is too large"},
+        ]
+        for error, exit_code in ((error, code) for error in errors for code in (0, 1)):
+            with self.subTest(error=error, exit_code=exit_code):
+                stream = [{'type': 'thread.started', 'thread_id': self.session},
+                          {'type': 'error', **error},
+                          {'type': 'turn.failed', 'error': error}]
+                _, record, value = self.call(stream=stream, exit_code=exit_code)
+                self.assertEqual(record['execution'], 'malformed')
+                self.assertEqual(record['refusal_kind'], 'structured_output')
+                self.assertIn(error['message'], record['error'])
+                self.assertEqual(record['exit_code'], exit_code)
+                self.assertIsNone(value)
+                self.assertEqual(review_seat_failures(None, record), [])
+                self.assertEqual(review_seat_failures({'review_executions': [record]}), [])
+
+    def test_unknown_provider_errors_remain_seat_failures(self):
+        from agent_ee.design_generate import review_seat_failures
+        for message in ('Login required', 'Quota exhausted', 'Connection reset'):
+            with self.subTest(message=message):
+                _, record, value = self.call(stream=[{'type': 'turn.failed', 'error': {'message': message}}],
+                                             exit_code=1)
+                self.assertEqual(record['execution'], 'failed')
+                self.assertIsNone(value)
+                self.assertTrue(review_seat_failures(None, record))
 
     def test_default_call_keeps_an_unbounded_console_and_no_extra_mounts(self):
         call, record, value = self.call()

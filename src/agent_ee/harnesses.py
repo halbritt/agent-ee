@@ -42,10 +42,70 @@ class StreamIdleTimeout(RuntimeError):
     failure_kind = 'stream_idle_timeout'
 
 
+def validate_provider_schema(schema):
+    """Refuse expensive provider grammars; never relax arbitrary local constraints."""
+    if isinstance(schema, dict):
+        if isinstance(schema.get('pattern'), str) and len(schema['pattern']) > 512:
+            raise OutputFormatRefusal('provider schema pattern exceeds 512 characters')
+        for child in schema.values():
+            validate_provider_schema(child)
+    elif isinstance(schema, list):
+        for child in schema:
+            validate_provider_schema(child)
+
+
+def provider_output_refusal(console):
+    """Recognize explicit schema/output-limit errors, never text in model/tool answers.
+
+    Native CLIs can exit nonzero before their stream parser runs. Inspect only
+    error events or unsuccessful terminal results; unknown failures stay failures.
+    """
+    errors = []
+    try:
+        events = [json.loads(console)]
+    except ValueError:
+        events = []
+        for line in console.splitlines():
+            try:
+                events.append(json.loads(line))
+            except ValueError:
+                continue
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get('type') in ('error', 'turn.failed') or event.get('event') == 'error':
+            errors.append(event.get('error', event))
+        elif event.get('event') == 'result' and isinstance(event.get('result'), dict):
+            result = event['result']
+            if result.get('status') == 'ERROR':
+                errors.append(result.get('error'))
+        elif event.get('type') == 'result' and event.get('is_error'):
+            if isinstance(event.get('errors'), list):
+                errors.extend(event['errors'])
+            else:
+                return None
+    refusal = None
+    for error in errors:
+        message = error.get('message', '') if isinstance(error, dict) else error
+        code = error.get('code') if isinstance(error, dict) else None
+        if not isinstance(message, str):
+            return None
+        if (code in ('invalid_json_schema', 'invalid_response_format', 'max_output_tokens', 'max_tokens')
+                or re.search(r'\bIncomplete response returned, reason: max_output_tokens\b', message, re.I)
+                or re.search(r'\bInvalid (?:JSON schema|schema for (?:response_format|text\.format))\b', message, re.I)):
+            refusal = message or code
+        else:
+            return None
+    return refusal
+
+
 def parse_stream(harness, text, model, tools=True):
     events = [json.loads(line) for line in text.splitlines() if line.strip()]
     if any(not isinstance(e, dict) for e in events):
         raise ValueError('non-object harness event')
+    refusal = provider_output_refusal(text)
+    if refusal is not None:
+        raise OutputFormatRefusal(refusal)
     if any(e.get('type') in ('error', 'turn.failed') or e.get('event') == 'error' for e in events):
         raise RuntimeError('native provider error; no fallback attempted')
     def unique(key, value):
@@ -166,6 +226,11 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
     record = {'backend': harness, 'model_requested': model, 'effort': effort,
         'billing_route': 'subscription', 'execution': 'unavailable', 'limitations': []}
     try:
+        try:
+            validate_provider_schema(schema)
+        except OutputFormatRefusal as exc:
+            record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
+            return record, None
         executable = executable or executable_for(harness)
         if not executable or not Path(executable).is_file():
             record['error'] = 'native executable unavailable; no fallback attempted'
@@ -234,6 +299,10 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
             )
         if record['execution'] != 'ok':
             record['error'] = 'harness execution failed; inspect retained console; no fallback attempted'
+            if record['execution'] == 'failed':
+                refusal = provider_output_refusal((work / 'stdout.log').read_text())
+                if refusal is not None:
+                    record.update(execution='malformed', refusal_kind='structured_output', error=refusal)
             return record, None
         try:
             value, observed = parse_stream(harness, (work / 'stdout.log').read_text(), model, tools)

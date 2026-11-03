@@ -118,14 +118,15 @@ def citation_transport_schema(schema):
 
 
 def review_transport_schema(schema):
-    """Express optional purpose tags without introducing a nullable finding field.
+    """Compact citation grammars for every seat and express optional purpose tags.
 
     Only the provider copy uses a union. Draft validation, archived schemas and
     replay keep the original contract; returned findings are never rewritten.
     """
-    if schema.get('properties', {}).get('schema', {}).get('enum') != [REVIEW_VERSION]:
-        return schema
     wire = citation_transport_schema(schema)
+    if schema.get('properties', {}).get('schema', {}).get('enum') != [REVIEW_VERSION]:
+        _check_schema_limits(wire)
+        return wire
     purpose = wire['properties']['findings']['items']
     ordinary = json.loads(json.dumps(purpose))
     del ordinary['properties']['dimension']
@@ -475,6 +476,12 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
     record = {"backend": "claude", "model_requested": model, "billing_route": "subscription",
               "execution": "unavailable", "effort": effort, "limitations": []}
     try:
+        from .harnesses import validate_provider_schema, provider_output_refusal
+        try:
+            validate_provider_schema(schema)
+        except OutputFormatRefusal as exc:
+            record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
+            return record, None
         if not credentials.is_file():
             record["error"] = "Claude subscription credential file unavailable; no fallback attempted"
             return record, None
@@ -507,9 +514,16 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
         record["harness_binary_sha256"] = digest(executable)
         if execution["execution"] != "ok":
             record["error"] = "reviewer execution failed; inspect raw console; no fallback attempted"
+            if execution['execution'] == 'failed':
+                refusal = provider_output_refusal((work / 'stdout.log').read_text())
+                if refusal is not None:
+                    record.update(execution='malformed', refusal_kind='structured_output', error=refusal)
             return record, None
         try:
             console = (work / "stdout.log").read_text()
+            refusal = provider_output_refusal(console)
+            if refusal is not None:
+                raise OutputFormatRefusal(refusal)
             if tools:
                 events = [json.loads(line) for line in console.splitlines() if line.strip()]
                 terminal = [e for e in events if e.get("type") == "result"]
