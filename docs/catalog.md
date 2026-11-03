@@ -1,7 +1,7 @@
 # Offline catalog snapshots
 
 `agent_ee.catalog` captures explicitly pinned **local** CSV, SQLite, ordinary
-ZIP/CSV files, or the jlcparts split ZIP64 feed described below. Capture never
+ZIP/CSV files, or the jlcparts split ZIP feed described below. Capture never
 downloads data or reads provider credentials. A separate host acquisition script
 downloads the current jlcparts snapshot, or a recorded manifest's volumes, before
 capture. Source catalog bytes and derived snapshots
@@ -80,7 +80,7 @@ private staging directory, validates SQLite integrity, and atomically publishes
 no replacement. Failure publishes nothing; an existing destination is refused.
 This is a Linux capture interface. Each compressed source volume is limited to
 512 MiB; all compressed volumes and the derived DB are each limited to 1 GiB.
-Ordinary ZIP/CSV expansion is limited to 1 GiB. Native split ZIP64 extraction
+Ordinary ZIP/CSV expansion is limited to 1 GiB. Native split ZIP extraction
 has a separate 8 GiB limit and streams to private temporary files.
 
 The DB has `component_base` and one derived table per category. Base rows contain
@@ -202,7 +202,11 @@ It resolves the `gh-pages` head through the GitHub API and reads that commit's
 `data/` listing. It then downloads `cache.z01` … `cache.zip` from
 `raw.githubusercontent.com` at that commit, so all volumes come from one commit
 even if the branch moves during the download. Each volume must have the size
-and Git blob ID that the commit's listing gives. The snapshot goes to
+and Git blob ID that the commit's listing gives. Before publishing, the refresh
+joins the volumes as capture does and requires one `cache.sqlite3` member that
+starts as an SQLite database. An archive layout that capture cannot read is
+refused, and nothing is published; the database's tables and columns are
+checked by capture itself. The snapshot goes to
 `<cache>/jlcparts/<snapshot date>-<commit[:12]>/`. The cache is `--cache DIR`,
 else `$AGENT_EE_CATALOG_CACHE` (an absolute path), else
 `~/.cache/agent-ee/catalog`. The snapshot date is the UTC date of the commit.
@@ -220,8 +224,10 @@ The directory holds:
   `repository`, `branch`, `committed_at` and `retrieved_at`.
 
 The command prints that record with the directory. When the cache already
-holds the current snapshot, the refresh still reads the branch head, then checks
-the volumes and manifests against `snapshot.json` and downloads no volumes. Another upstream commit gets a new
+holds the directory of the resolved head, the refresh downloads no volumes. It
+returns that snapshot only if its volumes and manifests match its
+`snapshot.json`, the record names the commit and date just resolved, and the
+archive check passes; otherwise it refuses. Another upstream commit gets a new
 dated directory next to the old ones. Capture and runs then use one dated
 snapshot, here the directory the refresh printed:
 
@@ -284,8 +290,11 @@ individual part's fetch date. No stock or price is made current by capture.
 
 All volumes are streamed into a private staging file and verified before any
 archive metadata or source rows are interpreted. The adapter accepts only
-contiguous `cache.z01` … `cache.zip` pieces, the pinned producer's fixed ZIP64
-trailer, and a single regular `cache.sqlite3` member beginning on disk zero.
+contiguous `cache.z01` … `cache.zip` pieces whose central directory and end
+record are on the last piece, and a single regular `cache.sqlite3` member
+beginning on disk zero. It reads both trailers jlcparts has produced: a ZIP64
+trailer, as in the 2026-09-14 snapshot, and a plain ZIP trailer, as in the
+2026-11-03 snapshot, whose 2,157,514,752-byte member fits ZIP's 32-bit fields.
 It translates split disk offsets, then delegates directory/decompression/CRC
 validation to Python's standard `zipfile` reader. No 7-Zip dependency, shell
 extraction or archive repair is used. Alternate layouts, encrypted members,

@@ -20,11 +20,12 @@ from .catalog import (MAX_TOTAL_BYTES, MAX_VOLUME_BYTES, exact_fields, publish_d
                       validate_source)
 from .catalog_identity import (FORMAT as IDENTITY_FORMAT, SOURCE_SCHEMA as IDENTITY_SOURCE_SCHEMA,
                                validate_source as validate_identity_source)
-from .catalog_jlcparts import FORMAT, split_volumes
+from .catalog_jlcparts import FORMAT, check_archive, split_volumes
 from .datasheet_capture import _Redirects, validate_url
 from .storage import digest, write_json
 
 MAX_SECONDS = 3600
+FETCH_MODES = ('--fetch', '--refresh-fetch')
 # jlcparts publishes its catalog as split ZIP volumes under data/ on its gh-pages branch.
 JLCPARTS_REPOSITORY = 'yaqwsx/jlcparts'
 JLCPARTS_BRANCH = 'gh-pages'
@@ -72,8 +73,16 @@ def _deadline(timeout):
         raise ValueError(f'acquisition deadline must be 1..{MAX_SECONDS} seconds')
 
 
-def run_owned_fetch(command, timeout):
-    """Run a fetch child; a process deadline also bounds DNS, redirects and trickling responses."""
+def run_owned_fetch(mode, request, stage, timeout):
+    """Run this module's own fetch child on a request file and a stage directory.
+
+    The program and argument shape are fixed: `python -m agent_ee.catalog_feed MODE REQUEST STAGE`
+    with MODE --fetch or --refresh-fetch, so the helper cannot launch any other command. The
+    process deadline also bounds DNS, redirects and trickling responses."""
+    if mode not in FETCH_MODES or not isinstance(request, Path) or not isinstance(stage, Path):
+        raise ValueError('run_owned_fetch runs only the catalog_feed fetch child')
+    _deadline(timeout)
+    command = [sys.executable, '-m', 'agent_ee.catalog_feed', mode, str(request), str(stage)]
     with subprocess.Popen(command) as child:
         try:
             status = child.wait(timeout=timeout)
@@ -101,8 +110,7 @@ def acquire_catalog(manifest, destination, *, timeout=900):
         stage = scratch / 'volumes'
         stage.mkdir()
         write_json(scratch / 'source.json', manifest)
-        run_owned_fetch([sys.executable, '-m', 'agent_ee.catalog_feed', '--fetch',
-                         str(scratch / 'source.json'), str(stage)], timeout)
+        run_owned_fetch('--fetch', scratch / 'source.json', stage, timeout)
         for volume in manifest['volumes']:
             path = stage / volume['path']
             if path.stat().st_size != volume['size_bytes'] or digest(path) != volume['sha256']:
@@ -257,6 +265,24 @@ def verify_snapshot(directory):
     return record
 
 
+def _resolved_snapshot(record, resolved, directory):
+    """Refuse a snapshot that is not the upstream head just resolved."""
+    found = (record['source']['commit'], record['snapshot_date'], record.get('committed_at', resolved['committed_at']))
+    wanted = (resolved['commit'], resolved['snapshot_date'], resolved['committed_at'])
+    if found != wanted:
+        raise ValueError(f'{directory} holds commit {found[0]} dated {found[1]}, not the resolved upstream '
+                         f'head {wanted[0]} dated {wanted[1]}')
+
+
+def _importable(directory, work):
+    """Refuse a snapshot whose archive layout capture cannot read."""
+    stocked = strict_json((Path(directory) / 'source-manifest.json').read_text(encoding='utf-8'))
+    try:
+        return check_archive(stocked['volumes'], directory, work)
+    except ValueError as exc:
+        raise ValueError(f'upstream snapshot in {directory} cannot be imported: {exc}') from exc
+
+
 def refresh_catalog(cache=None, *, timeout=900, api=GITHUB_API, raw=GITHUB_RAW,
                     repository=JLCPARTS_REPOSITORY, branch=JLCPARTS_BRANCH):
     """Fetch the current upstream jlcparts snapshot into the cache; return (directory, record).
@@ -264,8 +290,10 @@ def refresh_catalog(cache=None, *, timeout=900, api=GITHUB_API, raw=GITHUB_RAW,
     The snapshot goes to <cache>/jlcparts/<snapshot date>-<commit[:12]>/ with its volumes, the
     stocked (source-manifest.json) and identity (identity-source-manifest.json) source manifests
     and snapshot.json, the record of which snapshot it is. The snapshot date is the UTC date of
-    the branch head's commit. A snapshot already in the cache is verified, not fetched again.
-    Nothing is published unless every volume matches the commit's Git blob ID."""
+    the branch head's commit. A snapshot already in the cache is returned only when its volumes and
+    manifests match its snapshot.json and it is the commit and date just resolved; it is not
+    fetched again. Nothing is published unless every volume matches the commit's Git blob ID and
+    the archive has a layout capture can read (catalog_jlcparts.check_archive)."""
     _deadline(timeout)
     validate_url(api)
     validate_url(raw)
@@ -279,16 +307,18 @@ def refresh_catalog(cache=None, *, timeout=900, api=GITHUB_API, raw=GITHUB_RAW,
         stage.mkdir()
         write_json(scratch / 'request.json', {'api': api.rstrip('/'), 'raw': raw.rstrip('/'), 'repository': repository,
                                               'branch': branch, 'snapshots': str(snapshots)})
-        run_owned_fetch([sys.executable, '-m', 'agent_ee.catalog_feed', '--refresh-fetch',
-                         str(scratch / 'request.json'), str(stage)], timeout)
+        run_owned_fetch('--refresh-fetch', scratch / 'request.json', stage, timeout)
         resolved = strict_json((stage / 'resolved.json').read_text(encoding='utf-8'))
         destination = snapshots / snapshot_name(resolved['snapshot_date'], resolved['commit'])
         if destination.exists():
-            return destination, verify_snapshot(destination)
+            record = verify_snapshot(destination)
+            _resolved_snapshot(record, resolved, destination)
+            _importable(destination, scratch)
+            return destination, record
         (stage / 'resolved.json').unlink()
         record = snapshot_identity(stage)
-        if record['source']['commit'] != resolved['commit'] or record['snapshot_date'] != resolved['snapshot_date']:
-            raise ValueError('fetched manifests do not describe the resolved snapshot')
+        _resolved_snapshot(record, resolved, stage)
+        _importable(stage, scratch)
         record.update(repository=f'https://github.com/{repository}', branch=branch,
                       committed_at=resolved['committed_at'],
                       retrieved_at=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))

@@ -1,4 +1,4 @@
-"""Host-side adapter for the pinned, single-member jlcparts split ZIP64 feed."""
+"""Host-side adapter for the single-member jlcparts split ZIP feed (ZIP64 or plain ZIP trailer)."""
 from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
@@ -41,8 +41,11 @@ def split_volumes(volumes, profile=FORMAT):
 def reassemble(volumes, root, destination, profile=FORMAT):
     """Verify every volume before interpreting ZIP metadata; translate disk offsets.
 
-    This intentionally accepts only the pinned producer's single-entry ZIP64
-    layout. zipfile handles the directory, compression, CRC and member validation.
+    Accepts the two single-entry split layouts jlcparts has produced: a ZIP64
+    trailer (2026-09-14 snapshot) and a plain ZIP trailer (from 2026-11). In both,
+    the central directory and trailer are on the last disk and the member starts
+    on disk 0. The joined file is rewritten as one disk; zipfile handles the
+    directory, compression, CRC and member validation.
     """
     volumes = split_volumes(volumes, profile)
     with destination.open('xb') as output:
@@ -61,13 +64,25 @@ def reassemble(volumes, root, destination, profile=FORMAT):
             if size != volume['size_bytes'] or hashed.hexdigest() != volume['sha256']:
                 raise ValueError('volume size/hash mismatch')
     base = sum(v['size_bytes'] for v in volumes[:-1])
+    last = len(volumes) - 1
     with destination.open('r+b') as archive:
+        if archive.seek(0, 2) < 98:
+            raise ValueError('unsupported split ZIP trailer')
         archive.seek(-98, 2)
         trailer = bytearray(archive.read(98))
+        if trailer[:4] != b'PK\x06\x06':
+            # Plain ZIP trailer: every field fits 16/32 bits, so no ZIP64 record follows the data.
+            end = struct.unpack('<4sHHHHIIH', trailer[76:])
+            if (end != (b'PK\x05\x06', last, last, 1, 1, end[5], end[6], 0)
+                    or 0xFFFFFFFF in end[5:7] or end[6] + end[5] + 22 != volumes[-1]['size_bytes']
+                    or base + end[6] >= 0xFFFFFFFF):
+                raise ValueError('unsupported split ZIP trailer')
+            archive.seek(-22, 2)
+            archive.write(struct.pack('<4sHHHHIIH', b'PK\x05\x06', 0, 0, 1, 1, end[5], base + end[6], 0))
+            return
         end64 = struct.unpack('<4sQHHIIQQQQ', trailer[:56])
         locator = struct.unpack('<4sIQI', trailer[56:76])
         end = struct.unpack('<4sHHHHIIH', trailer[76:])
-        last = len(volumes) - 1
         if (end64[:2] != (b'PK\x06\x06', 44) or end64[4:8] != (last, last, 1, 1)
                 or locator != (b'PK\x06\x07', last, end64[9] + end64[8], len(volumes))
                 or end != (b'PK\x05\x06', last, last, 1, 1, end64[8], end64[9], 0)
@@ -82,17 +97,39 @@ def reassemble(volumes, root, destination, profile=FORMAT):
         archive.write(trailer)
 
 
+def _member(archive):
+    entries = archive.infolist()
+    if len(entries) != 1:
+        raise ValueError('expected one cache.sqlite3 member')
+    entry = entries[0]
+    mode = (entry.external_attr >> 16) & 0o170000
+    if (entry.filename != 'cache.sqlite3' or entry.volume != 0 or entry.header_offset != 4
+            or entry.flag_bits & 1 or mode not in (0, 0o100000)
+            or not 0 < entry.file_size <= MAX_EXPANDED_BYTES):
+        raise ValueError('unsupported or oversized native ZIP member')
+    return entry
+
+
+def check_archive(volumes, root, work, profile=FORMAT):
+    """Refuse volumes capture cannot read, without expanding the member.
+
+    Joins and rewrites the volumes as capture does (sizes and SHA-256 checked first), then
+    requires the single cache.sqlite3 member and an SQLite header at its start. The
+    database's tables and columns are checked by capture itself."""
+    with tempfile.TemporaryDirectory(prefix='.catalog-layout-', dir=work) as stage:
+        joined = Path(stage) / 'joined.zip'
+        reassemble(volumes, Path(root), joined, profile)
+        with zipfile.ZipFile(joined) as archive:
+            entry = _member(archive)
+            with archive.open(entry) as source:
+                if source.read(16) != b'SQLite format 3\x00':
+                    raise ValueError('native ZIP member is not an SQLite database')
+    return {'member': entry.filename, 'member_bytes': entry.file_size}
+
+
 def extract_database(archive_path, destination):
     with zipfile.ZipFile(archive_path) as archive:
-        entries = archive.infolist()
-        if len(entries) != 1:
-            raise ValueError('expected one cache.sqlite3 member')
-        entry = entries[0]
-        mode = (entry.external_attr >> 16) & 0o170000
-        if (entry.filename != 'cache.sqlite3' or entry.volume != 0 or entry.header_offset != 4
-                or entry.flag_bits & 1 or mode not in (0, 0o100000)
-                or not 0 < entry.file_size <= MAX_EXPANDED_BYTES):
-            raise ValueError('unsupported or oversized native ZIP member')
+        entry = _member(archive)
         size = 0
         with archive.open(entry) as source, destination.open('xb') as output:
             while block := source.read(1024**2):

@@ -6,9 +6,11 @@ import http.server
 import io
 import json
 from pathlib import Path
+import shutil
 import sqlite3
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -16,8 +18,9 @@ import unittest
 import zipfile
 
 from agent_ee.catalog import capture_catalog, load_catalog, validate_source
-from agent_ee.catalog_feed import acquire_catalog, refresh_catalog, source_manifests
-from agent_ee.catalog_identity import validate_source as validate_identity_source
+from agent_ee.catalog_feed import acquire_catalog, refresh_catalog, run_owned_fetch, source_manifests
+from agent_ee.catalog_identity import FORMAT as IDENTITY_FORMAT, SOURCE_SCHEMA as IDENTITY_SOURCE_SCHEMA
+from agent_ee.catalog_identity import capture_identity, validate_source as validate_identity_source
 from agent_ee.catalog_jlcparts import COMPONENT_COLUMNS, attributes, price1
 from agent_ee.part_selection import select_parts
 from agent_ee.storage import digest
@@ -29,7 +32,7 @@ class NativeCatalogTests(unittest.TestCase):
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
 
-    def source(self, edit=None, *, member='cache.sqlite3'):
+    def source(self, edit=None, *, member='cache.sqlite3', layout='zip64'):
         db = self.root / 'native.sqlite3'
         db.unlink(missing_ok=True)
         with sqlite3.connect(db) as connection:
@@ -57,14 +60,18 @@ class NativeCatalogTests(unittest.TestCase):
                                    [tuple(r[c] for c in COMPONENT_COLUMNS) for r in rows])
             if edit:
                 edit(connection)
-        self.split_archive(db.read_bytes(), member=member)
+        self.split_archive(db.read_bytes(), member=member, layout=layout)
         volumes = [dict(path=p.name, sha256=digest(p), size_bytes=p.stat().st_size, format='jlcparts-v2-stocked-split-zip')
                    for p in (self.root / 'cache.z01', self.root / 'cache.zip')]
         return dict(schema='agent-ee.catalog-source/1', snapshot_date='2026-09-14',
                     source_url='https://example.invalid/pinned/owned-v1', source_commit='owned-v1',
                     currency='USD', stale_before='2025-09-14', volumes=volumes)
 
-    def split_archive(self, payload, *, member):
+    def split_archive(self, payload, *, member, layout='zip64'):
+        """Two split volumes of one deflated member starting on disk 0 after the split marker.
+
+        layout zip64 is the 2026-09-14 producer's trailer; zip32 is the plain trailer of the
+        2026-11 snapshots (central directory and end record on the last disk, no ZIP64 record)."""
         output = io.BytesIO()
         with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
             entry = zipfile.ZipInfo(member, date_time=(2026, 9, 14, 0, 0, 0))
@@ -76,6 +83,11 @@ class NativeCatalogTests(unittest.TestCase):
         struct.pack_into('<I', whole, central + 42, 4)
         split = central // 2
         local_central = central - split
+        if layout == 'zip32':
+            whole[-22:] = struct.pack('<4sHHHHIIH', b'PK\x05\x06', 1, 1, 1, 1, end[5], local_central, 0)
+            (self.root / 'cache.z01').write_bytes(whole[:split])
+            (self.root / 'cache.zip').write_bytes(whole[split:])
+            return
         tail = (struct.pack('<4sQHHIIQQQQ', b'PK\x06\x06', 44, 45, 45, 1, 1, 1, 1, end[5], local_central)
                 + struct.pack('<4sIQI', b'PK\x06\x07', 1, local_central + end[5], 2)
                 + struct.pack('<4sHHHHIIH', b'PK\x05\x06', 1, 1, 1, 1, end[5], local_central, 0))
@@ -253,6 +265,39 @@ class NativeCatalogTests(unittest.TestCase):
                                                 'Voltage Rating (Max)': '250V'}), 'capacitor'))
         self.assertNotIn('voltage', normalized_attributes(raw))
 
+    def test_capture_reads_both_split_trailer_layouts_and_refuses_others(self):
+        # 2026-09-14 volumes end in a ZIP64 trailer; the 2026-11 snapshots in a plain ZIP trailer.
+        for layout in ('zip64', 'zip32'):
+            with self.subTest(layout):
+                for name in ('cache.z01', 'cache.zip'):
+                    (self.root / name).unlink(missing_ok=True)
+                source = self.source(layout=layout)
+                manifest = capture_catalog(source, self.root, self.root / f'stocked-{layout}')
+                self.assertEqual(manifest['row_counts']['resistor'], 3)
+                identity = dict(source, schema=IDENTITY_SOURCE_SCHEMA,
+                                volumes=[dict(v, format=IDENTITY_FORMAT) for v in source['volumes']])
+                del identity['currency']
+                capture_identity(identity, self.root, self.root / f'identity-{layout}')
+                self.assertTrue((self.root / f'identity-{layout}/manifest.json').is_file())
+        # A plain trailer that does not describe one member on the last disk is refused.
+        zip_path = self.root / 'cache.zip'
+        tail = bytearray(zip_path.read_bytes())
+        struct.pack_into('<H', tail, len(tail) - 12, 2)       # total entries
+        zip_path.write_bytes(tail)
+        source['volumes'][-1]['sha256'] = digest(zip_path)
+        with self.assertRaisesRegex(ValueError, 'unsupported split ZIP trailer'):
+            capture_catalog(source, self.root, self.root / 'refused')
+
+    def test_fetch_helper_runs_only_its_own_fetch_child(self):
+        marker = self.root / 'launched'
+        command = [sys.executable, '-c', f'open({str(marker)!r}, "w")']
+        for args in ((command, self.root / 'request.json', self.root, 5),
+                     ('--other', self.root / 'request.json', self.root, 5),
+                     ('--fetch', str(self.root / 'request.json'), self.root, 5)):
+            with self.subTest(args[0]), self.assertRaisesRegex(ValueError, 'only the catalog_feed fetch child'):
+                run_owned_fetch(*args)
+        self.assertFalse(marker.exists())
+
     def test_refresh_writes_records_in_the_form_of_the_dated_2026_09_14_fixtures(self):
         # The 2026-09-14 records stay as fixtures. The refresh's manifest writer, given their
         # commit, date and volumes, reproduces both files byte for byte as JSON values.
@@ -321,7 +366,7 @@ class NativeCatalogTests(unittest.TestCase):
         return refresh_catalog(self.root / 'cache', timeout=30, api=base, raw=base, repository='owned/jlcparts')
 
     def test_refresh_fetches_the_current_snapshot_records_it_and_selection_names_it(self):
-        self.source()
+        self.source(layout='zip32')
         files = {name: (self.root / name).read_bytes() for name in ('cache.z01', 'cache.zip')}
         first, second = 'a1' * 20, 'b2' * 20
         with self.upstream() as (base, state):
@@ -366,19 +411,62 @@ class NativeCatalogTests(unittest.TestCase):
         captured = load_catalog(self.root / 'snapshot', manifest_sha256)['manifest']
         self.assertEqual((captured['source_commit'], captured['volumes']), (first, source['volumes']))
 
-    def test_refresh_publishes_nothing_unless_the_volumes_are_the_commits(self):
-        self.source()
+    def test_refresh_publishes_nothing_unless_the_volumes_are_the_commits_and_importable(self):
+        self.source(layout='zip32')
         files = {name: (self.root / name).read_bytes() for name in ('cache.z01', 'cache.zip')}
         tampered = bytes([files['cache.zip'][0] ^ 1]) + files['cache.zip'][1:]
-        for case, commit in (('bytes differ from the listed Git blob',
-                              {'files': files, 'served': {'cache.zip': tampered}}),
-                             ('no final cache.zip volume', {'files': {'cache.z01': files['cache.z01']}})):
+        self.source(member='other.sqlite3', layout='zip32')
+        renamed = {name: (self.root / name).read_bytes() for name in ('cache.z01', 'cache.zip')}
+        for case, commit, error in (
+                ('bytes differ from the listed Git blob', {'files': files, 'served': {'cache.zip': tampered}},
+                 (RuntimeError, 'catalog download failed')),
+                ('no final cache.zip volume', {'files': {'cache.z01': files['cache.z01']}},
+                 (RuntimeError, 'catalog download failed')),
+                ('an archive capture cannot read', {'files': renamed},
+                 (ValueError, 'cannot be imported: unsupported or oversized native ZIP member'))):
             with self.subTest(case), self.upstream() as (base, state):
                 state['commits']['c3' * 20] = dict(commit, date='2026-11-02T00:00:00Z')
                 state['head'] = 'c3' * 20
-                with self.assertRaisesRegex(RuntimeError, 'catalog download failed'):
+                with self.assertRaisesRegex(*error):
                     self.refresh(base)
                 self.assertEqual(list((self.root / 'cache/jlcparts').iterdir()), [])
+
+    def test_cache_hit_must_be_the_resolved_head_with_unchanged_bytes(self):
+        self.source(layout='zip32')
+        files = {name: (self.root / name).read_bytes() for name in ('cache.z01', 'cache.zip')}
+        first, second = 'a1' * 20, 'b2' * 20
+        with self.upstream() as (base, state):
+            state['commits'][first] = {'date': '2026-11-02T21:30:00Z', 'files': files}
+            state['head'] = first
+            early, _ = self.refresh(base)
+            state['commits'][second] = {'date': '2026-11-03T00:00:00Z', 'files': files}
+            state['head'] = second
+            later, later_record = self.refresh(base)
+            # Review of ec8976ca: an older, internally valid snapshot restored under the newer head's name.
+            saved = {path.name: path.read_bytes() for path in later.iterdir()}
+            for path in early.iterdir():
+                shutil.copy2(path, later / path.name)
+            with self.assertRaisesRegex(ValueError, f'holds commit {first} dated 2026-11-02, not the resolved '
+                                                    f'upstream head {second} dated 2026-11-03'):
+                self.refresh(base)
+            for name, payload in saved.items():
+                (later / name).write_bytes(payload)
+            self.assertEqual(self.refresh(base), (later, later_record))
+            # Changed cached bytes, or consistently changed manifests, are refused rather than returned.
+            flip = lambda b: bytes([b[0] ^ 1]) + b[1:]
+            cutoff = lambda b: b.replace(b'"2025-11-03"', b'"2025-11-02"')
+            for case, edits, message in (
+                    ('volume bytes', {'cache.z01': flip}, 'cache.z01 size/hash differs from its manifest'),
+                    ('manifests', {'source-manifest.json': cutoff, 'identity-source-manifest.json': cutoff},
+                     'differs from its snapshot.json')):
+                with self.subTest(case):
+                    for name, edit in edits.items():
+                        self.assertNotEqual(edit(saved[name]), saved[name])
+                        (later / name).write_bytes(edit(saved[name]))
+                    with self.assertRaisesRegex(ValueError, message):
+                        self.refresh(base)
+                    for name in edits:
+                        (later / name).write_bytes(saved[name])
 
     @contextmanager
     def server(self, source, mode='ok'):

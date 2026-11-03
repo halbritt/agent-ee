@@ -35,7 +35,7 @@ identity volumes, and the identity importer refuses stocked volumes.
 Acquisition and archive handling reuse the [jlcparts acquisition](catalog.md#jlcparts-acquisition);
 a refresh writes this identity manifest next to the stocked one for the same snapshot.
 Every volume is size- and SHA-256-checked before any ZIP metadata is read. The
-same ZIP64 split layout, member limits, `source-db-v2` marker and exact
+same split layouts, member limits, `source-db-v2` marker and exact
 `jlc_components` column check apply. The upstream producer software
 (yaqwsx/jlcparts) is MIT-licensed. No upstream data is vendored. Pinning the
 public source does not grant permission to redistribute its data, so captured

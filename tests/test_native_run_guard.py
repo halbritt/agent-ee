@@ -106,6 +106,19 @@ APPROVED = {
     'operator diagnostics': (None, {('src/agent_ee/cli.py', 'doctor')}),
 }
 
+# The exempt network-acquisition helpers launch processes, so reaching one is a launch route too
+# (review of ec8976ca, finding 2): a call, import, attribute or getattr name of a helper anywhere but
+# in its approved callers fails. run_owned_fetch also fixes its own program and argument shape.
+HELPER_CALLERS = {
+    'run_owned_fetch': {('src/agent_ee/catalog_feed.py', 'acquire_catalog'),
+                        ('src/agent_ee/catalog_feed.py', 'refresh_catalog')},
+    'run_owned_child': {('src/agent_ee/datasheet_capture.py', '_bounded_fetch'),
+                        ('src/agent_ee/datasheet_cascade.py', '_search'),
+                        ('src/agent_ee/design_capture.py', 'capture_supplier'),
+                        ('src/agent_ee/digikey_capture.py', 'send'),
+                        ('src/agent_ee/jlc_stock_capture.py', '_capture')},
+}
+
 SUBPROCESS = {'run', 'Popen', 'call', 'check_call', 'check_output'}
 OS_PROCESS = ('system', 'exec', 'spawn', 'posix_spawn', 'fork')
 EXECUTOR = {'execute', 'sandbox_argv'}
@@ -307,6 +320,31 @@ def direct_sites(text):
     return sorted(visitor.found, key=lambda site: site[:2])
 
 
+def helper_references(text):
+    """(line, helper, innermost function) of each reference to an exempt helper's name in one module.
+
+    The helper's own definition is not a reference; a nested function counts as itself."""
+    found = []
+
+    def walk(node, function):
+        for child in ast.iter_child_nodes(node):
+            name = None
+            if isinstance(child, ast.Name):
+                name = child.id
+            elif isinstance(child, ast.Attribute):
+                name = child.attr
+            elif isinstance(child, ast.ImportFrom):
+                name = next((alias.name for alias in child.names if alias.name in HELPER_CALLERS), None)
+            elif isinstance(child, ast.Constant) and isinstance(child.value, str):
+                name = child.value
+            if name in HELPER_CALLERS:
+                found.append((child.lineno, name, function))
+            walk(child, child.name if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else function)
+
+    walk(ast.parse(text), None)
+    return found
+
+
 def argv_builds(text):
     """(line, tool) of each literal kicad-cli DRC or netlist-export argv in one module's source."""
     builds = []
@@ -373,6 +411,35 @@ class NativeRunGuardTest(unittest.TestCase):
     def test_every_exemption_still_matches_a_site(self):
         listed = {(name, rel, function) for name, entry in EXEMPT.items() for rel, function in entry['sites']}
         self.assertEqual(listed - self.used, set(), 'remove exemptions that no longer match')
+
+    def test_exempt_helpers_are_reached_only_from_their_approved_callers(self):
+        found, used = [], set()
+        for path in sorted(SOURCE.rglob('*.py')):
+            rel = path.relative_to(ROOT).as_posix()
+            for line, helper, function in helper_references(path.read_text()):
+                if (rel, function) in HELPER_CALLERS[helper]:
+                    used.add((helper, rel, function))
+                else:
+                    found.append(f'{rel}: line {line} {function or "<module>"} reaches {helper}')
+        self.assertEqual(found, [], 'a process helper is a launch route: add the caller deliberately or use native_run')
+        listed = {(helper, rel, function) for helper, callers in HELPER_CALLERS.items() for rel, function in callers}
+        self.assertEqual(listed - used, set(), 'remove approved callers that no longer reach their helper')
+
+    def test_helper_scanner_finds_imports_calls_attributes_and_getattr_names(self):
+        module = """
+from .catalog_feed import run_owned_fetch as fetch
+from . import datasheet_capture
+
+def a():
+    datasheet_capture.run_owned_child(['curl', url], 5)
+
+def b():
+    def inner():
+        return getattr(datasheet_capture, 'run_owned_child')
+    return inner
+"""
+        self.assertEqual(helper_references(module),
+                         [(2, 'run_owned_fetch', None), (6, 'run_owned_child', 'a'), (10, 'run_owned_child', 'inner')])
 
     def test_router_launch_is_not_exempt(self):
         # The routing step's argv (python -I -B <adapter script>) is executed by stage receipts; that
