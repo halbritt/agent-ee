@@ -308,13 +308,14 @@ def _attempt_outcome(record, rejected):
 
 
 def resolve_datasheets(root, request, out, *, allow_network=False, exa_command=None, timeout=30,
-                       max_bytes=None, search_timeout=60, min_interval=DEFAULT_INTERVAL):
+                       max_bytes=None, search_timeout=60, min_interval=DEFAULT_INTERVAL, details=None):
     """Walk the cascade and publish one new output directory ``out`` (relative to ``root``).
 
     Without ``allow_network=True`` the Exa tier is recorded as not run. Failed
     URLs, failed searches and rejected PDFs are recorded; capture or write
-    infrastructure failures raise and publish nothing. Never call this from a
-    check or campaign writer.
+    infrastructure failures raise and publish nothing. ``details``, when given,
+    receives each fetched URL's failure class and byte counts (the published
+    files are unchanged). Never call this from a check or campaign writer.
     """
     from .datasheet_capture import MAX_BYTES, _capture_parts
     from .datasheet_selection import validate_document
@@ -350,7 +351,7 @@ def resolve_datasheets(root, request, out, *, allow_network=False, exa_command=N
             def attempt(tier, url, rank):
                 acquisition_id = _attempt_id(key, tier, rank)
                 binding = {'id': acquisition_id, 'datasheet_url': url}
-                record = _capture_parts([binding], stage / 'datasheets', timeout, max_bytes, fetched)[0]
+                record = _capture_parts([binding], stage / 'datasheets', timeout, max_bytes, fetched, details)[0]
                 bindings.append(binding)
                 records.append(record)
                 outcome, reason = _attempt_outcome(record, rejected)

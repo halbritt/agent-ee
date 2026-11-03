@@ -43,6 +43,14 @@ This rejects HTML and truncated envelopes; actual PDF parsing and citation suppo
 remain obligations of the existing extractor. Envelope acceptance alone does not
 establish a well-formed or safe PDF.
 
+A failed record's reason names the check that failed: no PDF header, a PDF
+that stops before `%%EOF` (a truncated file), fewer bytes than the declared
+`Content-Length` (an incomplete transfer), the byte limit, an HTTP status, a
+refused URL, a network failure or the deadline. A Python caller can pass a
+dictionary as `details=` to `capture_datasheets`. For each URL it receives the
+failure class, whether the failure can be temporary, the HTTP status, and the
+declared and received byte counts. The manifest does not change.
+
 Each URL runs in an owned capture subprocess, with a hard elapsed-time deadline
 (default 30 seconds, maximum 60), including startup, DNS, redirects and reads.
 Timeout and catchable cancellation terminate and reap the owned child before

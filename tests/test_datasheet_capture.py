@@ -17,11 +17,21 @@ class DatasheetCaptureTests(unittest.TestCase):
         text_pdf(self.root / 'original.pdf', ['CANL 6', 'CANH 7'])
         self.pdf = (self.root / 'original.pdf').read_bytes()
         self.requests = []
+        # path -> (status, declared Content-Length or None, body bytes)
+        self.routes = {}
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 owner.requests.append(self.path)
+                if self.path in owner.routes:
+                    status, length, body = owner.routes[self.path]
+                    self.send_response(status)
+                    if length is not None:
+                        self.send_header('Content-Length', str(length))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 if self.path == '/identified':
                     if self.headers.get('User-Agent') != 'agent-ee/1 (public datasheet acquisition)':
                         self.send_error(403, 'Identify the acquisition client')
@@ -335,6 +345,32 @@ class DatasheetCaptureTests(unittest.TestCase):
                 self.assertTrue(part['missing'], part)
                 self.assertIsNone(part['sha256'])
                 self.assertFalse(list((self.root / route[1:]).glob('*.pdf')))
+
+    def test_fetch_detail_separates_repeating_failures_from_temporary_ones(self):
+        # Benchmark r4 load-switch: a hosted PDF that is complete as sent but cut before its
+        # end marker fails on every download; a transfer cut short can pass on a later one.
+        start = b'%PDF-1.4\n% owned synthetic datasheet body\n'
+        self.routes.update({'/truncated-file': (200, len(start), start), '/cut-transfer': (200, 4096, start),
+                            '/gone': (404, None, b'not found'), '/busy': (503, None, b'busy')})
+        for number, (path, timeout, failure, transient, status, sizes) in enumerate((
+                ('/pdf', 3, None, None, 200, (len(self.pdf), None)),
+                ('/truncated-file', 3, 'truncated', False, 200, (len(start), len(start))),
+                ('/cut-transfer', 3, 'incomplete_transfer', True, 200, (len(start), 4096)),
+                ('/html', 3, 'not_pdf', False, 200, (len(b'<html>error</html>'), None)),
+                ('/gone', 3, 'http_status', False, 404, (None, None)),
+                ('/busy', 3, 'http_status', True, 503, (None, None)),
+                ('/slow', 0.2, 'deadline', True, None, (None, None)),
+                (None, 3, 'no_url', False, None, (None, None)))):
+            with self.subTest(path=path):
+                url = None if path is None else self.url + path
+                details = {}
+                result = capture_datasheets([{'id': 'U1', 'datasheet_url': url}], self.root / f'detail-{number}',
+                                            timeout=timeout, details=details)
+                detail = details[url]
+                self.assertEqual((detail['failure'], detail['transient'], detail['http_status']),
+                                 (failure, transient, status))
+                self.assertEqual((detail['size_bytes'], detail['content_length']), sizes)
+                self.assertEqual(result['parts'][0]['missing'], failure is not None)
 
     def test_cli_exit_and_manifest_for_missing_url(self):
         import subprocess

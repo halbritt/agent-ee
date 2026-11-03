@@ -21,6 +21,43 @@ from .storage import canonical, identity
 MAX_PARTS = 256
 MAX_BYTES = 20 * 1024 * 1024
 MAX_SECONDS = 60
+# HTTP statuses that a later request can change. Every other refusal repeats.
+TRANSIENT_STATUS = frozenset((408, 425, 429, 500, 502, 503, 504))
+
+
+def envelope_problem(raw):
+    """Why ``raw`` is not a complete PDF envelope, as ``(kind, text)``, or None when it is.
+
+    The envelope is the PDF header at the start and the ``%%EOF`` marker at the end.
+    ``not_pdf``: there is no header, for example an HTML page. ``truncated``: a PDF
+    that stops before its end marker. The same bytes give the same result every time.
+    """
+    if not raw.startswith(b'%PDF-'):
+        start = 'the response is empty' if not raw else f'the response starts with {raw[:16]!r}'
+        return 'not_pdf', f'response is not a complete PDF envelope: it has no PDF header; {start}'
+    if not raw.rstrip().endswith(b'%%EOF'):
+        return 'truncated', (f'response is not a complete PDF envelope: the PDF stops after {len(raw)} '
+                             'bytes without its %%EOF end-of-file marker; the file is truncated')
+    return None
+
+
+class _Refusal(ValueError):
+    """A received response that is not a usable PDF, with its failure class."""
+
+    def __init__(self, kind, transient, text):
+        super().__init__(text)
+        self.kind, self.transient = kind, transient
+
+
+def _detail(failure=None, transient=None):
+    """Fetch facts kept beside, not inside, the manifest record."""
+    return {'failure': failure, 'transient': transient, 'http_status': None,
+            'content_length': None, 'size_bytes': None}
+
+
+def _declared_length(value):
+    value = (value or '').strip()
+    return int(value) if value.isascii() and value.isdigit() else None
 
 
 def validate_url(url):
@@ -41,8 +78,18 @@ class _Redirects(urllib.request.HTTPRedirectHandler):
 
 
 def _fetch(url, seconds, max_bytes):
+    """One URL: the manifest record, the PDF bytes, and a ``detail`` that classifies a failure.
+
+    ``detail.failure`` is ``not_pdf``, ``truncated``, ``too_large``, ``invalid_url``
+    or ``http_status`` (a refusal that repeats; ``transient`` false), or
+    ``incomplete_transfer``, ``network`` or an ``http_status`` in ``TRANSIENT_STATUS``
+    (a failure that a later request can avoid; ``transient`` true). A body shorter than
+    its declared Content-Length is an incomplete transfer; a complete body without the
+    end marker is a truncated file.
+    """
     record = {'url': url, 'final_url': None, 'fetched_at': datetime.now(timezone.utc).isoformat(),
               'sha256': None, 'path': None, 'missing': True, 'reason': None}
+    detail = _detail()
     try:
         validate_url(url)
         # Ignore ambient proxy credentials/configuration; only explicit URLs travel.
@@ -50,17 +97,38 @@ def _fetch(url, seconds, max_bytes):
         request = urllib.request.Request(url, headers={
             'User-Agent': 'agent-ee/1 (public datasheet acquisition)'})
         with opener.open(request, timeout=seconds) as response:
+            detail['http_status'] = response.status
             record['final_url'] = validate_url(response.geturl())
+            declared = detail['content_length'] = _declared_length(response.headers.get('Content-Length'))
             raw = response.read(max_bytes + 1)
+            detail['size_bytes'] = len(raw)
             if len(raw) > max_bytes:
-                raise ValueError('PDF byte limit exceeded')
-            if not raw.startswith(b'%PDF-') or not raw.rstrip().endswith(b'%%EOF'):
-                raise ValueError('response is not a complete PDF envelope')
+                raise _Refusal('too_large', False, f'PDF byte limit exceeded: the response is larger than '
+                                                   f'{max_bytes} bytes')
+            if declared is not None and len(raw) < declared:
+                raise _Refusal('incomplete_transfer', True, f'incomplete transfer: {len(raw)} of the {declared} '
+                                                            'bytes the server declared arrived')
+            problem = envelope_problem(raw)
+            if problem is not None:
+                raise _Refusal(problem[0], False, problem[1])
         record.update(missing=False, sha256=hashlib.sha256(raw).hexdigest())
-        return {'record': record, 'pdf': base64.b64encode(raw).decode('ascii')}
-    except (OSError, ValueError, urllib.error.URLError, http.client.HTTPException) as exc:
+        return {'record': record, 'pdf': base64.b64encode(raw).decode('ascii'), 'detail': detail}
+    except _Refusal as exc:
+        failure, transient = exc.kind, exc.transient
         record['reason'] = str(exc)
-        return {'record': record, 'pdf': None}
+    except urllib.error.HTTPError as exc:
+        detail['http_status'] = exc.code
+        failure, transient = 'http_status', exc.code in TRANSIENT_STATUS
+        record['reason'] = str(exc)
+    except ValueError as exc:
+        # validate_url refused the URL or a redirect target.
+        failure, transient = 'invalid_url', False
+        record['reason'] = str(exc)
+    except (OSError, urllib.error.URLError, http.client.HTTPException) as exc:
+        failure, transient = 'network', True
+        record['reason'] = str(exc)
+    detail.update(failure=failure, transient=transient)
+    return {'record': record, 'pdf': None, 'detail': detail}
 
 
 def _process_identity(pid):
@@ -113,7 +181,8 @@ def _bounded_fetch(url, seconds, max_bytes):
     if stdout is None:
         return {'record': {'url': url, 'final_url': None,
                 'fetched_at': datetime.now(timezone.utc).isoformat(), 'sha256': None,
-                'path': None, 'missing': True, 'reason': 'fetch deadline exceeded'}, 'pdf': None}
+                'path': None, 'missing': True, 'reason': 'fetch deadline exceeded'}, 'pdf': None,
+                'detail': _detail('deadline', True)}
     return json.loads(stdout)
 
 
@@ -178,8 +247,10 @@ def _limits(timeout, max_bytes):
         raise ValueError('invalid PDF byte limit')
 
 
-def _capture_parts(parts, stage, timeout, max_bytes, fetched=None):
+def _capture_parts(parts, stage, timeout, max_bytes, fetched=None, details=None):
     # ``fetched`` lets a host-side cascade fetch candidates one at a time into one stage.
+    # ``details``, when given, receives each URL's fetch detail (failure class, transient,
+    # HTTP status, declared and received byte counts); manifest records stay unchanged.
     records, fetched = [], {} if fetched is None else fetched
     for part in parts:
         url = part['datasheet_url']
@@ -187,24 +258,28 @@ def _capture_parts(parts, stage, timeout, max_bytes, fetched=None):
             if not url:
                 fetched[url] = {'url': url, 'final_url': None, 'fetched_at': None,
                                 'sha256': None, 'path': None, 'missing': True, 'reason': 'no datasheet URL'}
+                detail = _detail('no_url', False)
             else:
                 response = _bounded_fetch(url, timeout, max_bytes)
-                record = response['record']
+                record, detail = response['record'], response['detail']
                 if not record['missing']:
                     filename = hashlib.sha256(url.encode()).hexdigest() + '.pdf'
                     with (stage / filename).open('xb') as stream:
                         stream.write(base64.b64decode(response['pdf'], validate=True))
                     record['path'] = filename
                 fetched[url] = record
+            if details is not None:
+                details[url] = detail
         records.append({'id': part['id'], **fetched[url]})
     return records
 
 
-def capture_datasheets(parts, out, *, timeout=30, max_bytes=MAX_BYTES):
+def capture_datasheets(parts, out, *, timeout=30, max_bytes=MAX_BYTES, details=None):
     """New output only; URL failures are missing, infrastructure/write failures raise.
 
     Completed PDFs and a per-part manifest are published together by directory
-    rename. Never call this preparation API from a check or campaign writer.
+    rename. ``details``, when given, receives each URL's fetch detail (see
+    ``_fetch``). Never call this preparation API from a check or campaign writer.
     """
     parts = _parts(parts)
     _limits(timeout, max_bytes)
@@ -220,7 +295,7 @@ def capture_datasheets(parts, out, *, timeout=30, max_bytes=MAX_BYTES):
     published = False
     try:
         stage = Path(tempfile.mkdtemp(prefix='.datasheet-', dir=out.parent))
-        records = _capture_parts(parts, stage, timeout, max_bytes)
+        records = _capture_parts(parts, stage, timeout, max_bytes, details=details)
         manifest = {'schema': 'agent-ee.datasheet-capture/1', 'bindings_sha256': identity(parts),
                     'outcome': 'missing' if any(p['missing'] for p in records) else 'captured',
                     'parts': records}
