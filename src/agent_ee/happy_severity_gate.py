@@ -6,13 +6,13 @@ each run (kicad_happy.run_analyzers); a scope names only the installation path.
 
 from .check_registry import register as _register_check
 from . import check_prerequisites as _requires
-from collections import Counter
 import shutil
 from pathlib import Path
 
 from .candidate import safe_relative
 from .hardware_interface import exact_keys, text
 from .kicad_happy import SEVERITY_ANALYZERS, legacy_declaration, normalize, run_analyzers
+from .kicad_happy_format import FormatError, check_summary
 from .netclass_completeness import load_json
 from .storage import digest, write_json
 
@@ -70,20 +70,15 @@ def evaluate(reports, recorded):
         if isinstance(report, dict) and (report.get('execution', 'ok') != 'ok'
                 or report.get('status', 'ok') not in ('ok', 'complete')):
             raise CheckError('unsupported', f'unknown {name} analyzer result')
+    # normalize also refuses a finding field that acceptance reads in an unknown shape.
     findings, _ = normalize(reports, [])
     for name, report in reports.items():
-        summary = report.get('summary')
-        counts = Counter(f['severity'] for f in report['findings'])
-        if (not isinstance(summary, dict)
-                or type(summary.get('total_findings')) is not int
-                or summary['total_findings'] != len(report['findings'])
-                or not isinstance(summary.get('by_severity'), dict)
-                or set(summary['by_severity']) != {'error', 'warning', 'info'}
-                or any(type(value) is not int or value != counts[severity]
-                       for severity, value in summary['by_severity'].items())
-                or summary.get('suppressed', 0) != 0
-                or 'stage_filter' in report):
-            raise CheckError('unsupported', f'incomplete, filtered or contradictory {name} severity summary')
+        try:
+            check_summary(name, report)
+        except FormatError as exc:
+            raise CheckError('unsupported', str(exc)) from exc
+        if report['summary'].get('suppressed', 0) != 0 or 'stage_filter' in report:
+            raise CheckError('unsupported', f'filtered {name} severity summary')
     seen = set()
     errors, missing = [], []
     eligible = set()

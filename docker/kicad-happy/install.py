@@ -5,14 +5,17 @@ Usage: /usr/bin/python3 install.py DEST
 Runs only during the image build, which has network access. It selects the highest
 vX.Y.Z tag of the release line in kicad-happy-contract.json; pre-release tags and the
 moving v2 / v2.3 aliases are ignored. It clones that tag, applies correction.patch,
-removes .git and runs the analyzers agent-ee uses on the owned probe project.
-DEST.install.json then records the tag, commit, version, output format and the
-installed-file identity that every agent-ee run records with its analyzer evidence.
+removes .git and runs the analyzers agent-ee uses on the owned probe projects.
+Every report must pass the checks agent-ee applies when it reads one
+(kicad_happy_format.py, copied beside this file). DEST.install.json then records
+the tag, commit, version, output format and the installed-file identity that
+every agent-ee run records with its analyzer evidence.
 
 The build fails when no release matches, when the correction no longer applies, or
-when an analyzer reports an output format that agent-ee does not read.
+when a report has an output format or a read field shape that agent-ee does not read.
 """
 import hashlib
+import importlib.util
 import json
 import re
 import shutil
@@ -23,12 +26,11 @@ from pathlib import Path
 
 SOURCE = 'https://github.com/aklofas/kicad-happy.git'
 HERE = Path(__file__).resolve().parent
-# Every analyzer that agent_ee.kicad_happy runs, in dependency order.
-ANALYZERS = (('schematic', 'skills/kicad/scripts/analyze_schematic.py'),
-             ('pcb', 'skills/kicad/scripts/analyze_pcb.py'),
-             ('thermal', 'skills/kicad/scripts/analyze_thermal.py'),
-             ('emc', 'skills/emc/scripts/analyze_emc.py'),
-             ('cross_analysis', 'skills/kicad/scripts/cross_analysis.py'))
+_SPEC = importlib.util.spec_from_file_location('kicad_happy_format', HERE / 'kicad_happy_format.py')
+contract = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(contract)
+# Every analyzer that agent_ee.kicad_happy runs; schematic and pcb come first.
+ANALYZERS = {**contract.ANALYZERS, **contract.SEVERITY_ANALYZERS}
 
 
 def fail(message):
@@ -69,38 +71,41 @@ def identity(root):
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def output_format(root, formats):
-    """Run each analyzer on the owned probe project; all must report one format agent-ee reads."""
-    probe = HERE / 'probe'
-    observed = {}
-    with tempfile.TemporaryDirectory(prefix='kicad-happy-probe-') as tmp:
-        work = Path(tmp)
-        config = work / 'config.json'
-        config.write_text(json.dumps({'version': 1, 'project': {}, 'suppressions': []}))
-        for name, script in ANALYZERS:
-            if name == 'schematic':
-                args = [str(probe / 'gate.kicad_sch')]
-            elif name == 'pcb':
-                args = [str(probe / 'gate.kicad_pcb'), '--full']
-            else:
-                args = ['--schematic', str(work / 'schematic.json'), '--pcb', str(work / 'pcb.json')]
-            if name == 'thermal':
-                args += ['--ambient', '25.0']
-            args += ['--output', str(work / f'{name}.json')]
-            if name != 'cross_analysis':
-                args += ['--config', str(config)]
-            run([sys.executable, '-B', str(root / script), *args], cwd=work)
-            observed[name] = json.loads((work / f'{name}.json').read_text()).get('schema_version')
-    found = set(observed.values())
-    if len(found) != 1 or not found <= set(formats):
-        fail(f'unknown analyzer output format {observed}; agent-ee reads {sorted(formats)}')
+def output_format(root, formats, probe=HERE / 'probe'):
+    """Run the analyzers on the owned probe projects; every report must be one agent-ee reads.
+
+    The severity-gate project runs every analyzer. The AGENTEE-219 reproducer runs
+    the schematic analyzer, whose corrected PP-001 notes carry assumptions and
+    source_path. Reports are checked exactly as agent-ee checks them at run time:
+    kicad_happy_format.check_report, and check_summary for the severity gate's
+    analyzers. All reports must name one envelope format."""
+    projects = (('severity-gate', 'gate.kicad_sch', ANALYZERS),
+                ('AGENTEE-219 reproducer', 'reproducer.kicad_sch', {'schematic': ANALYZERS['schematic']}))
+    found = set()
+    for project, schematic, analyzers in projects:
+        with tempfile.TemporaryDirectory(prefix='kicad-happy-probe-') as tmp:
+            work = Path(tmp)
+            (work / 'config.json').write_text(json.dumps({'version': 1, 'project': {}, 'suppressions': []}))
+            for name, script in analyzers.items():
+                run([sys.executable, '-B', str(root / script),
+                     *contract.analyzer_args(name, str(probe / schematic), str(probe / 'gate.kicad_pcb'),
+                                             str(work), 25.0)], cwd=work)
+                try:
+                    report = json.loads((work / f'{name}.json').read_text())
+                    found.add(contract.check_report(name, report, formats))
+                    if name in contract.SEVERITY_ANALYZERS:
+                        contract.check_summary(name, report)
+                except (OSError, ValueError) as exc:
+                    fail(f'{name} report on the {project} probe is outside the contract agent-ee reads: {exc}')
+    if len(found) != 1:
+        fail(f'analyzers report several output formats {sorted(found)}')
     return found.pop()
 
 
 def main(dest):
-    contract = json.loads((HERE / 'kicad-happy-contract.json').read_text())
+    limits = json.loads((HERE / 'kicad-happy-contract.json').read_text())
     dest = Path(dest)
-    tag = newest_release(contract['release_major'])
+    tag = newest_release(limits['release_major'])
     run(['git', 'clone', '--quiet', '--depth', '1', '--branch', tag, SOURCE, str(dest)])
     commit = run(['git', '-C', str(dest), 'rev-parse', 'HEAD^{commit}']).strip()
     metadata = json.loads((dest / '.claude-plugin/plugin.json').read_text())
@@ -116,15 +121,19 @@ def main(dest):
             fail(f'the AGENTEE-219 correction no longer applies to {tag}: {result.stderr.strip()}')
     shutil.rmtree(dest / '.git')
     installed = identity(dest)
-    found = output_format(dest, contract['output_formats'])
+    found = output_format(dest, limits['output_formats'])
     if identity(dest) != installed:
         fail('the output-format probe changed the installed files')
-    record = {'schema': 'agent-ee.kicad-happy-install/1', 'source': SOURCE, 'tag': tag,
+    record = {'schema': contract.INSTALL_RECORD_SCHEMA, 'source': SOURCE, 'tag': tag,
               'commit': commit, 'version': metadata['version'], 'output_format': found,
               'release_sha256': release,
               'corrections': [{'origin': 'KICAD-HAPPY-219',
                                'sha256': hashlib.sha256(patch.read_bytes()).hexdigest()}],
               'installation_sha256': installed}
+    try:
+        contract.check_install_record(record, limits['output_formats'])
+    except ValueError as exc:
+        fail(f'the install record is not one agent-ee reads: {exc}')
     dest.with_name(dest.name + '.install.json').write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
     print(json.dumps(record, sort_keys=True))
 

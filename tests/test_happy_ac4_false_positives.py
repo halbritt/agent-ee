@@ -20,7 +20,8 @@ from pathlib import Path
 
 from agent_ee import candidate, checks
 from agent_ee.happy_severity_gate import KIND, SCHEMA
-from agent_ee.kicad_happy import INSTALL_RECORD_SCHEMA, install_record, installation
+from agent_ee.kicad_happy import install_record, installation
+from agent_ee.kicad_happy_format import INSTALL_RECORD_SCHEMA
 from agent_ee.storage import read_json, write_json
 from toolchain import require_toolchain
 
@@ -46,7 +47,8 @@ def git_apply(tree, patch, *flags):
 
 
 def analyzer_pair(destination, store=INSTALLED, patch=PATCH):
-    """Rebuild (release, corrected) analyzer trees from the installed one, without Git or network.
+    """Rebuild (release, corrected) analyzer trees from the installed one with `git apply`,
+    without Git metadata, an object store or network.
 
     The image installs the newest release with the correction applied; a plain
     checkout is the release itself. The correction applies forward to a release
@@ -152,8 +154,9 @@ class FixtureTests(unittest.TestCase):
             shutil.copytree(INSTALLED, store, ignore=shutil.ignore_patterns('.git', '__pycache__', '.pytest_cache'))
             installed = installation(store)
             write_json(Path(tmp) / 'kicad-happy.install.json', {
-                'schema': INSTALL_RECORD_SCHEMA, 'tag': 'v' + installed['version'], 'commit': '0' * 40,
-                'version': installed['version'], 'output_format': '1.4.0',
+                'schema': INSTALL_RECORD_SCHEMA, 'source': 'https://github.com/aklofas/kicad-happy.git',
+                'tag': 'v' + installed['version'], 'commit': '0' * 40,
+                'version': installed['version'], 'output_format': '1.4.0', 'corrections': [],
                 'installation_sha256': installed['sha256'], 'release_sha256': '0' * 64})
             with self.assertRaisesRegex(AssertionError, 'differs from the install record'):
                 analyzer_pair(Path(tmp) / 'out', store=store)

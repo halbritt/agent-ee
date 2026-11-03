@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .kicad_happy import ANALYZERS, SEVERITY_ANALYZERS, normalize
+from .kicad_happy_format import analyzer_args
 from .checks import CheckError
 from .netclass_completeness import load_json
 from .storage import read_json, write_json
@@ -35,18 +36,9 @@ def main():
         for name, script in analyzers.items():
             path = root / script
             sys.path.insert(0, str(path.parent))
-            args = [str(path)]
-            if name == 'schematic':
-                args += [request['schematic']]
-            elif name == 'pcb':
-                args += [request['pcb'], '--full']
-            else:
-                args += ['--schematic', '/work/schematic.json', '--pcb', '/work/pcb.json']
-            if name == 'thermal':
-                args += ['--ambient', str(request['ambient_c'])]
-            args += ['--output', f'/work/{name}.json']
-            if name != 'cross_analysis':
-                args += ['--config', '/work/config.json']
+            # The same arguments the image build's output-format probe uses.
+            args = [str(path), *analyzer_args(name, request['schematic'], request['pcb'], '/work',
+                                              request['ambient_c'])]
             sys.argv = args
             write_json(f'/work/{name}-argv.json', args)
             with open(f'/work/{name}-stdout.log', 'w') as out, open(f'/work/{name}-stderr.log', 'w') as err:

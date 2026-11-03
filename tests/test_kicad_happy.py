@@ -107,18 +107,40 @@ class NormalizationTest(unittest.TestCase):
             self.assertEqual(error.exception.execution, 'unsupported')
         normalize({'schematic': {'analyzer_type': 'schematic', 'schema_version': '1.4.0', 'findings': []}}, [])
 
+    def test_read_field_in_another_shape_under_the_same_format_is_unsupported(self):
+        finding = {'finding_id': 'schematic:PP-001:u2', 'rule_id': 'PP-001', 'severity': 'info',
+                   'source_path': 'assumed', 'assumptions': ['U1 regulates its output'], 'suppressed': False,
+                   'status': 'ok', 'type': 'low-pass', 'components': ['U2'], 'nets': [],
+                   'pins': [{'ref': 'U2', 'pin': '1'}]}
+        report = {'analyzer_type': 'schematic', 'schema_version': '1.4.0', 'findings': [finding]}
+        normalize({'schematic': report}, [])
+        drifts = {'source_path': {'kind': 'assumed'}, 'assumptions': 'U1 regulates its output',
+                  'suppressed': 0, 'status': {'value': 'unknown'}, 'type': ['low-pass'],
+                  'finding_id': 7, 'rule_id': '', 'components': 'U2', 'pins': 'U2.1'}
+        for key, value in drifts.items():
+            with self.subTest(key=key), self.assertRaises(CheckError) as error:
+                normalize({'schematic': {**report, 'findings': [{**finding, key: value}]}}, [])
+            self.assertEqual(error.exception.execution, 'unsupported')
+        with self.assertRaises(CheckError):
+            normalize({'schematic': {**{k: v for k, v in report.items() if k != 'findings'}, 'issues': []}}, [])
 
+
+import hashlib
+import importlib.util
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import time
 from pathlib import Path
+from unittest import mock
 
 from agent_ee import candidate, checks
-from agent_ee.kicad_happy import (INSTALL_RECORD_SCHEMA, installation, installation_record,
+from agent_ee.kicad_happy_format import INSTALL_RECORD_SCHEMA
+from agent_ee.kicad_happy import (CONTRACT, installation, installation_record,
                                   require_release_line, verify_recorded, verify_unchanged)
-from agent_ee.storage import read_json, write_json
+from agent_ee.storage import digest, identity, read_json, write_json
 from toolchain import require_toolchain
 
 REPO = Path(__file__).resolve().parents[1]
@@ -135,6 +157,12 @@ def specification(root):
         'counted_rules': ['cutoff'], 'blocking_rules': ['cutoff']}}
 
 
+def missing_installation():
+    if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
+        raise AssertionError('installed kicad-happy unavailable')
+    raise unittest.SkipTest('installed kicad-happy unavailable')
+
+
 class RecordedInstallationTest(unittest.TestCase):
     """The installed release is used and recorded; no fixed version or digest is compared."""
 
@@ -143,38 +171,42 @@ class RecordedInstallationTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
-    def install(self, name, version, **record):
-        """A minimal installed tree; with record fields, also the image's install record."""
+    def install(self, name, version, commit=None, **changes):
+        """A minimal installed tree; with a commit, also the image installer's record."""
         root = self.root / name / 'kicad-happy'
         write_json(root / '.claude-plugin/plugin.json', {'name': 'kicad-happy', 'version': version})
         (root / 'skills').mkdir()
         (root / 'skills/analyze.py').write_text('# installed analyzer bytes\n')
-        if record:
+        if commit:
             write_json(root.with_name('kicad-happy.install.json'), {
-                'schema': INSTALL_RECORD_SCHEMA, 'version': version, 'output_format': '1.4.0',
-                'installation_sha256': installation(root)['sha256'], **record})
+                'schema': INSTALL_RECORD_SCHEMA, 'source': 'https://github.com/aklofas/kicad-happy.git',
+                'tag': 'v' + version, 'commit': commit, 'version': version, 'output_format': '1.4.0',
+                'release_sha256': 'b' * 64, 'corrections': [{'origin': 'KICAD-HAPPY-219', 'sha256': 'c' * 64}],
+                'installation_sha256': installation(root)['sha256'], **changes})
         return root
 
-    def recorded_run(self, name):
-        """One finished check's saved evidence; its installation was the 2.3.1 image's."""
-        root = self.install(name, '2.3.1', tag='v2.3.1', commit=COMMIT_2_3_1)
+    def recorded_run(self, name, version='2.3.1', commit=COMMIT_2_3_1):
+        """One successful check's saved evidence, as run_analyzers writes it."""
+        root = self.install(name, version, commit)
         record = installation_record(root)
         executed = {'skills/analyze.py': record['files']['skills/analyze.py']}
         run = self.root / name / 'run'
         write_json(run / 'work/happy/installation.json', record)
         write_json(run / 'work/happy/executed.json', executed)
-        check = {'id': 'happy', 'kind': 'kicad_happy',
-                 'evidence': ['work/happy/installation.json', 'work/happy/executed.json'],
+        shutil.copyfile(root.with_name('kicad-happy.install.json'), run / 'work/happy/install-record.json')
+        check = {'id': 'happy', 'kind': 'kicad_happy', 'execution': 'ok',
+                 'evidence': ['work/happy/installation.json', 'work/happy/executed.json',
+                              'work/happy/install-record.json'],
                  'details': {'installation': record, 'executed_files': executed}}
         return root, run, check
 
     def test_release_other_than_the_previous_one_is_accepted_and_recorded(self):
-        # 2.3.2 as the image installs it, with its install record; 2.9.0 as a plain checkout.
-        for version, record, provenance in (
-                ('2.3.2', {'tag': 'v2.3.2', 'commit': COMMIT_2_3_2}, ('v2.3.2', COMMIT_2_3_2)),
-                ('2.9.0', {}, (None, None))):
+        # 2.3.2 as the image installs it; 2.9.0 and a 2.4.0 prerelease as plain checkouts.
+        for version, commit, provenance in (('2.3.2', COMMIT_2_3_2, ('v2.3.2', COMMIT_2_3_2)),
+                                            ('2.9.0', None, (None, None)),
+                                            ('2.4.0-rc.1', None, (None, None))):
             with self.subTest(version=version):
-                root = self.install(version, version, **record)
+                root = self.install(version, version, commit)
                 require_release_line(version)
                 recorded = installation_record(root)
                 self.assertEqual((recorded['version'], recorded['tag'], recorded['commit']),
@@ -183,16 +215,38 @@ class RecordedInstallationTest(unittest.TestCase):
                 self.assertEqual(recorded['root'], str(root))
 
     def test_release_outside_the_contract_line_is_unsupported(self):
-        for version in ('3.0.0', '1.3.2', '2.3', 'main'):
+        for version in ('3.0.0', '1.3.2', '2.3', 'main', '2.3.2junk', '2.3.2\n3.0.0', '2.3.2-'):
             with self.subTest(version=version), self.assertRaises(CheckError) as error:
                 require_release_line(version)
             self.assertEqual(error.exception.execution, 'unsupported')
 
     def test_install_record_that_describes_other_files_is_refused(self):
-        root = self.install('edited', '2.3.2', tag='v2.3.2', commit=COMMIT_2_3_2)
+        root = self.install('edited', '2.3.2', COMMIT_2_3_2)
         (root / 'skills/analyze.py').write_text('# changed after the image build\n')
         with self.assertRaisesRegex(ValueError, 'does not describe the installed files'):
             installation_record(root)
+
+    def test_install_record_cannot_name_its_own_path_or_digest(self):
+        root = self.install('measured', '2.3.2', COMMIT_2_3_2)
+        sidecar = root.with_name('kicad-happy.install.json')
+        recorded = installation_record(root)['install_record']
+        self.assertEqual((recorded['path'], recorded['sha256']),
+                         (str(sidecar), hashlib.sha256(sidecar.read_bytes()).hexdigest()))
+        forged = self.install('forged', '2.3.2', COMMIT_2_3_2, path='/forged/sidecar.json', sha256='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'install record'):
+            installation_record(forged)
+
+    def test_install_record_metadata_outside_the_contract_is_refused(self):
+        for name, changes in {'unlisted format': {'output_format': '99'},
+                              'tag of another version': {'tag': 'v9.0.0'},
+                              'commit not a commit': {'commit': 'not-a-commit'},
+                              'release identity not a digest': {'release_sha256': 'x'},
+                              'correction without origin': {'corrections': [{'origin': '', 'sha256': 'c' * 64}]},
+                              'unknown field': {'note': 'hand edited'}}.items():
+            with self.subTest(name):
+                root = self.install(name.replace(' ', '-'), '2.3.2', **{'commit': COMMIT_2_3_2, **changes})
+                with self.assertRaisesRegex(ValueError, 'install record'):
+                    installation_record(root)
 
     def test_old_run_verifies_from_its_saved_evidence_not_this_host(self):
         root, run, check = self.recorded_run('updated')
@@ -200,6 +254,13 @@ class RecordedInstallationTest(unittest.TestCase):
         write_json(root / '.claude-plugin/plugin.json', {'name': 'kicad-happy', 'version': '2.3.2'})
         verify_recorded(run, [check])
         shutil.rmtree(root)
+        verify_recorded(run, [check])
+
+    def test_refused_release_keeps_a_verifiable_record(self):
+        # run_analyzers records an installation before refusing a release outside the line.
+        _, run, check = self.recorded_run('refused', version='3.0.0', commit='d' * 40)
+        check.update(execution='unsupported')
+        del check['details']['executed_files']
         verify_recorded(run, [check])
 
     def test_saved_evidence_that_contradicts_the_record_is_refused(self):
@@ -215,6 +276,7 @@ class RecordedInstallationTest(unittest.TestCase):
             'saved record edited': edit_saved,
             'saved record not cited': lambda run, check: check['evidence'].remove('work/happy/installation.json'),
             'saved record deleted': lambda run, check: (run / 'work/happy/installation.json').unlink(),
+            'raw install record edited': lambda run, check: (run / 'work/happy/install-record.json').write_text('{}'),
             'files without their identity': forge_files,
             'helper outside the installation': lambda run, check: (
                 check['details']['executed_files'].update({'skills/other.py': '0' * 64}),
@@ -227,12 +289,143 @@ class RecordedInstallationTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'kicad-happy'):
                     verify_recorded(run, [check])
 
+    def test_coherent_record_that_no_run_could_write_is_refused(self):
+        # Each forgery updates the check record and its saved copy together.
+        def version(record, check):
+            record['version'] = '3.0.0'
+
+        def version_and_nested(record, check):
+            record.update(version='3.0.0', tag='v3.0.0')
+            record['install_record'].update(version='3.0.0', tag='v3.0.0')
+
+        def commit(record, check):
+            record['commit'] = record['install_record']['commit'] = '0' * 40
+
+        def file_digests(record, check):
+            record['files'] = {rel: 'not-a-sha256' for rel in record['files']}
+            record['sha256'] = identity(record['files'])
+
+        def executed_digest(record, check):
+            check['details']['executed_files'] = {'skills/analyze.py': 'not-a-sha256'}
+
+        forgeries = {
+            '3.0.0 at top, 2.3.1 nested': version,
+            '3.0.0 at top and nested': version_and_nested,
+            'commit at top and nested, raw record kept': commit,
+            'version with trailing text': lambda record, check: record.update(version='2.3.1junk'),
+            'tag differs from nested': lambda record, check: record.update(tag='v2.3.9'),
+            'tag without an install record': lambda record, check: record.update(install_record=None),
+            'file digests that are not digests': file_digests,
+            'executed digest that is not a digest': executed_digest,
+            'success without executed helpers': lambda record, check: check['details'].pop('executed_files'),
+        }
+        for name, forge in forgeries.items():
+            with self.subTest(name):
+                _, run, check = self.recorded_run(name.replace(' ', '-'))
+                record = check['details']['installation']
+                forge(record, check)
+                write_json(run / 'work/happy/installation.json', record)
+                if 'executed_files' in check['details']:
+                    write_json(run / 'work/happy/executed.json', check['details']['executed_files'])
+                with self.assertRaisesRegex(ValueError, 'kicad-happy'):
+                    verify_recorded(run, [check])
+
     def test_installation_change_during_the_run_is_refused(self):
         root, _, check = self.recorded_run('during')
         verify_unchanged([check])
-        (root / 'skills/analyze.py').write_text('# changed during the run\n')
-        with self.assertRaisesRegex(ValueError, 'bytes changed during the run'):
+        sidecar = root.with_name('kicad-happy.install.json')
+        original = sidecar.read_text()
+        sidecar.write_text(original.replace('"KICAD-HAPPY-219"', '"KICAD-HAPPY-219b"'))
+        with self.assertRaisesRegex(ValueError, 'install record changed during the run'):
             verify_unchanged([check])
+        sidecar.write_text(original)
+        (root / 'skills/analyze.py').write_text('# changed during the run\n')
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            verify_unchanged([check])
+
+
+def installer_stage(destination):
+    """Load docker/kicad-happy/install.py from a directory laid out as the image's
+    kicad-happy build stage, following that stage's COPY instructions."""
+    stage = (REPO / 'Dockerfile').read_text().split('FROM native AS kicad-happy\n', 1)[1].split('\nFROM ', 1)[0]
+    prefix = '/usr/local/share/agent-ee/kicad-happy'
+    for line in stage.splitlines():
+        if not line.startswith('COPY '):
+            continue
+        *sources, target = line.split()[1:]
+        into = Path(destination) / target.removeprefix(prefix).strip('/')
+        for source in sources:
+            path = REPO / source
+            if path.is_dir():
+                shutil.copytree(path, into, dirs_exist_ok=True)
+            else:
+                into.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, into / path.name)
+    spec = importlib.util.spec_from_file_location('kicad_happy_image_installer', Path(destination) / 'install.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def analyzer_report(name, findings=(), **changes):
+    """A report in the shape agent-ee reads, with a consistent severity summary."""
+    findings = list(findings)
+    counts = {severity: sum(f['severity'] == severity for f in findings) for severity in ('error', 'warning', 'info')}
+    return {'analyzer_type': name, 'schema_version': '1.4.0', 'findings': findings,
+            'summary': {'total_findings': len(findings), 'by_severity': counts}, **changes}
+
+
+class ImageInstallerTest(unittest.TestCase):
+    """The image installer's release choice and its output-format probe, without Git or network."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-happy-installer-')
+        self.addCleanup(self.tmp.cleanup)
+        self.installer = installer_stage(Path(self.tmp.name) / 'stage')
+
+    def test_resolver_takes_the_highest_release_of_the_line(self):
+        def remote(*tags):
+            listing = ''.join(f'{"a" * 40}\trefs/tags/{tag}\n' for tag in tags)
+            return mock.patch.object(self.installer.subprocess, 'run',
+                                     return_value=subprocess.CompletedProcess([], 0, listing, ''))
+        with remote('v1.3.2', 'v2', 'v2.3', 'v2.3.2', 'v2.4.0-rc.1', 'v2.9.0', 'v2.12.0', 'v3.0.0'):
+            self.assertEqual(self.installer.newest_release(CONTRACT['release_major']), 'v2.12.0')
+        with remote('v2', 'v2.3', 'v2.4.0-rc.1', 'v3.0.0'), self.assertRaisesRegex(SystemExit, 'no v2.x.y release'):
+            self.installer.newest_release(CONTRACT['release_major'])
+
+    def test_format_probe_accepts_the_installed_analyzer(self):
+        if not (INSTALLED / '.claude-plugin/plugin.json').is_file():
+            missing_installation()
+        self.assertEqual(self.installer.output_format(INSTALLED, CONTRACT['output_formats']), '1.4.0')
+
+    def test_format_probe_refuses_shape_drift_under_the_same_format_number(self):
+        finding = {'finding_id': 'schematic:PP-001:u2', 'rule_id': 'PP-001', 'severity': 'info',
+                   'source_path': 'assumed', 'assumptions': ['U1 regulates its output']}
+        drifts = {
+            'none (control)': {},
+            'findings renamed to issues': {'findings': None, 'issues': []},
+            'assumed source as an object': {'findings': [{**finding, 'source_path': {'kind': 'assumed'}}]},
+            'assumptions as text': {'findings': [{**finding, 'assumptions': 'U1 regulates its output'}]},
+            'summary without info count': {'summary': {'total_findings': 1, 'by_severity': {'error': 0, 'warning': 0}}},
+            'unlisted envelope format': {'schema_version': '1.5.0'},
+        }
+        for name, drift in drifts.items():
+            def analyzer(argv, **kwargs):
+                output = Path(argv[argv.index('--output') + 1])
+                report = analyzer_report(output.stem, [finding] if output.stem == 'schematic' else [])
+                if output.stem == 'schematic':
+                    report.update(drift)
+                    if report.get('findings') is None:
+                        del report['findings']
+                output.write_text(json.dumps(report))
+                return subprocess.CompletedProcess(argv, 0, '', '')
+            with self.subTest(name), mock.patch.object(self.installer.subprocess, 'run', side_effect=analyzer):
+                if not drift:
+                    self.assertEqual(self.installer.output_format(Path('/analyzer'), CONTRACT['output_formats']),
+                                     '1.4.0')
+                    continue
+                with self.assertRaisesRegex(SystemExit, 'schematic report .* outside the contract'):
+                    self.installer.output_format(Path('/analyzer'), CONTRACT['output_formats'])
 
 
 class InstalledAnalyzerTest(unittest.TestCase):
@@ -299,6 +492,10 @@ class InstalledAnalyzerTest(unittest.TestCase):
         recorded = control['details']['installation']
         self.assertEqual(recorded, installation_record(INSTALLED))
         self.assertEqual(read_json(control_run / 'work/happy/installation.json'), recorded)
+        if recorded['install_record'] is not None:
+            # The image's install record is kept byte for byte with the run's evidence.
+            self.assertEqual(digest(control_run / 'work/happy/install-record.json'),
+                             recorded['install_record']['sha256'])
         verify_recorded(control_run, [control])
 
     def test_exact_native_rc_target_population_flags(self):

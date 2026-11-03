@@ -113,17 +113,19 @@ RUN /usr/local/share/agent-ee/kicad-route/install.sh install
 
 # kicad-happy analyzer: the newest release of the 2.x line at build time, with the
 # AGENTEE-219 correction applied (docker/kicad-happy/install.py). The build fails
-# if the correction no longer applies or an analyzer reports an output format
-# agent-ee does not read. /opt/kicad-happy.install.json records the tag, commit,
-# output format and installed-file identity; every run records them with its
-# analyzer evidence. Updating means rebuilding the image. The upstream ref listing
-# is this stage's cache key: a rebuild after an upstream release installs it, and
-# an unchanged release leaves the later layers cached.
+# if the correction no longer applies, or if a report on the owned probe projects
+# fails the checks agent-ee applies when it reads one (kicad_happy_format.py).
+# /opt/kicad-happy.install.json records the tag, commit, output format and
+# installed-file identity; every run records them with its analyzer evidence.
+# Updating means rebuilding the image. The upstream ref listing is this stage's
+# cache key: a rebuild after an upstream release installs it, and an unchanged
+# release leaves the later layers cached.
 FROM native AS kicad-happy
 ADD https://github.com/aklofas/kicad-happy.git/info/refs?service=git-upload-pack /usr/local/share/agent-ee/kicad-happy/upstream-refs
 COPY docker/kicad-happy /usr/local/share/agent-ee/kicad-happy
-COPY src/agent_ee/data/kicad-happy-contract.json fixtures/kicad-happy/ac4-false-positives/correction.patch /usr/local/share/agent-ee/kicad-happy/
+COPY src/agent_ee/kicad_happy_format.py src/agent_ee/data/kicad-happy-contract.json fixtures/kicad-happy/ac4-false-positives/correction.patch /usr/local/share/agent-ee/kicad-happy/
 COPY fixtures/kicad-happy/severity-gate/warning /usr/local/share/agent-ee/kicad-happy/probe
+COPY fixtures/kicad-happy/ac4-false-positives/reproducer.kicad_sch fixtures/kicad-happy/ac4-false-positives/reproducer.kicad_pro /usr/local/share/agent-ee/kicad-happy/probe/
 RUN /usr/bin/python3 /usr/local/share/agent-ee/kicad-happy/install.py /opt/kicad-happy
 
 FROM native AS toolchain
