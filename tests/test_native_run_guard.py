@@ -71,8 +71,10 @@ EXEMPT = {
     'network acquisition': {
         'reason': 'fetches under its own network and isolation rules; not a tool run on candidate inputs',
         'tool': None,
+        # catalog_feed.run_owned_fetch launches the deadline-bounded fetch child of both
+        # acquire_catalog (recorded volumes) and refresh_catalog (the current upstream snapshot).
         'sites': {('src/agent_ee/datasheet_capture.py', 'run_owned_child'),
-                  ('src/agent_ee/catalog_feed.py', 'acquire_catalog')},
+                  ('src/agent_ee/catalog_feed.py', 'run_owned_fetch')},
     },
     'operator diagnostics': {
         'reason': 'agent-ee doctor host probes with short timeouts; produce no evidence',
@@ -100,7 +102,7 @@ APPROVED = {
         ('src/agent_ee/pcbschemagen_gate1.py', 'git'),
     }),
     'network acquisition': (None, {('src/agent_ee/datasheet_capture.py', 'run_owned_child'),
-                                   ('src/agent_ee/catalog_feed.py', 'acquire_catalog')}),
+                                   ('src/agent_ee/catalog_feed.py', 'run_owned_fetch')}),
     'operator diagnostics': (None, {('src/agent_ee/cli.py', 'doctor')}),
 }
 

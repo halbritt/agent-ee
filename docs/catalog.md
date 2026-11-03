@@ -3,7 +3,8 @@
 `agent_ee.catalog` captures explicitly pinned **local** CSV, SQLite, ordinary
 ZIP/CSV files, or the jlcparts split ZIP64 feed described below. Capture never
 downloads data or reads provider credentials. A separate host acquisition script
-downloads pinned volumes before capture. Source catalog bytes and derived snapshots
+downloads the current jlcparts snapshot, or a recorded manifest's volumes, before
+capture. Source catalog bytes and derived snapshots
 belong in private scratch until the owner approves publication. The committed
 tests generate owned synthetic inputs; their stock and prices are test values.
 
@@ -177,20 +178,69 @@ the adapter along with the rest of the Python package; changing normalization
 code invalidates public verification of earlier policy identity.
 
 
-## Pinned jlcparts acquisition
+## jlcparts acquisition
 
-The committed [source manifest](../catalog-sources/jlcparts-2026-09-14.json)
-pins the exact raw URLs at jlcparts commit
-`75daa67a78f3acf4ce18bab8dd68a86ac28c2818`: twelve 50 MiB pieces and the final
-ZIP piece, 680,612,272 compressed bytes in total. Every piece has a SHA-256 and
-size. Pins were established against that commit's Git tree blob IDs. The raw
-member is a 5,940,703,232-byte SQLite `source-db-v2` database. Source schema and
-values were inspected directly; the recovery documentation's older
-`components` schema does not describe these bytes. The upstream software is
+jlcparts publishes its catalog, and updates it regularly, as split ZIP volumes
+(`cache.z01` … `cache.zip`) under `data/` on the `gh-pages` branch of
+[yaqwsx/jlcparts](https://github.com/yaqwsx/jlcparts). Use the current snapshot:
+the refresh fetches it into a local cache and records which one it is. Each
+snapshot is then fixed for the runs that capture and select from it. The
+upstream software is
 [MIT licensed](https://github.com/yaqwsx/jlcparts/blob/master/LICENSE).
-Pinning a public source does not grant permission to redistribute its data.
+Recording a public source does not grant permission to redistribute its data,
+so catalog volumes and snapshots are never committed.
 
-Run acquisition **on the host**, with destinations in private scratch:
+### Refresh to the current snapshot
+
+Run the refresh **on the host**:
+
+```sh
+PYTHONPATH=src python3 scripts/acquire_catalog.py --refresh --timeout 900
+```
+
+It resolves the `gh-pages` head through the GitHub API and reads that commit's
+`data/` listing. It then downloads `cache.z01` … `cache.zip` from
+`raw.githubusercontent.com` at that commit, so all volumes come from one commit
+even if the branch moves during the download. Each volume must have the size
+and Git blob ID that the commit's listing gives. The snapshot goes to
+`<cache>/jlcparts/<snapshot date>-<commit[:12]>/`. The cache is `--cache DIR`,
+else `$AGENT_EE_CATALOG_CACHE` (an absolute path), else
+`~/.cache/agent-ee/catalog`. The snapshot date is the UTC date of the commit.
+The directory holds:
+
+- the volumes;
+- `source-manifest.json`: the `agent-ee.catalog-source/1` manifest of the
+  stocked profile, with each volume's size and SHA-256, the commit's raw URL and
+  a `stale_before` cutoff one year before the snapshot date;
+- `identity-source-manifest.json`: the same volumes under the
+  [identity profile](catalog-identity.md);
+- `snapshot.json`: the `agent-ee.catalog-snapshot-identity/1` record of the
+  snapshot. It has `source` (`url` and `commit`), `snapshot_date`, `size_bytes`
+  and `sha256` of all volumes in order, the SHA-256 of both manifests,
+  `repository`, `branch`, `committed_at` and `retrieved_at`.
+
+The command prints that record with the directory. When the cache already
+holds the current snapshot, the refresh still reads the branch head, then checks
+the volumes and manifests against `snapshot.json` and downloads no volumes. Another upstream commit gets a new
+dated directory next to the old ones. Capture and runs then use one dated
+snapshot, here the directory the refresh printed:
+
+```sh
+SNAPSHOT=$(PYTHONPATH=src python3 scripts/acquire_catalog.py --refresh |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["directory"])')
+agent-ee capture-catalog "$SNAPSHOT/source-manifest.json" \
+  --source-root "$SNAPSHOT" --out /private/scratch/jlcparts-snapshot
+```
+
+A run that selects parts records the snapshot it used. Each `agent-ee.selection/1`
+record names `snapshot_manifest_sha256`, `snapshot_sha256` and `snapshot_date`.
+That captured manifest carries the source URL, commit and volume SHA-256 values
+from `source-manifest.json`. Selections from different snapshots can differ.
+
+### Recorded snapshots
+
+`acquire_catalog.py --manifest` fetches exactly the volumes of a recorded source
+manifest, for example to repeat a run from its record:
 
 ```sh
 PYTHONPATH=src python3 scripts/acquire_catalog.py \
@@ -201,14 +251,25 @@ agent-ee capture-catalog catalog-sources/jlcparts-2026-09-14.json \
   --out /private/scratch/jlcparts-snapshot
 ```
 
-The download runs in an owned child with a total wall deadline (1–3600 seconds,
-900 by default), not just a socket timeout. Each response is capped at its
-pinned byte count and verified by SHA-256. HTTP failures, wrong lengths, hashes,
-deadlines and cancellation leave no published inputs. Successful downloads and
-their source manifest publish together through the same no-replacement atomic
-directory publication used by catalog capture. Ambient proxy credentials are
-ignored. The script never runs inside a check sandbox. No retries or live API
-updates can change the pinned inputs.
+The committed [2026-09-14 source manifest](../catalog-sources/jlcparts-2026-09-14.json)
+is such a record and a test fixture, not the current catalog. It names jlcparts
+commit `75daa67a78f3acf4ce18bab8dd68a86ac28c2818`, twelve 50 MiB pieces and the
+final ZIP piece, 680,612,272 compressed bytes in total, each with a SHA-256 and
+size established against that commit's Git tree blob IDs. The raw member is a
+5,940,703,232-byte SQLite `source-db-v2` database. Source schema and values
+were inspected directly; the recovery documentation's older `components`
+schema does not describe these bytes. Upstream may no longer serve an old
+commit's volumes; a fetch then fails and publishes nothing.
+
+Both commands download in an owned child with a total wall deadline (1–3600
+seconds, 900 by default), not just a socket timeout. Each response is capped at
+its expected byte count and verified: by SHA-256 against a recorded manifest,
+or by Git blob ID against the commit's listing for a refresh. HTTP failures,
+wrong lengths, hashes, deadlines and cancellation leave nothing published.
+Downloads and their manifests publish together through the same
+no-replacement atomic directory publication used by catalog capture. Ambient
+proxy credentials are ignored, and nothing is retried. The script never runs
+inside a check sandbox.
 
 `jlcparts-v2-stocked-split-zip` is an explicit compact import profile, not the
 entire upstream universe. It retains present rows with positive captured stock

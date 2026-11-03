@@ -1,6 +1,7 @@
 """Original source-db-v2 controls, built locally; no supplier data is committed."""
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import hashlib
 import http.server
 import io
 import json
@@ -15,8 +16,10 @@ import unittest
 import zipfile
 
 from agent_ee.catalog import capture_catalog, load_catalog, validate_source
-from agent_ee.catalog_feed import acquire_catalog
+from agent_ee.catalog_feed import acquire_catalog, refresh_catalog, source_manifests
+from agent_ee.catalog_identity import validate_source as validate_identity_source
 from agent_ee.catalog_jlcparts import COMPONENT_COLUMNS, attributes, price1
+from agent_ee.part_selection import select_parts
 from agent_ee.storage import digest
 
 
@@ -250,14 +253,132 @@ class NativeCatalogTests(unittest.TestCase):
                                                 'Voltage Rating (Max)': '250V'}), 'capacitor'))
         self.assertNotIn('voltage', normalized_attributes(raw))
 
-    def test_committed_source_manifest_has_exact_commit_urls_and_all_volume_pins(self):
-        path = Path(__file__).resolve().parents[1] / 'catalog-sources/jlcparts-2026-09-14.json'
-        source = json.loads(path.read_text())
-        validate_source(source)
-        self.assertEqual(source['source_commit'], '75daa67a78f3acf4ce18bab8dd68a86ac28c2818')
-        self.assertIn(source['source_commit'], source['source_url'])
-        self.assertEqual(len(source['volumes']), 13)
-        self.assertEqual(sum(v['size_bytes'] for v in source['volumes']), 680612272)
+    def test_refresh_writes_records_in_the_form_of_the_dated_2026_09_14_fixtures(self):
+        # The 2026-09-14 records stay as fixtures. The refresh's manifest writer, given their
+        # commit, date and volumes, reproduces both files byte for byte as JSON values.
+        root = Path(__file__).resolve().parents[1] / 'catalog-sources'
+        stocked = json.loads((root / 'jlcparts-2026-09-14.json').read_text())
+        identity = json.loads((root / 'jlcparts-identity-2026-09-14.json').read_text())
+        validate_source(stocked)
+        validate_identity_source(identity)
+        self.assertEqual(stocked['snapshot_date'], '2026-09-14')   # the date its file name carries
+        volumes = [{k: v[k] for k in ('path', 'sha256', 'size_bytes')} for v in stocked['volumes']]
+        self.assertEqual(source_manifests('https://raw.githubusercontent.com', 'yaqwsx/jlcparts',
+                                          stocked['source_commit'], stocked['snapshot_date'], volumes),
+                         (stocked, identity))
+
+    @contextmanager
+    def upstream(self):
+        """A local stand-in for the GitHub API and raw host. state['commits'] maps a commit to its
+        committer date, data/ files and optional served overrides; state['head'] is gh-pages."""
+        state = {'head': None, 'commits': {}, 'raw_requests': 0}
+        blob = lambda payload: hashlib.sha1(b'blob %d\0' % len(payload) + payload).hexdigest()
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                path, _, query = self.path.partition('?')
+                parts = path.strip('/').split('/')
+                if path == '/repos/owned/jlcparts/branches/gh-pages':
+                    head = state['head']
+                    body = json.dumps({'name': 'gh-pages', 'commit': {
+                        'sha': head, 'commit': {'committer': {'date': state['commits'][head]['date']}}}}).encode()
+                elif path == '/repos/owned/jlcparts/contents/data':
+                    files = state['commits'][query.removeprefix('ref=')]['files']
+                    body = json.dumps([{'name': name, 'type': 'file', 'size': len(data), 'sha': blob(data)}
+                                       for name, data in files.items()]
+                                      + [{'name': 'index.json', 'type': 'file', 'size': 2, 'sha': blob(b'{}')},
+                                         {'name': 'img', 'type': 'dir', 'size': 0, 'sha': '0' * 40}]).encode()
+                elif len(parts) == 5 and parts[:2] == ['owned', 'jlcparts'] and parts[3] == 'data':
+                    state['raw_requests'] += 1
+                    commit = state['commits'][parts[2]]
+                    body = commit.get('served', {}).get(parts[4], commit['files'].get(parts[4]))
+                else:
+                    body = None
+                if body is None:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f'http://127.0.0.1:{server.server_port}', state
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+    def refresh(self, base):
+        return refresh_catalog(self.root / 'cache', timeout=30, api=base, raw=base, repository='owned/jlcparts')
+
+    def test_refresh_fetches_the_current_snapshot_records_it_and_selection_names_it(self):
+        self.source()
+        files = {name: (self.root / name).read_bytes() for name in ('cache.z01', 'cache.zip')}
+        first, second = 'a1' * 20, 'b2' * 20
+        with self.upstream() as (base, state):
+            state['commits'][first] = {'date': '2026-11-02T21:30:00Z', 'files': files}
+            state['head'] = first
+            directory, record = self.refresh(base)
+            fetched = state['raw_requests']
+            # The same head again is verified from the cache, not fetched again.
+            self.assertEqual(self.refresh(base), (directory, record))
+            self.assertEqual(state['raw_requests'], fetched)
+            # Upstream moved: the new snapshot is dated by its commit, beside the first.
+            state['commits'][second] = {'date': '2026-11-03T01:00:00+01:00', 'files': files}
+            state['head'] = second
+            later, later_record = self.refresh(base)
+        self.assertEqual(fetched, 2)
+        self.assertEqual(directory.name, '2026-11-02-' + first[:12])
+        self.assertEqual((later.name, later_record['source']['commit']), ('2026-11-03-' + second[:12], second))
+        self.assertTrue(directory.is_dir())
+        self.assertEqual({key: record[key] for key in ('source', 'snapshot_date', 'size_bytes', 'sha256',
+                                                       'repository', 'branch', 'committed_at')},
+                         {'source': {'url': f'{base}/owned/jlcparts/{first}/data', 'commit': first},
+                          'snapshot_date': '2026-11-02', 'size_bytes': sum(map(len, files.values())),
+                          'sha256': hashlib.sha256(files['cache.z01'] + files['cache.zip']).hexdigest(),
+                          'repository': 'https://github.com/owned/jlcparts', 'branch': 'gh-pages',
+                          'committed_at': '2026-11-02T21:30:00Z'})
+        self.assertEqual(record['source_manifest_sha256'], digest(directory / 'source-manifest.json'))
+        source = json.loads((directory / 'source-manifest.json').read_text())
+        self.assertEqual((source['source_commit'], source['stale_before']), (first, '2025-11-02'))
+        self.assertEqual([(v['path'], v['sha256']) for v in source['volumes']],
+                         [(name, hashlib.sha256(data).hexdigest()) for name, data in files.items()])
+        # A run that captures and selects from it records the snapshot: the selection's manifest
+        # hash binds the refreshed commit and volumes, and its date is the snapshot's.
+        capture_catalog(source, directory, self.root / 'snapshot')
+        manifest_sha256 = digest(self.root / 'snapshot/manifest.json')
+        selection = select_parts(self.root / 'snapshot', manifest_sha256, dict(
+            schema='agent-ee.part-requirements/1', build_quantity=1, stock_floor=0, parts=[dict(
+                id='R1', category='resistor', package='0603', quantity_per_board=1, constraints={
+                    'resistance': {'kind': 'within', 'nominal': '1 kohm', 'tolerance_percent': '1'}})]))
+        self.assertEqual(selection['outcome'], 'pass')
+        self.assertEqual((selection['snapshot_manifest_sha256'], selection['snapshot_date']),
+                         (manifest_sha256, record['snapshot_date']))
+        captured = load_catalog(self.root / 'snapshot', manifest_sha256)['manifest']
+        self.assertEqual((captured['source_commit'], captured['volumes']), (first, source['volumes']))
+
+    def test_refresh_publishes_nothing_unless_the_volumes_are_the_commits(self):
+        self.source()
+        files = {name: (self.root / name).read_bytes() for name in ('cache.z01', 'cache.zip')}
+        tampered = bytes([files['cache.zip'][0] ^ 1]) + files['cache.zip'][1:]
+        for case, commit in (('bytes differ from the listed Git blob',
+                              {'files': files, 'served': {'cache.zip': tampered}}),
+                             ('no final cache.zip volume', {'files': {'cache.z01': files['cache.z01']}})):
+            with self.subTest(case), self.upstream() as (base, state):
+                state['commits']['c3' * 20] = dict(commit, date='2026-11-02T00:00:00Z')
+                state['head'] = 'c3' * 20
+                with self.assertRaisesRegex(RuntimeError, 'catalog download failed'):
+                    self.refresh(base)
+                self.assertEqual(list((self.root / 'cache/jlcparts').iterdir()), [])
 
     @contextmanager
     def server(self, source, mode='ok'):
