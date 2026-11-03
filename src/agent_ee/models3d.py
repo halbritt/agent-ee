@@ -466,7 +466,12 @@ def _release_tag(tag):
 
 
 def installed_kicad_version(env=None):
-    """The installed kicad-cli release, as the model-default probe reads it; None when unknown."""
+    """The installed KiCad release: the image install record's version, else the kicad-cli
+    version the model-default probe reads; None when unknown."""
+    from .kicad_install import read_install_record
+    installed = read_install_record()
+    if installed is not None:
+        return installed["record"]["version"]
     identity = _kicad_model_defaults(dict(os.environ) if env is None else env)[1]
     return identity["version"] if identity else None
 

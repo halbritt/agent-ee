@@ -1,6 +1,8 @@
 """Full capture orchestration over scripted loopback HTTP, without vendor access."""
 
+import io
 import json
+import os
 import shutil
 import tempfile
 import threading
@@ -13,7 +15,9 @@ from pathlib import Path
 from agent_ee.design import DesignError
 from agent_ee.design_capture import capture_design, validate_capture_manifest
 from agent_ee.design_compile import compile_design
+from agent_ee.kicad_install import RECORD_ENV
 from tests.test_design_compile import design_fixture
+from tests.test_kicad_install import record as install_record
 from tests.test_jlc_stock_capture import row, search
 from tests.land_pattern_fixtures import chip, component, pad
 
@@ -311,13 +315,18 @@ class CaptureHttpTests(unittest.TestCase):
         footprint.write_bytes(footprint.read_bytes().rstrip()[:-1]
                               + b' (model "${KICAD10_3DMODEL_DIR}/Owned.3dshapes/R2.step"))\n')
         # Every download is a 404, as for a model missing from the repository at each revision.
-        # The installed release's revision is a recorded input: no kicad-cli or tag lookup runs.
+        # The image install record names the installed release (10.0.8) and the mocked GitLab tag
+        # lookup returns its packages3D commit; no kicad-cli runs.
         current = {"tag": "10.0.8", "commit": "8975715167d1a76f9b44be155ac02326f704cdbb"}
-        with patch.object(models3d, "_download_model", return_value=None), \
-                patch.object(models3d, "stock_revisions", return_value=[current, models3d.LEGACY_REVISION]), \
-                patch.object(models3d, "installed_kicad_version", return_value="10.0.8"), \
+        record = self.root / "kicad.install.json"
+        record.write_text(json.dumps(install_record("10.0.8")))
+        tag = io.BytesIO(json.dumps({"name": "10.0.8", "commit": {"id": current["commit"]}}).encode())
+        with patch.dict(os.environ, {RECORD_ENV: str(record)}), \
+                patch.object(models3d, "urlopen", return_value=tag) as lookup, \
+                patch.object(models3d, "_download_model", return_value=None), \
                 self.assertRaises(DesignError) as caught:
             self.capture()
+        self.assertEqual(lookup.call_args.args[0].full_url, models3d.STOCK_TAG_API + "10.0.8")
         message = str(caught.exception)
         for ref in ("R1", "R2"):
             self.assertIn(f"parts.{ref}.footprint: Owned:R2 uses the 3D model Owned.3dshapes/R2.step", message)

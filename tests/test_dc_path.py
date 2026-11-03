@@ -64,6 +64,7 @@ class DCPathModelTests(unittest.TestCase):
 
 
 import contextlib
+import hashlib
 import io
 import math
 import shutil
@@ -304,15 +305,29 @@ p.SaveBoard(path,b)
             descriptor = describe_check(ctx.spec, check_specs=[ctx.spec], files=files, scope=ctx.scope, inputs=ctx.inputs)
             self.assertEqual(descriptor['status'], 'unsupported', descriptor)
         write_json(ctx.inputs / 'contract.json', contract())
-        measured = dc_path.tools()
-        changed = {**measured, '/usr/bin/python3': '0' * 64}
-        with patch.object(dc_path, 'tools', side_effect=[measured, changed]):
-            with self.assertRaisesRegex(checks.CheckError, 'changed during extraction: /usr/bin/python3'):
-                dc_path.check_dc_path(ctx)
-        receipt = read_json(ctx.work / 'analysis.json')
-        self.assertEqual(receipt['tools'], measured)
-        with patch.object(dc_path, 'tools', return_value={}):
-            with self.assertRaisesRegex(checks.CheckError, 'DC native tool unavailable'):
+
+    def test_native_tools_are_measured_recorded_and_a_mid_run_change_refuses(self):
+        # One more tracked tool file in a temporary directory: its bytes really change while the
+        # native probe runs, and it really is absent for the unavailable case.
+        tool = self.root / 'tracked-native-tool'
+        tool.write_bytes(b'tool bytes at launch')
+        with patch.object(dc_path, 'TOOL_PATHS', (*dc_path.TOOL_PATHS, str(tool))):
+            ctx = self.ctx(self.prepare('tool-change'))
+            real_execute = ctx.execute
+
+            def execute_then_replace(*args, **kwargs):
+                record = real_execute(*args, **kwargs)
+                tool.write_bytes(b'tool bytes replaced during extraction')
+                return record
+            with patch.object(ctx, 'execute', side_effect=execute_then_replace):
+                with self.assertRaisesRegex(checks.CheckError, 'changed during extraction: ' + str(tool)):
+                    dc_path.check_dc_path(ctx)
+            receipt = read_json(ctx.work / 'analysis.json')
+            self.assertEqual(receipt['tools'][str(tool)], hashlib.sha256(b'tool bytes at launch').hexdigest())
+            self.assertEqual(set(receipt['tools']), {*dc_path.TOOL_PATHS})
+            tool.unlink()
+            ctx = self.ctx(self.prepare('tool-missing'))
+            with self.assertRaisesRegex(checks.CheckError, 'DC native tool unavailable: ' + str(tool)):
                 dc_path.check_dc_path(ctx)
 
     def test_native_failure_and_partial_solver_never_supply_metrics(self):

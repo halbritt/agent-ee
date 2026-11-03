@@ -9,6 +9,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
 from agent_ee import native_run
+from agent_ee.kicad_install import RECORD_ENV
 from agent_ee.models3d import (
     LEGACY_REVISION,
     STOCK_REPOSITORY,
@@ -24,11 +25,14 @@ from agent_ee.models3d import (
     stock_revisions,
 )
 
-# kicad-packages3D tag 10.0.8 (10.0.8^{}, git ls-remote 2026-11-03): a recorded input
-# for these tests, which run no kicad-cli and make no tag lookup.
+try:
+    from test_kicad_install import record as install_record
+except ImportError:  # module-qualified invocation from the repository root
+    from tests.test_kicad_install import record as install_record
+
+# kicad-packages3D tag 10.0.8 (10.0.8^{}, git ls-remote 2026-11-03): the commit these tests'
+# mocked GitLab tag lookup returns.
 CURRENT = {"tag": "10.0.8", "commit": "8975715167d1a76f9b44be155ac02326f704cdbb"}
-INSTALLED = {"executable": "/usr/bin/kicad-cli", "version": "10.0.8", "source": "kicad-default",
-             "platform": "linux-packages", "directory": "/usr/share/kicad/3dmodels", "available": False}
 
 
 class ModelResponse(io.BytesIO):
@@ -525,13 +529,24 @@ class StockModelFetchTests(unittest.TestCase):
         self.relative = "Resistor_SMD.3dshapes/R_0805_2012Metric.step"
         self.payload = b"ISO-10303-21;\nHEADER;\nENDSEC;\nEND-ISO-10303-21;\n"
         self.write_refs(["${KICAD10_3DMODEL_DIR}/" + self.relative])
-        # The installed KiCad and its packages3D revision are recorded inputs: no host kicad-cli
-        # runs and no tag lookup leaves the host (StockRevisionTests covers the lookup).
-        for target, value in (("agent_ee.models3d._kicad_model_defaults", ({}, dict(INSTALLED))),
-                              ("agent_ee.models3d.stock_revisions", [CURRENT, LEGACY_REVISION])):
-            started = patch(target, return_value=value)
-            started.start()
-            self.addCleanup(started.stop)
+        # Boundaries only: the image install record names the installed release (10.0.8), no
+        # kicad-cli is found, and the network is self.network (GitLab tag lookup and raw files).
+        record = self.root / "kicad.install.json"
+        record.write_text(json.dumps(install_record("10.0.8")))
+        self.enterContext(patch.dict(os.environ, {RECORD_ENV: str(record)}))
+        self.enterContext(patch("agent_ee.models3d.shutil.which", return_value=None))
+
+    def network(self, model):
+        """urlopen side effect: GitLab answers the 10.0.8 tag lookup; model(request) serves raw files."""
+        def respond(request, **kwargs):
+            if request.full_url.startswith(STOCK_TAG_API):
+                self.assertEqual(request.full_url, STOCK_TAG_API + "10.0.8")
+                return ModelResponse(json.dumps({"name": "10.0.8", "commit": {"id": CURRENT["commit"]}}).encode())
+            return model(request, **kwargs) if callable(model) else model
+        return respond
+
+    def model_calls(self, request):
+        return [call for call in request.call_args_list if not call.args[0].full_url.startswith(STOCK_TAG_API)]
 
     def write_refs(self, refs):
         footprints = " ".join(f'(footprint "Part" (property "Reference" "R{i}") (model "{ref}"))'
@@ -590,9 +605,9 @@ class StockModelFetchTests(unittest.TestCase):
 
     def test_exact_pinned_download_deduplicates_and_persists_verified_provenance(self):
         self.write_refs(["${KICAD10_3DMODEL_DIR}/" + self.relative, "${KISYS3DMOD}/" + self.relative])
-        with patch("agent_ee.models3d.urlopen", return_value=ModelResponse(self.payload)) as request:
+        with patch("agent_ee.models3d.urlopen", side_effect=self.network(ModelResponse(self.payload))) as request:
             manifest = fetch_stock_models(self.board, self.cache)
-        self.assertEqual(request.call_count, 1)
+        self.assertEqual(len(self.model_calls(request)), 1)
         url = request.call_args.args[0].full_url
         self.assertEqual(url, f"{STOCK_REPOSITORY}/-/raw/{CURRENT['commit']}/{self.relative}")
         self.assertEqual(request.call_args.kwargs["timeout"], 30)
@@ -618,15 +633,15 @@ class StockModelFetchTests(unittest.TestCase):
             if CURRENT["commit"] in request.full_url:
                 return self.not_found(request)
             return ModelResponse(self.payload)
-        with patch("agent_ee.models3d.urlopen", side_effect=response) as request:
+        with patch("agent_ee.models3d.urlopen", side_effect=self.network(response)) as request:
             manifest = fetch_stock_models(self.board, self.cache)
-        self.assertEqual(request.call_count, 2)
+        self.assertEqual(len(self.model_calls(request)), 2)
         self.assertEqual((manifest["files"][0]["commit"], manifest["files"][0]["tag"]),
                          (LEGACY_REVISION["commit"], "6.0.11"))
-        self.assertTrue(all(call.args[0].full_url.endswith(self.relative) for call in request.call_args_list))
+        self.assertTrue(all(call.args[0].full_url.endswith(self.relative) for call in self.model_calls(request)))
 
     def test_404_at_both_revisions_remains_missing(self):
-        with patch("agent_ee.models3d.urlopen", side_effect=self.not_found):
+        with patch("agent_ee.models3d.urlopen", side_effect=self.network(self.not_found)):
             manifest = fetch_stock_models(self.board, self.cache)
         self.assertEqual(manifest["status"], "partial")
         self.assertEqual(manifest["missing"], 1)
@@ -637,10 +652,12 @@ class StockModelFetchTests(unittest.TestCase):
         for error in (URLError("network unavailable"), TimeoutError("timed out"),
                       HTTPError("https://official", 403, "forbidden", {}, None)):
             with self.subTest(error=type(error).__name__):
-                with patch("agent_ee.models3d.urlopen", side_effect=error) as request:
+                def fail(request, error=error, **kwargs):
+                    raise error
+                with patch("agent_ee.models3d.urlopen", side_effect=self.network(fail)) as request:
                     with self.assertRaisesRegex(ModelFetchError, "request failed"):
                         fetch_stock_models(self.board, self.cache)
-                self.assertEqual(request.call_count, 1)
+                self.assertEqual(len(self.model_calls(request)), 1)
                 self.assertFalse((self.cache / self.relative).exists())
 
     def test_private_project_models_and_disabled_refs_never_fetch(self):
@@ -704,7 +721,7 @@ class StockModelFetchTests(unittest.TestCase):
                                       (ModelResponse(b"<html>access denied</html>"), 1024, "not the referenced"),
                                       (BrokenStream(self.payload), 1024, "transfer interrupted")):
             with self.subTest(reason=reason):
-                with patch("agent_ee.models3d.urlopen", return_value=stream):
+                with patch("agent_ee.models3d.urlopen", side_effect=self.network(stream)):
                     with self.assertRaisesRegex(ModelFetchError, reason):
                         fetch_stock_models(self.board, self.cache, max_file_bytes=limit)
                 self.assertFalse((self.cache / self.relative).exists())
@@ -714,7 +731,7 @@ class StockModelFetchTests(unittest.TestCase):
         relative = "Connector.3dshapes/Socket (test)+1.wrl"
         self.write_refs(["${KISYS3DMOD}/" + relative])
         payload = b"#VRML V2.0 utf8\nShape {}\n"
-        with patch("agent_ee.models3d.urlopen", return_value=ModelResponse(payload)) as request:
+        with patch("agent_ee.models3d.urlopen", side_effect=self.network(ModelResponse(payload))) as request:
             manifest = fetch_stock_models(self.board, self.cache)
         self.assertIn("Socket%20%28test%29%2B1.wrl", request.call_args.args[0].full_url)
         self.assertEqual((self.cache / relative).read_bytes(), payload)
@@ -722,7 +739,7 @@ class StockModelFetchTests(unittest.TestCase):
 
     def test_response_is_closed_when_local_download_setup_fails(self):
         response = ModelResponse(self.payload)
-        with patch("agent_ee.models3d.urlopen", return_value=response):
+        with patch("agent_ee.models3d.urlopen", side_effect=self.network(response)):
             with patch("agent_ee.models3d.tempfile.mkstemp", side_effect=OSError("cache is full")):
                 with self.assertRaisesRegex(ModelFetchError, "cache is full"):
                     fetch_stock_models(self.board, self.cache)
@@ -732,7 +749,7 @@ class StockModelFetchTests(unittest.TestCase):
     def test_early_eof_with_content_length_never_installs_partial_model(self):
         response = ModelResponse(self.payload)
         response.headers["Content-Length"] = str(len(self.payload) + 100)
-        with patch("agent_ee.models3d.urlopen", return_value=response):
+        with patch("agent_ee.models3d.urlopen", side_effect=self.network(response)):
             with self.assertRaisesRegex(ModelFetchError, "download was truncated"):
                 fetch_stock_models(self.board, self.cache)
         self.assertTrue(response.closed)
@@ -803,16 +820,17 @@ class StockRevisionTests(unittest.TestCase):
                 if request.full_url == f"{STOCK_REPOSITORY}/-/raw/{commit}/R.3dshapes/r.step":
                     return ModelResponse(payload)
                 raise HTTPError(request.full_url, 404, "not found", {}, None)
-            with patch("agent_ee.models3d._kicad_model_defaults", return_value=({}, None)), \
-                    patch("agent_ee.models3d.urlopen", side_effect=network):
+            # A host with neither a kicad-cli nor an install record: the release is named.
+            self.enterContext(patch("agent_ee.models3d.shutil.which", return_value=None))
+            self.enterContext(patch.dict(os.environ, {RECORD_ENV: str(root / "absent.install.json")}))
+            with patch("agent_ee.models3d.urlopen", side_effect=network):
                 manifest = fetch_stock_models(board, root / "models", kicad_version="10.0.9")
             self.assertEqual(manifest["revisions"], [{"tag": "10.0.9", "commit": commit}, LEGACY_REVISION])
             receipt = json.loads((root / "models/.agent-ee-models.json").read_text())
             self.assertEqual({key: receipt["files"]["R.3dshapes/r.step"][key] for key in ("tag", "commit")},
                              {"tag": "10.0.9", "commit": commit})
             board.write_text('(kicad_pcb (footprint "R" (model "${KISYS3DMOD}/R.3dshapes/other.step")))')
-            with patch("agent_ee.models3d._kicad_model_defaults", return_value=({}, None)), \
-                    patch("agent_ee.models3d.urlopen") as request:
+            with patch("agent_ee.models3d.urlopen") as request:
                 with self.assertRaisesRegex(ModelFetchError, "release None is unknown"):
                     fetch_stock_models(board, root / "models")
             request.assert_not_called()
