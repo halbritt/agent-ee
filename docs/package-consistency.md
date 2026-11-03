@@ -78,10 +78,17 @@ answer. The ordinary coordinator seal covers these and the netlist artifacts.
 
 ## Mapping table
 
-The committed table is
-[`references/package-map/kicad-10.0.7-lcsc-1.json`](../references/package-map/kicad-10.0.7-lcsc-1.json),
-produced by [`generate.py`](../references/package-map/generate.py) from the file
-names in the pinned KiCad 10.0.7 footprint library. It has exactly `schema`,
+One table is committed per KiCad footprint library release, named
+`references/package-map/kicad-<release>-lcsc-1.json` and produced by
+[`generate.py`](../references/package-map/generate.py) from the file names in
+that release's footprint library:
+[10.0.7](../references/package-map/kicad-10.0.7-lcsc-1.json) and
+[10.0.8](../references/package-map/kicad-10.0.8-lcsc-1.json). Generation and
+the rung-1 scaffold use the table of the installed `kicad-footprints` release
+that the image install record names ([container.md](container.md#kicad)), else
+the table of the newest release (`generate.package_map_path`). A check reads the
+table its scope captures and records its path, SHA-256 and version. Each table
+has exactly `schema`,
 `version`, `derivation`, `rules`, `footprints` and `packages`. Every footprint
 entry is an exact `library:name` ID with a rule, a class list (catalog
 categories, or `null` for class-free outlines) and a `{family, pins, body}`
@@ -104,9 +111,12 @@ read from public product pages on 2026-10-17 (`C1525` `0402`, `C14663` `0603`,
 `C9055` `SOT-23-5`, `C51118` `SOT-25-5`, `C20917` `SOT-23`, `C7593` `SOIC-8`,
 `C1340704` `UFQFPN-48(7x7)`). The table has not been measured against a full
 catalog feed: a real string the table lacks is unknown, and a feed row whose
-string misstates its body would be compared as stated. Regenerate with
-`python3 -I references/package-map/generate.py /usr/share/kicad/footprints <out>`
-and give a changed table a new version.
+string misstates its body would be compared as stated. After a KiCad update, run
+`python3 -I references/package-map/generate.py /usr/share/kicad/footprints references/package-map/kicad-<release>-lcsc-1.json`
+in the rebuilt image; the generator takes the release from the install record
+(or a third argument) and writes it into `version` and `derivation`. The native
+test regenerates the installed release's table and compares it byte for byte. A
+change to the rules or vocabulary needs a new table version (`-lcsc-2`).
 
 ## Evidence and limits
 

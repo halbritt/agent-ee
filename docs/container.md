@@ -25,14 +25,14 @@ on a hosted runner. The workflow now provisions the
 with them has not yet been observed. Other architectures and container engines have not been demonstrated. The first
 hosted run exposed a user-namespace requirement, handled below.
 
-## Pinned toolchain
+## Toolchain versions
 
-| Component | Pin | How the pin is enforced |
+| Component | Version | How it is fixed or recorded |
 | --- | --- | --- |
 | Base | `ubuntu:24.04@sha256:68ee2200…` | Image index digest in `UBUNTU_DIGEST` |
-| Package indexes | Snapshot `20261015T000000Z` | `snapshot.ubuntu.com` and `snapshot.ppa.launchpadcontent.net` URLs, so later archive uploads do not change resolution |
-| KiCad 10.0.7, stock symbols, footprints and templates | `10.0.7~ubuntu24.04.1` | Exact `apt-get install pkg=version` from the KiCad 10.0 releases PPA, signed by key `FDA854F61C4D0D9572BB95E5245D5502FAD7A805` stored in [docker/](../docker/kicad-10.0-releases.asc) |
-| pcbnew Python bindings | Shipped by the `kicad` package | Build fails unless `/usr/bin/python3` imports `pcbnew` and reports build version 10.0.7 |
+| Ubuntu package indexes | Snapshot `20261015T000000Z` | `snapshot.ubuntu.com` URLs, so later archive uploads do not change resolution |
+| KiCad, newest 10.0 release at build time (10.0.8 on 2026-11-03), with its stock symbols, footprints, 3D models and templates | Not fixed in the Dockerfile: the release used is recorded per image in `/opt/kicad.install.json` and per run with its evidence ([KiCad](#kicad)) | `apt-get install` from the live KiCad 10.0 releases PPA, signed by key `FDA854F61C4D0D9572BB95E5245D5502FAD7A805` stored in [docker/](../docker/kicad-10.0-releases.asc). [docker/kicad/install.py](../docker/kicad/install.py) fails the build unless every package, `kicad-cli` and pcbnew name one release of the 10.x line, each library repository has a tag for it, pcbnew loads an owned board and `kicad-cli` DRC reports on it. Rebuild the image to update |
+| pcbnew Python bindings | Shipped by the `kicad` package | Build fails unless `/usr/bin/python3` imports `pcbnew` and its version is the `kicad-cli` release |
 | ngspice 47 with inverse-switch correction | Upstream `a80f6e3e95d51534905b1f23410a951802666656` plus the hash-guarded [correction](../docker/ngspice/patch.py) | Source build from the same package snapshot; runtime reports 47 and passes 20 independent switch-divider checks; installed file hashes retained in `/usr/share/agent-ee/ngspice-install.json` |
 | Bubblewrap 0.9.0 | `0.9.0-1ubuntu0.3` | Exact apt version; build fails unless `bwrap --version` is `bubblewrap 0.9.0` and the binary is not setuid |
 | Python 3.12 | `python3=3.12.3-0ubuntu2.1` | Exact apt version; build fails unless the interpreter reports 3.12 |
@@ -54,11 +54,13 @@ notices accompany the installed files. Exact pins record the qualified build;
 new releases require fresh qualification, rather than indefinite dependency
 freezing.
 
-Pinned packages are also held with `apt-mark hold`. Every pin fails closed: an
-unavailable version stops `apt-get install`, and the verification layer refuses
-an image whose tools report other versions or whose stock library paths used by
-the RC fixtures are missing. Unpinned dependencies (shared libraries, `git`) are
-fixed by the snapshot timestamp rather than individual version strings.
+Exact-version packages and the KiCad packages are held with `apt-mark hold`, so
+later build stages cannot change them. An unavailable exact version stops
+`apt-get install`, and the verification layer refuses an image whose base tools
+report other versions or whose stock library paths used by the RC fixtures are
+missing. Dependencies without an exact version (shared libraries, `git`) are
+fixed by the snapshot timestamp rather than individual version strings; KiCad's
+own shared-library dependencies resolve against that snapshot.
 
 All ten image-build `apt-get update` and `apt-get install` invocations use
 [the shared outer retry wrapper](../docker/apt-retry.sh), including the TLS
@@ -86,12 +88,69 @@ body-less HTTP 5xx responses that apt may not retry internally. Updates use
 stale or missing indexes. Snapshot URLs, package version pins and signature
 verification remain unchanged.
 
-`doctor` reports the installed PDF extractor binary and, when
+`doctor` reports the KiCad install record with the `kicad-cli` probe and fails
+that probe when the record does not describe the `kicad-cli` that runs (another
+version or binary digest). It also reports the installed PDF extractor binary and, when
 `AGENT_EE_KICAD_HAPPY` names an installation, the analyzer version, its
 source-file hashes and identity, and the tag and commit from its install record
 (null without one). Optional tools absent from a basic installation do not
 become required merely by running doctor. An explicitly configured broken
 analyzer does fail the probe.
+
+## KiCad
+
+The image installs the newest KiCad 10.0 release in the KiCad PPA, with the
+`kicad-symbols`, `kicad-footprints`, `kicad-packages3d` and `kicad-templates`
+packages of the same release, when it is built. There is no version argument.
+On 2026-11-03 the build installed 10.0.8 (`10.0.8~ubuntu24.04.1`).
+
+[docker/kicad/install.py](../docker/kicad/install.py) runs in the same build
+step and writes `/opt/kicad.install.json`
+([kicad_install.py](../src/agent_ee/kicad_install.py) checks its shape, at build
+time and when a run reads it):
+
+- `version` (from `kicad-cli version`) and pcbnew's `build_version`;
+- `packages`: each KiCad package's installed version, all of the same release;
+- `source`: the PPA URL, suite, and the `Date` and SHA-256 of the PPA release
+  file that apt read;
+- `libraries`: for each library repository, the tag of that release and its
+  commit, resolved with `git ls-remote` during the build;
+- `files`: SHA-256 of `kicad-cli`, `pcbnew.py` and `_pcbnew.so`;
+- `probe`: the owned board `fixtures/dc-path/straight.kicad_pcb`, its SHA-256,
+  the footprint and track counts that pcbnew loaded (equal to the counts in the
+  board's own text), and the `$schema` and `kicad_version` of the `kicad-cli`
+  DRC report on it.
+
+The build fails if any of these does not hold. Every run with the image uses
+that release. Runs record what they used with their evidence: `result.json`
+`runtime_files` holds the `kicad-cli`, pcbnew extension and `/usr/bin/python3`
+digests; native checks keep the `kicad_version` of their DRC and ERC reports,
+the `pcbnew_version` of their geometry probes and the `kicad-cli` version and
+digest of schematic renders; DC checks record the tool digests they measured
+when they started. `agent-ee verify` still compares a run's recorded
+`runtime_files` with the verifying host, as for every tool: on an image with
+another KiCad build, an older run is reported as made with other tools
+("tool runtime changed; rerun under the current tools"), and its records keep
+the release it used.
+
+No check compares with one fixed KiCad version. Native readers refuse only a
+release outside the 10.x line their formats are written for
+(`kicad_install.line_release`). Behaviour that differs between releases is keyed
+on the recorded version in [kicad_quirks.py](../src/agent_ee/kicad_quirks.py):
+the ERC JSON coordinate scale (10.0.0 to 10.0.6 against 10.0.7 and later) and
+the omitted board text-height default of the 10.0 series. Stock-library files
+captured by digest, such as the ESP32-S3-WROOM-1 footprint and RF_Module symbols
+in `footprint_library.py`, are still compared byte for byte; a release that
+changes them needs a recapture.
+
+To update KiCad, rebuild the image. The PPA's release file is the cache key of
+the native base stage, so a rebuild after a KiCad release installs it, and an
+unchanged PPA keeps the cached layers. After an update, regenerate the package
+map for the new footprint release
+([package-consistency.md](package-consistency.md#mapping-table)) and run the
+native test modules in the rebuilt image. The image reads the 10.0 series PPA
+(`kicad-10.0-releases`); a later series' PPA needs its URL and signing key in
+the Dockerfile.
 
 ## Hosted build cache
 
@@ -661,9 +720,9 @@ The action has not run on a hosted runner, and this design does not plan one.
 
 ## Stock 3D models
 
-The KiCad apt install includes `kicad-packages3d=${KICAD_VERSION}` alongside
-symbols, footprints and templates. The exact package pin uses the existing
-signed package source and fails the build if unavailable. The library adds
+The KiCad apt install includes `kicad-packages3d` of the installed release
+alongside symbols, footprints and templates, from the same signed package
+source; the install record names its library tag and commit. The library adds
 approximately 280 MB of downloads and 3.3 GB unpacked (package estimates).
 [Candidate model coverage](pcb-renders.md#proposal-project-model-closure-agentee-394)
 records the actual referenced model file hashes; runtime rendering is offline.

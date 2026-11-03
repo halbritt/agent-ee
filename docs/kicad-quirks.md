@@ -32,7 +32,8 @@ classified version.
 
 The check result records the regime alongside the counts:
 
-- `details.kicad_cli`: `{path, sha256, version}` of the pinned sandbox binary.
+- `details.kicad_cli`: `{path, sha256, version}` of the installed sandbox binary,
+  the release the run used.
 - `details.erc_coordinates`: `version`, `regime`, `scale`, `status` (`trusted` or
   `withheld`), `report_kicad_version`, `coordinate_units`, and `reason` when
   withheld.
@@ -48,8 +49,9 @@ adds the same regime record for the host kicad-cli as
 Fixtures and the 10.0.6 build used for capture are recorded in
 [fixtures/kicad-quirks/README.md](../fixtures/kicad-quirks/README.md). On
 both captures the corrected positions match the text report for all 12 items.
-The pinned image ships 10.0.7, so the native `erc` test exercises `native`. The
-`scale_x100` path is tested against the captured 10.0.6 JSON and report.
+The image installs the newest 10.0 release (10.0.8 on 2026-11-03), so the native
+`erc` test exercises `native`. The `scale_x100` path is tested against the
+captured 10.0.6 JSON and report.
 Releases 10.0.0 to 10.0.4 fall under `scale_x100` on the issue's evidence, but no
 build was captured. Launchpad no longer serves them.
 

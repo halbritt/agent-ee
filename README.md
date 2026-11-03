@@ -101,7 +101,7 @@ stage. `--through STAGE` stops at a checkpoint for diagnosis. See the
 
 ## Try it
 
-The demonstrated environment is Linux with KiCad 10.0.7 (including the
+The demonstrated environment is Linux with a KiCad 10.x release (including the
 `pcbnew` Python bindings on the system interpreter), ngspice, Bubblewrap and
 the Rust placement engine built from `crates/placement-engine`. The CLI has no
 third-party Python dependencies. See [installation](docs/installation.md);

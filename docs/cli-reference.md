@@ -251,8 +251,9 @@ be new and outside a retained review. Defaults request 4096 × 3072 pixels,
 1, 2 or 3. Actual output dimensions are recorded from the PNGs.
 
 `--models DIR` supplies a stock-model cache. `--fetch-models` requires that
-directory and explicitly enables downloads of referenced stock models from
-pinned official sources. Missing models remain visible in coverage metadata.
+directory and explicitly enables downloads of referenced stock models from the
+official library at the installed KiCad release's tag, with the 6.0.11 tag as a
+legacy fallback; the receipt records each file's tag and commit. Missing models remain visible in coverage metadata.
 See [native 3D renders](pcb-renders.md) for output records, examples and failures.
 
 ## `doctor`

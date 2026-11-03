@@ -58,13 +58,13 @@ exist. Unknown tool versions/platforms or an absent default directory leave the
 variable unresolved. The manifest records the CLI identity and default directory
 in `model_coverage.kicad_default`, plus each model's `resolution_source` and
 `variable_sources` (`env`, `kicad-default`, `project`, `relative` or `unresolved`).
-Legacy `${KISYS3DMOD}` paths follow kicad-cli 10.0.7, verified in the pinned
-image (AGENTEE-428): an environment or project text value for `KISYS3DMOD`
+Legacy `${KISYS3DMOD}` paths follow kicad-cli 10.0.7, verified in the image
+of that release (AGENTEE-428): an environment or project text value for `KISYS3DMOD`
 wins; otherwise it takes the process `KICAD10_3DMODEL_DIR` (environment, then
 the qualified default). A project text variable named `KICAD10_3DMODEL_DIR`
 does not feed the alias. `model_coverage.variable_aliases` records each applied
 alias and its source. The alias needs a qualified 10.0.x CLI identity or
-injected defaults; otherwise `KISYS3DMOD` stays unresolved. The pinned CLI
+injected defaults; otherwise `KISYS3DMOD` stays unresolved. kicad-cli
 also aliases other versioned `KICADn_3DMODEL_DIR` names; inventory does not,
 so those references stay unresolved (under-reported, never claimed).
 An explicit environment path whose file is absent stays missing; inventory never
@@ -94,9 +94,16 @@ For a new cache, explicitly request downloads:
   --fetch-models
 ```
 
-Fetching requests only referenced stock-model paths from pinned official KiCad
-sources. It does not upload the PCB. The cache retains download provenance and
-file hashes. Local project models continue to resolve from the source project.
+Fetching requests only referenced stock-model paths from the official
+kicad-packages3D repository, at the commit of the installed KiCad release's tag.
+The installed release is the `kicad-cli version` identity above; its tag is
+looked up when the first file has to be downloaded, so a cache that already
+holds every file needs no lookup. A file missing there (404) is tried at the
+6.0.11 tag, a recorded legacy fallback for older boards whose model filenames
+exist only in older library releases. An unknown release or a missing tag fails
+the fetch; no other revision is substituted. It does not upload the PCB. The
+cache receipt records each downloaded file's tag, commit, source URL, SHA-256
+and size, and `models-fetch.json` lists the revisions used. Local project models continue to resolve from the source project.
 Ordinary renders make no model downloads. A captured copy of such a cache can
 also resolve stock model paths in the
 [fab-package consistency gate](fab-consistency.md#stock-model-libraries).

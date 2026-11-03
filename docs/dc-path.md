@@ -1,6 +1,7 @@
 # PCB DC path resistance
 
-The optional `dc_path` check extracts saved KiCad 10.0.7 copper geometry. Contract
+The optional `dc_path` check extracts saved KiCad 10.x copper geometry; the
+probe records the pcbnew release it used. Contract
 version 1 solves an isolated, ideal one-dimensional resistor network; version 2
 bounds voltage drop on complete multilayer nets with distributed loads. Both
 models require explicitly declared physical parameters and ideal contacts.
@@ -67,9 +68,10 @@ The checks-only review exits 1 because independent engineering review remains
 incomplete. Its `dc` check must be `ok/pass`, at approximately 11.6373224084 mV;
 `verify` must exit zero. The [native tests](../tests/test_dc_rail.py) also prove
 rejection of a disconnected route, an exceeded drop budget, altered sealed
-geometry, stale DRC and an ignored connectivity check. Qualification pins the
-model, probe, dispatcher and native tool identities. Regenerating that file
-without rerunning the native oracles does not establish qualification.
+geometry, stale DRC and an ignored connectivity check. Qualification fixes the
+model, probe and dispatcher identities and names the native tool paths and the
+KiCad 10.x line. Regenerating that file without rerunning the native oracles
+does not establish qualification.
 
 ## Captured inputs
 
@@ -112,12 +114,19 @@ review command exits 1 because agent review is incomplete; inspect the check
 outcome and run `agent-ee verify build/dc-control` for evidence integrity.
 The other five scopes use the same immutable declared material and limits.
 
-Qualification pins the native Python interpreter, pcbnew wrapper and native
-extension, extraction script, model policy and numerical thresholds. Tool hashes
-are checked before/after extraction and included in pre-inference expectations.
-The native probe runs in the existing networkless tool sandbox. Changing a pin
-requires semantic review and native analytic requalification, not a hash refresh
-alone. The shipped qualification targets the repository's pinned native image.
+Qualification fixes the extraction script, model policy and numerical
+thresholds, and names the native tool paths (the Python interpreter, the pcbnew
+wrapper and its native extension) and the KiCad 10.x line. It holds no tool
+digest or single KiCad version. A check measures the tool digests when it starts
+and records them in `analysis.json`; a run also records them in its launch
+expectation, so reviewer preflight refuses a later change. A digest that changes
+during extraction refuses the check. Geometry from pcbnew outside the 10.x line,
+or a prerequisite DRC report of another line, is refused; `analysis.json` records
+the probe's `pcbnew_version`. The native probe runs in the existing networkless
+tool sandbox. Changing the model, probe or thresholds requires semantic review
+and native analytic requalification, not a hash refresh alone. A new KiCad
+release needs no qualification change; the native oracles run in the rebuilt
+image.
 
 ## Geometry and physics limits
 

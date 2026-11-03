@@ -430,7 +430,7 @@ sealed `kicad-cli version` run, never from the report alone. KiCad 10.0.0 to
 multiplies them by 100. 10.0.7 and later 10.0.N are `native`. Any other version,
 or a report whose `kicad_version` differs from the sealed version, is `withheld`:
 items keep no positions and a limitation records the reason. `details.kicad_cli`
-and `details.erc_coordinates` record the pinned binary and the regime applied.
+and `details.erc_coordinates` record the installed binary and the regime applied.
 Counts and outcome are unaffected. See
 [KiCad report-format quirk guards](kicad-quirks.md).
 
@@ -1047,8 +1047,9 @@ witness remain mandatory for accepting a coordinator finding.
 Native qualification tests use `AGENT_EE_KICAD_HAPPY` to locate an installation
 (default `$HOME/git/kicad-happy`). `AGENT_EE_REQUIRE_TOOLCHAIN=1` makes missing
 native prerequisites or the installation a test failure. The demonstrated host
-uses KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0 and Python 3.12.3; qualification
-inside the common completion image remains separate.
+used KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0 and Python 3.12.3; the image
+installs the newest KiCad 10.0 release and records it
+([container.md](container.md#kicad)).
 
 ## Installed kicad-happy severity gate
 

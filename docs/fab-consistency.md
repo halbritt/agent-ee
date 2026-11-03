@@ -178,8 +178,9 @@ captures a stock-model cache built by
 [`render3d --fetch-models`](pcb-renders.md#component-models)
 (`models3d.fetch_stock_models`) as an ordinary scope input. Such a cache holds
 the `agent-ee.stock-models/1` receipt `.agent-ee-models.json`. Each receipt entry
-records a file's SHA-256, its size, and either the kicad-packages3D commit and
-URL it was downloaded from or `existing-local`. The scope then maps each
+records a file's SHA-256, its size, and either the kicad-packages3D commit,
+tag and URL it was downloaded from or `existing-local`. Receipts written before
+tags were recorded name the commit and URL only. The scope then maps each
 variable to that captured receipt:
 
 ```json
@@ -198,8 +199,9 @@ these hold:
    directories and `..` are refused.
 2. The variable is declared, and its receipt is the captured input and passes
    `models3d` receipt validation.
-3. The receipt lists the file with a pinned kicad-packages3D commit.
-   `existing-local` entries are unpinned.
+3. The receipt lists the file with the kicad-packages3D commit it was
+   downloaded from, and the URL of that commit. `existing-local` entries name
+   no commit.
 4. The file next to the receipt is a captured input whose bytes match both the
    capture digest and the receipt SHA-256.
 
