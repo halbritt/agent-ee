@@ -318,7 +318,7 @@ class StageExecutionTests(unittest.TestCase):
         base = mount_view()
         def mount(point, flags='rw', kind='ext4', ident=99):
             return f'\n{ident} 0 0:1 / {point} {flags} - {kind} none {flags}'
-        positive = [base, base+mount('/lib','ro'), base+mount('/lib64','ro')+mount('/bin','ro',ident=100),
+        positive = [base, base+mount('/tool/plan','ro'), base+mount('/lib','ro'), base+mount('/lib64','ro')+mount('/bin','ro',ident=100),
                     base+mount('/proc/sys','ro','proc'), base+mount('/dev/mqueue','rw','mqueue'),
                     base+mount('/dev/null','rw','devtmpfs'), base+mount('/work/out'),
                     base+mount('/candidate')+mount('/candidate','ro',ident=100)]
@@ -328,6 +328,7 @@ class StageExecutionTests(unittest.TestCase):
                      base+mount('/dev/hosthome'), base+mount('/proc/hosthome'),
                      base+mount('/candidate'), base+mount('/usr/lib'),
                      base+mount('/etc'), base+mount('/app'), base+mount('/tool/agent-ee'),
+                     base+mount('/tool/plan'), base+mount('/tool/unknown','ro'),
                      base+mount('/lib/x'), base+'\nmalformed',
                      base+mount('/lib','ro',ident=1), base+mount('/candidate','ro,rw')]
         for accepted, views in ((True, positive),(False, negative)):

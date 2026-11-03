@@ -164,7 +164,8 @@ class TestTier5AdversarialStageExecution(unittest.TestCase):
 
             def mock_probe(inputs, work, argv, timeout=120):
                 self.assertTrue(Path(inputs).is_dir())
-                self.assertTrue(Path(work).is_dir())
+                self.assertFalse(Path(work).exists())
+                Path(work).mkdir()  # The process adapter owns creation of its record scratch.
                 mod_file = Path(inputs) / "test_pad.kicad_mod"
                 self.assertTrue(mod_file.is_file())
                 self.assertEqual(mod_file.read_bytes(), b"(footprint test_pad)")

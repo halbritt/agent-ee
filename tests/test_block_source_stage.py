@@ -260,9 +260,10 @@ class ProducerTests(unittest.TestCase):
     def test_fixed_entrypoint_refuses_unconfined_host_before_native_read(self):
         from agent_ee.forward_annotation import AnnotationError
         with patch('pathlib.Path.read_text', side_effect=PermissionError('CPU denied mountinfo')):
-            with self.assertRaisesRegex(AnnotationError, 'stage mountinfo'):
+            with self.assertRaisesRegex(AnnotationError, 'malformed or unavailable mountinfo') as refused:
                 stage.main(['--board','board.kicad_pcb','--project','board.kicad_pro',
                             '--source','source.json','--intent','intent.json','--groups','groups.json'])
+            self.assertEqual(refused.exception.code, 'stage_confinement')
 
     def test_completed_producer_chain_revalidates_and_rejects_foreign_source_policy_or_proof(self):
         write_json(self.candidate/'roles/locality.json',self.source['relationships'])

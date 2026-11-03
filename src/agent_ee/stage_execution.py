@@ -108,7 +108,7 @@ class ConfinementView(enum.Enum, metaclass=_ConfinementViewMeta):
 
         if self == ConfinementView.STAGE_TOOL:
             required['/tool/agent-ee'] = 'ro'
-            readonly += ['/tool/agent-ee', '/app']
+            readonly += ['/tool/agent-ee', '/tool/plan', '/app']
             if _fab_templates:
                 required['/tool/fixtures/fab-export'] = 'ro'
                 readonly += ['/tool/fixtures/fab-export']
@@ -483,7 +483,6 @@ class StageContext:
         root = Path(tempfile.mkdtemp(prefix='member-', dir=parent))
         inputs, work = root / 'inputs', root / 'work'
         inputs.mkdir(parents=True, exist_ok=True)
-        work.mkdir(parents=True, exist_ok=True)
         name = footprint.get('name') if isinstance(footprint, dict) else None
         if not isinstance(name, str) or not name.strip() or '/' in name or '\\' in name or '..' in name:
             raise FootprintError(f'invalid or unsafe footprint name: {name!r}')
