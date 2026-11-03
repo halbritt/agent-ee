@@ -245,7 +245,7 @@ class ControllerBoundaryTests(Fixture):
         def routed(directory, *_args, **_kwargs):
             selected.append(str(directory))
             result = {'status': 'routed', 'board': str(self.board), 'generated_relation_count':1, 'preflight': {
-                k: None for k in ('commit', 'pin', 'executable_sha256', 'adapter_sha256', 'problems')}}
+                k: None for k in job.ROUTER_IDENTITY}}
             if partial:
                 count = 1 if str(directory).endswith('seed0') else 2
                 result['generated_relation_count'] = count
@@ -375,7 +375,7 @@ class ControllerBoundaryTests(Fixture):
                         elif mode.startswith('deadline'):
                             remaining[0] = -1.0
                         return {'status': 'routed', 'board': str(self.board), 'preflight': {
-                            k: None for k in ('commit', 'pin', 'executable_sha256', 'adapter_sha256', 'problems')}}
+                            k: None for k in job.ROUTER_IDENTITY}}
                     route = stack.enter_context(patch.object(job, 'route', side_effect=routed))
                     final = stack.enter_context(patch.object(job, 'final_checks', return_value={
                         'integrity': 'violated', 'physical_checks': 'FAILED'}))

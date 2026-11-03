@@ -1429,6 +1429,11 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
     return None
 
 
+# The router identity a job records: routing_adapter.preflight's checkout record (the kicad-route
+# commit, clean-tree state and code digest), the executable and adapter digests, and its problems.
+ROUTER_IDENTITY = ('commit', 'clean', 'code_sha256', 'code_files', 'executable_sha256', 'adapter_sha256', 'problems')
+
+
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
           bus=None, length_match=None, ac_match=None, local_decoupling=None,
@@ -2102,8 +2107,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            local_fallback_reason=selected.get('local_fallback_reason'))
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             trial['generated_relation_count'] = routed.get('generated_relation_count', 0)
-            report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
-                                                                           'adapter_sha256', 'problems')}
+            report['router_identity'] = {k: routed['preflight'][k] for k in ROUTER_IDENTITY}
             if routed['status'] == 'local_copper_deferred':
                 # Unknown candidates get generation first; retained subsets rank by count.
                 queue.append({**selected, 'local_fallback_reason': routed.get('local_decoupling', routed['reason']),
@@ -2587,8 +2591,7 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None, identitie
     cli = _run_child(['kicad-cli', 'version'], clock=clock or Clock(60), cancel_dir=cancel_dir)
     identities['kicad_cli'] = cli.stdout.decode().strip()
     router = routing_adapter.preflight(config['router']['checkout'])
-    identities['router'] = {k: router.get(k) for k in (
-        'checkout', 'commit', 'clean', 'code_sha256', 'code_files', 'executable_sha256', 'adapter_sha256')}
+    identities['router'] = {k: router.get(k) for k in ('checkout', *ROUTER_IDENTITY[:-1])}
     problems = list(router['problems'])
     if cli.returncode != 0:
         problems.append('kicad-cli unavailable')
