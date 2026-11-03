@@ -40,10 +40,13 @@ The default author needs a subscription login, not an API key. Set
 `AGENT_EE_CODEX_AUTH_HOME` to the mounted login directory and
 `AGENT_EE_CODEX_BINARY` to the native binary. There is no fallback on login,
 quota or harness failure: the design ends `seat_failed` and the benchmark stops.
-The retained consoles of the first benchmark rounds held no login or quota
-failure, and the harness reports any provider error as the same generic failure,
-so the tool cannot tell a login or quota failure from another stream failure.
-It therefore stops on every seat failure.
+The same holds for review seats: with `--review-profile`, a reviewer execution in
+the review result that is not ok also ends the design `seat_failed`. For either
+seat, a timeout, a seat the stopped run never reached and a structured-output
+refusal are not seat failures. The retained consoles of the first benchmark
+rounds held no login or quota failure, and the harness reports any provider
+error as the same generic failure, so the tool cannot tell a login or quota
+failure from another stream failure. It therefore stops on every seat failure.
 
 An author turn that reaches `--author-seconds` is not a seat failure. While
 attempts and time remain, another author turn starts with the timed-out turn's
@@ -57,30 +60,42 @@ statement is JSON text inside that envelope because its parts/nets maps have
 design-dependent keys. The next author turn reads the experiments of the most
 recent author turn, also after an automatic search retry, at
 `/candidate/prior-author-experiments`; links are not copied, and capture still
-refreshes stock and downloads. The harness deletes each experiment file that
-holds the seat's mounted login, or a long token from it, before the turn is
-retained or forwarded, and records the paths as `credential_copies_refused`.
-Only verbatim copies are detected.
+refreshes stock and downloads.
+
+Remaining risk: a seat can read the login mounted for its turn, and it could copy
+it into its experiments or console. Nothing scans or removes such a copy, and
+the next author turn receives the experiments. Retained experiments stay local
+in the run directory and unpublished; these commands never upload them.
 
 ## Requirement trace
 
-A requirement item is one sentence of the requirements. A sentence ends at `.`,
-`!` or `?` (with any closing quote or bracket) followed by a space and a
-character that is not a lowercase letter. A sentence never spans a blank line,
-heading or list item. Headings are titles: they may be quoted but need no trace.
-The prompt lists the numbered items.
+A requirement item is one sentence of the requirements, or one row of a
+Markdown table (without its outer pipes). A sentence ends at `.`, `!` or `?`
+(with any closing quote or bracket) followed by a space and a character that is
+not a lowercase letter. A sentence never spans a blank line, heading, list item
+or table row. Headings, and table rows above a table's separator row, are
+titles: they may be quoted but need no trace and cover no other item. The
+prompt lists the numbered items.
 
 - `trace` pairs a quote with the design field that carries it. A quote is at
   least three whole words copied from inside one item, or the whole item when it
   is shorter; line breaks and spacing may differ. A field is a path through the
   statement's objects and lists, such as `board.width_mm` or `bench[0]`, never a
   character position inside a text value.
+- A quote covers an item only when it lies inside exactly one item, or when the
+  entry's `item` names the item's number. A quote whose words occur in more than
+  one item, with no `item`, is refused: a shared quote never covers two items.
 - Intent and every `functional[i].text` need a trace.
 - Every item needs a trace quote or an `untraced` entry. An `untraced` entry
   quotes the item and gives status `unsupported` or `not_applicable` and a
-  reason. Nothing is dropped silently: an item with neither is refused.
+  reason. An item with neither is refused.
 - `agent_selected` lists every discretionary choice, each a nonblank label,
   separately from requirement facts.
+
+The sentence split is a heuristic. An abbreviation followed by a capital or a
+digit ends a sentence (`approx. 5 V` gives two items), and a sentence that
+starts with a lowercase letter joins the one before it. Neither drops text, but
+an author may need a correction turn to quote such items.
 
 `provenance.json` keeps the trace, the untraced items and the choices, labelled
 as agent-authored and not owner or datasheet rulings. They are text
@@ -159,11 +174,11 @@ one of these final states:
 | `accepted` | An attempt passed file release (and review when requested). | continues |
 | `unsupported` | The author reported that the compiler subset cannot express the requirements. | continues |
 | `author_timeout` | The last author turn timed out and no attempt or time was left. | continues |
-| `review_incomplete` | The engineering review did not complete; no further seat was called. | continues |
+| `review_incomplete` | The engineering review ended without a usable outcome and no review seat failed; no further seat was called. | continues |
 | `time_exhausted` | `--max-seconds` ran out. | continues |
 | `attempts_exhausted` | `--max-attempts` ran out without acceptance. | continues |
 | `error` | An unexpected error; it is retained and propagated. | continues with an `error` row |
-| `seat_failed` | The author seat failed (login, quota, transport or stream). | stops; later designs are `not_run` |
+| `seat_failed` | The author seat or a review seat failed (login, quota, transport or stream). | stops; later designs are `not_run` |
 | `runtime_refused` | The build refused the native runtime or router pin. | stops; later designs are `not_run` |
 | `interrupted` | SIGINT or SIGTERM stopped the run. | stops; see below |
 
@@ -191,10 +206,16 @@ and `outline_utilisation`. A row's status is the design's final state, or
 
 The benchmark ends `complete` (every design has a row from its own run, which
 can be a failure), `stopped_seat_failed`, `stopped_runtime_refused`,
-`interrupted` or `error`. The CLI exits 0 only when the benchmark is complete and
-every design is accepted (for `generate`: when the design is accepted), 130 when
-interrupted, 2 when an option is refused (for `generate`, also its requirements
-file), and 1 otherwise.
+`interrupted` or `error`.
+
+## Exit codes
+
+| Exit | When |
+|---|---|
+| `0` | `generate`: the design is accepted. `benchmark`: the benchmark is `complete` and every design is accepted. |
+| `1` | The command returned a final report that is not that: any other final state of `generate`, or any other benchmark outcome. Also an unexpected internal error of a type the CLI does not handle, which Python reports with a traceback; any report it reached is retained with status `error`. |
+| `2` | The CLI printed `agent-ee: MESSAGE`. This is a refused option, a host without process-tree support or, for `generate`, a refused requirements file, all before any output. It is also any internal `ValueError`, `OSError`, `KeyError` or `TypeError` that escaped the command, for example from a phase; any report it reached is retained with status `error`. In a benchmark, one design's error is a row, not an exit. |
+| `130` | SIGINT or SIGTERM interrupted the run; its reports are final. |
 
 Each row reports a final-coordinate outline utilisation proxy: the projected
 union of linear courtyard bounding boxes, divided by the stated rectangular
@@ -203,19 +224,35 @@ the outline can shrink. Missing native candidates are explicitly unavailable.
 
 ## Stopping a run
 
-SIGTERM, as sent by `docker stop` or `native-admit`, takes the same path as
-SIGINT. Every report is finalized: the attempt in flight is `interrupted`, the
-generate report is `interrupted`, the benchmark lists the design in flight as
-`interrupted` and every design not started as `not_run`, and the CLI exits 130.
+Every SIGTERM, as sent by `docker stop` or `native-admit`, interrupts the run as
+an operator's SIGINT does, whatever handler SIGINT has. A caller's own SIGINT
+handler is neither called nor replaced, and the previous SIGTERM handler is
+restored when the command returns. While a phase or seat is being launched and
+SIGINT has Python's default handler, the stop is held until the launch returns,
+so the launched process is stopped too. While a final record is written, SIGINT
+and SIGTERM are held and arrive right after it. Every report is finalized: the
+attempt in flight is `interrupted`, the generate report is `interrupted`, the
+benchmark lists the design in flight as `interrupted` (or with its own final
+state if it had just finished) and every design not started as `not_run`, and
+the CLI exits 130. This handling is installed only when the command runs on the
+main thread.
 
 Each capture, compile, build and review phase runs under `agent_ee.process_tree`,
-a child subreaper that keeps every descendant of the phase below it, including
-descendants that start their own sessions. On a stop or a phase timeout the
-phase receives SIGINT and 5 seconds to unwind; then every remaining descendant
-is killed. The coordinator allows the phase 15 seconds for this before it kills
-the phase's own process. A finished phase's leftover descendants are killed too.
-The author sandbox is killed with the seat call, and it dies with the
-coordinator (`bwrap --die-with-parent`).
+a child subreaper. A descendant of the phase whose parent exits, including one
+that started its own session, becomes its child. It signals only its own
+children: each one only after a fresh check, made just before the signal, that
+it is still its child with the start time it first observed. Until it collects a
+child, that child's PID cannot be reused. On a stop or a phase timeout the phase
+receives SIGINT and 5 seconds to unwind; then the phase and every remaining
+descendant are killed. The coordinator allows the phase 15 seconds for this
+before it kills the phase's own process. A finished phase's leftover descendants
+are killed too. The author sandbox is killed with the seat call, and it dies
+with the coordinator (`bwrap --die-with-parent`).
+
+Process-tree ownership needs a readable `/proc` and `prctl`. Without them the
+coordinator refuses to run (exit 2) and `agent_ee.process_tree` refuses to
+launch a phase (exit 125). When it cannot show the tree empty after a phase, it
+reports that and exits 125, so the phase counts as failed.
 
 A SIGKILL of the coordinator cannot be handled: its reports stay `running`. Its
 phases then receive SIGTERM through their parent-death signal and stop their

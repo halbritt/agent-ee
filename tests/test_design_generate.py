@@ -867,6 +867,58 @@ class TraceTests(ScriptedLoop):
         response['trace'].pop(0)
         self.assertIn('intent: supply an exact requirement quote in trace', self.problems(response))
 
+    def test_a_shared_quote_covers_no_item_unless_it_names_one(self):
+        text = 'Provide a labelled connector for input power. Provide a labelled connector for output power.'
+        shared = self.response()
+        shared['trace'] = [dict(field=field, quote='Provide a labelled connector')
+                           for field in ('intent', 'functional[0].text', 'bench')]
+        problems = self.problems(shared, text)
+        self.assertIn('intent: trace.quote occurs in requirement items 1, 2; quote words that occur in one item '
+                      'only, or name the item in item', problems)
+        self.assertIn('requirements: item 1 ("Provide a labelled connector for input power.") has no trace quote '
+                      'and no untraced entry', problems)
+        self.assertIn('requirements: item 2 ("Provide a labelled connector for output power.") has no trace quote '
+                      'and no untraced entry', problems)
+        named = copy.deepcopy(shared)
+        named['trace'][1]['item'], named['trace'][2]['item'] = 1, 2
+        self.assertEqual(self.problems(named, text), ['intent: trace.quote occurs in requirement items 1, 2; quote '
+            'words that occur in one item only, or name the item in item', 'intent: supply an exact requirement quote in trace'])
+        named['trace'][0] = dict(field='intent', quote='connector for output power')
+        self.assertEqual(self.problems(named, text), [])
+        named['trace'][1]['item'] = 3
+        self.assertIn('functional[0].text: trace.quote must lie inside requirement item 3, the item it names',
+                      self.problems(named, text))
+        # The scripted loop refuses the shared quote instead of accepting it.
+        self.requirements.write_text(text)
+        self.responses = [shared]
+        report = self.generate(max_attempts=1)
+        self.assertEqual((report['status'], report['attempts'][0]['status']), ('attempts_exhausted', 'refused'))
+        self.assertIn('requirements', report['attempts'][0]['refusal_classes'])
+
+    def test_table_rows_are_items_and_a_header_covers_none_of_them(self):
+        text = '| Required electrical behavior | Value |\n|---|---|\n| Input | 12 V |\n| Output | 3.3 V |\n'
+        self.assertEqual(loop.requirement_items(text), [('Required electrical behavior | Value', False),
+                                                        ('Input | 12 V', True), ('Output | 3.3 V', True)])
+        response = self.response()
+        response['trace'] = [dict(field=field, quote='Required electrical behavior')
+                             for field in ('intent', 'functional[0].text', 'bench')]
+        self.assertEqual(self.problems(response, text), [
+            'requirements: item 1 ("Input | 12 V") has no trace quote and no untraced entry',
+            'requirements: item 2 ("Output | 3.3 V") has no trace quote and no untraced entry'])
+        response['trace'] += [dict(field='board', quote='Input | 12 V'), dict(field='board', quote='Output | 3.3 V')]
+        self.assertEqual(self.problems(response, text), [])
+
+    def test_an_item_number_is_null_or_a_positive_integer(self):
+        for item in (0, -1, 1.5, '1', True):
+            response = self.response()
+            response['trace'][0]['item'] = item
+            with self.assertRaises(ValueError, msg=repr(item)):
+                loop.validate_response(response)
+        response = self.response()
+        response['trace'][0]['item'] = None
+        response['untraced'] = [dict(quote='Measure it on hardware', item=2, status='not_applicable', reason='Bench.')]
+        self.assertIs(loop.validate_response(response), response)
+
     def test_untraced_entries_need_a_known_status_and_a_reason(self):
         for entry in (dict(quote='Measure it on hardware', status='maybe', reason='x'),
                       dict(quote='Measure it on hardware', status='unsupported', reason='  '),
@@ -949,6 +1001,39 @@ class BenchmarkTests(ScriptedLoop):
             report = loop.benchmark(directory, self.root / 'benchmark', max_attempts=3)
         self.assertEqual(report['status'], 'stopped_runtime_refused')
         self.assertEqual([(r['name'], r['status']) for r in report['designs']], [('a', 'runtime_refused'), ('b', 'not_run')])
+
+    def test_a_review_seat_failure_stops_the_benchmark(self):
+        directory = self.make_dir([('a', REQUIREMENTS), ('b', REQUIREMENTS)])
+        self.responses = [self.response(), self.response()]
+        reviews = []
+        original = self.step
+        def step(attempt, label, argv, seconds):
+            if label != 'review':
+                return original(attempt, label, argv, seconds)
+            reviews.append(attempt.parent.name)
+            (attempt / 'review/review').mkdir(parents=True)
+            # A failed reviewer leaves the engineering dimension unassessed (qualification.py).
+            write_json(attempt / 'review/report.json', dict(outcome='execution_incomplete', qualification=dict(
+                dimensions=dict(engineering_review='not_assessed'))))
+            write_json(attempt / 'review/review/result.json', dict(findings=[], review_executions=[dict(
+                role='circuit', execution='failed', error='subscription quota exhausted; no fallback attempted')]))
+            return dict(execution='failed', exit_code=1)
+        with patch.object(loop, 'run_step', side_effect=step):
+            report = loop.benchmark(directory, self.root / 'benchmark', max_attempts=1, review_profile=self.profile())
+        self.assertEqual(report['status'], 'stopped_seat_failed')
+        self.assertEqual([(r['name'], r['status']) for r in report['designs']], [('a', 'seat_failed'), ('b', 'not_run')])
+        self.assertEqual((len(self.prompts), reviews), (1, ['a']))
+        self.assertIn('Engineering review seat failed (circuit: failed)', report['designs'][0]['reason'])
+
+    def test_review_seat_failures_exclude_timeouts_unreached_seats_and_format_refusals(self):
+        rows = [dict(role='ok', execution='ok'), dict(role='slow', execution='timeout'),
+                dict(role='unreached', execution='not_run'), dict(role='stopped', execution='interrupted'),
+                dict(role='format', execution='malformed', refusal_kind='structured_output'),
+                dict(role='quota', execution='failed', error='quota'), dict(role='stream', execution='malformed'),
+                dict(role='login', execution='unavailable')]
+        self.assertEqual([r['role'] for r in loop.review_seat_failures(dict(review_executions=rows))],
+                         ['quota', 'stream', 'login'])
+        self.assertEqual(loop.review_seat_failures(None), [])
 
     def test_one_designs_error_is_a_row_and_the_rest_still_run(self):
         directory = self.make_dir([('a', REQUIREMENTS), ('b', '   \n'), ('c', ''), ('d', REQUIREMENTS), ('e', REQUIREMENTS)])
@@ -1101,6 +1186,120 @@ class StopTests(ScriptedLoop):
         self.assertTrue(wait_for(lambda: not any(alive(pid) for pid in pids), 10), pids)
 
 
+class SignalTests(ScriptedLoop):
+    """SIGTERM interrupts whatever SIGINT's handler is; a guard fails the test if it is not translated."""
+
+    def setUp(self):
+        super().setUp()
+        def untranslated(signum, frame):
+            raise AssertionError('SIGTERM reached the caller untranslated')
+        self.guard = untranslated
+        previous = signal.signal(signal.SIGTERM, untranslated)
+        self.addCleanup(signal.signal, signal.SIGTERM, previous)
+
+    def sigint(self, handler):
+        previous = signal.signal(signal.SIGINT, handler)
+        self.addCleanup(signal.signal, signal.SIGINT, previous)
+
+    def test_sigterm_interrupts_even_with_a_custom_sigint_handler(self):
+        seen = []
+        def custom(signum, frame):
+            seen.append(signum)
+        self.sigint(custom)
+        def seat(*args, **options):
+            os.kill(os.getpid(), signal.SIGTERM)
+            os.kill(os.getpid(), signal.SIGTERM)
+            time.sleep(10)
+            raise AssertionError('SIGTERM did not stop the author turn')
+        with patch.object(loop.harnesses, 'native_call', side_effect=seat):
+            with self.assertRaises(KeyboardInterrupt):
+                self.generate(max_attempts=1)
+        self.assertEqual(seen, [])
+        self.assertEqual(self.saved()['status'], 'interrupted')
+        self.assertIs(signal.getsignal(signal.SIGINT), custom)
+        self.assertIs(signal.getsignal(signal.SIGTERM), self.guard)
+
+    def test_sigterm_interrupts_while_an_ignored_sigint_stays_ignored(self):
+        self.sigint(signal.SIG_IGN)
+        with loop.stop_signals():
+            os.kill(os.getpid(), signal.SIGINT)
+            time.sleep(0.05)
+            with self.assertRaises(KeyboardInterrupt):
+                os.kill(os.getpid(), signal.SIGTERM)
+                time.sleep(10)
+        self.assertEqual(signal.getsignal(signal.SIGINT), signal.SIG_IGN)
+        self.assertIs(signal.getsignal(signal.SIGTERM), self.guard)
+
+    def test_every_sigterm_interrupts_while_the_scope_lasts(self):
+        with loop.stop_signals():
+            for _ in range(3):
+                with self.assertRaises(KeyboardInterrupt):
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    time.sleep(10)
+
+    def test_a_stop_during_a_final_write_arrives_right_after_it(self):
+        written = []
+        with loop.stop_signals():
+            with self.assertRaises(KeyboardInterrupt):
+                with loop.held_stops():
+                    signal.pthread_kill(threading.main_thread().ident, signal.SIGTERM)
+                    time.sleep(0.05)
+                    written.append('report')
+                time.sleep(10)
+        self.assertEqual(written, ['report'])
+
+
+class ProcessTreeTests(ScriptedLoop):
+    def detached(self):
+        """A process that is not this process's child: a session-detached grandchild."""
+        launch = subprocess.run([sys.executable, '-c', 'import subprocess, sys; print(subprocess.Popen('
+                                 '[sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True, '
+                                 'stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid)'],
+                                capture_output=True, text=True, timeout=30, check=True)
+        pid = int(launch.stdout)
+        self.addCleanup(kill_all, [pid])
+        return pid
+
+    def test_a_stale_snapshot_naming_an_unrelated_process_signals_nothing(self):
+        outsider = self.detached()
+        start = loop.process_tree.stat(outsider)[2]
+        with patch.object(loop.process_tree, 'children', return_value=[(outsider, start)]), \
+             patch.object(loop.process_tree, 'reap'):
+            self.assertTrue(loop.process_tree.stop_tree())
+        self.assertTrue(alive(outsider))
+
+    def test_a_child_whose_start_time_differs_from_the_snapshot_is_not_signalled(self):
+        own = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        self.addCleanup(own.wait)
+        self.addCleanup(own.kill)
+        start = loop.process_tree.stat(own.pid)[2]
+        with patch.object(loop.process_tree, 'children', return_value=[(own.pid, start + 1)]), \
+             patch.object(loop.process_tree, 'reap'):
+            self.assertTrue(loop.process_tree.stop_tree())
+        self.assertIsNone(own.poll())
+
+    def test_without_a_readable_proc_the_phase_is_not_launched(self):
+        for name in [*map(int, loop.process_tree.STOP_SIGNALS), int(signal.SIGCHLD)]:
+            self.addCleanup(signal.signal, name, signal.getsignal(name))
+        (self.root / 'empty-proc').mkdir()
+        for proc in (self.root / 'absent-proc', self.root / 'empty-proc'):
+            with patch.object(loop.process_tree, 'PROC', str(proc)), \
+                 patch.object(loop.process_tree, 'prctl') as prctl, \
+                 patch.object(loop.process_tree.subprocess, 'Popen') as launch:
+                self.assertIsNotNone(loop.process_tree.support_problem())
+                status = loop.process_tree.main([str(os.getppid()), '--', sys.executable, '-c', 'pass'])
+            self.assertEqual(status, 125, proc)
+            launch.assert_not_called()
+            prctl.assert_not_called()
+
+    def test_the_coordinator_refuses_to_run_without_process_tree_support(self):
+        with patch.object(loop.process_tree, 'support_problem', return_value='/proc cannot be read (simulated)'):
+            with self.assertRaisesRegex(ValueError, 'process_tree: /proc cannot be read'):
+                self.generate()
+        self.assertFalse((self.root / 'run').exists())
+        self.assertFalse(self.prompts)
+
+
 class DocsTests(unittest.TestCase):
     def test_doc_names_every_option_with_its_default_and_every_final_state(self):
         text = (ROOT / 'docs/design-generate.md').read_text()
@@ -1119,6 +1318,10 @@ class DocsTests(unittest.TestCase):
                       'runtime_refused', 'time_exhausted', 'attempts_exhausted', 'interrupted', 'error',
                       'complete', 'stopped_seat_failed', 'stopped_runtime_refused', 'not_run'):
             self.assertIn(f'`{state}`', text, state)
+        for code in ('0', '1', '2', '130'):
+            self.assertRegex(text, rf'\n\| `{code}` \| ', code)
+        # Internal errors of these types leave through the CLI's handler with exit 2.
+        self.assertIn('internal `ValueError`, `OSError`, `KeyError` or `TypeError`', text)
 
 
 if __name__ == '__main__':

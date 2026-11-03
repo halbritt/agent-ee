@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 
-from . import design, harnesses, native_run, review_run
+from . import design, harnesses, native_run, process_tree, review_run
 from .storage import digest, write_json
 
 SCHEMA = 'agent-ee.design-generate/1'
@@ -47,10 +47,14 @@ PHASE_STOP_GRACE_S = 15
 SEAT_KICAD_ROOT = '/kicad'
 ROUTER_PIN = Path(__file__).with_name('data') / 'kicad-route-pin.json'
 
-ITEM_RULE = ('A requirement item is one sentence of REQUIREMENTS.md; a sentence never spans a heading, '
-             'paragraph or list item. Headings are titles, not items.')
+ITEM_RULE = ('A requirement item is one sentence of REQUIREMENTS.md, or one row of a Markdown table; a '
+             'sentence never spans a heading, paragraph, list item or table row. Headings and table header '
+             'rows are titles, not items.')
 QUOTE_RULE = (f'At least {MIN_QUOTE_WORDS} whole words copied exactly from inside one requirement item, or '
-              'the whole item when it is shorter. Line breaks and spacing may differ.')
+              'the whole item when it is shorter. Line breaks and spacing may differ. A quote whose words '
+              'occur in more than one item covers none of them unless item names its item.')
+ITEM_NUMBER_RULE = ('The number of the requirement item the quote is taken from, as numbered in the prompt. '
+                    'Needed when the quoted words occur in more than one item; otherwise null.')
 AUTHOR_SCHEMA = dict(type='object', additionalProperties=False,
     required=['status', 'reason', 'statement_json', 'trace', 'untraced', 'agent_selected'], properties=dict(
         status=dict(type='string', enum=['ready', 'unsupported']),
@@ -61,11 +65,13 @@ AUTHOR_SCHEMA = dict(type='object', additionalProperties=False,
             required=['field', 'quote'], properties=dict(
                 field=dict(type='string', description='A design field path such as intent, functional[0].text, '
                     'board.width_mm or bench[1]; never a character position inside a text value.'),
-                quote=dict(type='string', description=QUOTE_RULE)))),
+                quote=dict(type='string', description=QUOTE_RULE),
+                item=dict(type='integer', description=ITEM_NUMBER_RULE)))),
         untraced=dict(type='array', description='Each requirement item that no trace quotes, with why the '
             'design does not carry it.', items=dict(type='object', additionalProperties=False,
             required=['quote', 'status', 'reason'], properties=dict(
                 quote=dict(type='string', description=QUOTE_RULE),
+                item=dict(type='integer', description=ITEM_NUMBER_RULE),
                 status=dict(type='string', enum=['unsupported', 'not_applicable']),
                 reason=dict(type='string')))),
         agent_selected=dict(type='array', items=dict(type='string'))))
@@ -118,6 +124,9 @@ def resolve_options(options):
     options['kicad_root'] = Path(options['kicad_root'])
     if seat_kicad_root(options['kicad_root'])[1] and not options['kicad_root'].is_dir():
         raise ValueError('kicad_root: supply an existing KiCad library directory')
+    problem = process_tree.support_problem()
+    if problem is not None:
+        raise ValueError(f'process_tree: {problem}; phase process trees cannot be owned, so nothing runs')
     return options
 
 
@@ -131,6 +140,13 @@ def seat_kicad_root(kicad_root):
     return SEAT_KICAD_ROOT, ((resolved, SEAT_KICAD_ROOT),)
 
 
+def entries(rows, keys):
+    """A list of objects with string keys and an optional item number (null when absent)."""
+    return isinstance(rows, list) and all(isinstance(t, dict) and keys <= set(t) <= keys | {'item'}
+        and all(isinstance(t[k], str) for k in keys)
+        and (t.get('item') is None or (type(t['item']) is int and t['item'] >= 1)) for t in rows)
+
+
 def validate_response(value):
     if not isinstance(value, dict) or set(value) != set(AUTHOR_SCHEMA['properties']):
         raise ValueError('author response: supply all documented envelope fields')
@@ -138,12 +154,10 @@ def validate_response(value):
         raise ValueError('author response.status: use ready or unsupported')
     if any(not isinstance(value[k], str) for k in ('reason', 'statement_json')):
         raise ValueError('author response: reason and statement_json must be strings')
-    if not isinstance(value['trace'], list) or any(not isinstance(t, dict) or set(t) != {'field', 'quote'}
-            or any(not isinstance(t[k], str) for k in t) for t in value['trace']):
-        raise ValueError('author response.trace: supply field/quote objects')
-    if not isinstance(value['untraced'], list) or any(not isinstance(t, dict) or set(t) != {'quote', 'status', 'reason'}
-            or any(not isinstance(t[k], str) for k in t) for t in value['untraced']):
-        raise ValueError('author response.untraced: supply quote/status/reason objects')
+    if not entries(value['trace'], {'field', 'quote'}):
+        raise ValueError('author response.trace: supply field/quote objects (item: null or a positive integer)')
+    if not entries(value['untraced'], {'quote', 'status', 'reason'}):
+        raise ValueError('author response.untraced: supply quote/status/reason objects (item: null or a positive integer)')
     if any(t['status'] not in ('unsupported', 'not_applicable') or not t['reason'].strip() for t in value['untraced']):
         raise ValueError('author response.untraced: use status unsupported or not_applicable, with a reason')
     if not isinstance(value['agent_selected'], list) or any(not isinstance(t, str) for t in value['agent_selected']):
@@ -156,6 +170,7 @@ def validate_response(value):
 _WORD = re.compile(r'\w+')
 _LIST_MARKER = re.compile(r'(?:[-*+]|\d{1,9}[.)])\s+')
 _SENTENCE_BREAK = re.compile(r'[.!?]["\')\]]*( )(?=[^a-z])')
+_TABLE_RULE = re.compile(r'\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?')
 
 
 def normalize(text):
@@ -174,23 +189,32 @@ def split_sentences(text):
 
 
 def requirement_items(text):
-    """[(sentence, required)] for the requirement text.
+    """[(text, required)] for the requirement text.
 
     Every sentence of every paragraph and list item is a required item; a sentence never
-    spans a blank line, heading or list item. Heading text may be quoted but needs no trace."""
-    items, block = [], []
+    spans a blank line, heading, list item or table row. Each Markdown table row is one
+    required item, without its outer pipes. Headings, and the header rows above a table's
+    separator row, are titles: they may be quoted but need no trace and cover no row."""
+    items, block, table = [], [], []
 
     def flush():
         items.extend((sentence, True) for sentence in split_sentences(normalize(' '.join(block))))
         block.clear()
+        rules = [n for n, row in enumerate(table) if _TABLE_RULE.fullmatch(row)]
+        for n, row in enumerate(table):
+            if n not in rules and _WORD.search(row):
+                items.append((normalize(row.strip('|')), not rules or n > rules[0]))
+        table.clear()
 
     for line in text.splitlines():
         stripped = line.strip()
         marker = _LIST_MARKER.match(stripped)
-        if not stripped or stripped.startswith('#') or marker:
+        if not stripped or stripped.startswith('#') or marker or stripped.startswith('|') != bool(table):
             flush()
         if stripped.startswith('#'):
             items.extend((sentence, False) for sentence in split_sentences(normalize(stripped.lstrip('#'))))
+        elif stripped.startswith('|'):
+            table.append(stripped)
         elif marker:
             block.append(stripped[marker.end():])
         elif stripped:
@@ -203,8 +227,11 @@ def excerpt(text, limit=80):
     return text if len(text) <= limit else text[:limit - 3] + '...'
 
 
-def quote_items(quote, items, whole, label):
-    """(problem or None, indexes of the requirement items this quote covers)."""
+def quote_items(quote, items, whole, label, number=None):
+    """(problem or None, the index of the required item this quote covers, if any).
+
+    A quote covers a required item only when it lies inside exactly one required item, or
+    when number names the item it is taken from: a shared quote never covers two items."""
     text = normalize(quote)
     if not text or text not in whole:
         return f'{label} must be an exact nonempty span of REQUIREMENTS.md', set()
@@ -212,12 +239,21 @@ def quote_items(quote, items, whole, label):
     within = [index for index, (item, _) in enumerate(items) if found.search(item)]
     if not within:
         return (f'{label} must start and end on word boundaries inside one requirement item '
-                '(a sentence or list item)'), set()
+                '(a sentence, list item or table row)'), set()
     words = len(_WORD.findall(text))
-    covered = {index for index in within if words >= min(MIN_QUOTE_WORDS, len(_WORD.findall(items[index][0])))}
-    if not covered:
+    fits = [index for index in within if words >= min(MIN_QUOTE_WORDS, len(_WORD.findall(items[index][0])))]
+    if not fits:
         return f'{label} must hold at least {MIN_QUOTE_WORDS} whole words, or a whole shorter requirement item', set()
-    return None, covered
+    numbers = [n for n, (item, required) in enumerate(items) if required]
+    if number is not None:
+        if not 1 <= number <= len(numbers) or numbers[number - 1] not in fits:
+            return f'{label} must lie inside requirement item {number}, the item it names', set()
+        return None, {numbers[number - 1]}
+    shared = [numbers.index(index) + 1 for index in fits if items[index][1]]
+    if len(shared) > 1:
+        return (f'{label} occurs in requirement items {", ".join(map(str, shared))}; quote words that occur in '
+                'one item only, or name the item in item'), set()
+    return None, {numbers[shared[0] - 1]} if shared else set()
 
 
 def trace_problems(response, statement, requirements):
@@ -229,14 +265,14 @@ def trace_problems(response, statement, requirements):
         if not trace_field_exists(statement, row['field']):
             problems.append('trace.' + row['field'] + ': cite an existing design field, never a position inside a text value')
             continue
-        problem, quoted = quote_items(row['quote'], items, whole, 'trace.quote')
+        problem, quoted = quote_items(row['quote'], items, whole, 'trace.quote', row.get('item'))
         if problem:
             problems.append(row['field'] + ': ' + problem)
         else:
             seen.add(row['field'])
             covered |= quoted
     for index, row in enumerate(response['untraced']):
-        problem, quoted = quote_items(row['quote'], items, whole, 'untraced.quote')
+        problem, quoted = quote_items(row['quote'], items, whole, 'untraced.quote', row.get('item'))
         if problem:
             problems.append(f'untraced[{index}]: ' + problem)
         else:
@@ -310,7 +346,9 @@ the design field that carries it (any field path such as board.width_mm or bench
 never a character inside a text value). An item the design does not carry goes in
 untraced with that quote, status unsupported or not_applicable, and a reason. A quote
 is at least {MIN_QUOTE_WORDS} whole words copied from inside one item, or the whole item
-when it is shorter; line breaks and spacing may differ. {ITEM_RULE}
+when it is shorter; line breaks and spacing may differ. A quote whose words occur in
+more than one item covers none of them: quote words found in one item only, or set
+item to that item's number. {ITEM_RULE}
 These quotes establish text traceability, not proof of engineering correctness.
 Functional witnesses must independently specify intended pin roles; native parity alone
 cannot establish them. Put behavioral/performance claims and physical tests in bench.
@@ -362,30 +400,45 @@ def run_step(attempt, label, argv, seconds):
 
 @contextlib.contextmanager
 def stop_signals():
-    """SIGTERM takes SIGINT's path while a coordinator runs.
+    """While a coordinator runs, every SIGTERM stops it as an operator interrupt does.
 
     docker stop and native-admit end a job with SIGTERM, and python as PID 1 has no handler
-    of its own for it. Here SIGTERM raises SIGINT: a launch in progress holds it (as
-    executor.held_interrupt does) and otherwise the run unwinds as KeyboardInterrupt, which
-    finalizes every report. Later SIGTERMs are ignored while that unwind runs."""
+    of its own for it. Here each SIGTERM raises KeyboardInterrupt, whatever handler SIGINT
+    has: the run unwinds and finalizes every report. While a launch holds interrupts
+    (executor.held_interrupt replaced SIGINT's handler for it), the SIGTERM goes to that
+    hold, so the launched process is still owned and stopped. SIGINT keeps the caller's
+    handler. The previous SIGTERM handler is restored on exit. Main thread only: a call
+    from another thread installs nothing."""
     if threading.current_thread() is not threading.main_thread():
         yield
         return
+    entry_int = signal.getsignal(signal.SIGINT)
 
     def terminate(signum, frame):
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        signal.raise_signal(signal.SIGINT)
+        held = signal.getsignal(signal.SIGINT)
+        if held is not entry_int and callable(held):
+            held(signal.SIGINT, frame)
+            return
+        raise KeyboardInterrupt
 
-    previous_int = signal.getsignal(signal.SIGINT)
-    if not callable(previous_int):
-        signal.signal(signal.SIGINT, signal.default_int_handler)
     previous = signal.signal(signal.SIGTERM, terminate)
     try:
         yield
     finally:
         signal.signal(signal.SIGTERM, signal.SIG_DFL if previous is None else previous)
-        if previous_int is not None and not callable(previous_int):
-            signal.signal(signal.SIGINT, previous_int)
+
+
+@contextlib.contextmanager
+def held_stops():
+    """Delay SIGINT and SIGTERM while a final record is written; they arrive right after."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
 
 
 def read_optional(path):
@@ -446,6 +499,17 @@ def review_feedback(result):
               'recommendation', 'disposition', 'disposition_reason')
     return [{key: row[key][:1200] if isinstance(row[key], str) else row[key]
              for key in fields if key in row} for row in rows]
+
+
+def review_seat_failures(result):
+    """Review seats that failed as a subscription seat fails: any execution that is not ok,
+    except a timeout, a seat the stopped run never reached, and a structured-output refusal
+    (as for the author, those are not login, quota or transport failures)."""
+    return [{key: row.get(key) for key in ('role', 'execution', 'error')}
+            for row in (result or {}).get('review_executions', [])
+            if isinstance(row, dict) and row.get('execution') != 'ok'
+            and row.get('execution') not in ('timeout', 'not_run', 'interrupted')
+            and not (row.get('execution') == 'malformed' and row.get('refusal_kind') == 'structured_output')]
 
 
 def review_reason(findings, reviewed, attempt, record):
@@ -601,7 +665,7 @@ def run_identity(options, requirements):
 
 
 def generate(requirements_path, out, **options):
-    """Run one design to a final state. SIGTERM takes SIGINT's path; every report is final."""
+    """Run one design to a final state. SIGTERM interrupts it like SIGINT; every report is final."""
     with stop_signals():
         return _generate(requirements_path, out, resolve_options(options))
 
@@ -690,8 +754,6 @@ def _generate(requirements_path, out, options, identity=None):
                             min(timeout, remaining(deadline)), log_bytes=AUTHOR_CONSOLE_BYTES,
                             extra_mounts=seat_mounts), validate_response)
                     row['author_execution'] = record['execution']
-                    if record.get('credential_copies_refused'):
-                        row['credential_copies_refused'] = record['credential_copies_refused']
                     write_json(attempt / 'response.json', response)
                     if response is None:
                         if record['execution'] == 'malformed' and record.get('refusal_kind') == 'structured_output':
@@ -784,6 +846,14 @@ def _generate(requirements_path, out, options, identity=None):
                     if record['execution'] != 'ok' or record.get('exit_code') != 0 or dimension != 'pass':
                         result = read_optional(attempt / 'review/review/result.json')
                         row['review_findings'] = review_feedback(result or {})
+                        failed = review_seat_failures(result)
+                        if failed:
+                            # As for the author: no fallback, no further seat, and the benchmark stops.
+                            row.update(status='seat_failed', failing_stage='review', review_seat_failures=failed,
+                                reason='Engineering review seat failed (' + ', '.join(
+                                    f'{r["role"]}: {r["execution"]}' for r in failed) + '); no fallback attempted')
+                            report['status'] = 'seat_failed'
+                            break
                         if dimension not in ('pass', 'failed'):
                             row.update(status='review_incomplete', reason='Engineering review did not complete; inspect retained execution records. No further seat called.')
                             report['status'] = 'review_incomplete'
@@ -822,12 +892,13 @@ def _generate(requirements_path, out, options, identity=None):
                 row.update(status='error', reason=f'{type(exc).__name__}: {exc}')
                 raise
             finally:
-                row['duration_s'] = time.monotonic() - began
-                # Full feedback is retained. Only the bounded excerpt goes into the next prompt.
-                if len(feedback) > FEEDBACK_CHARS:
-                    feedback = feedback[:FEEDBACK_CHARS] + '\n[Feedback excerpt ends; full refusal retained in preceding attempt.]'
-                write_json(attempt / 'attempt.json', row)
-                save()
+                with held_stops():
+                    row['duration_s'] = time.monotonic() - began
+                    # Full feedback is retained. Only the bounded excerpt goes into the next prompt.
+                    if len(feedback) > FEEDBACK_CHARS:
+                        feedback = feedback[:FEEDBACK_CHARS] + '\n[Feedback excerpt ends; full refusal retained in preceding attempt.]'
+                    write_json(attempt / 'attempt.json', row)
+                    save()
         if report['status'] in ('running', 'time_exhausted') and report['attempts'][-1:] and \
                 report['attempts'][-1]['status'] == 'author_timeout':
             # The last author turn timed out and no attempt or time is left for another.
@@ -842,11 +913,12 @@ def _generate(requirements_path, out, options, identity=None):
         report.update(status='error', error=f'{type(exc).__name__}: {exc}')
         raise
     finally:
-        if not report['accepted']:
-            # Claims describe the final outcome: nothing is claimed without an accepted attempt.
-            reviewed = any(r.get('engineering_review', 'not_run') != 'not_run' for r in report['attempts'])
-            report['claims'].update(file_release=False, engineering_review='not_claimed' if reviewed else 'not_run')
-        save()
+        with held_stops():
+            if not report['accepted']:
+                # Claims describe the final outcome: nothing is claimed without an accepted attempt.
+                reviewed = any(r.get('engineering_review', 'not_run') != 'not_run' for r in report['attempts'])
+                report['claims'].update(file_release=False, engineering_review='not_claimed' if reviewed else 'not_run')
+            save()
     return report
 
 
@@ -894,7 +966,7 @@ def design_row(path, run, status=None, reason=None):
 
 
 def benchmark(directory, out, **options):
-    """Every *.md design in filename order. SIGTERM takes SIGINT's path; every report is final."""
+    """Every *.md design in filename order. SIGTERM interrupts it like SIGINT; every report is final."""
     with stop_signals():
         return _benchmark(directory, out, resolve_options(options))
 
@@ -921,7 +993,11 @@ def _benchmark(directory, out, options):
             if path.stem in listed:
                 continue
             if path == in_flight:
-                report['designs'].append(design_row(path, out / path.stem, current_status, current_reason))
+                row = design_row(path, out / path.stem)
+                if row['status'] in (None, 'running'):
+                    # No final report of its own: the stop decides its state.
+                    row = design_row(path, out / path.stem, current_status, current_reason)
+                report['designs'].append(row)
             else:
                 report['designs'].append(design_row(path, out / path.stem, 'not_run', stop))
 
@@ -946,15 +1022,18 @@ def _benchmark(directory, out, options):
         else:
             report['status'] = 'complete'
     except KeyboardInterrupt:
-        report['status'] = 'interrupted'
-        list_rest('interrupted', 'interrupted', 'Coordinator interrupted during this design; partial artifacts retained')
+        with held_stops():
+            report['status'] = 'interrupted'
+            list_rest('interrupted', 'interrupted', 'Coordinator interrupted during this design; partial artifacts retained')
         raise
     except BaseException as exc:
-        report.update(status='error', error=f'{type(exc).__name__}: {exc}')
-        list_rest('error', 'error', report['error'])
+        with held_stops():
+            report.update(status='error', error=f'{type(exc).__name__}: {exc}')
+            list_rest('error', 'error', report['error'])
         raise
     finally:
-        save()
+        with held_stops():
+            save()
     return report
 
 
