@@ -41,7 +41,7 @@ MUTANTS = {'baseline': ([],
                              ['test_local_decoupling']),
  'G2_leg_ignores_obstacles': ([('src/agent_ee/local_decoupling.py',
                                 "    boxes = _obstacles(board, first.GetNetCode(), layer, rules['clearance'] "
-                                '+ width // 2 + 25_000, (first, second))\n',
+                                '+ width // 2 + 25_000, (first, second), joinable=joinable)\n',
                                 '    boxes = []\n')],
                               ['test_local_decoupling']),
  'G3_leg_tracks_unlocked': ([('src/agent_ee/local_decoupling.py',
@@ -77,9 +77,9 @@ MUTANTS = {'baseline': ([],
                                 ['test_local_decoupling']),
  'G9_leg_obstacle_margin_zero': ([('src/agent_ee/local_decoupling.py',
                                    '    boxes = _obstacles(board, first.GetNetCode(), layer, '
-                                   "rules['clearance'] + width // 2 + 25_000, (first, second))\n",
+                                   "rules['clearance'] + width // 2 + 25_000, (first, second), joinable=joinable)\n",
                                    '    boxes = _obstacles(board, first.GetNetCode(), layer, 0, (first, '
-                                   'second))\n')],
+                                   'second), joinable=joinable)\n')],
                                  ['test_local_decoupling']),
  'G10_tie_ignores_other_net_obstacles': ([('src/agent_ee/local_decoupling.py',
                                            '        if _via_site_blocked(board, via, terminal, rules, via_obstacles):\n'
@@ -92,13 +92,10 @@ MUTANTS = {'baseline': ([],
                               '        return False\n')],
                             ['test_local_decoupling']),
  'C2_no_junction_through_pad': ([('src/agent_ee/decoupling_loops.py',
-                                  "                    if item.GetClass() != 'PAD' and other.GetClass() != "
-                                  "'PAD' and any(\n"
-                                  '                            self.items[p].IsOnLayer(layer) and '
-                                  'all(self.items[p].GetEffectiveShape(layer).Collide(\n'
-                                  '                                k.VECTOR2I(round(point[0]), '
-                                  'round(point[1])), 0) for point in (a, b))\n'
-                                  '                            for p in touching[key] & touching[target]):\n'
+                                  "                    if item.GetClass() != 'PAD' and "
+                                  "other.GetClass() != 'PAD' and junction_in_pad(\n"
+                                  '                            item, other, layer, [self.items[p] '
+                                  'for p in touching[key] & touching[target]]):\n'
                                   '                        continue\n',
                                   '')],
                                 ['test_local_decoupling']),
@@ -425,11 +422,12 @@ MUTANTS.update({'R3_M1_corridor_counts_only_contained_boxes': ([('src/agent_ee/l
                                  'a[1]+2_000_000 and v >= a[1]-2_000_000\n',
                                  '        return True\n')],
                                ['test_local_decoupling.ReviewRegressionTests.test_via_site_work_ignores_8000_distant_obstacles']),
- 'R7_N4_statement_order_encloses_later_capacitor': ([('src/agent_ee/local_decoupling.py',
-                                                      "    for relation in sorted(document['relations'], "
-                                                      'key=relation_order):\n',
-                                                      "    for relation in document['relations']:\n")],
-                                                    ['test_local_decoupling.ReviewRegressionTests.test_three_capacitor_bank_reaches_nearest_capacitor_before_enclosing_it'])})
+'R7_N4_statement_order_encloses_later_capacitor': ([('src/agent_ee/local_decoupling.py',
+                                                      "    ordered = sorted(document['relations'], "
+                                                      "key=relation_order) if order == 'nearest-first' else "
+                                                      "document['relations']\n",
+                                                      "    ordered = document['relations']\n")],
+                                                    ['test_local_decoupling.ReviewRegressionTests.test_nearest_order_is_applied_within_stable_bank_order'])})
 
 # R3_M3e's class-to-floor change is intended in round six. Removing the via
 # fabrication floor instead is a non-equivalent fault and must be killed.
@@ -438,6 +436,67 @@ MUTANTS['R7_same_net_via_obstacle_loses_floor'] = ([(
     "            track_margin = max(0, margin - _rules(board, item)['clearance'] + _separation_floor(board))\n",
     "            track_margin = max(0, margin - _rules(board, item)['clearance'] + (0 if item.GetClass() == 'PCB_VIA' else _separation_floor(board)))\n")],
     ['test_local_decoupling.ReviewRegressionTests.test_search_keeps_native_floor_from_an_existing_plane_via'])
+
+MUTANTS.update({'R4_V1_verify_floor_contact_only': ([('src/agent_ee/local_decoupling.py',
+                                       '    required_gap = _separation_floor(board)\n',
+                                       '    required_gap = 1\n')],
+                                     ['test_local_decoupling']),
+ 'R4_V2_verify_ignores_overlap_outside_shared_pad': ([('src/agent_ee/local_decoupling.py',
+                                                       '        if outside.IsEmpty():\n'
+                                                       '            return None\n',
+                                                       '        if True:\n            return None\n')],
+                                                     ['test_local_decoupling']),
+ 'R4_V3_shared_pad_interior_inflated_50um': ([('src/agent_ee/local_decoupling.py',
+                                               '            terminal.TransformShapeToPolygon(inside, layer, '
+                                               '0, 1, k.ERROR_INSIDE)\n',
+                                               '            terminal.TransformShapeToPolygon(inside, layer, '
+                                               '50_000, 1, k.ERROR_INSIDE)\n')],
+                                             ['test_local_decoupling']),
+ 'R4_V4_tie_path_contact_only': ([('src/agent_ee/local_decoupling.py',
+                                   '            if other.IsOnLayer(layer) and _too_close(segment, other, '
+                                   'layer, [terminal], _same_net_search_gap(board)):\n',
+                                   '            if other.IsOnLayer(layer) and _too_close(segment, other, '
+                                   'layer, [terminal], 1):\n')],
+                                 ['test_local_decoupling']),
+ 'R4_V5_floor_halved': ([('src/agent_ee/local_decoupling.py',
+                          '    return value\n\n\ndef _same_net_search_gap',
+                          '    return value // 2\n\n\ndef _same_net_search_gap')],
+                        ['test_local_decoupling']),
+ 'R4_O1_document_order': ([('src/agent_ee/local_decoupling.py',
+                            "    ordered = sorted(document['relations'], key=relation_order) if order == "
+                            "'nearest-first' else document['relations']\n",
+                            "    ordered = document['relations']\n")],
+                          ['test_local_decoupling.ReviewRegressionTests.test_nearest_order_is_applied_within_stable_bank_order']),
+ 'R4_O2_order_ignores_bank': ([('src/agent_ee/local_decoupling.py',
+                                "        return bank_order[bank_ids[relation['id']]], length\n",
+                                '        return length\n')],
+                              ['test_local_decoupling.ReviewRegressionTests.test_nearest_order_is_applied_within_stable_bank_order']),
+ 'R4_O3_farthest_first': ([('src/agent_ee/local_decoupling.py',
+                            "        return bank_order[bank_ids[relation['id']]], length\n",
+                            "        return bank_order[bank_ids[relation['id']]], -length\n")],
+                          ['test_local_decoupling.ReviewRegressionTests.test_nearest_order_is_applied_within_stable_bank_order']),
+ 'R4_N1_via_collection_drops_via_radius': ([('src/agent_ee/local_decoupling.py',
+                                             '        x, y, u, v = _box(item, radius + gap)\n',
+                                             '        x, y, u, v = _box(item, gap)\n')],
+                                           ['test_local_decoupling']),
+ 'R8_C3_track_pad_floor_ignored': ([('src/agent_ee/local_decoupling.py',
+                                     "gap = max(clearance, _rules(board, terminal)['clearance']) if via else "
+                                     'required_gap',
+                                     "gap = max(clearance, _rules(board, terminal)['clearance']) if via else "
+                                     '1')],
+                                   ['test_local_decoupling.ReviewRegressionTests.test_undeclared_same_net_pad_keeps_the_native_floor_in_guard_and_report']),
+ 'R8_C4_missing_floor_allowed': ([('src/agent_ee/local_decoupling.py',
+                                   "    if value <= 0:\n        raise JobRefusal('local copper requires",
+                                   "    if False:\n        raise JobRefusal('local copper requires")],
+                                 ['test_local_decoupling.ReviewRegressionTests.test_missing_or_zero_clearance_without_a_bound_profile_refuses_local_copper']),
+ 'R8_C5_document_retry_removed': ([('src/agent_ee/local_decoupling.py',
+                                    "    for order in ('nearest-first', 'document'):\n",
+                                    "    for order in ('nearest-first',):\n")],
+                                  ['test_local_decoupling.ReviewRegressionTests.test_failed_nearest_order_leaves_no_copper_in_the_document_retry']),
+ 'R8_C3_report_omits_pad_pairs': ([('src/agent_ee/local_decoupling.py',
+                                    '    pad_rows = []\n    for uid, item in tracks.items():',
+                                    '    pad_rows = []\n    for uid, item in ():')],
+                                  ['test_local_decoupling.ReviewRegressionTests.test_undeclared_same_net_pad_keeps_the_native_floor_in_guard_and_report'])})
 
 def run(name):
     edits, tests = MUTANTS[name]

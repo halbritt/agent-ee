@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 
 from . import local_loop_geometry as geo
-from .local_decoupling import banks, endpoint_key, pad, position, validate
+from .local_decoupling import banks, endpoint_key, junction_in_pad, pad, position, validate
 from .storage import digest, read_json, write_json
 
 
@@ -54,11 +54,8 @@ class CopperGraph:
                     continue
                 for layer in set(item.GetLayerSet().CuStack()) & set(other.GetLayerSet().CuStack()):
                     a, b = geo.closest(self.line(item), self.line(other))
-                    # Sharing a pad does not hide a junction elsewhere on the tracks.
-                    if item.GetClass() != 'PAD' and other.GetClass() != 'PAD' and any(
-                            self.items[p].IsOnLayer(layer) and all(self.items[p].GetEffectiveShape(layer).Collide(
-                                k.VECTOR2I(round(point[0]), round(point[1])), 0) for point in (a, b))
-                            for p in touching[key] & touching[target]):
+                    if item.GetClass() != 'PAD' and other.GetClass() != 'PAD' and junction_in_pad(
+                            item, other, layer, [self.items[p] for p in touching[key] & touching[target]]):
                         continue
                     self.edge(self.port(key, layer, a), self.port(target, layer, b), math.dist(a, b))
         self.islands = []

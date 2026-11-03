@@ -125,28 +125,69 @@ def _rules(board, terminal):
 
 
 def _separation_floor(board):
-    return int(board.GetDesignSettings().m_MinClearance)
+    from .placement_job import JobRefusal
+    value = int(board.GetDesignSettings().m_MinClearance)
+    if value <= 0 and board.GetFileName():
+        # KiCad can retain a cached default project in a long-lived process.
+        # Read the authored rule, never a class preference or an assumed fab.
+        from .storage import read_json
+        project = Path(board.GetFileName()).with_suffix('.kicad_pro')
+        if project.is_file():
+            authored = read_json(project).get('board', {}).get('design_settings', {}).get('rules', {}).get('min_clearance', 0)
+            if type(authored) in (int, float) and math.isfinite(authored) and authored > 0:
+                value = round(authored * 1e6)
+                board.GetDesignSettings().m_MinClearance = value
+    if value <= 0:
+        raise JobRefusal('local copper requires a nonzero authored minimum copper clearance; '
+                         'no applicable fabrication profile is bound to this board')
+    return value
 
 
 def _same_net_search_gap(board):
     return _separation_floor(board) + 25_000
 
 
+def _junction_polygons(first, second, layer, shared_pads, *, copper_inside=False):
+    import pcbnew as k
+    inside = k.SHAPE_POLY_SET()
+    for terminal in shared_pads:
+        if terminal.IsOnLayer(layer) and terminal.GetNetCode() == first.GetNetCode() == second.GetNetCode():
+            terminal.TransformShapeToPolygon(inside, layer, 0, 1, k.ERROR_INSIDE)
+    inside.Simplify()
+    copper = []
+    for item in (first, second):
+        shape = k.SHAPE_POLY_SET()
+        item.TransformShapeToPolygon(shape, layer, 0, 1, k.ERROR_INSIDE if copper_inside else k.ERROR_OUTSIDE)
+        copper.append(shape)
+    return inside, copper
+
+
+def junction_in_pad(first, second, layer, shared_pads):
+    """The actual copper overlap belongs entirely to a declared pad junction."""
+    if not shared_pads or not first.GetEffectiveShape(layer).Collide(second.GetEffectiveShape(layer), 0):
+        return False
+    # Inscribed 1 nm polygons localize overlap without outward arc-rounding
+    # slivers. Independent-copper gaps still use conservative outside polygons.
+    inside, copper = _junction_polygons(first, second, layer, shared_pads, copper_inside=True)
+    overlap = copper[0]
+    overlap.BooleanIntersection(copper[1])
+    if overlap.IsEmpty():
+        return False
+    overlap.BooleanSubtract(inside)
+    return overlap.IsEmpty()
+
+
 def _separation_shapes(first, second, layer, shared_pads):
     if not shared_pads:
         return first.GetEffectiveShape(layer), second.GetEffectiveShape(layer)
-    import pcbnew as k
-    # Outside copper is over-approximated; pad interiors are under-approximated.
-    # This can refuse a boundary case, but cannot approve a sub-floor bridge.
-    inside = k.SHAPE_POLY_SET()
-    for terminal in shared_pads:
-        if terminal.IsOnLayer(layer):
-            terminal.TransformShapeToPolygon(inside, layer, 0, 1, k.ERROR_INSIDE)
-    inside.Simplify()
+    # Straight tracks and vias are convex. Their close region is connected to
+    # the in-pad overlap, so these are two arms of that junction, not isolated
+    # copper requiring a gap at the pad boundary.
+    if junction_in_pad(first, second, layer, shared_pads):
+        return None
+    inside, copper = _junction_polygons(first, second, layer, shared_pads)
     shapes = []
-    for item in (first, second):
-        outside = k.SHAPE_POLY_SET()
-        item.TransformShapeToPolygon(outside, layer, 0, 1, k.ERROR_OUTSIDE)
+    for outside in copper:
         outside.BooleanSubtract(inside)
         outside.Simplify()
         if outside.IsEmpty():
@@ -184,13 +225,15 @@ def _subtract_box(box, opening):
             if r[0] < r[2] and r[1] < r[3]]
 
 
-def _obstacles(board, net, layer, margin, endpoints=()):
+def _obstacles(board, net, layer, margin, endpoints=(), *, joinable=()):
     items = ([p for fp in board.GetFootprints() for p in fp.Pads()]
              + list(board.GetTracks()) + list(board.GetDrawings()))
     allowed = {p.m_Uuid.AsString() for p in endpoints}
     boxes = []
     for item in items:
         if not item.IsOnLayer(layer) or item.m_Uuid.AsString() in allowed:
+            continue
+        if item.GetClass() == 'PCB_TRACK' and item.GetNetCode() == net and item.m_Uuid.AsString() in joinable:
             continue
         track_margin = margin
         if item.GetClass() in ('PCB_TRACK', 'PCB_VIA') and item.GetNetCode() == net:
@@ -271,7 +314,7 @@ def position_point(p):
     return int(p.x), int(p.y)
 
 
-def _leg(board, first, second, *, clock, cancel_dir, reusable=()):
+def _leg(board, first, second, *, clock, cancel_dir, reusable=(), joinable=()):
     common = set(_layers(board, first)) & set(_layers(board, second))
     if not common:
         raise ValueError('local leg endpoints must share a copper face')
@@ -281,7 +324,7 @@ def _leg(board, first, second, *, clock, cancel_dir, reusable=()):
     # remains the board rule, not the class's preferred routing width.
     width = max(int(board.GetDesignSettings().m_TrackMinWidth),
                 min(rules['width'], *(min(p.GetSize().x, p.GetSize().y) for p in (first, second))))
-    boxes = _obstacles(board, first.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000, (first, second))
+    boxes = _obstacles(board, first.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000, (first, second), joinable=joinable)
     path = _local_path(position(first), position(second), boxes, clock=clock, cancel_dir=cancel_dir)
     if path is None:
         raise ValueError('no clear local surface path within the 12 mm search budget')
@@ -314,6 +357,7 @@ def _clear_tie_path(board, path, terminal, layer, width):
         segment.SetEnd(k.VECTOR2I(*b))
         segment.SetWidth(width)
         segment.SetLayer(layer)
+        segment.SetNetCode(terminal.GetNetCode())
         for other in board.GetTracks():
             if other.IsOnLayer(layer) and _too_close(segment, other, layer, [terminal], _same_net_search_gap(board)):
                 return False
@@ -441,18 +485,12 @@ def copper_identity(item):
     return result
 
 
-def seed(board_path, document, *, clock, cancel_dir=None):
-    """Write only a disposable candidate. Required failures name the relation."""
-    import pcbnew as k
+def _seed_copper(board, document, *, order, clock, cancel_dir):
     from .placement_job import JobRefusal, _check_stop
-    validate_topology(document)
-    board = k.LoadBoard(str(board_path))
-    if board is None or board.GetCopperLayerCount() != 2:
-        raise JobRefusal('local decoupling requires a native two-layer board')
-    before = digest(board_path)
     rows, protected, tied, plane_ties = [], [], set(), {}
     bank_ids = {rid: bank['id'] for bank in banks(document) for rid in bank['relations']}
     bank_copper = {bank_id: set() for bank_id in bank_ids.values()}
+    device_legs = {}; escapes = set()
     bank_order = {bank['id']: i for i, bank in enumerate(banks(document))}
     def relation_order(relation):
         try:
@@ -462,14 +500,18 @@ def seed(board_path, document, *, clock, cancel_dir=None):
             raise JobRefusal(f"local decoupling {relation['id']}: {exc}") from exc
         return bank_order[bank_ids[relation['id']]], length
     # Reaching nearby capacitors first avoids enclosing a later bank endpoint.
-    for relation in sorted(document['relations'], key=relation_order):
+    ordered = sorted(document['relations'], key=relation_order) if order == 'nearest-first' else document['relations']
+    for relation in ordered:
         _check_stop(clock, cancel_dir)
         added, legs = [], []
         reusable = bank_copper[bank_ids[relation['id']]]
         try:
             for leg in ('supply', 'return'):
                 first, second = [pad(board, p) for p in relation[leg]]
-                leg_items = _leg(board, first, second, clock=clock, cancel_dir=cancel_dir, reusable=reusable)
+                shared = device_legs.setdefault((bank_ids[relation['id']], leg, first.GetNetCode()), set())
+                leg_items = _leg(board, first, second, clock=clock, cancel_dir=cancel_dir, reusable=reusable,
+                                 joinable=shared - escapes)
+                shared.update(t.m_Uuid.AsString() for t in leg_items)
                 reusable.update(t.m_Uuid.AsString() for t in leg_items)
                 added += leg_items
                 legs.append(dict(kind=leg, pads=[p.m_Uuid.AsString() for p in (first, second)],
@@ -482,6 +524,7 @@ def seed(board_path, document, *, clock, cancel_dir=None):
                             plane_ties[tie_key] = _tie(board, second, target, clock=clock, cancel_dir=cancel_dir,
                                                        away_from=position(first), reusable=reusable)
                         tie_items = plane_ties[tie_key]
+                        escapes.update(t.m_Uuid.AsString() for t in tie_items)
                         added += tie_items
                         reusable.update(t.m_Uuid.AsString() for t in tie_items)
                         legs.append(dict(kind='plane_tie', pads=[second.m_Uuid.AsString()],
@@ -508,6 +551,34 @@ def seed(board_path, document, *, clock, cancel_dir=None):
                     protected += [copper_identity(item) for item in added]
                     other.append(dict(pad=terminal.m_Uuid.AsString(), status='seeded' if added else 'already_on_layer',
                                       copper=[t.m_Uuid.AsString() for t in added]))
+    return rows, protected, other
+
+
+def seed(board_path, document, *, clock, cancel_dir=None):
+    """Write only a disposable candidate. Required failures name the relation."""
+    import pcbnew as k
+    from .placement_job import JobRefusal, _check_stop
+    validate_topology(document)
+    board = k.LoadBoard(str(board_path))
+    if board is None or board.GetCopperLayerCount() != 2:
+        raise JobRefusal('local decoupling requires a native two-layer board')
+    before = digest(board_path)
+    attempts = []
+    for order in ('nearest-first', 'document'):
+        _check_stop(clock, cancel_dir)
+        board = k.LoadBoard(str(board_path))
+        _separation_floor(board)
+        try:
+            rows, protected, other = _seed_copper(board, document, order=order, clock=clock, cancel_dir=cancel_dir)
+            trial = dict(contract=document, relations=rows, protected=protected, other_pads=other)
+            verify_geometry(board, trial)
+        except JobRefusal as exc:
+            attempts.append(dict(order=order, status='refused', reason=str(exc)))
+        else:
+            attempts.append(dict(order=order, status='seeded'))
+            break
+    else:
+        raise JobRefusal('; '.join(item['order'] + ': ' + item['reason'] for item in attempts))
     # Native SaveBoard also rewrites the sibling project with defaults. The
     # operation owns copper only; preserve the exact authored project and PRL.
     siblings = {Path(board_path).with_suffix(suffix): None for suffix in ('.kicad_pro', '.kicad_prl')}
@@ -523,7 +594,7 @@ def seed(board_path, document, *, clock, cancel_dir=None):
                 path.unlink()
     receipt = dict(schema='agent-ee.local-decoupling-seed/1', source_sha256=before,
                    board_sha256=digest(board_path), contract=document, relations=rows,
-                   protected=list({r['uuid']: r for r in protected}.values()), other_pads=other, banks=banks(document))
+                   protected=list({r['uuid']: r for r in protected}.values()), other_pads=other, banks=banks(document), generation_order=dict(selected=order, attempts=attempts))
     verify(board_path, receipt)
     return receipt
 
@@ -582,7 +653,7 @@ def verify_geometry(board, receipt):
             for layer in board.GetEnabledLayers().CuStack():
                 if not item.IsOnLayer(layer) or not terminal.IsOnLayer(layer):
                     continue
-                gap = max(clearance, _rules(board, terminal)['clearance']) if via else 1
+                gap = max(clearance, _rules(board, terminal)['clearance']) if via else required_gap
                 shape = terminal.GetEffectiveShape(layer)
                 collision = item.GetEffectiveShape(layer).Collide(shape, gap)
                 if via:
@@ -611,6 +682,24 @@ def verify_geometry(board, receipt):
                 separation_source='native design rules: m_MinClearance')
 
 
+def _gap_lower_bound(first, second, shapes):
+    if shapes is None:
+        return None
+    a, b = (obj.GetBoundingBox() for obj in (first, second))
+    high = math.ceil(math.hypot(max(a.GetRight(), b.GetRight()) - min(a.GetLeft(), b.GetLeft()),
+                               max(a.GetBottom(), b.GetBottom()) - min(a.GetTop(), b.GetTop()))) + 4
+    if not shapes[0].Collide(shapes[1], high):
+        raise ValueError('native pair distance could not be bounded')
+    low = 0
+    while high - low > 1:
+        middle = (low + high) // 2
+        if shapes[0].Collide(shapes[1], middle):
+            high = middle
+        else:
+            low = middle
+    return low / 1e6
+
+
 def separation_report(board_path, receipt):
     """Conservative minimum distance for every non-exempt generated pair/layer."""
     import pcbnew as k
@@ -633,30 +722,32 @@ def separation_report(board_path, receipt):
             terminals = [p for p in pads if p.m_Uuid.AsString() in shared]
             for layer in sorted(layers):
                 shapes = _separation_shapes(item, other, layer, terminals)
-                low = None
-                if shapes is not None:
-                    a, b = (obj.GetBoundingBox() for obj in (item, other))
-                    high = math.ceil(math.hypot(max(a.GetRight(), b.GetRight()) - min(a.GetLeft(), b.GetLeft()),
-                                               max(a.GetBottom(), b.GetBottom()) - min(a.GetTop(), b.GetTop()))) + 4
-                    if not shapes[0].Collide(shapes[1], high):
-                        raise ValueError('native pair distance could not be bounded')
-                    low = 0
-                    while high - low > 1:
-                        middle = (low + high) // 2
-                        if shapes[0].Collide(shapes[1], middle):
-                            high = middle
-                        else:
-                            low = middle
+                low = _gap_lower_bound(item, other, shapes)
                 failed = _too_close(item, other, layer, terminals, floor)
                 rows.append(dict(items=[uid, other_uid], layer=board.GetLayerName(layer), shared_pads=sorted(shared),
-                                 minimum_gap_mm_lower_bound=None if low is None else low / 1e6,
+                                 minimum_gap_mm_lower_bound=low,
                                  status='defect' if failed else 'pass',
-                                 scope='no copper outside shared pad' if shapes is None else 'outside shared pads'))
+                                 scope='declared junction arms' if shapes is None else 'outside shared pads'))
+    pad_rows = []
+    for uid, item in tracks.items():
+        via = item.GetClass() == 'PCB_VIA'
+        for terminal in pads:
+            if not via and terminal.m_Uuid.AsString() in allowed.get(uid, set()):
+                continue
+            gap = max(_rules(board, item)['clearance'], _rules(board, terminal)['clearance']) if via else floor
+            for layer in board.GetEnabledLayers().CuStack():
+                if item.IsOnLayer(layer) and terminal.IsOnLayer(layer):
+                    shapes = (item.GetEffectiveShape(layer), terminal.GetEffectiveShape(layer))
+                    pad_rows.append(dict(items=[uid, terminal.m_Uuid.AsString()],
+                        pad=terminal.GetParentFootprint().GetReference()+'.'+terminal.GetNumber(),
+                        layer=board.GetLayerName(layer), required_gap_mm=gap/1e6,
+                        minimum_gap_mm_lower_bound=_gap_lower_bound(item, terminal, shapes),
+                        status='defect' if shapes[0].Collide(shapes[1], max(1,gap)) else 'pass'))
     return dict(schema='agent-ee.local-separation/1', board_sha256=digest(board_path),
                 floor_mm=floor / 1e6, source='native design rules: m_MinClearance',
                 distance_resolution_nm=1, polygon_approximation_nm=1, pairs=rows,
-                exempt_pairs=exempt, separate_layer_pairs=separate_layers,
-                outcome='defect' if any(r['status'] == 'defect' for r in rows) else 'pass')
+                exempt_pairs=exempt, separate_layer_pairs=separate_layers, pad_pairs=pad_rows,
+                outcome='defect' if any(r['status'] == 'defect' for r in rows + pad_rows) else 'pass')
 
 
 def prepare_stub_trial(request):

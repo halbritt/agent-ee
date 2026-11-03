@@ -209,11 +209,19 @@ clearance from every pad, including same-net pads.
 The floor covers escape tracks/vias against device legs or other relations,
 different banks, and every distinct leg allowed to meet only inside a declared
 shared pad. Same-bank device legs already allowed to share copper remain exempt,
-as do items of the same generated leg. Verification clips allowed shared-pad
-interiors out of conservative native copper polygons before checking the floor.
+as do items of the same generated leg. When the copper overlap of two convex
+track/via items belongs entirely to their declared shared pad, they are arms of
+one junction. Their continuous near region at the pad boundary does not require
+a gap. Actual copper overlap outside the pad remains forbidden. Independent
+copper uses conservative outside polygons and the full floor. The junction
+localization uses inscribed native copper polygons at 1 nm resolution, avoiding
+outward arc-rounding slivers at land edges. Both generation verification and the
+typed connectivity graph use this same polygon-overlap decision.
 Near misses below the floor count as meetings even without geometric contact.
-The saved-board separation report lists every non-exempt pair/layer and its
-conservative minimum distance, plus exemptions and pairs on separate layers.
+The saved-board separation report lists every non-exempt generated pair/layer
+and every generated item against undeclared pads (all pads for vias), including
+the required gap and conservative distance. It records junction exemptions and
+pairs on separate layers. Undeclared same-net pads keep the floor too.
 
 Via sites are checked using native pad and copper shapes rather than inflated
 rectangular pad corners. A bounded grid resolves windows between the radial
@@ -224,15 +232,21 @@ A search refusal is not a proof that no geometrically legal layout exists.
 
 The local search orders relations within each automatically derived bank by the
 sum of their direct supply and return distances, reaching nearer capacitor
-endpoints first. This avoids enclosing an unvisited capacitor with earlier
-legs. Legs remain stars from device pads; all geometry and bank checks apply.
+endpoints first. If this order refuses, it reloads the untouched input board
+and tries document order within the same caller clock and cancellation budget.
+The receipt records the selected order and each refusal. A failed in-memory
+attempt cannot leave copper in the retry. This is a bounded search, not an
+exhaustive ordering search. Legs remain stars and can use the existing sharing
+exemption only for the same bank, leg kind and net; escape copper and other
+banks remain obstacles. All geometry and bank checks apply.
 Via-site obstacles are collected once per tie from the 2 mm search disk plus
 the via radius and applicable clearance. Retained pads and tracks still receive
 exact native-shape tests at each site; drawing boxes remain conservative
 obstacles.
 
-Known junction limitation: the typed connectivity check locates in-pad junctions
-using centreline closest points, rather than the complete copper overlap.
-The generated-copper geometry guard separately clips native copper shapes to
-pad interiors and enforces the fabrication floor outside those pads. Router
-copper does not receive that generated-copper overlap audit.
+A nonzero fabrication floor is required. The build's captured fabrication profile
+is already compiled into the native project rule (0.1 mm on both examples).
+When KiCad retains a cached zero default, the generator reads that authored rule
+and restores it in memory. A bare placement job without a nonzero rule or an
+applicable bound fabrication profile is refused during setup, before placement
+search. No class preference or assumed manufacturer supplies a zero-rule floor.

@@ -1705,6 +1705,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 local_contract = validate_local(strict_json(raw))
             except ValueError as exc:
                 raise JobRefusal('invalid local decoupling contract: ' + str(exc)) from exc
+            import pcbnew
+            from .local_decoupling import _separation_floor
+            _separation_floor(pcbnew.LoadBoard(str(board_path)))
             if local_contract['planes'] and (plane_bytes is None or any(
                     not any(z['net'] == p['net'] and z['layer'] == p['layer'] for z in plane_plan['zones'])
                     for p in local_contract['planes'])):

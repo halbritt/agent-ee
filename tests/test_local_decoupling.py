@@ -24,6 +24,7 @@ class LocalCopperTests(unittest.TestCase):
         self.path = self.root / 'board.kicad_pcb'
         self.board = board = k.BOARD()
         board.SetCopperLayerCount(2)
+        board.GetDesignSettings().m_MinClearance = 100_000
         board.GetDesignSettings().SetBoardThickness(1_200_000)
         # Explicit test routing rules, with ample space for a plane tie.
         cls = board.GetAllNetClasses()['Default']
@@ -74,6 +75,14 @@ class LocalCopperTests(unittest.TestCase):
 
     def save(self):
         self.k.SaveBoard(str(self.path), self.board)
+        from agent_ee.storage import write_json
+        cls = self.board.GetAllNetClasses()['Default']
+        write_json(self.path.with_suffix('.kicad_pro'),dict(
+            board=dict(design_settings=dict(rules=dict(min_clearance=self.board.GetDesignSettings().m_MinClearance/1e6))),
+            meta=dict(filename=self.path.with_suffix('.kicad_pro').name,version=1),
+            net_settings=dict(classes=[dict(name='Default',clearance=cls.GetClearance()/1e6,
+                track_width=cls.GetTrackWidth()/1e6,via_diameter=cls.GetViaDiameter()/1e6,
+                via_drill=cls.GetViaDrill()/1e6)],meta=dict(version=3))))
 
     def seed(self, doc=None):
         return local.seed(self.path, doc or contract(), clock=Clock(60))
@@ -164,7 +173,7 @@ class LocalCopperTests(unittest.TestCase):
 
     def test_native_copper_save_preserves_authored_project_bytes(self):
         project = self.path.with_suffix('.kicad_pro')
-        raw = b'{"meta":{"version":1},"net_settings":{"meta":{"version":3}}}\n'
+        raw = b'{"board":{"design_settings":{"rules":{"min_clearance":0.1}}},"meta":{"version":1},"net_settings":{"meta":{"version":3}}}\n'
         project.write_bytes(raw)
         self.seed()
         self.assertEqual(project.read_bytes(), raw)
@@ -194,7 +203,7 @@ class LocalCopperTests(unittest.TestCase):
         from unittest.mock import patch
         from agent_ee import placement_job as job
         from agent_ee.storage import digest, write_json
-        self.path.with_suffix('.kicad_pro').write_text('{}')
+        self.save()
         doc = contract(5)
         receipt = self.seed(doc)
         self.filled()
@@ -250,7 +259,7 @@ class LocalCopperTests(unittest.TestCase):
     def test_failed_local_copper_returns_an_ineligible_candidate_reason_before_routing(self):
         from unittest.mock import patch
         from agent_ee import placement_job as job
-        (self.root / 'board.kicad_pro').write_text('{}')
+        self.save()
         doc = contract()
         doc['relations'][0]['supply'][0]['reference'] = 'missing'
         fake = dict(violations=[], unconnected_items=[])
@@ -555,7 +564,7 @@ class LocalCopperTests(unittest.TestCase):
         from copy import deepcopy
         from unittest.mock import patch
         from agent_ee import placement_job as job
-        self.path.with_suffix('.kicad_pro').write_text('{}')
+        self.save()
         doc = contract()
         other = deepcopy(doc['relations'][0])
         other['id'] = 'innocent'
@@ -631,6 +640,149 @@ class ReviewRegressionTests(unittest.TestCase):
         for n in range(count):
             i, j = divmod(n, 73)
             self.add_pad(fp, n+1, 21+i*.25, 21+j*.25, net, 100_000)
+
+    def test_tiny_lands_allow_the_two_arms_of_an_in_pad_junction(self):
+        import math
+        k=self.k;net=self.board.FindNet('/return').GetNetCode()
+        for land in (200_000,250_000,300_000,500_000):
+            fp=self.add_fp('LAND'+str(land),[]);p=self.add_pad(fp,'1',36,25,'/return',land)
+            for angle in (180,150,120,90):
+                with self.subTest(land=land,angle=angle):
+                    c=(36_000_000,25_000_000)
+                    end=(c[0]+round(1_000_000*math.cos(math.radians(angle))),c[1]-round(1_000_000*math.sin(math.radians(angle))))
+                    a=local._track(self.board,[c,(37_000_000,25_000_000)],net,k.F_Cu,200_000)[0]
+                    b=local._track(self.board,[c,end],net,k.F_Cu,200_000)[0]
+                    for gap in (1,100_000,125_000):self.assertFalse(local._too_close(a,b,k.F_Cu,[p],gap))
+                    self.board.Remove(a);self.board.Remove(b)
+            self.board.Remove(fp)
+
+    def test_a_shared_junction_does_not_excuse_overlap_outside_its_pad(self):
+        import math
+        fp=self.add_fp('LAND',[]);p=self.add_pad(fp,'1',36,25,'/return',200_000)
+        c=(36_000_000,25_000_000);net=p.GetNetCode()
+        a=local._track(self.board,[c,(37_000_000,25_000_000)],net,self.k.F_Cu,200_000)[0]
+        b=local._track(self.board,[c,(c[0]+round(1_000_000*math.cos(math.radians(80))),c[1]-round(1_000_000*math.sin(math.radians(80))))],net,self.k.F_Cu,200_000)[0]
+        self.assertFalse(local.junction_in_pad(a,b,self.k.F_Cu,[p]))
+        self.assertTrue(local._too_close(a,b,self.k.F_Cu,[p],100_000))
+
+    def test_polygon_junction_agrees_with_typed_bank_on_reviewer_seed2_tracks(self):
+        from agent_ee import local_loop_geometry as geo
+        k=self.k;net=self.board.FindNet('/return').GetNetCode()
+        cap=local.pad(self.board,contract()['relations'][0]['return'][1])
+        cap.SetPosition(k.VECTOR2I(28_640_000,29_290_000));cap.SetSize(k.VECTOR2I(600_000,600_000))
+        returned=local._track(self.board,[(30_000_000,31_000_000),(28_739_999,29_625_001),(28_640_000,29_290_000)],net,k.F_Cu,400_000)
+        escaped=local._track(self.board,[(28_640_000,29_290_000),(28_014_999,29_190_001),(27_200_000,28_500_000)],net,k.F_Cu,400_000)
+        via=k.PCB_VIA(self.board);via.SetPosition(k.VECTOR2I(27_200_000,28_500_000));via.SetWidth(600_000);via.SetDrill(300_000)
+        via.SetLayerPair(k.F_Cu,k.B_Cu);via.SetNetCode(net);via.SetLocked(True);self.board.Add(via);escaped.append(via)
+        supply=local._track(self.board,[(30_000_000,29_000_000),(33_000_000,29_000_000)],self.board.FindNet('/rail').GetNetCode(),k.F_Cu,400_000)
+        a,b=geo.closest((local.position_point(returned[0].GetStart()),local.position_point(returned[0].GetEnd())),
+                        (local.position_point(escaped[0].GetStart()),local.position_point(escaped[0].GetEnd())))
+        self.assertFalse(all(cap.GetEffectiveShape(k.F_Cu).Collide(k.VECTOR2I(round(x),round(y)),0) for x,y in (a,b)))
+        self.assertTrue(local.junction_in_pad(returned[0],escaped[0],k.F_Cu,[cap]))
+        doc=contract();legs=[]
+        for kind,items,endpoints in [('supply',supply,doc['relations'][0]['supply']),('return',returned,doc['relations'][0]['return']),('plane_tie',escaped,doc['relations'][0]['return'][1:])]:
+            legs.append(dict(kind=kind,tracks=[t.m_Uuid.AsString() for t in items],pads=[local.pad(self.board,p).m_Uuid.AsString() for p in endpoints]))
+        items=supply+returned+escaped;receipt=dict(contract=doc,relations=[dict(id='cell',copper=[t.m_Uuid.AsString() for t in items],legs=legs)],protected=[local.copper_identity(t) for t in items],other_pads=[])
+        self.assertEqual(local.verify_geometry(self.board,receipt)['status'],'pass')
+        self.save();self.filled();result=measure(self.path,doc)
+        self.assertEqual(result['outcome'],'info',result)
+        self.assertFalse(result['banks'][0]['return']['pin_bypasses_bank'],result)
+
+    def test_undeclared_same_net_pad_keeps_the_native_floor_in_guard_and_report(self):
+        fp=self.add_fp('NEAR',[]);p=self.add_pad(fp,'1',31.5,31.4,'/return',300_000)
+        items=local._track(self.board,[(30_000_000,31_000_000),(33_000_000,31_000_000)],p.GetNetCode(),self.k.F_Cu,400_000)
+        doc=contract();ids=[t.m_Uuid.AsString() for t in items]
+        receipt=dict(contract=doc,relations=[dict(id='cell',copper=ids,legs=[dict(kind='return',tracks=ids,pads=[local.pad(self.board,e).m_Uuid.AsString() for e in doc['relations'][0]['return']])])],protected=[local.copper_identity(t) for t in items],other_pads=[])
+        self.assertRaisesRegex(JobRefusal,'pad clearance NEAR.1',local.verify_geometry,self.board,receipt)
+        self.save();report=local.separation_report(self.path,receipt)
+        row=next(r for r in report['pad_pairs'] if r['pad']=='NEAR.1')
+        self.assertEqual(row['status'],'defect');self.assertAlmostEqual(row['minimum_gap_mm_lower_bound'],.05,places=5)
+        self.assertEqual(report['outcome'],'defect')
+
+    def test_missing_or_zero_clearance_without_a_bound_profile_refuses_local_copper(self):
+        self.board.GetDesignSettings().m_MinClearance=0
+        self.path.with_suffix('.kicad_pro').unlink(missing_ok=True)
+        self.assertRaisesRegex(JobRefusal,'nonzero authored minimum',local._separation_floor,self.board)
+        self.board.GetDesignSettings().m_MinClearance=100_000
+        self.assertEqual(local._separation_floor(self.board),100_000)
+
+    def test_job_refuses_an_unknown_floor_before_placement_search(self):
+        import json
+        from unittest.mock import patch
+        from agent_ee import placement_job as job
+        self.board.GetDesignSettings().m_MinClearance=0;self.save()
+        self.path.with_suffix('.kicad_pro').write_text('{}')
+        doc=contract();doc['planes']=[]
+        intent=dict(fixed_poses=[],edge_connectors=[])
+        groups=dict(groups=[dict(name='cell',anchor='IC',refs=['IC','BYP','OTHER'])])
+        inputs=dict(board=(self.path,self.path.read_bytes()),project=(self.path.with_suffix('.kicad_pro'),b'{}'),
+                    intent=(self.path,json.dumps(intent).encode()),groups=(self.path,json.dumps(groups).encode()),
+                    local_decoupling=(self.path,json.dumps(doc).encode()))
+        config=dict(budget_s=60,inputs={key:{} for key in inputs},search=dict(shortlist=1),router=dict(checkout='unused'))
+        with patch.object(job,'verified_input',side_effect=lambda entry,label:inputs[label]), \
+             patch.object(job,'capture') as capture,patch.object(job,'solve') as solve:
+            report=job.run_job(config,self.root/'unknown-floor-job')
+        self.assertEqual(report['status'],'refused',report)
+        self.assertIn('nonzero authored minimum',report['reason'])
+        capture.assert_not_called();solve.assert_not_called()
+
+    def test_tie_path_rejects_a_subfloor_near_miss_to_another_leg(self):
+        net=self.board.FindNet('/return').GetNetCode()
+        local._track(self.board,[(34_000_000,33_000_000),(36_000_000,33_000_000)],net,self.k.F_Cu,200_000)
+        terminal=local.pad(self.board,contract()['relations'][0]['return'][1])
+        self.assertFalse(local._clear_tie_path(self.board,[(34_000_000,33_250_000),(36_000_000,33_250_000)],terminal,self.k.F_Cu,200_000))
+
+    def test_via_collection_includes_an_obstacle_reached_only_by_its_ring(self):
+        terminal=local.pad(self.board,contract()['relations'][0]['return'][1]);rules=local._rules(self.board,terminal)
+        via=self.k.PCB_VIA(self.board);via.SetPosition(self.k.VECTOR2I(35_000_000,31_000_000));via.SetWidth(rules['diameter']);via.SetDrill(rules['drill'])
+        via.SetLayerPair(self.k.F_Cu,self.k.B_Cu);via.SetNetCode(terminal.GetNetCode())
+        fp=self.add_fp('RING',[]);obstacle=self.add_pad(fp,'1',35.55,31,'/foreign',300_000)
+        gathered=local._via_obstacles(self.board,terminal,rules)
+        self.assertIn(obstacle.m_Uuid.AsString(),{p.m_Uuid.AsString() for p in gathered[0]})
+        self.assertTrue(local._via_site_blocked(self.board,via,terminal,rules,gathered))
+
+    def test_reviewer_seed1_four_capacitor_bank_records_the_order_that_succeeds(self):
+        from copy import deepcopy
+        caps=[('C1',(27.41,32.86),(27.41,34.06)),('C2',(31.2,29.87),(31.2,31.67)),('C3',(28.2,30.16),(28.2,31.66))]
+        for ref,a,b in caps:
+            fp=self.add_fp(ref,[])
+            self.add_pad(fp,'1',*a,'/rail',600_000);self.add_pad(fp,'2',*b,'/return',600_000)
+        doc=contract();relations=[]
+        for ref,_,_ in reversed(caps):
+            relation=deepcopy(doc['relations'][0]);relation['id']='far-'+ref
+            for kind in ('supply','return'):relation[kind][1]['reference']=ref
+            relations.append(relation)
+        doc['relations']=relations+doc['relations'];self.save();receipt=self.seed(doc)
+        self.assertIn(receipt['generation_order']['selected'],('nearest-first','document'))
+        self.assertEqual(receipt['generation_order']['attempts'][-1]['status'],'seeded')
+        self.assertEqual(local.verify(self.path,receipt)['status'],'pass')
+        self.filled();self.assertFalse(measure(self.path,doc)['banks'][0]['return']['pin_bypasses_bank'])
+
+    def test_failed_nearest_order_leaves_no_copper_in_the_document_retry(self):
+        from unittest.mock import patch
+        real=local._seed_copper
+        def attempt(board,doc,**kwargs):
+            result=real(board,doc,**kwargs)
+            if kwargs['order']=='nearest-first':raise JobRefusal('forced refusal after constructing copper')
+            return result
+        with patch.object(local,'_seed_copper',side_effect=attempt):receipt=self.seed()
+        self.assertEqual(receipt['generation_order']['selected'],'document')
+        self.assertEqual([r['status'] for r in receipt['generation_order']['attempts']],['refused','seeded'])
+        native=self.k.LoadBoard(str(self.path))
+        self.assertEqual({t.m_Uuid.AsString() for t in native.GetTracks()},{r['uuid'] for r in receipt['protected']})
+
+    def test_nearest_order_is_applied_within_stable_bank_order(self):
+        from copy import deepcopy
+        self.add_fp('DEVICE',[('1',25,35,'/rail'),('2',25,37,'/return')])
+        self.add_fp('CAP',[('1',26,35,'/rail'),('2',26,37,'/return')])
+        doc=contract();second=deepcopy(doc['relations'][0]);second['id']='second'
+        for kind in ('supply','return'):
+            second[kind][0]['reference']='DEVICE';second[kind][1]['reference']='CAP'
+        bulk=deepcopy(doc['relations'][0]);bulk['id']='bulk'
+        for kind in ('supply','return'):bulk[kind][1]['reference']='OTHER'
+        doc['relations']=[bulk,doc['relations'][0],second];self.save();receipt=self.seed(doc)
+        self.assertEqual([r['id'] for r in receipt['relations']],['cell','bulk','second'])
+        self.assertEqual(receipt['generation_order']['selected'],'nearest-first')
 
     def test_three_capacitor_bank_reaches_nearest_capacitor_before_enclosing_it(self):
         from copy import deepcopy
@@ -907,7 +1059,6 @@ class ReviewRegressionTests(unittest.TestCase):
         doc = contract();second = deepcopy(doc['relations'][0]);second['id'] = 'small-cap'
         for leg in ('supply','return'):second[leg][1]['reference'] = 'CAP2'
         doc['relations'].append(second)
-        doc['planes'] = []  # This regression isolates leg search, not a tiny-land escape.
         self.save();receipt = self.seed(doc)
         self.assertEqual(local.verify(self.path,receipt)['status'],'pass')
         self.filled();result = measure(self.path,doc)
