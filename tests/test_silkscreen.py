@@ -96,7 +96,7 @@ assert shape.GetLayer()==k.F_Fab and fp.Reference().GetLayer()==k.B_Fab
 assert pad.GetSize()==before
 ''')
 
-    def test_board_text_reservation_blocks_same_side_and_keeps_policy(self):
+    def test_imu_reservation_blocks_same_side_and_keeps_policy(self):
         work = self.native('''
 import pcbnew as k
 from agent_ee.silkscreen import reserve_imu_markings
@@ -111,8 +111,8 @@ for invalid in (None, {}, {'obstacles':None}):
 policy={'obstacles':[]}
 a=reserve_imu_markings(b,policy)
 assert policy=={'obstacles':[]}
-assert a==reserve_imu_markings(b,policy) and len(a['obstacles'])==3
-assert any(o['source'].startswith('board/') for o in a['obstacles'])
+assert a==reserve_imu_markings(b,policy) and len(a['obstacles'])==2
+assert not any(o['source'].startswith('board/') for o in a['obstacles'])
 assert {o['side'] for o in a['obstacles']}=={'F','B'}
 write_json('/work/reserved.json',a)
 ''')

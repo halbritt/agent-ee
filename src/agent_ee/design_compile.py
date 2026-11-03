@@ -94,7 +94,7 @@ def spec(design):
         )
     if design.get("markings"):
         sections["Manufacturing"].append(
-            "Every declared board marking shall retain its text, side, attachment and placement, fit inside the board, and meet the sourced legend height, stroke and pad-clearance minima without silkscreen overlap."
+            "Every declared board marking shall retain its text, side, attachment and placement, fit inside the board, and meet the sourced legend height, stroke, pad-clearance and silk-to-mask minima without silkscreen overlap."
         )
     return "".join(
         "# "
@@ -923,7 +923,8 @@ def board_markings(design, root):
     profile = load(DATA / "board-text-fab-profile.json")
     facts_path = "fab-sources/board-text-facts.txt"
     (root / facts_path).write_bytes((DATA / "board-text-fab-facts.txt").read_bytes())
-    for row in [*profile["limits"], *profile.get("applicability", []), *profile.get("order", [])]:
+    for row in [*profile["limits"], *profile.get("advisories", []),
+                *profile.get("applicability", []), *profile.get("order", [])]:
         row["source"]["path"] = facts_path
         row["source"]["sha256"] = digest(root / facts_path)
     for row in profile["limits"]:
@@ -1019,7 +1020,9 @@ def requirements(design, root, record, suppliers):
         req(f"FUNC-{i}", [rule_check]) for i in range(1, len(design["functional"]) + 1)
     ]
     if design.get("markings"):
-        rows.append(req("DELIV-2", [check("board-text", "board_text", markings="board-text.json")]))
+        rows.append(req("DELIV-2", [
+            check("board-text", "board_text", markings="board-text.json"),
+            check("board-text-fab", "fab_profile", fab_profile="board-text-profile.json")]))
     rows += [
         req(
             "MECH-1",

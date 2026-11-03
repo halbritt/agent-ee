@@ -522,6 +522,8 @@ def _describe_board(board, facts):
     settings = board.GetDesignSettings()
     native_class = settings.m_NetSettings.GetDefaultNetclass()
     clearance = _clearance(settings)
+    from .board_text import placement_regions
+    text_obstacles, attached_text = placement_regions(board)
     footprints = []
     for fp in board.GetFootprints():
         uuid = fp.m_Uuid.AsString()
@@ -529,6 +531,12 @@ def _describe_board(board, facts):
         q = _quarter_turns(captured['rotation_deg'], uuid)
         origin = captured['position_nm']
         native = classify_footprint(fp, captured)
+        seat_occupancy = (native['occupancy'] or {}).get('box')
+        if uuid in attached_text and native['occupancy'] is not None:
+            native['occupancy'] = dict(native['occupancy'],
+                status='derived', label='derived_occupancy',
+                box=_union([native['occupancy']['box'], *attached_text[uuid]]),
+                sources=[*native['occupancy'].get('sources', []), 'declared-board-text'])
         box = (native['occupancy'] or {}).get('box')
         footprints.append({
             'uuid': uuid, 'ref': captured['ref'], 'side': captured['side'], 'locked': captured['locked'],
@@ -550,7 +558,7 @@ def _describe_board(board, facts):
                       'half_nm': _pad_half(p, origin, q)}
                      for p in fp.Pads()],
             'seats_local_nm': {basis: _local_rect(rect, origin, q) if rect else None
-                               for basis, rect in native['seats'].items()}})
+                               for basis, rect in {**native['seats'], 'body:occupancy': seat_occupancy}.items()}})
     return {'outline_rect_nm': _rectangle(facts['outline']),
             'rules': {'copper_clearance_nm': clearance,
                       'hole_to_hole_clearance_nm': int(settings.m_HoleToHoleMin),
@@ -559,7 +567,7 @@ def _describe_board(board, facts):
             'pair': {'width_nm': int(native_class.GetDiffPairWidth()) if native_class.HasDiffPairWidth() else None,
                      'gap_nm': int(native_class.GetDiffPairGap()) if native_class.HasDiffPairGap() else None,
                      'clearance_nm': clearance},
-            'footprints': footprints}
+            'footprints': footprints, 'text_obstacles': text_obstacles}
 
 
 def _rectangle(outline):
@@ -1142,6 +1150,17 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
         raise JobRefusal('native custom rules differ from captured rules')
     board = pcbnew.LoadBoard(str(source))
     before = native_inventory(board)
+    from .board_text import placement_regions
+    obstacles, _ = placement_regions(board)
+    reserved = {row['uuid']: row for row in obstacles}
+    obstacle_poses = [row for row in poses if row['uuid'] in reserved]
+    if len(obstacle_poses) != len(reserved) or len({r['uuid'] for r in obstacle_poses}) != len(reserved):
+        raise JobRefusal('candidate pose vector omits or repeats a board text obstacle')
+    for row in obstacle_poses:
+        expected = reserved[row['uuid']]['pose']
+        if row['moved'] or any(row[key] != expected[key] for key in ('x_nm', 'y_nm', 'quarter_turns')):
+            raise JobRefusal('candidate moved a fixed board text obstacle')
+    poses = [row for row in poses if row['uuid'] not in reserved]
     captured = [dict(uuid=u, ref=r['ref'], position_nm=[r['x_nm'], r['y_nm']], side=r['side'],
                      rotation_deg=r['rotation_deg'])
                 for u, r in before.items()]

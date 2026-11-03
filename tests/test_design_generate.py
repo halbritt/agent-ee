@@ -7,6 +7,7 @@ import argparse
 import copy
 import datetime
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -224,6 +225,29 @@ class ScriptedLoop(unittest.TestCase):
 
 
 class GenerateTests(ScriptedLoop):
+    def test_partial_cli_exit_and_successful_placement_is_not_a_benchmark_finding(self):
+        def placed(attempt):
+            self.build_report(attempt)
+            path = attempt / 'build/stages/05-placement/placement'
+            path.mkdir(parents=True)
+            write_json(path / 'job-report.json', dict(status='completed', final=dict(opens=0)))
+            return dict(execution='ok', exit_code=0)
+        self.responses = [self.partial_response()]
+        parser = argparse.ArgumentParser()
+        loop.configure_parser(parser.add_subparsers(dest='design_command'))
+        args = parser.parse_args(['generate', str(self.requirements), '--out', str(self.root / 'run'),
+                                 '--max-attempts', '1', '--context-root', str(ROOT)])
+        with self.with_build(placed), patch('sys.stdout', new=io.StringIO()):
+            self.assertEqual(loop.execute(args), 1)
+        row = loop.design_row(self.requirements, self.root / 'run')
+        self.assertEqual(row['status'], 'accepted_partial')
+        self.assertEqual(row['placement_findings'], [])
+
+    def test_author_can_read_the_board_text_validator(self):
+        context = self.root / 'context'
+        loop.prepare_context(ROOT, context)
+        self.assertEqual((context / 'board_text.py').read_bytes(), (ROOT / 'src/agent_ee/board_text.py').read_bytes())
+
     def partial_response(self, envelope='ready'):
         response = self.response()
         response['trace'] = response['trace'][:2]
@@ -1566,7 +1590,7 @@ class DocsTests(unittest.TestCase):
                                 ('--max-seconds', '2400'), ('--author-seconds', '600'), ('--search-retries', '1'),
                                 ('--kicad-root', '/usr/share/kicad')):
             self.assertRegex(text, rf'\| `{option}[^`]*` \| `{default}` \|', option)
-        for state in ('accepted', 'unsupported', 'seat_failed', 'author_timeout', 'review_incomplete',
+        for state in ('accepted', 'accepted_partial', 'unsupported', 'seat_failed', 'author_timeout', 'review_incomplete',
                       'runtime_refused', 'time_exhausted', 'attempts_exhausted', 'interrupted', 'error',
                       'complete', 'stopped_seat_failed', 'stopped_runtime_refused', 'not_run'):
             self.assertIn(f'`{state}`', text, state)

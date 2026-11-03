@@ -341,7 +341,7 @@ def prepare_context(root, out):
     out.mkdir()
     shutil.copyfile(root / 'docs/design-compile.md', out / 'design-compile.md')
     shutil.copytree(root / 'fixtures/design-examples', out / 'examples')
-    for name in ('design.py', 'design_shape.py'):
+    for name in ('design.py', 'design_shape.py', 'board_text.py'):
         shutil.copyfile(Path(__file__).with_name(name), out / name)
     write_json(out / 'author-schema.json', AUTHOR_SCHEMA)
 
@@ -1084,7 +1084,7 @@ def design_row(path, run, status=None, reason=None):
                 refusal_classes=sorted({c for r in rows for c in r['refusal_classes']}),
                 failed_checks=[dict(attempt=r['number'], checks=r['failed_checks']) for r in rows if r['failed_checks']],
                 placement_findings=[dict(attempt=r['number'], findings=r['placement_findings'])
-                    for r in rows if r.get('placement_findings') and r['status'] != 'accepted'],
+                    for r in rows if r.get('placement_findings') and r['status'] not in ('accepted', 'accepted_partial')],
                 failing_stages=sorted({r['failing_stage'] for r in rows if 'failing_stage' in r}),
                 untraced_requirements=next((r['untraced'] for r in reversed(rows) if 'untraced' in r), None),
                 outline_utilisation=next((r['outline_utilisation'] for r in reversed(rows) if 'outline_utilisation' in r),

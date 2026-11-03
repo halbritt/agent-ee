@@ -13,6 +13,8 @@ A board description is a plain dict:
   ``mask_min_web_nm``), the native settings the engine checks against;
 * ``pair``: the native default differential pair ``width_nm`` and ``gap_nm``
   and the placement ``clearance_nm`` used for escape-space hints;
+* optional ``text_obstacles``: declared free-text bounds represented as fixed
+  bodies for the existing engine; these are not extra native PCB footprints;
 * ``footprints``: one entry per native footprint with ``uuid``, ``ref``,
   ``side``, ``locked``, ``position_nm``, ``rotation_deg``, ``quarter_turns``,
   the native classification ``silk_only`` and ``mark_eligible`` (pads, all
@@ -155,7 +157,8 @@ def _seat(footprint, declaration, occupancy):
                 return footprint['seats_local_nm'][basis], basis
     if 'box' not in occupancy:
         raise JobRefusal(f'{footprint["ref"]}: declared edge has no seat geometry')
-    return footprint['occupancy_local_nm'], occupancy.get('rung', occupancy['status'])
+    return (footprint['seats_local_nm'].get('body:occupancy') or footprint['occupancy_local_nm'],
+            occupancy.get('rung', occupancy['status']))
 
 
 def escape_hints(row, *, width, gap, clearance):
@@ -265,7 +268,7 @@ def _document(board, *, fixed_poses, edges, groups, rails):
     document = {'schema': INPUT_SCHEMA,
                 'outline': {'kind': 'rectangle', 'rect_nm': board['outline_rect_nm']},
                 'rules': dict(board['rules']),
-                'footprints': sorted(rows, key=lambda r: r['uuid']),
+                'footprints': sorted([*rows, *board.get('text_obstacles', [])], key=lambda r: r['uuid']),
                 'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in groups],
                 'rails': _rails(rails),
                 'weights': dict(WEIGHTS)}

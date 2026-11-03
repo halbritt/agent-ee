@@ -64,10 +64,17 @@ on fabrication layers do not satisfy a printed-label requirement.
 ]
 ```
 
-Each label needs a unique `id`, literal `text`, `layer` and `anchor`. Text is
-one nonblank line of at most 256 printable characters; KiCad `${...}` text
-variables are refused. Layers are `F.SilkS` and `B.SilkS`. Free `at_mm` coordinates
-are measured from the board's top-left corner, with x right and y down.
+Each label needs a unique `id`, literal `text`, `layer` and `anchor`. The id
+matches `[A-Za-z][A-Za-z0-9_-]{0,63}` (1–64 ASCII characters). Text is one
+nonblank line of at most 256 printable characters. KiCad variables `${...}`,
+arithmetic `@{...}`, overbar `~{...}`, subscript `_{...}`, superscript `^{...}`
+and backslash escapes are refused, including escaped forms of those constructs.
+Final verification compares KiCad's shown text with the declared literal.
+Layers are `F.SilkS` and `B.SilkS`. The anchor is the centre of the text.
+Free `at_mm` coordinates are measured from the board's top-left corner, with x
+right and y down; x must be in `[0, board.width_mm]`, y in
+`[0, board.height_mm]`, both exact to one nanometre. A centre on an edge is
+allowed in the statement, but the full text bounds must fit at final verification.
 Attached `offset_mm` is measured from the part origin or the named physical pad,
 in the footprint's local front-side frame. A pin must select exactly one pad;
 repeated pad numbers are refused. Attached labels are footprint graphics and
@@ -75,13 +82,23 @@ follow translation, rotation and side flips. Their layer is relative to the
 part's original front side: `F.SilkS` follows the component side and `B.SilkS`
 follows its opposite side. Back text is mirrored for reading from the back.
 
-Optional `rotation_deg` defaults to zero and must be a multiple of 90. Optional
+Optional `rotation_deg` defaults to zero and must be a multiple of 90. Attached
+labels move and rotate with their part, including the placer's left-right side
+flip. Keep-upright is disabled: declared 180 and 270 degree text retains those
+orientations instead of being rendered as 0 or 90. Optional
 `height_mm` and `stroke_mm` default to the sourced legend fabrication profile's
-1.0 mm and 0.15 mm minima; smaller sizes are refused. Compilation retains this
-profile and its source facts separately from the structural fabrication profile.
+1.0 mm and 0.15 mm minima; smaller sizes are refused. The native font size is
+`[height_mm, height_mm]`, so width scales with height using KiCad's proportional
+stroke-font glyph widths. There is no independent width compression or wrapping.
+Compilation retains the complete four-limit legend profile, its advisories and
+source facts separately from the structural fabrication profile.
 The generated `board-text.json` and build plan cause native emission after
-forward annotation. Free text reserves placement space. Attached text retains
-its declared offset; the artwork mover does not relocate it.
+forward annotation. In the build placer, free text is a fixed-body keep-out;
+attached text extends its part's occupied bounding region. These conservative
+projected regions reserve space on both sides. Connector seat geometry keeps
+its original native body bounds. Attached text retains its declared offset;
+the artwork mover does not relocate it. Final checks also refuse a label covered
+by another part's same-side courtyard (or native bounds when no courtyard exists).
 
 The final `board_text` file check verifies content, visibility, attachment, side,
 position, angle, font and size on the saved board. It requires the full native
@@ -91,6 +108,14 @@ silk or pad mask openings and must clear same-side pad copper by the sourced
 Native DRC also runs on the complete
 board; no label is hidden, clipped or moved to a fabrication layer to pass.
 Neither check establishes physical printing or readability after assembly.
+
+The generated `board-text-fab` check uses the existing `fab_profile` path for
+all four legend limits, including the recorded 0.15 mm silk-to-mask minimum.
+It retains order-selection and supplier-applicability gates. The packaged
+profile has no captured target order and the existing path cannot measure the
+silk-to-mask limit: those records remain unknown and prevent file release.
+A passing `board_text` geometry check therefore does not claim complete legend
+fabrication qualification. No order or applicability evidence is invented.
 
 The initial sourced fab template supports conventional FR-4, two copper layers,
 1 oz outer copper and nominal 1.2 mm thickness. Other layer counts and nominal

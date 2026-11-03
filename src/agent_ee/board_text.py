@@ -4,6 +4,7 @@ Coordinates are explicit design choices. Footprint-owned graphics follow the
 native rigid transform; the artwork mover has no authority to change them.
 """
 import argparse
+import json
 import math
 import re
 import uuid
@@ -15,6 +16,8 @@ from .symbol_library import nanometres as _nanometres
 SCHEMA = 'agent-ee.board-text/1'
 DATA = Path(__file__).parent / 'data'
 KEYS = ('min_silk_text_height_mm', 'min_silk_line_width_mm', 'min_pad_to_silk_mm')
+PLACEMENT_FIELD = 'agent_ee_board_text_placement'
+LITERAL_CONSTRUCTS = ('${', '@{', '~{', '_{', '^{')
 
 
 def nanometres(value):
@@ -43,8 +46,9 @@ def validate_items(items, references=None, pins=None):
         seen.add(ident)
         text = row['text']
         if (not isinstance(text, str) or not text.strip() or len(text) > 256
-                or any(not c.isprintable() for c in text) or '${' in text):
-            fail('text must be 1–256 printable characters without KiCad text variables')
+                or any(not c.isprintable() for c in text) or '\\' in text
+                or any(token in text for token in LITERAL_CONSTRUCTS)):
+            fail('text must be 1–256 printable literal characters without KiCad variables, expressions or markup')
         if row['layer'] not in ('F.SilkS', 'B.SilkS'):
             fail('layer must be F.SilkS or B.SilkS')
         anchor = row['anchor']
@@ -149,9 +153,14 @@ def _pose(board, doc, row):
 def emit(board, doc, limits):
     """Add real visible silk text. Native footprint ownership carries attached labels."""
     import pcbnew as k
+    labels = {}
+    owners = sorted(board.GetFootprints(), key=lambda fp: fp.m_Uuid.AsString())
     for row in doc['items']:
         owner, at, angle, layer, mirror = _pose(board, doc, row)
         text = k.PCB_TEXT(owner or board)
+        text.SetKeepUpright(False)
+        text.SetHorizJustify(k.GR_TEXT_H_ALIGN_CENTER)
+        text.SetVertJustify(k.GR_TEXT_V_ALIGN_CENTER)
         text.SetText(row['text'])
         text.SetLayer(layer)
         text.SetPosition(at)
@@ -162,6 +171,60 @@ def emit(board, doc, limits):
         text.SetTextThickness(nanometres(row.get('stroke_mm', limits[KEYS[1]])))
         text.SetUuidDirect(k.KIID(label_uuid(doc['namespace'], row['id'])))
         (owner or board).Add(text)
+        holder = owner or (owners[0] if owners else None)
+        if holder is None:
+            raise ValueError('board text placement metadata needs a physical part')
+        entry = labels.setdefault(holder.m_Uuid.AsString(), (holder, dict(free=[], attached=[])))
+        entry[1]['attached' if owner else 'free'].append(text.m_Uuid.AsString())
+    for holder, record in labels.values():
+        if holder.HasField(PLACEMENT_FIELD):
+            raise ValueError('board text placement metadata already exists')
+        holder.SetField(PLACEMENT_FIELD, json.dumps(record, sort_keys=True))
+        field = next(f for f in holder.GetFields() if f.GetName() == PLACEMENT_FIELD)
+        field.SetVisible(False)
+        field.SetLayer(k.F_Fab)
+        field.SetUuidDirect(k.KIID(str(uuid.uuid5(uuid.UUID(holder.m_Uuid.AsString()), PLACEMENT_FIELD))))
+
+
+def placement_regions(board):
+    """Native label bounds cited by immutable footprint properties.
+
+    Free text becomes fixed-body input to the existing engine. Attached text
+    extends its owner's occupied region. Neither adds a fictitious PCB part.
+    """
+    import pcbnew as k
+    drawings = {i.m_Uuid.AsString(): i for i in board.GetDrawings()}
+    free, attached, seen = [], {}, set()
+    for fp in board.GetFootprints():
+        fields = [f for f in fp.GetFields() if f.GetName() == PLACEMENT_FIELD]
+        if not fields:
+            continue
+        if len(fields) != 1:
+            raise ValueError('ambiguous board text placement metadata')
+        record = json.loads(fields[0].GetText())
+        if (not isinstance(record, dict) or set(record) != {'free', 'attached'} or
+                any(not isinstance(record[key], list) for key in record)):
+            raise ValueError('malformed board text placement metadata')
+        owned = {i.m_Uuid.AsString(): i for i in fp.GraphicalItems()}
+        for kind in ('free', 'attached'):
+            for uid in record[kind]:
+                item = (drawings if kind == 'free' else owned).get(uid)
+                if (uid in seen or item is None or item.GetClass() != 'PCB_TEXT' or not item.IsVisible()
+                        or item.GetLayer() not in (k.F_SilkS, k.B_SilkS)):
+                    raise ValueError('missing, hidden or ambiguous declared board text: ' + str(uid))
+                seen.add(uid)
+                box = item.GetBoundingBox()
+                bounds = [box.GetLeft(), box.GetTop(), box.GetRight(), box.GetBottom()]
+                if kind == 'attached':
+                    attached.setdefault(fp.m_Uuid.AsString(), []).append(bounds)
+                else:
+                    at = item.GetPosition()
+                    free.append(dict(uuid=uid, native_ref='board-text:' + uid,
+                        role='fixed_body', pose=dict(x_nm=at.x, y_nm=at.y, quarter_turns=0),
+                        occupancy=dict(status='derived', label='derived_occupancy', rung='silk+pads',
+                            local_rect_nm=[bounds[0]-at.x, bounds[1]-at.y, bounds[2]-at.x, bounds[3]-at.y]),
+                        copper_local_nm=[], mask_local_nm=[], holes_local_nm=[], pads=[], rotations=[0]))
+    return sorted(free, key=lambda r: r['uuid']), attached
 
 
 def _conflicts(text, items, pad_clearance):
@@ -221,10 +284,10 @@ def evaluate(board, doc, limits):
         parent = text.GetParentFootprint()
         if (parent.m_Uuid.AsString() if parent else None) != (owner.m_Uuid.AsString() if owner else None):
             defects.append('attachment_changed')
-        if text.GetText() != row['text'] or not text.IsVisible():
+        if text.GetShownText(False) != row['text'] or not text.IsVisible():
             defects.append('content_or_visibility_changed')
         if (text.GetLayer() != layer or text.IsMirrored() != mirror or
-                text.GetTextAngle().AsDegrees() % 360 != angle or text.GetPosition() != at):
+                text.GetTextAngle().AsDegrees() % 360 != angle or text.GetPosition() != at or text.IsKeepUpright()):
             defects.append('declared_pose_changed')
         if (text.GetTextHeight() < nanometres(limits[KEYS[0]]) or
                 text.GetTextThickness() < nanometres(limits[KEYS[1]])):
@@ -239,6 +302,18 @@ def evaluate(board, doc, limits):
         if conflicts:
             defects.append('silk_overlap_or_pad_clearance')
         record['conflicts'] = conflicts
+        covered = []
+        for fp in board.GetFootprints():
+            if ((owner is not None and fp.m_Uuid.AsString() == owner.m_Uuid.AsString())
+                    or fp.IsFlipped() != (layer == k.B_SilkS)):
+                continue
+            court = fp.GetCourtyard(k.B_CrtYd if fp.IsFlipped() else k.F_CrtYd)
+            body = court.BBox() if court.OutlineCount() else fp.GetBoundingBox(False, False)
+            if text.GetBoundingBox().Intersects(body):
+                covered.append(fp.GetReference())
+        if covered:
+            defects.append('label_covered_by_part')
+        record['covering_parts'] = covered
         record.update(text=text.GetText(), layer=board.GetLayerName(text.GetLayer()),
                       position_nm=[text.GetPosition().x, text.GetPosition().y],
                       expected_position_nm=[at.x, at.y], rotation_deg=text.GetTextAngleDegrees(),
