@@ -40,8 +40,8 @@ the optional policy for a separately measured workload.
 
 The local search uses effective native net-class routing sizes and clearance,
 bounded visibility paths around copper and every undeclared pad, including
-same-net pads, and radial via escapes outside all solder lands. The search tries 36 directions
-at six fixed radii, with at most 216 candidate centres before the far-side filter;
+same-net pads, and radial via escapes outside all solder lands. The search retains all eight original radial directions and adds a 10-degree grid,
+for 40 directions at six fixed radii and at most 240 centres before the far-side filter;
 paths still stay within 2 mm and every pad, edge and copper rule remains in force. Each generated
 via keeps effective net-class clearance from every pad on every copper layer.
 Generated tracks may touch only their declared endpoint pads. Same-net

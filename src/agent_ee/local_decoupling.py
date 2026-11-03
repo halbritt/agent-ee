@@ -300,7 +300,7 @@ def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None, reusable=
                   for b in _obstacles(board, terminal.GetNetCode(), l, margin)]
     front = _obstacles(board, terminal.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000, (terminal,))
     edge = board.GetBoardEdgesBoundingBox()
-    angles = sorted(range(0, 360, 10), key=lambda angle: (
+    angles = sorted(set(range(0, 360, 10)) | set(range(0, 360, 45)), key=lambda angle: (
         0 if away_from is None else (away_from[0]-a[0])*math.cos(math.radians(angle))
         + (away_from[1]-a[1])*math.sin(math.radians(angle)), angle))
     for distance in (600_000, 800_000, 1_000_000, 1_250_000, 1_500_000, 2_000_000):
