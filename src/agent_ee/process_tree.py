@@ -99,7 +99,10 @@ def stop_tree(rounds=300):
             return True
         for pid in live:
             # Nothing collects children between owned() and here, so each PID is still this child.
-            os.kill(pid, signal.SIGKILL)
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except PermissionError:
+                pass  # A setuid child cannot be signalled; it remains, and the tree is not shown empty.
         time.sleep(0.01)
     reap()
     return not any(owned(pid, start) for pid, start in children())
@@ -180,7 +183,7 @@ def main(argv=None):
         try:
             emptied = stop_tree()
         except OSError as exc:
-            print(f'agent-ee process tree: {PROC} cannot be read ({exc})', file=sys.stderr)
+            print(f'agent-ee process tree: the phase tree could not be inspected ({exc})', file=sys.stderr)
         if not emptied:
             print('agent-ee process tree: the phase tree could not be shown empty; descendants may remain',
                   file=sys.stderr)
