@@ -12,7 +12,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from agent_ee import build_stages, campaign, native_run, parts_stage, run_record
+from agent_ee import build_stages, native_run, parts_stage, run_record
+from agent_ee.acquisition import addr_repair as campaign
 from agent_ee.baseline import compile_baseline, load_baseline
 from agent_ee.check_record import CheckRecord
 from agent_ee.passive_ratings import load_provenance

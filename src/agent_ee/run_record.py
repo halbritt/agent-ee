@@ -22,7 +22,8 @@ from .storage import digest, digest_scope, fingerprint as runtime_digest, read_j
 def policy_files():
     # Package data is policy too: the snapshot a helper step runs from needs it (AGENTEE-439).
     root = Path(__file__).resolve().parent
-    files = {p.name: digest(p) for p in sorted(root.glob("*.py"))}
+    files = {p.relative_to(root).as_posix(): digest(p) for p in sorted(root.rglob("*.py"))
+             if "__pycache__" not in p.parts}
     files.update({p.relative_to(root).as_posix(): digest(p) for p in sorted((root / "data").rglob("*"))
                   if p.is_file() and "__pycache__" not in p.parts})
     return files
