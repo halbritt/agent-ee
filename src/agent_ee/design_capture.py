@@ -143,6 +143,30 @@ def model_references(cad):
     return sorted(refs)
 
 
+def missing_models(design, cad, report):
+    """One refusal line per part whose footprint uses a stock 3D model that the fetch did not find,
+    naming the part, its footprint, the model file and the repository revisions that were tried."""
+    from .models3d import stock_reference
+
+    missing = {r["path"]: r for r in report["files"] if r["status"] == "not-found"}
+    problems = []
+    for ref, part in sorted(design["parts"].items()):
+        node = parse_sexpr((cad / footprint_path(part)).read_bytes())
+        for model in children(node, "model"):
+            stock = stock_reference(model[1])
+            if stock is None or stock[1] not in missing:
+                continue
+            tried = ", ".join(a["commit"] for a in missing[stock[1]].get("attempts", []))
+            problems.append(
+                f"parts.{ref}.footprint: {part['footprint']} uses the 3D model {stock[1]}, which "
+                f"{report['repository']} does not have at the revisions recorded for this capture "
+                f"({tried}); choose a footprint whose model is there. models-report.json lists every model"
+            )
+    return problems or [
+        "parts.footprint: a stock 3D model was not found; see models-report.json"
+    ]
+
+
 SUPPLIER_ENDPOINT = (
     "https://easyeda.com/api/products/{lcsc}/components?version=6.4.19.5"
 )
@@ -271,11 +295,7 @@ def _capture_design(design, out, *, kicad_root, stock_endpoint, supplier_endpoin
     report = fetch_stock_references(model_references(out / "cad"), out / "lib3d")
     write_json(out / "models-report.json", report)
     if report["missing"]:
-        raise DesignError(
-            [
-                "parts.footprint: some stock models were not found at pinned revisions; choose a supported footprint; see models-report.json"
-            ]
-        )
+        raise DesignError(missing_models(design, out / "cad", report))
     write_json(
         out / "capture.json",
         dict(

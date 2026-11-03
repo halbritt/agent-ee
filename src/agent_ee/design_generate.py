@@ -580,6 +580,9 @@ def phase_feedback(stage, reason, row):
 
     Short, actionable sections come first, so the cut falls in the bulky placement detail."""
     feedback = f'Failing stage: {stage}\nReason: {reason}\n'
+    if row.get('missing_models'):
+        feedback += ("Stock 3D models not found (the not-found rows of the capture's models-report.json): "
+                     + json.dumps(row['missing_models']) + '\n')
     if 'search_retry_skipped' in row:
         feedback += 'No automatic search retry: ' + row['search_retry_skipped'] + '\n'
     findings = row.get('placement_findings', [])
@@ -987,6 +990,10 @@ def _generate(requirements_path, out, options, identity=None):
             except PhaseFailure as exc:
                 row.update(status='failed', failing_stage=exc.stage, reason=str(exc),
                     refusal_classes=refusal_classes(str(exc)))
+                models = read_optional(Path(row['capture']) / 'models-report.json') \
+                    if exc.stage == 'capture' and 'capture' in row else None
+                if models:
+                    row['missing_models'] = [r for r in models.get('files', []) if r.get('status') == 'not-found']
                 feedback = phase_feedback(exc.stage, str(exc), row)
                 (attempt / 'refusal.txt').write_text(str(exc), encoding='utf-8')
                 if exc.stage in ('capture', 'compile') and not row['refusal_classes']:

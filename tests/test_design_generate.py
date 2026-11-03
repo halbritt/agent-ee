@@ -495,6 +495,32 @@ class GenerateTests(ScriptedLoop):
         self.assertEqual(report['attempts'][0]['tool_gap'], 'Refusal does not name a design field')
         self.assertEqual((self.root / 'run/attempt-001/refusal.txt').read_text(), 'unlocated preflight failure')
 
+    def test_capture_refusal_passes_the_models_report_to_the_next_author_turn(self):
+        # Benchmark r4 led-flasher attempt-001: models-report.json never reached the next prompt.
+        self.responses = [self.response(), self.response()]
+        original = self.step
+        missing = dict(path='Owned.3dshapes/J1.step', status='not-found',
+                       attempts=[dict(commit='c' * 40, source_url='https://example.invalid/J1.step', status=404)])
+        found = dict(path='Owned.3dshapes/R2.step', status='downloaded', commit='c' * 40, sha256='d' * 64)
+        def step(attempt, label, argv, seconds):
+            if label != 'capture' or attempt.name != 'attempt-001':
+                return original(attempt, label, argv, seconds)
+            (attempt / 'capture').mkdir()
+            write_json(attempt / 'capture/models-report.json', dict(schema='agent-ee.models-fetch/1',
+                repository='https://example.invalid/models', status='partial', files=[found, missing], missing=1))
+            (attempt / 'capture-execution').mkdir()
+            (attempt / 'capture-execution/stderr.log').write_text(
+                'agent-ee: Design refused:\n- parts.J1.footprint: Owned:J1 uses the 3D model Owned.3dshapes/J1.step')
+            return dict(execution='failed', exit_code=2)
+        with patch.object(loop, 'run_step', side_effect=step):
+            report = self.generate(max_attempts=2)
+        self.assertEqual(report['attempts'][0]['missing_models'], [missing])
+        feedback = self.feedback(1)
+        self.assertIn('parts.J1.footprint: Owned:J1 uses the 3D model Owned.3dshapes/J1.step', feedback)
+        self.assertIn('"path": "Owned.3dshapes/J1.step", "status": "not-found"', feedback)
+        self.assertIn('"source_url": "https://example.invalid/J1.step"', feedback)
+        self.assertNotIn('Owned.3dshapes/R2.step', feedback)
+
     def test_phase_logs_reach_reasons_only_as_bounded_tails(self):
         self.responses = [self.response(), self.response()]
         original = self.step

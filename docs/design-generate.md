@@ -146,6 +146,9 @@ What goes back to the author is bounded:
 - Feedback is cut at 14000 characters and marked; the full refusal stays in the
   attempt.
 - Phase logs enter reasons and feedback only as the last 6000 bytes of each log.
+- When capture fails, the feedback also carries the not-found rows of the
+  capture's `models-report.json`: each missing stock 3D model file and the
+  revisions tried. The attempt row keeps them as `missing_models`.
 - A failed engineering review leads with its blocking findings (accepted,
   deferred or unresolved), then a short excerpt of the review report. The report
   itself stays in `review/report.json`.

@@ -123,7 +123,10 @@ accidental edits; it does not authenticate a vendor response against forgery.
 
 Local symbol subsets and footprints are retained in `cad/`. Model downloads use
 the footprints' stock model references through the public
-`models3d.fetch_stock_references` function; no placed board is required. Supplier
+`models3d.fetch_stock_references` function; no placed board is required. If a
+model file is missing from the model repository at every revision tried, capture
+refuses. The refusal names each part, its footprint, the model file and the
+revisions tried; `models-report.json` keeps every model's result. Supplier
 capture retains the full response, the exact UTF-8 byte span of its top-level
 `result` object, and provenance plus byte offsets and hashes. Nothing uploads
 project files or places an order.

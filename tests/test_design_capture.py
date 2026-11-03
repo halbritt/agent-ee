@@ -136,6 +136,28 @@ class CaptureHttpTests(unittest.TestCase):
                 self.assertTrue((self.root / boundary / "cad/Owned.kicad_sym").exists())
                 self.assertFalse((self.root / boundary / "capture.json").exists())
 
+    def test_missing_stock_model_refusal_names_each_part_footprint_and_model_file(self):
+        # Benchmark r4 led-flasher attempt-001: the refusal named neither the part nor the file.
+        from unittest.mock import patch
+        from agent_ee import models3d
+
+        footprint = self.kicad / "footprints/Owned.pretty/R2.kicad_mod"
+        footprint.write_bytes(footprint.read_bytes().rstrip()[:-1]
+                              + b' (model "${KICAD10_3DMODEL_DIR}/Owned.3dshapes/R2.step"))\n')
+        # Every download is a 404, as for a model missing from the repository at each revision.
+        with patch.object(models3d, "_download_model", return_value=None), \
+                self.assertRaises(DesignError) as caught:
+            self.capture()
+        message = str(caught.exception)
+        for ref in ("R1", "R2"):
+            self.assertIn(f"parts.{ref}.footprint: Owned:R2 uses the 3D model Owned.3dshapes/R2.step", message)
+        for revision in models3d.STOCK_REVISIONS:
+            self.assertIn(revision, message)
+        report = json.loads((self.root / "captured/models-report.json").read_bytes())
+        self.assertEqual([(r["path"], r["status"]) for r in report["files"]],
+                         [("Owned.3dshapes/R2.step", "not-found")])
+        self.assertFalse((self.root / "captured/capture.json").exists())
+
     def test_malformed_supplier_body_stays_retained_and_cannot_be_compiled(self):
         self.supplier_raw = b'{"result":null}'
         with self.assertRaisesRegex(DesignError, "captures"):
