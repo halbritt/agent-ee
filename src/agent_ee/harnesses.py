@@ -222,23 +222,16 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
             record['tool_host_sha256'] = digest(host)
         record['harness_binary_sha256'] = digest(executable)
         with seat_credential(credential) as mounted:
-            try:
-                record.update(
-                    native_run.run(
-                        native_run.Intent('model', argv, stdin=stdin, timeout=timeout, network=True,
-                                          log_bytes=log_bytes),
-                        inputs=Path(run_dir) / 'inputs',
-                        work=work,
-                        mounts=[(mounted, guest), *mounts],
-                        cancel=cancellation,
-                    )
+            record.update(
+                native_run.run(
+                    native_run.Intent('model', argv, stdin=stdin, timeout=timeout, network=True,
+                                      log_bytes=log_bytes),
+                    inputs=Path(run_dir) / 'inputs',
+                    work=work,
+                    mounts=[(mounted, guest), *mounts],
+                    cancel=cancellation,
                 )
-            finally:
-                # Experiments are retained and can be fed to later seats; a copy of the
-                # mounted login must not travel with them.
-                refused = refuse_credential_copies(work / 'experiments', mounted)
-                if refused:
-                    record['credential_copies_refused'] = refused
+            )
         if record['execution'] != 'ok':
             record['error'] = 'harness execution failed; inspect retained console; no fallback attempted'
             return record, None
@@ -287,52 +280,6 @@ def seat_credential(path):
         shutil.copyfile(path, copy)
         copy.chmod(0o400)
         yield copy
-
-
-def credential_needles(login):
-    """The login bytes and every long token-like run inside them (a token copied on its own)."""
-    whole = login.strip()
-    return sorted({whole, *re.findall(rb'[A-Za-z0-9._~+/=-]{32,}', login)} - {b''}, key=len)
-
-
-def refuse_credential_copies(directory, credential):
-    """Delete each experiment file that holds the seat's mounted login or a token from it.
-
-    A file this process cannot read is deleted too, since it cannot be checked. Returns the
-    removed paths relative to directory, never their content. Verbatim copies only: an
-    encoded or split copy is not detected."""
-    directory = Path(directory)
-    if directory.is_symlink() or not directory.is_dir():
-        return []
-    needles = credential_needles(Path(credential).read_bytes())
-    if not needles:
-        return []
-    overlap = max(map(len, needles)) - 1
-    refused = []
-    for root, _, names in os.walk(directory):
-        for name in sorted(names):
-            path = Path(root) / name
-            if path.is_symlink() or not path.is_file():
-                continue
-            tail = b''
-            try:
-                with path.open('rb') as stream:
-                    while chunk := stream.read(1 << 20):
-                        window = tail + chunk
-                        if any(needle in window for needle in needles):
-                            refused.append(path)
-                            break
-                        tail = window[-overlap:] if overlap else b''
-            except OSError:
-                refused.append(path)
-    for path in refused:
-        try:
-            path.unlink()
-        except PermissionError:
-            # The seat owns its experiments; a directory it made read-only is reopened.
-            path.parent.chmod(0o700)
-            path.unlink()
-    return sorted(path.relative_to(directory).as_posix() for path in refused)
 
 
 def evidence_mounts(run_dir, label):

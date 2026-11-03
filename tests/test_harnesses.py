@@ -356,37 +356,15 @@ class NativeCallTests(unittest.TestCase):
         call, record, _ = self.call(log_bytes=4096, extra_mounts=[(libraries, '/kicad')])
         self.assertEqual(call.intent.log_bytes, 4096)
         self.assertIn((libraries, '/kicad'), call.mounts)
-        self.assertNotIn('credential_copies_refused', record)
 
-    def test_experiment_copies_of_the_mounted_login_are_refused(self):
-        token = json.loads(self.login)['tokens']['refresh_token']
-        call, record, value = self.call(files={
-            'experiments/login-copy.json': self.login,
-            'experiments/nested/token.txt': b'export TOKEN=' + token.encode() + b'\n',
-            'experiments/parts.json': b'{"lcsc": "C1"}'})
-        experiments = self.root / 'review-work/probe/experiments'
-        self.assertEqual(record['credential_copies_refused'], ['login-copy.json', 'nested/token.txt'])
-        self.assertEqual(sorted(p.relative_to(experiments).as_posix() for p in experiments.rglob('*') if p.is_file()),
-                         ['parts.json'])
+    def test_experiments_are_retained_unchanged(self):
+        # Evidence is never deleted on a heuristic, even a file that holds the (fake) login.
+        files = {'experiments/login-copy.json': self.login, 'experiments/parts.json': b'{"lcsc": "C1"}'}
+        _, record, value = self.call(files=files)
         self.assertEqual(value, {'answer': 1})
-        retained = b''.join(p.read_bytes() for p in (self.root / 'review-work').rglob('*') if p.is_file())
-        self.assertNotIn(token.encode(), retained)
-
-    def test_unreadable_files_and_read_only_folders_keep_no_copy(self):
-        from agent_ee.harnesses import refuse_credential_copies
-        experiments = self.root / 'experiments'
-        locked = experiments / 'locked'
-        locked.mkdir(parents=True)
-        (locked / 'copy.json').write_bytes(self.login)
-        locked.chmod(0o500)
-        self.addCleanup(locked.chmod, 0o700)
-        hidden = experiments / 'hidden.bin'
-        hidden.write_bytes(b'cannot be checked')
-        hidden.chmod(0)
-        # A file that cannot be read cannot be checked, so it is not kept (root can read it).
-        expected = ['locked/copy.json'] + ([] if os.access(hidden, os.R_OK) else ['hidden.bin'])
-        self.assertEqual(refuse_credential_copies(experiments, self.root / 'subscription/auth.json'), sorted(expected))
-        self.assertFalse((locked / 'copy.json').exists())
+        for name, data in files.items():
+            self.assertEqual((self.root / 'review-work/probe' / name).read_bytes(), data)
+        self.assertNotIn('credential_copies_refused', record)
 
 
 if __name__ == '__main__':
