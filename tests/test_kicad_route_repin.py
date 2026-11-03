@@ -73,6 +73,14 @@ class RepinPolicyTest(unittest.TestCase):
                     'src/kicad_route/router/rust_router/Cargo.lock'):
             self.assertIn(rel, attempt.PINNED_CODE)
 
+    def test_ci_image_installs_the_packaged_router_pin(self):
+        # The image's install.sh lagged five re-pins behind (c4af095 against 995891ae), so every
+        # strict-suite router test refused the image's own checkout (2026-11-03 baseline).
+        script = Path(__file__).resolve().parents[1] / 'docker/kicad-route/install.sh'
+        pins = [line.split('=', 1)[1] for line in script.read_text().splitlines()
+                if line.startswith('KICAD_ROUTE_COMMIT=')]
+        self.assertEqual(pins, [attempt.PIN])
+
     def test_pin_is_data_not_logic(self):
         # AGENTEE-539: a re-pin rewrites the pin data file and this identity test, no adapter line.
         self.assertEqual(attempt.load_pin(), {'schema': attempt.PIN_SCHEMA, 'pin': attempt.PIN,
