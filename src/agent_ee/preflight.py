@@ -49,8 +49,12 @@ def runtime_drift(expected, observed, definitions):
                                for k in changed if harnesses.get(k) == 'unused']}
 
 
-def capture_expectation(result, manifest, definitions, *, inputs=None):
-    """Capture once before checks/edits; callers supply the original runtime."""
+def capture_expectation(result, manifest, definitions, *, inputs=None, measured_tools=None):
+    """Capture once before checks/edits; callers supply the original runtime.
+
+    DC tools are measured on this host at capture. Recomputing a recorded expectation
+    passes its declared_tools as measured_tools, so verification reads the record and
+    never this host's binaries."""
     from .baseline import compile_baseline
     baseline = compile_baseline(manifest['scope'], manifest.get('files', {}), inputs)
     tools, installations = {}, {}
@@ -74,8 +78,9 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
         params = spec.get('params', {})
         if spec.get('kind') == 'dc_path':
             # The DC tools as measured at launch: the run records them and refuses a change.
-            from .dc_path import tools as dc_tools
-            tools.update(dc_tools())
+            from .dc_path import TOOL_PATHS, tools as dc_tools
+            tools.update(dc_tools() if measured_tools is None else
+                         {path: measured_tools[path] for path in TOOL_PATHS if path in measured_tools})
         if spec.get('kind') == 'datasheet_facts':
             extractor = params['extractor']
             tools[extractor['path']] = extractor['sha256']
@@ -288,7 +293,7 @@ def verify_calls(run, result, manifest):
     expected = result['launch_expectation']
     validate_expectation(expected)
     if expected != capture_expectation(result, manifest, profile_definitions(manifest['scope']),
-                                       inputs=Path(run) / 'inputs'):
+                                       inputs=Path(run) / 'inputs', measured_tools=expected['declared_tools']):
         raise ValueError('launch expectation differs from captured run')
     invocation_ids = set()
     for record in result.get('review_executions', []):

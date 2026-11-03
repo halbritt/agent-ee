@@ -558,7 +558,8 @@ def record_iteration(root, state, run, config, *, host=None):
         # A refused capture leaves no candidate; report the run's own typed refusal.
         error = read_json(run / "result.json").get("error") or "no recorded error"
         raise ValueError(f"run {run.name} captured no candidate: {error}")
-    result = verify(run, host=host)
+    # The campaign is in progress on this host: the run must have used this host's tools.
+    result = verify(run, host=host, current_host=True)
     if ('max_schema_resubmissions' in state and
             result.get('max_schema_resubmissions') != state['max_schema_resubmissions']):
         raise ValueError('review resubmission bound differs from campaign configuration')
@@ -676,7 +677,7 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None, ho
             if state["state"] != "repair":
                 return 0 if state["state"] == "criteria_satisfied" else 1
             with writer_lock(run):
-                verify(run, invoked=[config["implementation"]], host=host)
+                verify(run, invoked=[config["implementation"]], host=host, current_host=True)
                 scope_path = implement(root, run, config["implementation"], state, deadline, host=host)
     except (ValueError, OSError, KeyError, TypeError, KeyboardInterrupt) as exc:
         state.update(state="incomplete", error=f"{type(exc).__name__}: {exc}")
@@ -723,7 +724,8 @@ def verify_campaign_records(root, *, observations=None, host=None):
             source = Path(state['history'][int(work.name) - 1]['run'])
             original = read_json(source / 'result.json')
             wanted = capture_expectation({**original, **state['launch_environment']},
-                read_json(source / 'candidate.json'), [{**config['implementation'], 'tool_mode': 'investigate'}], inputs=source / 'inputs')
+                read_json(source / 'candidate.json'), [{**config['implementation'], 'tool_mode': 'investigate'}],
+                inputs=source / 'inputs', measured_tools=expected.get('declared_tools'))
             if expected != wanted:
                 raise ValueError('implementation launch expectation changed')
             from .review_run import verify_role_call

@@ -406,10 +406,20 @@ class DatasheetFactsTests(unittest.TestCase):
             self.assertEqual(run_review(self.root / 'scope.json', out, 60, checks_only=True), 1)
         result = verify(out)
         self.assertEqual(result['checks'][-1]['outcome'], 'pass')
-        # Simulated installed binary replacement; extraction above used real Poppler.
-        with patch('agent_ee.datasheet_facts.digest', return_value='0' * 64):
+        # Simulated installed binary replacement; extraction above used real Poppler. The finished
+        # run is verified against its recorded extractor; the host's binary is information, and
+        # only a caller claiming this host's tools for the run refuses it.
+        recorded = next(spec['params']['extractor']['sha256'] for spec in read_json(out / 'candidate.json')['scope']['checks']
+                        if spec['kind'] == 'datasheet_facts')
+        with patch('agent_ee.run_record.digest', side_effect=lambda path: '0' * 64 if str(path) == '/usr/bin/pdftotext'
+                   else digest(path)):
+            observations = []
+            self.assertEqual(verify(out, observations=observations), result)
+            self.assertIn({'name': '/usr/bin/pdftotext', 'kind': 'host_difference',
+                           'recorded': {'path': '/usr/bin/pdftotext', 'sha256': recorded},
+                           'current': {'path': '/usr/bin/pdftotext', 'sha256': '0' * 64}}, observations)
             with self.assertRaisesRegex(ValueError, 'pdftotext hash changed'):
-                verify(out)
+                verify(out, current_host=True)
 
     def test_extractor_hash_and_version_mismatch_are_not_verified(self):
         self.run_fact()

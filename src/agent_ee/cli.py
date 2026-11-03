@@ -163,9 +163,15 @@ def render3d(args):
 
 
 def print_runtime_observations(observations):
+    def identity(record):
+        return f"{record.get('path')} {record.get('sha256')}" if isinstance(record, dict) else repr(record)
     for change in observations:
-        print(f"observation: unused harness runtime {change['name']} changed since capture; "
-              "this run never invoked it, so integrity still holds")
+        if change.get("kind") == "host_difference":
+            print(f"observation: {change['name']} differs on this host: recorded {identity(change['recorded'])}, "
+                  f"current {identity(change['current'])}; the run is verified against its own records")
+        else:
+            print(f"observation: unused harness runtime {change['name']} changed since capture; "
+                  "this run never invoked it, so integrity still holds")
 
 
 # Commands whose whole path takes a caller's host fingerprints (run_record.pinned).
@@ -283,6 +289,8 @@ def main(argv=None, *, host=None):
         p.add_argument("run")
         if cmd == "verify":
             p.add_argument("--snapshot-only", action="store_true")
+            p.add_argument("--current-host", action="store_true",
+                           help="also require the tools the run used to be this host's (work continuing on the run)")
     resume = sub.add_parser("resume", help="preserve old run; recapture/rerun all evidence into new run")
     resume.add_argument("run")
     resume.add_argument("--out", required=True)
@@ -424,7 +432,7 @@ def main(argv=None, *, host=None):
         elif args.command == "verify":
             observations = []
             result = run_record.verify(args.run, current_source=not args.snapshot_only, observations=observations,
-                                       host=host)
+                                       host=host, current_host=args.current_host)
             print(f"fresh {result['outcome']}: {result['candidate_id']}")
             print_runtime_observations(observations)
         elif args.command == "resume":

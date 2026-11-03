@@ -106,11 +106,15 @@ def artifacts(run):
     return found
 
 
-def verify(run, *, current_source=True, observations=None, invoked=(), host=None):
-    """Raise on integrity failure; unused-harness changes are appended to observations.
+def verify(run, *, current_source=True, observations=None, invoked=(), host=None, current_host=False):
+    """Raise on integrity failure; tool differences from this host are appended to observations.
 
-    invoked names further definitions that ran against this run (a campaign
-    writer); their harnesses gate drift like the profile's. host, when given, holds
+    A finished run is verified against its own records: it used the tools it recorded, and
+    a different tool on the verifying host is information (host_difference), never a
+    failure. current_host=True is for a caller that claims this host's tools for the run,
+    a run in progress or work continuing on it; a difference in a tool the run used then
+    refuses. invoked names further definitions that ran against this run (a campaign
+    writer); their harnesses count as used like the profile's. host, when given, holds
     the caller's one observation of this host's policy and runtime files (see observed)."""
     run = Path(run).resolve()
     from .locking import reader_lock
@@ -119,7 +123,12 @@ def verify(run, *, current_source=True, observations=None, invoked=(), host=None
         result = read_json(run / "result.json")
         verify_publications(run, result)
         return verify_records(run, result, current_source=current_source, observations=observations,
-                              invoked=invoked, host=host)
+                              invoked=invoked, host=host, current_host=current_host)
+
+
+def host_difference(name, recorded, current):
+    """An observation: a tool the run recorded differs on the verifying host (recorded versus current)."""
+    return {"name": name, "kind": "host_difference", "recorded": recorded, "current": current}
 
 
 def observed(host, name, observe):
@@ -143,8 +152,9 @@ def pinned(host, name, observe):
     return copy.deepcopy(host[name]) if host is not None and name in host else observe()
 
 
-def verify_records(run, result, *, current_source=True, observations=None, invoked=(), host=None):
-    """Validate an explicit projection; callers separately bind publication intent."""
+def verify_records(run, result, *, current_source=True, observations=None, invoked=(), host=None,
+                   current_host=False):
+    """Validate an explicit projection; callers separately bind publication intent (see verify)."""
     manifest = verify_source(run) if current_source else verify_snapshot(run)
     from . import judgment_context
     judgment_context.read(run, result=result)
@@ -158,14 +168,38 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
     if result.get("policy_files") != observed(host, "policy_files", policy_files):
         raise ValueError("review implementation changed; rerun under the current rules")
     from .preflight import profile_definitions, runtime_drift
+    recorded = result.get("runtime_files")
+    if not isinstance(recorded, dict):
+        raise ValueError("tool runtime changed in the run's records: runtime_files is missing")
+    # The launch expectation recorded the same runtime; verify_calls also recomputes it.
+    expectation = result.get("launch_expectation")
+    if expectation is not None and (not isinstance(expectation, dict) or expectation.get("runtime_files") != recorded):
+        raise ValueError("tool runtime changed in the run's records: runtime_files differs from the launch expectation")
+    current = observed(host, "runtime_files", runtime_files)
     # Without a captured launch expectation every harness counts as used.
-    drift = runtime_drift(result.get("runtime_files") or {}, observed(host, "runtime_files", runtime_files),
-                          [*profile_definitions(manifest["scope"]), *invoked]
-                          if "launch_expectation" in result else None)
-    if not isinstance(result.get("runtime_files"), dict) or drift["gated"]:
+    drift = runtime_drift(recorded, current, [*profile_definitions(manifest["scope"]), *invoked]
+                          if expectation is not None else None)
+    if current_host and drift["gated"]:
         raise ValueError("tool runtime changed; rerun under the current tools")
     if observations is not None:
         observations.extend(drift["unused_changes"])
+        if not current_host:
+            observations.extend(host_difference(name, recorded.get(name), current.get(name))
+                                for name in drift["gated"])
+
+    def declared_tool(path, sha256, refusal):
+        """A scope-declared tool: its recorded digest, compared with this host only as information."""
+        try:
+            live = digest(path)
+        except OSError:
+            live = None
+        if live == sha256:
+            return
+        if current_host:
+            raise ValueError(refusal)
+        if observations is not None:
+            observations.append(host_difference(path, {"path": path, "sha256": sha256},
+                                                {"path": path, "sha256": live}))
     # The analyzer installation a run used is checked against the run's own evidence, not this host.
     from .kicad_happy import verify_recorded
     verify_recorded(run, result["checks"])
@@ -186,13 +220,14 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
     for spec in manifest["scope"].get("checks", []):
         tool = spec.get("params", {}).get("tool")
         if spec.get("kind") == "datasheet_facts":
-            from .datasheet_facts import verify_extractor
-            verify_extractor(spec.get("params", {}).get("extractor"))
+            from .datasheet_facts import EXTRACTOR, validate_extractor
+            extractor = spec.get("params", {}).get("extractor")
+            validate_extractor(extractor)
+            declared_tool(EXTRACTOR, extractor["sha256"], "installed pdftotext hash changed")
         if spec.get("kind") == "measurements":
             if not isinstance(tool, dict) or not tool.get("argv") or not tool.get("sha256"):
                 raise ValueError("measurement check lacks a pinned tool declaration")
-            if digest(tool["argv"][0]) != tool["sha256"]:
-                raise ValueError("declared measurement tool changed since review")
+            declared_tool(tool["argv"][0], tool["sha256"], "declared measurement tool changed since review")
     if result.get("candidate_id"):
         from .rf_review import decide_run
         # A record without the decision is accepted only when no RF review is required.

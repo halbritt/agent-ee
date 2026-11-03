@@ -6,8 +6,9 @@ import unittest
 
 from agent_ee.baseline import freeze_evidence
 from agent_ee.candidate import capture, verify_snapshot
+from agent_ee.preflight import capture_expectation
 from agent_ee.run_record import save_result, verify
-from agent_ee.storage import digest, write_json
+from agent_ee.storage import digest, read_json, write_json
 
 
 class HistoricalReviewBoundaryTests(unittest.TestCase):
@@ -23,6 +24,7 @@ class HistoricalReviewBoundaryTests(unittest.TestCase):
         self.run = self.root / 'run'
         self.run.mkdir()
         manifest = capture(scope_path, self.run)
+        self.manifest = manifest
         self.policy = self.root / 'policy'
         self.policy.mkdir()
         for name in ('viewer.py', 'routing_rules.py'):
@@ -70,11 +72,34 @@ class HistoricalReviewBoundaryTests(unittest.TestCase):
                 finally:
                     path.write_bytes(original)
 
-    def test_replaced_runtime_bytes_refuse_snapshot_review_verification(self):
+    def test_replaced_runtime_bytes_verify_from_the_record_and_are_reported(self):
+        # Integrator decision 2026-11-03 ("versions should be fixed and recorded"): a finished run
+        # used the tools it recorded. Another tool on the verifying host, such as a KiCad update,
+        # is information; only a caller that claims this host's tools for the run refuses it.
+        recorded = self.host['runtime_files']['native-tool']
         self.binary.write_bytes(b'Replacement runtime; never executed.\n')
         verify_snapshot(self.run)
-        with self.assertRaisesRegex(ValueError, 'tool runtime changed'):
-            verify(self.run, current_source=False, host=self.observation())
+        current = self.observation()
+        observations = []
+        result = verify(self.run, current_source=False, observations=observations, host=current)
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertEqual(observations, [{'name': 'native-tool', 'kind': 'host_difference', 'recorded': recorded,
+                                         'current': current['runtime_files']['native-tool']}])
+        with self.assertRaisesRegex(ValueError, 'tool runtime changed; rerun under the current tools'):
+            verify(self.run, current_source=False, host=current, current_host=True)
+
+    def test_tampered_runtime_record_refuses_on_any_host(self):
+        # A run with a launch expectation records its runtime twice; a rewritten result disagrees.
+        stored = read_json(self.run / 'result.json')
+        stored['launch_expectation'] = capture_expectation(stored, self.manifest, [], inputs=self.run / 'inputs')
+        save_result(self.run, stored)
+        self.assertEqual(verify(self.run, current_source=False, host=self.host)['outcome'], 'incomplete')
+        forged = {'path': str(self.binary), 'sha256': '0' * 64}
+        save_result(self.run, {**stored, 'runtime_files': {'native-tool': forged}})
+        for host in (self.host, {**self.host, 'runtime_files': {'native-tool': forged}}):
+            with self.subTest(host_matches_forgery=host is not self.host), \
+                    self.assertRaisesRegex(ValueError, "tool runtime changed in the run's records"):
+                verify(self.run, current_source=False, host=host)
 
     def test_retained_input_and_evidence_tamper_refuse_without_rewriting_history(self):
         before = (self.run / 'result.json').read_bytes()

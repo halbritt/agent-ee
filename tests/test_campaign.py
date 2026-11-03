@@ -784,13 +784,19 @@ Path(sys.argv[2]).write_text(json.dumps(report))
 
     @toolchain_test
     def test_used_harness_update_after_checks_still_refuses_review(self):
-        _, _, result = self.review_with_update_after_checks('codex')
+        base, updated, result = self.review_with_update_after_checks('codex')
+        # A binary that changes while the run is in progress refuses the review.
         self.assertEqual(self.calls, [])
         self.assertEqual(result['outcome'], 'incomplete')
         self.assertIn('implementation or tool runtime changed during review; rerun required', result['error'])
         self.assertTrue(all('runtime_drift' in r.get('error', '') for r in result['review_executions']))
+        # The finished run is verified against its own records; the host's codex is information.
+        observations = []
+        self.assertEqual(verify(self.root / 'run', observations=observations, host=self.host), result)
+        self.assertEqual(observations, [{'name': 'codex', 'kind': 'host_difference',
+                                         'recorded': base['codex'], 'current': updated['codex']}])
         with self.assertRaisesRegex(ValueError, 'tool runtime changed'):
-            verify(self.root / 'run', host=self.host)
+            verify(self.root / 'run', host=self.host, current_host=True)
 
     @toolchain_test
     def test_retained_campaign_observes_unused_harness_update_and_refuses_used(self):
@@ -816,12 +822,19 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with contextlib.redirect_stdout(out):
             self.assertEqual(main(['verify-campaign', str(root)], host=self.host), 0)
         self.assertIn('observation: unused harness runtime agy changed', out.getvalue())
+        # A retained campaign is verified against its records: a used harness that later changes
+        # on this host is reported, recorded versus current, and the campaign still verifies.
         self.host['runtime_files'] = {
             **updated, 'codex': {'path': '/usr/bin/true', 'sha256': 'replaced-by-host-update'}}
-        with self.assertRaisesRegex(ValueError, 'tool runtime changed'):
-            verify_campaign(root, host=self.host)
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(main(['verify-campaign', str(root)], host=self.host), 2)
+        observations = []
+        self.assertEqual(verify_campaign(root, observations=observations, host=self.host)['state'],
+                         'criteria_satisfied')
+        self.assertIn({'name': 'codex', 'kind': 'host_difference', 'recorded': base['codex'],
+                       'current': self.host['runtime_files']['codex']}, observations)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(main(['verify-campaign', str(root)], host=self.host), 0)
+        self.assertIn('observation: codex differs on this host', out.getvalue())
 
     @toolchain_test
     def test_retained_mixed_harness_campaign_gates_on_writer_harness(self):
@@ -839,12 +852,15 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         state = read_json(root / 'state.json')
         self.assertEqual(state['state'], 'criteria_satisfied')
         self.assertGreater(len(state['history']), 1)
-        # The writer produced the candidate, so its binary changing is integrity drift.
+        # The writer produced the candidate with the harness the campaign recorded; a later writer
+        # binary on this host is reported for every run, and the retained campaign still verifies.
         self.host['runtime_files'] = writer_updated
-        with self.assertRaisesRegex(ValueError, 'tool runtime changed'):
-            verify_campaign(root, host=self.host)
+        observations = []
+        self.assertEqual(verify_campaign(root, observations=observations, host=self.host)['state'],
+                         'criteria_satisfied')
+        self.assertEqual([(c['name'], c['kind']) for c in observations], [('claude', 'host_difference')])
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(main(['verify-campaign', str(root)], host=self.host), 2)
+            self.assertEqual(main(['verify-campaign', str(root)], host=self.host), 0)
         # A single review run never invoked the writer; its own verify only observes it.
         observations = []
         verify(root / 'runs/1', current_source=False, observations=observations, host=self.host)
