@@ -25,11 +25,12 @@ from .storage import digest
 
 
 STOCK_REPOSITORY = "https://gitlab.com/kicad/libraries/kicad-packages3D"
-# Verified with git ls-remote on 2026-10-17. The second commit is 6.0.11^{}.
-STOCK_REVISIONS = (
-    "8975715167d1a76f9b44be155ac02326f704cdbb",
-    "417c4ea884a0d1501061f511730604890bbb0a35",
-)
+# GitLab tag lookup for the repository; a tag names the library release of a KiCad release.
+STOCK_TAG_API = "https://gitlab.com/api/v4/projects/kicad%2Flibraries%2Fkicad-packages3D/repository/tags/"
+# Older boards name model files that exist only in older library releases, so a 404 at
+# the installed release's commit tries the same filename at the 6.0.11 tag, a recorded
+# legacy fallback (6.0.11^{}, resolved with git ls-remote on 2026-10-17).
+LEGACY_REVISION = {"tag": "6.0.11", "commit": "417c4ea884a0d1501061f511730604890bbb0a35"}
 STOCK_RECEIPT = ".agent-ee-models.json"
 STOCK_VARIABLE = re.compile(r"KICAD\d+_3DMODEL_DIR|KISYS3DMOD")
 KICAD10_LINUX_MODEL_DIR = Path("/usr/share/kicad/3dmodels")
@@ -447,15 +448,57 @@ def _validate_receipt_entry(relative, entry):
             or type(entry.get("size_bytes")) is not int or entry["size_bytes"] < 0):
         raise ModelFetchError(f"invalid model cache receipt entry: {relative}")
     if entry.get("source") == "existing-local":
-        if "commit" not in entry and "source_url" not in entry:
+        if "commit" not in entry and "source_url" not in entry and "tag" not in entry:
             return
     elif entry.get('source') == 'declared-url':
         validate_model_sources({relative: {k: entry.get(k) for k in ('source_url', 'sha256')}})
         return
-    elif (entry.get("commit") in STOCK_REVISIONS
-          and entry.get("source_url") == _model_url(entry["commit"], relative)):
+    elif (isinstance(entry.get("commit"), str) and re.fullmatch(r"[0-9a-f]{40}", entry["commit"])
+          and entry.get("source_url") == _model_url(entry["commit"], relative)
+          # Receipts written before tags were recorded name the commit only.
+          and ("tag" not in entry or _release_tag(entry["tag"]))):
         return
     raise ModelFetchError(f"invalid model cache provenance: {relative}")
+
+
+def _release_tag(tag):
+    return isinstance(tag, str) and re.fullmatch(r"\d+\.\d+\.\d+", tag) is not None
+
+
+def installed_kicad_version(env=None):
+    """The installed kicad-cli release, as the model-default probe reads it; None when unknown."""
+    identity = _kicad_model_defaults(dict(os.environ) if env is None else env)[1]
+    return identity["version"] if identity else None
+
+
+def stock_revisions(kicad_version, *, timeout=30):
+    """Revisions a stock model is fetched from: the installed release's tag, resolved now, then 6.0.11.
+
+    `kicad_version` is the installed KiCad release; the kicad-packages3D tag of the same
+    name gives the commit, looked up when the fetch runs and recorded with each file.
+    An unknown version or a missing tag raises ModelFetchError: no other revision is
+    substituted."""
+    if not _release_tag(kicad_version):
+        raise ModelFetchError(f"installed KiCad release {kicad_version!r} is unknown; "
+                              "cannot resolve its kicad-packages3D revision")
+    url = STOCK_TAG_API + quote(kicad_version, safe="")
+    request = Request(url, headers={"User-Agent": "agent-ee-stock-models/1"})
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            raw = response.read(1024 * 1024)
+    except HTTPError as exc:
+        raise ModelFetchError(f"kicad-packages3D tag {kicad_version} lookup failed (HTTP {exc.code}): {url}") from exc
+    except (URLError, TimeoutError, OSError, HTTPException) as exc:
+        raise ModelFetchError(f"kicad-packages3D tag {kicad_version} lookup failed: {url}: {exc}") from exc
+    try:
+        document = json.loads(raw.decode("utf-8"))
+        commit = document["commit"]["id"]
+        name = document["name"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ModelFetchError(f"kicad-packages3D tag {kicad_version} lookup returned no commit: {url}") from exc
+    if name != kicad_version or not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ModelFetchError(f"kicad-packages3D tag {kicad_version} lookup returned no commit: {url}")
+    return [{"tag": kicad_version, "commit": commit}, dict(LEGACY_REVISION)]
 
 
 def _model_url(revision, relative):
@@ -553,7 +596,8 @@ def validate_model_sources(sources):
     return sources
 
 
-def _fetch_one(cache, relative, receipt, *, timeout, max_file_bytes, source=None):
+def _fetch_one(cache, relative, receipt, revisions, *, timeout, max_file_bytes, source=None):
+    """revisions() gives the stock revisions, resolved on the first stock download only."""
     path = _cache_path(cache, relative)
     if path.exists():
         if not path.is_file():
@@ -577,20 +621,36 @@ def _fetch_one(cache, relative, receipt, *, timeout, max_file_bytes, source=None
         provenance = dict(downloaded, source='declared-url')
         receipt['files'][relative] = provenance
         return dict(provenance, status='downloaded')
-    for revision in STOCK_REVISIONS:
-        url = _model_url(revision, relative)
+    for revision in revisions():
+        url = _model_url(revision["commit"], relative)
         downloaded = _download_model(path, url, timeout=timeout, max_file_bytes=max_file_bytes)
         if downloaded is not None:
-            provenance = {**downloaded, "commit": revision}
+            provenance = {**downloaded, "commit": revision["commit"], "tag": revision["tag"]}
             receipt["files"][relative] = provenance
             return {**provenance, "status": "downloaded"}
-        attempts.append({"commit": revision, "source_url": url, "status": 404})
+        attempts.append({"commit": revision["commit"], "tag": revision["tag"], "source_url": url, "status": 404})
     return {"status": "not-found", "attempts": attempts}
 
 
+def _revision_source(kicad_version, env, *, timeout):
+    """A memoized revisions() for one fetch: nothing is probed or looked up until a download."""
+    resolved = []
+
+    def revisions():
+        if not resolved:
+            version = installed_kicad_version(env) if kicad_version is None else kicad_version
+            resolved.append(stock_revisions(version, timeout=timeout))
+        return resolved[0]
+    return revisions, resolved
+
+
 def fetch_stock_references(references, cache: Path, *, timeout=30,
-                           max_file_bytes=32 * 1024 * 1024, sources=None) -> dict:
-    """Fetch explicit stock-relative model paths without requiring a placed board."""
+                           max_file_bytes=32 * 1024 * 1024, sources=None, kicad_version=None) -> dict:
+    """Fetch explicit stock-relative model paths without requiring a placed board.
+
+    sources maps a path to a declared HTTPS URL and SHA-256. Other paths come from the
+    installed KiCad release's packages3D tag: kicad_version names it, by default kicad-cli
+    is asked, and only when a stock file has to be downloaded."""
     if timeout <= 0 or max_file_bytes <= 0:
         raise ValueError("model download timeout and size limit must be positive")
     required = sorted(set(_stock_relative(ref).as_posix() for ref in references))
@@ -602,9 +662,10 @@ def fetch_stock_references(references, cache: Path, *, timeout=30,
         _cache_path(cache, relative)
     cache.mkdir(parents=True, exist_ok=True)
     receipt = _read_receipt(cache)
+    revisions, resolved = _revision_source(kicad_version, None, timeout=timeout)
     files = []
     for relative in required:
-        record = _fetch_one(cache, relative, receipt, timeout=timeout, max_file_bytes=max_file_bytes,
+        record = _fetch_one(cache, relative, receipt, revisions, timeout=timeout, max_file_bytes=max_file_bytes,
                             source=sources.get(relative))
         files.append({"path": relative, **record})
         _atomic_json(cache / STOCK_RECEIPT, receipt)
@@ -612,17 +673,21 @@ def fetch_stock_references(references, cache: Path, *, timeout=30,
         _atomic_json(cache / STOCK_RECEIPT, receipt)
     missing = sum(r["status"] == "not-found" for r in files)
     return {"schema": "agent-ee.models-fetch/1", "repository": STOCK_REPOSITORY,
+            "revisions": resolved[0] if resolved else [],
             "status": "partial" if missing else "complete", "files": files, "missing": missing}
 
 
 def fetch_stock_models(board: Path, cache: Path, *, env=None, timeout=30,
-                       max_file_bytes=32 * 1024 * 1024) -> dict:
+                       max_file_bytes=32 * 1024 * 1024, kicad_version=None) -> dict:
     """Explicitly fetch exact enabled stock references into a persistent cache.
 
     Only two-component .3dshapes paths beneath KISYS3DMOD or
     KICAD<number>_3DMODEL_DIR are eligible. No project files are uploaded.
-    A 404 tries the same filename at the pinned legacy revision; missing files
-    remain missing. Other network, path, and size failures raise ModelFetchError.
+    Files come from the kicad-packages3D commit of the installed KiCad release
+    (kicad_version, by default the inventory's kicad-cli identity), resolved when
+    the first download is needed and recorded with each file. A 404 tries the
+    same filename at the recorded 6.0.11 legacy revision; missing files remain
+    missing. Other network, path, and size failures raise ModelFetchError.
     Existing files are preserved and identified as local unless receipts exist.
     """
     if timeout <= 0 or max_file_bytes <= 0:
@@ -632,17 +697,20 @@ def fetch_stock_models(board: Path, cache: Path, *, env=None, timeout=30,
     cache = Path(cache).expanduser().resolve()
     cache.mkdir(parents=True, exist_ok=True)
     receipt = _read_receipt(cache)
+    if kicad_version is None and inventory["kicad_default"]:
+        kicad_version = inventory["kicad_default"]["version"]
+    revisions, resolved = _revision_source(kicad_version, {} if env is None else env, timeout=timeout)
     files = []
     # Validate every target before the first network request or model write.
     for relative in required:
         _cache_path(cache, relative)
     for relative, references in required.items():
-        record = _fetch_one(cache, relative, receipt, timeout=timeout, max_file_bytes=max_file_bytes)
+        record = _fetch_one(cache, relative, receipt, revisions, timeout=timeout, max_file_bytes=max_file_bytes)
         files.append({"path": relative, "references": references, **record})
         _atomic_json(cache / STOCK_RECEIPT, receipt)
     missing = sum(record["status"] == "not-found" for record in files)
     return {"schema": "agent-ee.models-fetch/1", "board": inventory["board"], "cache": str(cache),
-            "repository": STOCK_REPOSITORY, "revisions": list(STOCK_REVISIONS),
+            "repository": STOCK_REPOSITORY, "revisions": resolved[0] if resolved else [],
             "status": "partial" if missing else "complete", "files": files, "skipped": skipped,
             "downloaded": sum(record["status"] == "downloaded" for record in files),
             "reused": sum(record["status"] in ("reused", "existing-local") for record in files),

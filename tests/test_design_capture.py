@@ -311,14 +311,18 @@ class CaptureHttpTests(unittest.TestCase):
         footprint.write_bytes(footprint.read_bytes().rstrip()[:-1]
                               + b' (model "${KICAD10_3DMODEL_DIR}/Owned.3dshapes/R2.step"))\n')
         # Every download is a 404, as for a model missing from the repository at each revision.
+        # The installed release's revision is a recorded input: no kicad-cli or tag lookup runs.
+        current = {"tag": "10.0.8", "commit": "8975715167d1a76f9b44be155ac02326f704cdbb"}
         with patch.object(models3d, "_download_model", return_value=None), \
+                patch.object(models3d, "stock_revisions", return_value=[current, models3d.LEGACY_REVISION]), \
+                patch.object(models3d, "installed_kicad_version", return_value="10.0.8"), \
                 self.assertRaises(DesignError) as caught:
             self.capture()
         message = str(caught.exception)
         for ref in ("R1", "R2"):
             self.assertIn(f"parts.{ref}.footprint: Owned:R2 uses the 3D model Owned.3dshapes/R2.step", message)
-        for revision in models3d.STOCK_REVISIONS:
-            self.assertIn(revision, message)
+        for revision in (current, models3d.LEGACY_REVISION):
+            self.assertIn(revision["commit"], message)
         self.assertIn('[tool_gap]', message)
         report = json.loads((self.root / "captured/models-report.json").read_bytes())
         self.assertEqual([(r["path"], r["status"]) for r in report["files"]],

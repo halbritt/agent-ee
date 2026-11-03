@@ -549,7 +549,6 @@ class DesignCompileTests(unittest.TestCase):
         from agent_ee.models3d import (
             fetch_stock_references,
             STOCK_REPOSITORY,
-            STOCK_REVISIONS,
         )
 
         relative = "Owned.3dshapes/R.step"
@@ -557,7 +556,7 @@ class DesignCompileTests(unittest.TestCase):
         path = root / relative
         path.parent.mkdir(parents=True)
         path.write_bytes(b"ISO-10303-21;\nowned synthetic model envelope\n")
-        commit = STOCK_REVISIONS[0]
+        commit = "8975715167d1a76f9b44be155ac02326f704cdbb"  # kicad-packages3D 10.0.8^{}
         write_json(
             root / ".agent-ee-models.json",
             dict(

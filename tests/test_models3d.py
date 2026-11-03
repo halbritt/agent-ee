@@ -10,8 +10,9 @@ from urllib.error import HTTPError, URLError
 
 from agent_ee import native_run
 from agent_ee.models3d import (
+    LEGACY_REVISION,
     STOCK_REPOSITORY,
-    STOCK_REVISIONS,
+    STOCK_TAG_API,
     ModelFetchError,
     fetch_stock_models,
     inspect_models,
@@ -20,7 +21,14 @@ from agent_ee.models3d import (
     copy_project_models,
     verify_project_models,
     _kicad_model_defaults,
+    stock_revisions,
 )
+
+# kicad-packages3D tag 10.0.8 (10.0.8^{}, git ls-remote 2026-11-03): a recorded input
+# for these tests, which run no kicad-cli and make no tag lookup.
+CURRENT = {"tag": "10.0.8", "commit": "8975715167d1a76f9b44be155ac02326f704cdbb"}
+INSTALLED = {"executable": "/usr/bin/kicad-cli", "version": "10.0.8", "source": "kicad-default",
+             "platform": "linux-packages", "directory": "/usr/share/kicad/3dmodels", "available": False}
 
 
 class ModelResponse(io.BytesIO):
@@ -517,6 +525,13 @@ class StockModelFetchTests(unittest.TestCase):
         self.relative = "Resistor_SMD.3dshapes/R_0805_2012Metric.step"
         self.payload = b"ISO-10303-21;\nHEADER;\nENDSEC;\nEND-ISO-10303-21;\n"
         self.write_refs(["${KICAD10_3DMODEL_DIR}/" + self.relative])
+        # The installed KiCad and its packages3D revision are recorded inputs: no host kicad-cli
+        # runs and no tag lookup leaves the host (StockRevisionTests covers the lookup).
+        for target, value in (("agent_ee.models3d._kicad_model_defaults", ({}, dict(INSTALLED))),
+                              ("agent_ee.models3d.stock_revisions", [CURRENT, LEGACY_REVISION])):
+            started = patch(target, return_value=value)
+            started.start()
+            self.addCleanup(started.stop)
 
     def write_refs(self, refs):
         footprints = " ".join(f'(footprint "Part" (property "Reference" "R{i}") (model "{ref}"))'
@@ -579,30 +594,35 @@ class StockModelFetchTests(unittest.TestCase):
             manifest = fetch_stock_models(self.board, self.cache)
         self.assertEqual(request.call_count, 1)
         url = request.call_args.args[0].full_url
-        self.assertEqual(url, f"{STOCK_REPOSITORY}/-/raw/{STOCK_REVISIONS[0]}/{self.relative}")
+        self.assertEqual(url, f"{STOCK_REPOSITORY}/-/raw/{CURRENT['commit']}/{self.relative}")
         self.assertEqual(request.call_args.kwargs["timeout"], 30)
         self.assertEqual((self.cache / self.relative).read_bytes(), self.payload)
         self.assertEqual(manifest["files"][0]["references"], ["R1", "R2"])
         self.assertEqual(manifest["downloaded"], 1)
         self.assertEqual(manifest["files"][0]["sha256"], hashlib.sha256(self.payload).hexdigest())
         receipt = json.loads((self.cache / ".agent-ee-models.json").read_text())
-        self.assertEqual(receipt["files"][self.relative]["commit"], STOCK_REVISIONS[0])
+        self.assertEqual(receipt["files"][self.relative]["commit"], CURRENT["commit"])
+        self.assertEqual(receipt["files"][self.relative]["tag"], "10.0.8")
+        # The revisions resolved for this fetch are recorded with it.
+        self.assertEqual(manifest["revisions"], [CURRENT, LEGACY_REVISION])
         with patch("agent_ee.models3d.urlopen") as request:
             reused = fetch_stock_models(self.board, self.cache)
         request.assert_not_called()
-        self.assertEqual(reused["reused"], 1)
+        # A cache that already holds every file resolves no revision.
+        self.assertEqual((reused["reused"], reused["revisions"]), (1, []))
         inventory = inspect_models(self.board, {"KICAD10_3DMODEL_DIR": str(self.cache), "KISYS3DMOD": str(self.cache)})
         self.assertEqual(inventory["summary"]["resolved"], 2)
 
     def test_legacy_same_filename_fallback_only_after_404(self):
         def response(request, **kwargs):
-            if STOCK_REVISIONS[0] in request.full_url:
+            if CURRENT["commit"] in request.full_url:
                 return self.not_found(request)
             return ModelResponse(self.payload)
         with patch("agent_ee.models3d.urlopen", side_effect=response) as request:
             manifest = fetch_stock_models(self.board, self.cache)
         self.assertEqual(request.call_count, 2)
-        self.assertEqual(manifest["files"][0]["commit"], STOCK_REVISIONS[1])
+        self.assertEqual((manifest["files"][0]["commit"], manifest["files"][0]["tag"]),
+                         (LEGACY_REVISION["commit"], "6.0.11"))
         self.assertTrue(all(call.args[0].full_url.endswith(self.relative) for call in request.call_args_list))
 
     def test_404_at_both_revisions_remains_missing(self):
@@ -722,8 +742,12 @@ class StockModelFetchTests(unittest.TestCase):
     def test_malformed_receipt_entries_are_actionable_errors(self):
         self.cache.mkdir()
         for entry in ("bad", {}, {"sha256": "bad", "size_bytes": 3},
-                      {"sha256": "a" * 64, "size_bytes": 3, "commit": STOCK_REVISIONS[0],
-                       "source_url": "https://unrelated/model.step"}):
+                      {"sha256": "a" * 64, "size_bytes": 3, "commit": CURRENT["commit"],
+                       "source_url": "https://unrelated/model.step"},
+                      {"sha256": "a" * 64, "size_bytes": 3, "commit": CURRENT["commit"], "tag": "master",
+                       "source_url": f"{STOCK_REPOSITORY}/-/raw/{CURRENT['commit']}/{self.relative}"},
+                      {"sha256": "a" * 64, "size_bytes": 3, "commit": "master",
+                       "source_url": f"{STOCK_REPOSITORY}/-/raw/master/{self.relative}"}):
             with self.subTest(entry=entry):
                 receipt = {"schema": "agent-ee.stock-models/1", "repository": STOCK_REPOSITORY,
                            "files": {self.relative: entry}}
@@ -732,6 +756,66 @@ class StockModelFetchTests(unittest.TestCase):
                     with self.assertRaisesRegex(ModelFetchError, "invalid model cache"):
                         fetch_stock_models(self.board, self.cache)
                 request.assert_not_called()
+
+
+class StockRevisionTests(unittest.TestCase):
+    """The installed release's kicad-packages3D tag is resolved when a fetch needs it."""
+
+    def tag(self, document):
+        return ModelResponse(json.dumps(document).encode())
+
+    def test_installed_release_tag_gives_the_commit_then_the_legacy_fallback(self):
+        reply = self.tag({"name": "10.0.8", "commit": {"id": CURRENT["commit"]}})
+        with patch("agent_ee.models3d.urlopen", return_value=reply) as request:
+            self.assertEqual(stock_revisions("10.0.8"), [CURRENT, LEGACY_REVISION])
+        self.assertEqual(request.call_args.args[0].full_url, STOCK_TAG_API + "10.0.8")
+
+    def test_unknown_release_missing_tag_or_malformed_reply_refuses(self):
+        for version in (None, "", "10.0.8-rc1", "master"):
+            with self.subTest(version=version), patch("agent_ee.models3d.urlopen") as request:
+                with self.assertRaisesRegex(ModelFetchError, "is unknown"):
+                    stock_revisions(version)
+                request.assert_not_called()
+
+        def missing(request, **kwargs):
+            raise HTTPError(request.full_url, 404, "not found", {}, None)
+        with patch("agent_ee.models3d.urlopen", side_effect=missing):
+            with self.assertRaisesRegex(ModelFetchError, r"lookup failed \(HTTP 404\)"):
+                stock_revisions("10.0.99")
+        for document in ({"name": "10.0.7", "commit": {"id": CURRENT["commit"]}},
+                         {"name": "10.0.8", "commit": {"id": "short"}}, {"name": "10.0.8"}, []):
+            with self.subTest(document=document), patch("agent_ee.models3d.urlopen", return_value=self.tag(document)):
+                with self.assertRaisesRegex(ModelFetchError, "returned no commit"):
+                    stock_revisions("10.0.8")
+
+    def test_fetch_downloads_at_the_named_release_tag_or_refuses_without_one(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            board = root / "board.kicad_pcb"
+            board.write_text('(kicad_pcb (footprint "R" (model "${KISYS3DMOD}/R.3dshapes/r.step")))')
+            payload = b"ISO-10303-21;\n"
+            # The network: GitLab answers the tag lookup for 10.0.9 and serves the model at its commit.
+            commit = "1" * 40
+
+            def network(request, **kwargs):
+                if request.full_url == STOCK_TAG_API + "10.0.9":
+                    return self.tag({"name": "10.0.9", "commit": {"id": commit}})
+                if request.full_url == f"{STOCK_REPOSITORY}/-/raw/{commit}/R.3dshapes/r.step":
+                    return ModelResponse(payload)
+                raise HTTPError(request.full_url, 404, "not found", {}, None)
+            with patch("agent_ee.models3d._kicad_model_defaults", return_value=({}, None)), \
+                    patch("agent_ee.models3d.urlopen", side_effect=network):
+                manifest = fetch_stock_models(board, root / "models", kicad_version="10.0.9")
+            self.assertEqual(manifest["revisions"], [{"tag": "10.0.9", "commit": commit}, LEGACY_REVISION])
+            receipt = json.loads((root / "models/.agent-ee-models.json").read_text())
+            self.assertEqual({key: receipt["files"]["R.3dshapes/r.step"][key] for key in ("tag", "commit")},
+                             {"tag": "10.0.9", "commit": commit})
+            board.write_text('(kicad_pcb (footprint "R" (model "${KISYS3DMOD}/R.3dshapes/other.step")))')
+            with patch("agent_ee.models3d._kicad_model_defaults", return_value=({}, None)), \
+                    patch("agent_ee.models3d.urlopen") as request:
+                with self.assertRaisesRegex(ModelFetchError, "release None is unknown"):
+                    fetch_stock_models(board, root / "models")
+            request.assert_not_called()
 
 
 class StockReceiptHelperTests(unittest.TestCase):
@@ -752,8 +836,8 @@ class StockReceiptHelperTests(unittest.TestCase):
 
     def test_parse_stock_receipt_validates_schema_and_provenance(self):
         relative = "Lib.3dshapes/a.step"
-        entry = {"sha256": "a" * 64, "size_bytes": 3, "commit": STOCK_REVISIONS[0],
-                 "source_url": f"{STOCK_REPOSITORY}/-/raw/{STOCK_REVISIONS[0]}/{relative}"}
+        entry = {"sha256": "a" * 64, "size_bytes": 3, "commit": CURRENT["commit"], "tag": "10.0.8",
+                 "source_url": f"{STOCK_REPOSITORY}/-/raw/{CURRENT['commit']}/{relative}"}
         receipt = {"schema": "agent-ee.stock-models/1", "repository": STOCK_REPOSITORY, "files": {relative: entry}}
         self.assertEqual(parse_stock_receipt(json.dumps(receipt).encode(), "r")["files"], {relative: entry})
         for raw, message in ((b"\xff", "invalid model cache receipt"), (b"[]", "unsupported model cache receipt"),

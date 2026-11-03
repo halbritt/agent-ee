@@ -36,7 +36,9 @@ from agent_ee.executor import SANDBOX_PATH, execute
 from agent_ee.fab_export import header_records
 from agent_ee.findings import adjudicate, collect_findings
 from agent_ee.kicad_embedded import decompress, kicad_checksum, records, verify
-from agent_ee.models3d import STOCK_REPOSITORY, STOCK_REVISIONS
+from agent_ee.models3d import STOCK_REPOSITORY
+# kicad-packages3D 10.0.8^{} (git ls-remote 2026-11-03), the revision these synthetic receipts name.
+STOCK_COMMIT = '8975715167d1a76f9b44be155ac02326f704cdbb'
 from agent_ee.storage import digest, read_json, write_json
 from agent_ee.symbol_library import parse_sexpr
 try:
@@ -105,8 +107,8 @@ def stock_library(paths, *, root='lib3d', listed=None, captured=None, provenance
         entry = {'sha256': hashlib.sha256(owned_step(PurePosixPath(rel).name)).hexdigest(),
                  'size_bytes': len(owned_step(PurePosixPath(rel).name))}
         if provenance == 'pinned':
-            entry.update(commit=STOCK_REVISIONS[0],
-                         source_url=f'{STOCK_REPOSITORY}/-/raw/{STOCK_REVISIONS[0]}/{quote(rel, safe="/")}')
+            entry.update(commit=STOCK_COMMIT,
+                         source_url=f'{STOCK_REPOSITORY}/-/raw/{STOCK_COMMIT}/{quote(rel, safe="/")}')
         else:
             entry['source'] = 'existing-local'
         entries[rel] = entry
@@ -929,7 +931,7 @@ class FabConsistencyTests(FabCase):
             self.assertEqual(record['status'], 'resolved', record)
             self.assertEqual(record['sha256'], hashlib.sha256(owned_step(PurePosixPath(relative).name)).hexdigest())
             self.assertEqual(record['library'], {'variable': 'KICAD10_3DMODEL_DIR', 'receipt': STOCK_RECEIPT,
-                                                 'member': f'lib3d/{relative}', 'commit': STOCK_REVISIONS[0]})
+                                                 'member': f'lib3d/{relative}', 'commit': STOCK_COMMIT})
         library = result['details']['models']['libraries']['KICAD10_3DMODEL_DIR']
         self.assertEqual(library, {'receipt': STOCK_RECEIPT, 'receipt_sha256': self.manifest['files'][STOCK_RECEIPT]})
         # The receipt is an immutable baseline dependency; members are bound by its hashes.
