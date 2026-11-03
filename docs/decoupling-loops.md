@@ -219,6 +219,29 @@ Independent copper uses conservative outside polygons and the full floor. The ju
 localization uses inscribed native copper polygons at 1 nm resolution, avoiding
 outward arc-rounding slivers at land edges. Both generation verification and the
 typed connectivity graph use this same polygon-overlap decision.
+The known junction bound, alongside the polygon junction note above (N5), is
+that the region is the declared pad grown by one native floor: copper may
+physically merge inside this region, while beyond it the floor is enforced
+between the arms' remainders only. At shallow junction angles of about 20–35°,
+a remainder can be below the floor from the other arm's copper inside the ring.
+The reviewer measured about 86–90 µm at a 0.1 mm floor; a bridge across this
+bounded gap stays within one floor of the pad edge. This is an accepted limit
+of the current rule, not a fabrication qualification. Geometric overlap
+outside the declared pad is still separately refused.
+
+The measured accepted cases use square lands, 0.2 mm tracks and 1.5 mm arms.
+The incoming arm follows approach ray α toward the pad centre; the escape
+follows α−θ away, with rays `(cos α, −sin α)` in board coordinates:
+
+| Land mm | Approach α | Junction θ | Remainder gap µm | Remainder-to-ring cross gap µm |
+|---|---:|---:|---:|---:|
+| 1.2 | 135° | 20° | 110.411 | 86.143 |
+| 1.2 | 165° | 22° | 107.393 | 88.794 |
+| 0.7 | 135° | 35° | 125.750 | 90.290 |
+
+An escape vertex inside the ring can conservatively turn a legal escape into
+a refusal; this split-escape limitation never creates a false pass.
+
 Near misses below the floor count as meetings even without geometric contact.
 The saved-board separation report lists every non-exempt generated pair/layer
 and every generated item against undeclared pads (all pads for vias), including

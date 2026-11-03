@@ -641,6 +641,66 @@ class ReviewRegressionTests(unittest.TestCase):
             i, j = divmod(n, 73)
             self.add_pad(fp, n+1, 21+i*.25, 21+j*.25, net, 100_000)
 
+    def junction_fixture(self, land, alpha, theta):
+        import math
+        fp=self.add_fp('JX',[]);pad=self.add_pad(fp,'1',36,25,'/return',land)
+        c=local.position(pad)
+        def ray(angle):
+            t=math.radians(angle)
+            return c[0]+round(1_500_000*math.cos(t)),c[1]-round(1_500_000*math.sin(t))
+        a=local._track(self.board,[ray(alpha),c],pad.GetNetCode(),self.k.F_Cu,200_000)[0]
+        b=local._track(self.board,[c,ray(alpha-theta)],pad.GetNetCode(),self.k.F_Cu,200_000)[0]
+        ids=[t.m_Uuid.AsString() for t in (a,b)]
+        receipt=dict(contract=contract(),relations=[dict(id='cell',copper=ids,legs=[
+            dict(kind=kind,tracks=[uid],pads=[pad.m_Uuid.AsString()])
+            for kind,uid in zip(('return','plane_tie'),ids)])],
+            protected=[local.copper_identity(t) for t in (a,b)],other_pads=[])
+        return pad,a,b,receipt
+
+    def junction_gap_um(self, a, b, pad, margins):
+        # Independent native masks measure the reviewer's remainder/cross terms.
+        shapes=[]
+        for item,margin in zip((a,b),margins):
+            mask=self.k.SHAPE_POLY_SET();pad.TransformShapeToPolygon(mask,self.k.F_Cu,margin,1,self.k.ERROR_INSIDE)
+            copper=self.k.SHAPE_POLY_SET();item.TransformShapeToPolygon(copper,self.k.F_Cu,0,1,self.k.ERROR_OUTSIDE)
+            copper.BooleanSubtract(mask);copper.Simplify();self.assertFalse(copper.IsEmpty())
+            shapes.append(copper)
+        return local._gap_lower_bound(a,b,shapes)*1000
+
+    def test_junction_opening_cannot_grow_beyond_one_native_floor(self):
+        # R6_M1/M5/M6: just 20 um more opening changes this refusal into a pass.
+        pad,a,b,receipt=self.junction_fixture(700_000,180,35)
+        self.assertTrue(local.junction_in_pad(a,b,self.k.F_Cu,[pad]))
+        at_floor=self.junction_gap_um(a,b,pad,(100_000,100_000))
+        enlarged=self.junction_gap_um(a,b,pad,(120_000,120_000))
+        self.assertAlmostEqual(at_floor,93.017,places=2)
+        self.assertLess(at_floor,100);self.assertGreater(enlarged,100)
+        self.assertRaisesRegex(JobRefusal,'outside a declared shared pad',local.verify_geometry,self.board,receipt)
+        self.save();report=local.separation_report(self.path,receipt)
+        row=report['pairs'][0]
+        self.assertEqual(row['status'],'defect');self.assertEqual(report['outcome'],'defect')
+        self.assertAlmostEqual(row['minimum_gap_mm_lower_bound']*1000,at_floor,places=2)
+        print(dict(junction_opening_upper_bound=dict(floor_um=100,at_floor_gap_um=at_floor,
+                    enlarged_opening_um=120,enlarged_gap_um=enlarged,status='refused')))
+
+    def test_documented_junction_ring_cross_terms_remain_accepted(self):
+        # Integrator round-10 decision: characterize this bounded limit, not repair it.
+        cases=[(1_200_000,135,20,110.411,86.143),(1_200_000,165,22,107.393,88.794),
+               (700_000,135,35,125.750,90.290)]
+        for land,alpha,theta,remainder_expected,cross_expected in cases:
+            with self.subTest(land=land,alpha=alpha,theta=theta):
+                self.setUp();pad,a,b,receipt=self.junction_fixture(land,alpha,theta)
+                self.assertEqual(local.verify_geometry(self.board,receipt)['status'],'pass')
+                remainder=self.junction_gap_um(a,b,pad,(100_000,100_000))
+                cross=min(self.junction_gap_um(a,b,pad,(100_000,0)),
+                          self.junction_gap_um(a,b,pad,(0,100_000)))
+                self.assertGreaterEqual(remainder,100);self.assertLess(cross,100)
+                self.assertAlmostEqual(remainder,remainder_expected,places=2)
+                self.assertAlmostEqual(cross,cross_expected,places=2)
+                print(dict(documented_junction_limit=dict(land_mm=land/1e6,alpha=alpha,theta=theta,
+                            remainder_gap_um=remainder,cross_gap_um=cross,status='pass')))
+                self.doCleanups()
+
     def test_junction_opening_keeps_the_floor_beyond_one_floor_of_the_pad(self):
         # Reviewer C1Narrow: a shallow in-pad junction cannot exempt its whole pair.
         import math

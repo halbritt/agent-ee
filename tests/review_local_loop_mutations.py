@@ -581,6 +581,50 @@ MUTANTS.update({'R3_M3c_same_net_margin_zero': ([('src/agent_ee/local_decoupling
                                                  'Bound that opening\n')],
                                                ['test_local_decoupling.ReviewRegressionTests.test_junction_opening_keeps_the_floor_beyond_one_floor_of_the_pad'])})
 
+# Reviewer r6 opening-size fault models; production geometry is unchanged.
+MUTANTS.update({'R6_M1_margin_two_floors': ([('src/agent_ee/local_decoupling.py',
+                               '    margin = _separation_floor(first.GetBoard()) if junction_in_pad(first, '
+                               'second, layer, shared_pads) else 0\n',
+                               '    margin = 2 * _separation_floor(first.GetBoard()) if '
+                               'junction_in_pad(first, second, layer, shared_pads) else 0\n')],
+                             ['test_local_decoupling.ReviewRegressionTests.test_junction_opening_cannot_grow_beyond_one_native_floor']),
+ 'R6_M2_margin_zero': ([('src/agent_ee/local_decoupling.py',
+                         '    margin = _separation_floor(first.GetBoard()) if junction_in_pad(first, second, '
+                         'layer, shared_pads) else 0\n',
+                         '    margin = 0\n')],
+                       ['test_local_decoupling.ReviewRegressionTests.test_tiny_lands_allow_the_two_arms_of_an_in_pad_junction']),
+ 'R6_M3_margin_without_junction': ([('src/agent_ee/local_decoupling.py',
+                                     '    margin = _separation_floor(first.GetBoard()) if '
+                                     'junction_in_pad(first, second, layer, shared_pads) else 0\n',
+                                     '    margin = _separation_floor(first.GetBoard())\n')],
+                                   ['test_local_decoupling.ReviewRegressionTests.test_a_shared_junction_does_not_excuse_overlap_outside_its_pad']),
+ 'R6_M4_margin_half_floor': ([('src/agent_ee/local_decoupling.py',
+                               '    margin = _separation_floor(first.GetBoard()) if junction_in_pad(first, '
+                               'second, layer, shared_pads) else 0\n',
+                               '    margin = _separation_floor(first.GetBoard()) // 2 if '
+                               'junction_in_pad(first, second, layer, shared_pads) else 0\n')],
+                             ['test_local_decoupling.ReviewRegressionTests.test_tiny_lands_allow_the_two_arms_of_an_in_pad_junction']),
+ 'R6_M5_margin_floor_plus_50um': ([('src/agent_ee/local_decoupling.py',
+                                    '    margin = _separation_floor(first.GetBoard()) if '
+                                    'junction_in_pad(first, second, layer, shared_pads) else 0\n',
+                                    '    margin = (_separation_floor(first.GetBoard()) + 50_000) if '
+                                    'junction_in_pad(first, second, layer, shared_pads) else 0\n')],
+                                  ['test_local_decoupling.ReviewRegressionTests.test_junction_opening_cannot_grow_beyond_one_native_floor']),
+ 'R6_M6_margin_floor_plus_20um': ([('src/agent_ee/local_decoupling.py',
+                                    '    margin = _separation_floor(first.GetBoard()) if '
+                                    'junction_in_pad(first, second, layer, shared_pads) else 0\n',
+                                    '    margin = (_separation_floor(first.GetBoard()) + 20_000) if '
+                                    'junction_in_pad(first, second, layer, shared_pads) else 0\n')],
+                                  ['test_local_decoupling.ReviewRegressionTests.test_junction_opening_cannot_grow_beyond_one_native_floor']),
+ 'R6_M7_old_pairwide_exemption': ([('src/agent_ee/local_decoupling.py',
+                                    '    margin = _separation_floor(first.GetBoard()) if '
+                                    'junction_in_pad(first, second, layer, shared_pads) else 0\n',
+                                    '    margin = _separation_floor(first.GetBoard()) if '
+                                    'junction_in_pad(first, second, layer, shared_pads) else 0\n'
+                                    '    if margin:\n'
+                                    '        return None\n')],
+                                  ['test_local_decoupling.ReviewRegressionTests.test_junction_opening_keeps_the_floor_beyond_one_floor_of_the_pad'])})
+
 def run(name):
     edits, tests = MUTANTS[name]
     work = WORK / name
