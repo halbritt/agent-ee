@@ -618,6 +618,58 @@ class GenerateTests(ScriptedLoop):
         self.assertIn('placement.seeds is already 64', report['attempts'][0]['search_retry_skipped'])
         self.assertIn('No automatic search retry', self.feedback(1))
 
+    def infeasible_job(self):
+        """Shaped like benchmark r4 led-flasher attempt-004: no engine-feasible seed, one overlapping
+        pair, and locality detail (with its provenance) far longer than FEEDBACK_CHARS."""
+        violation = {'kind': 'pair', 'ref': 'U1', 'with': 'C3', 'uuid': 'u1', 'with_uuid': 'c3', 'count': 1}
+        floor = dict(status='known', floor_nm=0, source=dict(url='https://example.invalid/floor'))
+        measured = [dict(obligation=f'decoupling-{n}', role=role, refs=['C3', 'U1'], distance_mm=2.3,
+                         max_distance_nm=5000000, citation='Decoupling pads at most 5 mm. ' + 'x' * 400,
+                         manufacturing_floor=floor, **{'from': dict(reference='U1', pad='5'),
+                                                        'to': dict(reference='C3', pad='1')})
+                    for n in range(40) for role in ('supply', 'return')]
+        locality = dict(status='pass', measured=measured, defects=[], unknown=[], advisories=[],
+                        declaration=dict(obligations=[], source_records={'spec.md': 'S' * 5000}))
+        errors = dict(placement_introduced=dict(by_type=dict(courtyards_overlap=1), count=1))
+        candidate = dict(seed=4, engine_violations=[violation], errors=errors, locality=locality,
+                         edge_intent=dict(status='pass', violations=[]), integrity_problems=[])
+        return dict(status='placement_infeasible', engine_feasible=False,
+                    validity='NO valid incumbent: exploratory route of the best diagnostic candidate '
+                             '(engine violations: pair)',
+                    best_diagnostic=dict(seed=4, engine_violations=[violation]),
+                    final=dict(opens=0, errors=errors, integrity='preserved', locality=locality,
+                               edge_intent=dict(status='pass', violations=[])),
+                    shortlist=[candidate, dict(candidate, seed=1)], routing_trials=[])
+
+    def test_infeasible_placement_goes_to_the_author_with_its_violations_first(self):
+        self.responses = [self.response(), self.response()]
+        job = self.infeasible_job()
+        def build(attempt):
+            self.build_report(attempt, accepted=False, stage='placement-routing',
+                              reason='ValueError: placement/routing did not pass: placement_infeasible')
+            path = attempt / 'build/stages/05-placement/placement'
+            path.mkdir(parents=True)
+            write_json(path / 'job-report.json', job)
+            return dict(execution='failed', exit_code=1)
+        with self.with_build(build):
+            report = self.generate(max_attempts=2, search_retries=1)
+        # No seed retry: the next attempt is an author turn.
+        self.assertEqual([r['kind'] for r in report['attempts']], ['author', 'author'])
+        self.assertIn('placement_infeasible', report['attempts'][0]['search_retry_skipped'])
+        feedback = self.feedback(1)
+        self.assertTrue(feedback.endswith('[Feedback excerpt ends; full refusal retained in preceding attempt.]\n'))
+        for text in ('No automatic search retry', '"engine_feasible": false', 'NO valid incumbent',
+                     '"ref": "U1", "with": "C3"', loop.VIOLATION_TERMS['pair'], '"courtyards_overlap": 1'):
+            self.assertIn(text, feedback)
+        self.assertLess(feedback.index('"ref": "U1"'), feedback.index('Check findings'))
+        for field in ('"declaration"', '"source_records"', '"manufacturing_floor"'):
+            self.assertNotIn(field, feedback)
+        # Only the feedback omits provenance; the retained records keep it.
+        retained = json.dumps(report['attempts'][0]['placement_findings'])
+        for field in ('"declaration"', '"source_records"', '"manufacturing_floor"'):
+            self.assertIn(field, retained)
+        self.assertEqual(self.saved('run/attempt-001/build/stages/05-placement/placement/job-report.json'), job)
+
     def test_runtime_pin_refusal_is_not_scored_as_a_design_failure(self):
         self.responses = [self.response()]
         def build(attempt):

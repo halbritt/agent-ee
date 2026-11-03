@@ -1958,7 +1958,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                         or seed_check['board_sha256'] != report['final'].get('board_sha256')):
                     raise JobRefusal('acquisition route did not preserve the checked local routing')
         _check_stop(clock, job_dir)
-        status = _completion_status(routed, selected if incumbent is not None else None, report['final'])
+        status = _completion_status(routed, selected if incumbent is not None else None, report['final'],
+                                    engine_feasible=report['engine_feasible'])
         trial.update(status=status, route=report['route'], final=report['final'])
         receipt = retain_routing_trial(trial, suffix)
         if status == 'completed':
@@ -2000,8 +2001,15 @@ def _silk_graphic_conflicts(report):
             and not any(names_a_field(item['description']) for item in violation['items'])]
 
 
-def _completion_status(routed, incumbent, final):
-    """Native rejection or absent checks cannot be overridden by router success."""
+def _completion_status(routed, incumbent, final, *, engine_feasible=True):
+    """Native rejection or absent checks cannot be overridden by router success.
+
+    With no incumbent and no hard-feasible engine state, the routed board is only the
+    exploratory route of a diagnostic candidate. Its router and native outcomes cannot
+    make the job pass, so the job reports why: ``placement_infeasible``.
+    """
+    if incumbent is None and not engine_feasible:
+        return 'placement_infeasible'
     if routed.get('status') != 'routed':
         return 'route_failed'
     if routed.get('router_accepted') is False:

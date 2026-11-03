@@ -32,6 +32,21 @@ DEFAULTS = dict(author=DEFAULT_AUTHOR, max_attempts=4, max_seconds=2400, author_
 MAX_REQUIREMENTS_BYTES = 32768
 STATEMENT_ECHO_CHARS = 20000
 FEEDBACK_CHARS = 14000
+# Pure-provenance fields (where a limit, rule or record came from, not what failed). Author feedback
+# omits them so that the violations fit the excerpt; retained job and attempt reports keep them.
+FEEDBACK_OMITTED_FIELDS = frozenset({'declaration', 'source_records', 'manufacturing_floor'})
+# What each placement-engine violation kind means (crates/placement-engine/src/job.rs violations()).
+VIOLATION_TERMS = dict(
+    pair='courtyard, copper, hole or mask overlap between the two parts',
+    electrical_locality='a decoupling or locality pad distance is over its limit',
+    edge_identity='the declared edge is not the nearest board edge',
+    edge_setback='farther from its declared edge than the allowed setback',
+    edge_overhang_min='overhangs its declared edge less than required',
+    occupancy_outside_outline='body outside the board outline',
+    copper_edge_clearance='copper closer to the board edge than the edge clearance',
+    source_body_outside='declared package body outside the board outline',
+    source_body_gap='declared package bodies closer than the minimum gap',
+    connector_access='parts in a connector mating access region')
 # Phase logs quoted in reasons and feedback: the last bytes of each log only.
 LOG_TAIL_BYTES = 6000
 REVIEW_EXCERPT_CHARS = 1500
@@ -494,6 +509,8 @@ def placement_findings(root):
     for path in sorted(root.glob('stages/*/placement/job-report.json')):
         job = design.load(path)
         result.append(dict(path=str(path), status=job['status'], reason=job.get('reason'),
+            engine_feasible=job.get('engine_feasible'), validity=job.get('validity'),
+            routed_candidate=job.get('routed_candidate'), best_diagnostic=job.get('best_diagnostic'),
             final={k: job.get('final', {}).get(k) for k in
                    ('opens', 'errors', 'warnings', 'integrity', 'edge_intent', 'locality')},
             shortlist=[{k: row[k] for k in ('seed', 'error', 'engine_violations', 'errors',
@@ -502,6 +519,78 @@ def placement_findings(root):
             routing_trials=[{k: row[k] for k in ('seed', 'status', 'error', 'final') if k in row}
                 for row in job.get('routing_trials', [])[:8]]))
     return result
+
+
+def without_provenance(value):
+    """A copy for author feedback without FEEDBACK_OMITTED_FIELDS; retained reports keep them."""
+    if isinstance(value, dict):
+        return {k: without_provenance(v) for k, v in value.items() if k not in FEEDBACK_OMITTED_FIELDS}
+    if isinstance(value, list):
+        return [without_provenance(v) for v in value]
+    return value
+
+
+def _locality_leg(record):
+    """One graded locality leg by part, pad and distance, without its provenance."""
+    row = {k: record[k] for k in ('kind', 'obligation', 'role', 'citation', 'reason') if k in record}
+    for key in ('from', 'to'):
+        end = record.get(key)
+        if isinstance(end, dict):
+            row[key] = f'{end.get("reference")}.{end.get("pad")}'
+    if isinstance(record.get('distance_mm'), (int, float)):
+        row['distance_mm'] = round(record['distance_mm'], 3)
+    if isinstance(record.get('max_distance_nm'), int):
+        row['max_distance_mm'] = record['max_distance_nm'] / 1000000
+    return row
+
+
+def placement_summary(findings):
+    """Per placement job: engine feasibility, validity and the hard violations by part and term.
+
+    Engine violations are merged across the checked candidates, with the seeds that showed each."""
+    summary = []
+    for job in findings:
+        merged = {}
+        for candidate in [job.get('best_diagnostic') or {}, *(job.get('shortlist') or [])]:
+            for violation in candidate.get('engine_violations') or []:
+                named = {k: violation[k] for k in ('kind', 'ref', 'with', 'obligation', 'role', 'detail')
+                         if k in violation}
+                row = merged.setdefault(json.dumps(named, sort_keys=True), dict(named,
+                    term=VIOLATION_TERMS.get(named.get('kind'), 'see the engine violation record'), seeds=[]))
+                if candidate.get('seed') is not None and candidate['seed'] not in row['seeds']:
+                    row['seeds'].append(candidate['seed'])
+        final = job.get('final') or {}
+        errors = {split: (final.get('errors') or {}).get(split, {}).get('by_type')
+                  for split in ('placement_introduced', 'routing_introduced', 'pre_existing')}
+        locality = final.get('locality') or {}
+        edge = final.get('edge_intent') or {}
+        summary.append(dict(status=job.get('status'), engine_feasible=job.get('engine_feasible'),
+            validity=job.get('validity'), engine_violations=list(merged.values()),
+            native_errors={k: v for k, v in errors.items() if v}, opens=final.get('opens'),
+            integrity=final.get('integrity'),
+            edge_intent=dict(status=edge.get('status'), violations=edge.get('violations', [])),
+            locality=dict(status=locality.get('status'),
+                          defects=[_locality_leg(d) for d in locality.get('defects', [])],
+                          unknown=[_locality_leg(d) for d in locality.get('unknown', [])])))
+    return summary
+
+
+def phase_feedback(stage, reason, row):
+    """The next author turn's feedback after a failed phase, before the FEEDBACK_CHARS cut.
+
+    Short, actionable sections come first, so the cut falls in the bulky placement detail."""
+    feedback = f'Failing stage: {stage}\nReason: {reason}\n'
+    if 'search_retry_skipped' in row:
+        feedback += 'No automatic search retry: ' + row['search_retry_skipped'] + '\n'
+    findings = row.get('placement_findings', [])
+    if findings:
+        feedback += ('Placement summary (engine feasibility, validity and hard violations): '
+                     + json.dumps(placement_summary(findings)) + '\n')
+    feedback += 'Check findings: ' + json.dumps(row.get('failed_checks', []))
+    if findings:
+        feedback += ('\nPlacement findings (provenance fields omitted here; the job reports keep them): '
+                     + json.dumps(without_provenance(findings)))
+    return feedback
 
 
 def review_feedback(result):
@@ -579,6 +668,8 @@ def refusal_classes(text):
 
 
 def search_failure(build, run):
+    """A placement search that more seeds could change. ``placement_infeasible`` is not one:
+    the engine found no hard-feasible state, so the statement goes back to the author."""
     if not build or not build.get('attempts') or build['attempts'][-1].get('stage') != 'placement-routing':
         return False
     jobs = list(run.glob('stages/*/placement/job-report.json'))
@@ -850,6 +941,10 @@ def _generate(requirements_path, out, options, identity=None):
                         else:
                             row['search_retry_skipped'] = (f'placement.seeds is already {seeds}, the most the '
                                 'compiler accepts; a rebuild would repeat the same search')
+                    elif any(p.get('status') == 'placement_infeasible' for p in row['placement_findings']):
+                        row['search_retry_skipped'] = ('the placement engine found no placement that meets every '
+                            'hard constraint (placement_infeasible); more seeds would repeat the same search, so '
+                            'change the statement: see the engine violations in the placement summary')
                     reason = (build or {}).get('reason') or execution_error(record, attempt, 'build')
                     raise PhaseFailure(row['failing_stage'], reason, record)
                 row['engineering_review'] = 'not_run'
@@ -892,10 +987,7 @@ def _generate(requirements_path, out, options, identity=None):
             except PhaseFailure as exc:
                 row.update(status='failed', failing_stage=exc.stage, reason=str(exc),
                     refusal_classes=refusal_classes(str(exc)))
-                feedback = (f'Failing stage: {exc.stage}\nReason: {exc}\nCheck findings: '
-                    + json.dumps(row['failed_checks']) + '\nPlacement findings: ' + json.dumps(row.get('placement_findings', [])))
-                if 'search_retry_skipped' in row:
-                    feedback += '\nNo automatic search retry: ' + row['search_retry_skipped']
+                feedback = phase_feedback(exc.stage, str(exc), row)
                 (attempt / 'refusal.txt').write_text(str(exc), encoding='utf-8')
                 if exc.stage in ('capture', 'compile') and not row['refusal_classes']:
                     row['tool_gap'] = 'Refusal does not name a design field'

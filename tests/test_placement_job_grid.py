@@ -58,6 +58,27 @@ class PackageTrackConflictTests(unittest.TestCase):
                                                          reject_track_dangling=True), [])
 
 
+class CompletionStatusTests(unittest.TestCase):
+    def test_no_hard_feasible_engine_state_is_reported_before_route_and_native_outcomes(self):
+        # Benchmark r4 led-flasher attempt-004: every seed was engine-infeasible, the exploratory
+        # route read verification_failed, and the generate loop retried the same search.
+        passing = dict(integrity='preserved', edge_intent=dict(status='pass'), eligibility='eligible')
+        routed = dict(status='routed', router_accepted=True)
+        cases = [(dict(status='failed'), passing, 'route_failed'),
+                 (dict(routed, router_accepted=False), passing, 'verification_failed'),
+                 (routed, dict(passing, integrity='violated'), 'integrity_failed'),
+                 (routed, dict(passing, edge_intent=dict(status='failed')), 'intent_failed'),
+                 (routed, dict(passing, eligibility='ineligible'), 'verification_failed'),
+                 (routed, passing, 'placement_failed')]
+        for route, final, without_incumbent in cases:
+            with self.subTest(expected=without_incumbent, route=route, final=final):
+                self.assertEqual(job._completion_status(route, None, final, engine_feasible=False),
+                                 'placement_infeasible')
+                # Engine-feasible candidates that native checks rejected keep their own outcome.
+                self.assertEqual(job._completion_status(route, None, final, engine_feasible=True),
+                                 without_incumbent)
+
+
 class RepeatedPadRefusalTests(unittest.TestCase):
     def test_refusal_lists_the_lands_of_a_repeated_pad_number(self):
         # A SOT-223 lead and tab share one number.

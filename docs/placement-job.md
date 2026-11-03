@@ -627,7 +627,11 @@ rules, including stricter coupling limits, always remain in force.
    actual scope; it does not establish all functional-block, pin, side, access,
    height, overhang or setback requirements. The metrics command exits nonzero
    when this check fails.
-   Job status `verification_failed` also rejects native errors or opens;
+   Job status `placement_infeasible` comes first when there is no incumbent and
+   the engine found no hard-feasible state (`engine_feasible: false`): the routed
+   board is then only the exploratory route of a diagnostic candidate, and its
+   router and native outcomes stay in `routing_trials`. Job status
+   `verification_failed` also rejects native errors or opens;
    `placement_failed` rejects an otherwise eligible exploratory route with no
    feasible incumbent. `completed` requires an eligible final board and a valid
    incumbent. It remains a placement/routing milestone, not manufacturing

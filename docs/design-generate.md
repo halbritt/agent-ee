@@ -149,15 +149,25 @@ What goes back to the author is bounded:
 - A failed engineering review leads with its blocking findings (accepted,
   deferred or unresolved), then a short excerpt of the review report. The report
   itself stays in `review/report.json`.
-- Build failures carry the failed check records and placement findings.
+- Build failures carry the failed check records and placement findings. A
+  placement summary comes first, before the check records: for each placement
+  job, its status, `engine_feasible`, `validity`, the engine's hard violations
+  by part and term (with the seeds that showed each), native error types, opens,
+  edge-intent violations and locality defects. The detailed placement findings
+  follow. The feedback leaves out the provenance fields `declaration`,
+  `source_records` and `manufacturing_floor`; the attempt and job reports keep
+  them.
 
 A placement search failure first uses an automatic search retry while
 `--search-retries` allows: no model call, the same statement and captures, and
 twice the placement seeds up to the compiler's 64. When the seeds are already 64
 the retry is skipped (`search_retry_skipped`) and the next author turn is told
-why. A retry attempt writes `automatic-retry.json`, which names its source
-attempt and the changed seed count; it writes no prompt and no response. It uses
-the same attempt and time bounds.
+why. A job status of `placement_infeasible` (no incumbent and no hard-feasible
+engine state) is not retried either: more seeds would repeat the same search,
+so the next author turn gets the violations. A retry attempt writes
+`automatic-retry.json`, which names its source attempt and the changed seed
+count; it writes no prompt and no response. It uses the same attempt and time
+bounds.
 
 ## Acceptance and claims
 
