@@ -794,6 +794,23 @@ class ReviewRegressionTests(unittest.TestCase):
         via.SetNetCode(net)
         self.assertTrue(local._via_site_blocked(self.board,via,endpoints[0],local._rules(self.board,endpoints[0])))
 
+    def test_leg_can_use_a_channel_above_floor_below_class_preference(self):
+        self.board.GetDesignSettings().m_MinClearance = 100_000
+        endpoints = [local.pad(self.board,p) for p in contract()['relations'][0]['return']]
+        for terminal in endpoints:terminal.SetSize(self.k.VECTOR2I(200_000,200_000))
+        obstacles = [local._track(self.board,[(28_000_000,y),(35_000_000,y)],
+                     endpoints[0].GetNetCode(),self.k.F_Cu,100_000)[0]
+                     for y in (30_700_000,31_300_000)]
+        # A 0.2 mm leg has 0.15 mm gaps: above the 0.1 mm native floor,
+        # below the 0.2 mm class preference. Neither obstacle touches a pad.
+        added = local._leg(self.board,*endpoints,clock=Clock(60),cancel_dir=None)
+        self.assertTrue(added)
+        self.assertAlmostEqual(sum(t.GetLength()/1e6 for t in added),3)
+        for item in added:
+            for obstacle in obstacles:
+                self.assertFalse(item.GetEffectiveShape(self.k.F_Cu).Collide(
+                    obstacle.GetEffectiveShape(self.k.F_Cu),100_000))
+
     def test_search_keeps_native_floor_from_an_existing_plane_via(self):
         self.board.GetDesignSettings().m_MinClearance = 100_000
         endpoints = [local.pad(self.board,p) for p in contract()['relations'][0]['return']]
