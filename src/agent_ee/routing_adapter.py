@@ -53,6 +53,35 @@ ARTIFACTS = ('routing/adapter-report.json', 'routing/kicad-route.stdout', 'routi
              'routing/attempt/work', 'routing/' + attempt.ORIGINAL_STAGE)
 
 
+# The image's kicad-route install record (docker/kicad-route/install.sh); a test names another file.
+INSTALL_RECORD_ENV = 'AGENT_EE_KICAD_ROUTE_INSTALL_RECORD'
+INSTALL_RECORD = '/opt/kicad-route.install.json'
+INSTALL_RECORD_SCHEMA = 'agent-ee.kicad-route-install/2'
+
+
+def read_install_record(path=None):
+    """{'path', 'sha256', 'record'} for the image's kicad-route install record, or None when there is none.
+
+    A host install without the image has no record; every routing attempt still records the checkout
+    it runs. A record that is not one install.sh writes (schema, a 40-hex commit recorded clean, the
+    installed checkout path) raises ValueError."""
+    path = Path(path) if path is not None else Path(os.environ.get(INSTALL_RECORD_ENV) or INSTALL_RECORD)
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    try:
+        record = json.loads(raw.decode('utf-8'))
+    except ValueError as exc:
+        raise ValueError(f'kicad-route install record {path} is not JSON') from exc
+    route = record.get('kicad_route') if isinstance(record, dict) else None
+    if (not isinstance(record, dict) or record.get('schema') != INSTALL_RECORD_SCHEMA or not isinstance(route, dict)
+            or not isinstance(route.get('commit'), str) or not attempt.COMMIT.match(route['commit'])
+            or route.get('clean') is not True or not isinstance(route.get('path'), str)):
+        raise ValueError(f'kicad-route install record {path} is not one docker/kicad-route/install.sh writes')
+    return {'path': str(path), 'sha256': digest(path), 'record': record}
+
+
 def legacy_claim(report):
     """The commit a report written before 2026-11-03 recorded as its tool.pin, else None.
 

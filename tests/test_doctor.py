@@ -320,6 +320,48 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(router['problems'])
         self.assertIsNone(router['sha256'])
 
+    def test_the_installed_router_checkout_must_hold_the_install_records_commit(self):
+        from agent_ee.routing_adapter import INSTALL_RECORD_ENV, INSTALL_RECORD_SCHEMA
+        from tests.kicad_route_fixture import commit_all, make_checkout
+        checkout, commit = make_checkout(self.root / 'router', 'complete')
+        record_path = self.root / 'kicad-route.install.json'
+
+        def route(record):
+            if record is None:
+                record_path.unlink(missing_ok=True)
+            else:
+                record_path.write_text(json.dumps(record) if isinstance(record, dict) else record)
+            with patch.dict('os.environ', {INSTALL_RECORD_ENV: str(record_path)}):
+                return self.doctor('--checks-only', '--router-checkout', str(checkout))[1]['prerequisites']['kicad-route']
+
+        def record(commit, path=checkout):
+            return {'schema': INSTALL_RECORD_SCHEMA, 'kicad_route': {'commit': commit, 'clean': True, 'path': str(path)}}
+
+        # The image's own checkout holds the recorded commit: bound, no error.
+        router = route(record(commit))
+        self.assertEqual((router['problems'], router['installed_checkout']), ([], True))
+        self.assertNotIn('error', router)
+        self.assertEqual(router['install_record']['record']['kicad_route']['commit'], commit)
+        # The installed checkout moved to another commit: the probe fails, naming both.
+        with (checkout / 'bin/kicad-route').open('a') as handle:
+            handle.write('# a later kicad-route commit\n')
+        later = commit_all(checkout, 'later router')
+        router = route(record(commit))
+        self.assertIn(f'holds {later}', router['error'])
+        self.assertIn(f'not the commit {commit}', router['error'])
+        # Another checkout is reported with the record, not bound to it: any clean commit runs.
+        router = route(record(commit, path=self.root / 'elsewhere'))
+        self.assertEqual((router['installed_checkout'], router.get('error')), (False, None))
+        # A record install.sh does not write fails the probe; a host without one has nothing to bind.
+        for bad in ('{not json', {**record(later), 'schema': 'agent-ee.kicad-route-install/1'},
+                    {'schema': INSTALL_RECORD_SCHEMA, 'kicad_route': {'commit': later, 'clean': False,
+                                                                      'path': str(checkout)}}):
+            with self.subTest(bad=str(bad)[:40]):
+                self.assertIn('kicad-route install record', route(bad)['error'])
+        router = route(None)
+        self.assertIsNone(router['install_record'])
+        self.assertNotIn('error', router)
+
 
 if __name__ == "__main__":
     unittest.main()

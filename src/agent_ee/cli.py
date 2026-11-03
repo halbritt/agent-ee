@@ -56,6 +56,29 @@ def check_kicad_install(checks):
                             f"{'match' if observed[1:] == expected[1:] else 'differ'})")
 
 
+def check_router_install(check):
+    """Bind the router checkout doctor inspected to the image's kicad-route install record.
+
+    The installed checkout (the record's path) must hold the recorded commit with a clean tree, or the
+    probe fails. Another checkout is reported with the record but not bound to it: any clean commit
+    runs, and every routing attempt records the one it ran. An invalid record fails the probe."""
+    from .routing_adapter import read_install_record
+    try:
+        installed = read_install_record()
+    except (OSError, ValueError) as exc:
+        check["error"] = f"kicad-route install record: {exc}"
+        return
+    check["install_record"] = installed
+    if installed is None:
+        return
+    route = installed["record"]["kicad_route"]
+    check["installed_checkout"] = Path(route["path"]).resolve() == Path(check["checkout"]).resolve()
+    if check["installed_checkout"] and (check.get("commit"), check.get("clean")) != (route["commit"], True):
+        check["error"] = (f"kicad-route checkout {check['checkout']} holds {check.get('commit')} "
+                          f"(clean: {check.get('clean')}), not the commit {route['commit']} of the install "
+                          f"record {installed['path']}")
+
+
 def doctor(checks_only=False, router_checkout=None):
     """Probe versions and hash the probed binaries; real runs establish integration."""
     checks, skipped = {}, {}
@@ -129,6 +152,8 @@ def doctor(checks_only=False, router_checkout=None):
                                     'sha256': router['executable_sha256']}
         except (OSError, ValueError) as exc:
             checks['kicad-route'] = {'path': str(router_checkout), 'error': str(exc)}
+        else:
+            check_router_install(checks['kicad-route'])
     report = {"prerequisites": checks,
         "runtime": {"executable": sys.executable, "version": sys.version,
                     "prefix": sys.prefix, "base_prefix": sys.base_prefix,
