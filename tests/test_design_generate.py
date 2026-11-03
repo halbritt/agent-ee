@@ -1002,6 +1002,23 @@ class BenchmarkTests(ScriptedLoop):
         self.assertEqual(report['status'], 'stopped_runtime_refused')
         self.assertEqual([(r['name'], r['status']) for r in report['designs']], [('a', 'runtime_refused'), ('b', 'not_run')])
 
+    def test_a_stop_before_a_designs_report_exists_lists_it_interrupted(self):
+        directory = self.make_dir([('a', REQUIREMENTS), ('b', REQUIREMENTS), ('c', REQUIREMENTS)])
+        self.responses = [self.response()]
+        original = loop.prepare_context
+        def prepare_context(root, out):
+            if out.parent.name == 'b':
+                raise KeyboardInterrupt  # design b has started; its report does not exist yet
+            return original(root, out)
+        with patch.object(loop, 'prepare_context', side_effect=prepare_context):
+            with self.assertRaises(KeyboardInterrupt):
+                loop.benchmark(directory, self.root / 'benchmark', max_attempts=1)
+        report = self.saved('benchmark/benchmark-report.json')
+        self.assertEqual([(r['name'], r['status'], r['report']) for r in report['designs']],
+                         [('a', 'accepted', str((self.root / 'benchmark').resolve() / 'a/generate-report.json')),
+                          ('b', 'interrupted', None), ('c', 'not_run', None)])
+        self.assertEqual(report['designs'][1]['reason'], 'Coordinator interrupted during this design; partial artifacts retained')
+
     def test_a_stop_just_after_a_design_finished_keeps_its_final_state(self):
         directory = self.make_dir([('a', REQUIREMENTS), ('b', REQUIREMENTS)])
         self.responses = [self.response()]
