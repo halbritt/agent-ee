@@ -318,7 +318,7 @@ class StageExecutionTests(unittest.TestCase):
         base = mount_view()
         def mount(point, flags='rw', kind='ext4', ident=99):
             return f'\n{ident} 0 0:1 / {point} {flags} - {kind} none {flags}'
-        positive = [base, base+mount('/tool/plan','ro'), base+mount('/lib','ro'), base+mount('/lib64','ro')+mount('/bin','ro',ident=100),
+        positive = [base, base+mount('/lib','ro'), base+mount('/lib64','ro')+mount('/bin','ro',ident=100),
                     base+mount('/proc/sys','ro','proc'), base+mount('/dev/mqueue','rw','mqueue'),
                     base+mount('/dev/null','rw','devtmpfs'), base+mount('/work/out'),
                     base+mount('/candidate')+mount('/candidate','ro',ident=100)]
@@ -328,7 +328,7 @@ class StageExecutionTests(unittest.TestCase):
                      base+mount('/dev/hosthome'), base+mount('/proc/hosthome'),
                      base+mount('/candidate'), base+mount('/usr/lib'),
                      base+mount('/etc'), base+mount('/app'), base+mount('/tool/agent-ee'),
-                     base+mount('/tool/plan'), base+mount('/tool/unknown','ro'),
+                     base+mount('/tool/plan'), base+mount('/tool/plan','ro'), base+mount('/tool/unknown','ro'),
                      base+mount('/lib/x'), base+'\nmalformed',
                      base+mount('/lib','ro',ident=1), base+mount('/candidate','ro,rw')]
         for accepted, views in ((True, positive),(False, negative)):
@@ -340,6 +340,27 @@ class StageExecutionTests(unittest.TestCase):
                     else:
                         with self.assertRaises(ValueError):
                             StageContext(ConfinementView.STAGE_TOOL)
+
+    def test_plan_mount_requires_declared_scaffold_context(self):
+        plan = '\n99 0 0:1 / /tool/plan ro - ext4 none ro'
+        fab = '\n100 0 0:1 / /tool/fixtures/fab-export ro - ext4 none ro'
+        with patch.object(Path, 'read_text', return_value=mount_view() + plan), \
+             patch.object(fa, '__file__', '/tool/agent-ee/agent_ee/forward_annotation.py'):
+            StageContext(ConfinementView.STAGE_TOOL, _pod_plan=True)
+            with self.assertRaises(stage_execution.ConfinementError):
+                StageContext(ConfinementView.STAGE_TOOL)
+        for view in (mount_view(), mount_view() + plan.replace(' ro', ' rw')):
+            with self.subTest(view=view), patch.object(Path, 'read_text', return_value=view), \
+                 patch.object(fa, '__file__', '/tool/agent-ee/agent_ee/forward_annotation.py'):
+                with self.assertRaises(stage_execution.ConfinementError):
+                    StageContext(ConfinementView.STAGE_TOOL, _pod_plan=True)
+        with patch.object(Path, 'read_text', return_value=mount_view() + fab), \
+             patch.object(fa, '__file__', '/tool/agent-ee/agent_ee/forward_annotation.py'):
+            StageContext(ConfinementView.STAGE_TOOL, _fab_templates=True)
+        with patch.object(Path, 'read_text', return_value=mount_view() + fab + plan), \
+             patch.object(fa, '__file__', '/tool/agent-ee/agent_ee/forward_annotation.py'):
+            with self.assertRaises(stage_execution.ConfinementError):
+                StageContext(ConfinementView.STAGE_TOOL, _fab_templates=True)
 
     def test_stage_entrypoint_refuses_a_host_view_and_incomplete_mount_declarations(self):
         args = ['annotate', '--board','a.kicad_pcb','--schematic','a.kicad_sch',
@@ -619,3 +640,20 @@ class StageExecutionTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 footprint_probe._stage_main(str(self.captures), 'OwnedCustom', str(output))
         self.assertEqual(output.read_bytes(), original)
+
+
+class NativeHookScopeTests(unittest.TestCase):
+    def test_only_source_revision_host_probe_bypasses_sandbox_hook(self):
+        from tests.native_hooks import Hooked
+        def fault(call, run):
+            self.fail('host metadata reached a sandbox fault callback')
+        hook = Hooked(fault)
+        result = native_run.run(native_run.Intent('source_revision',
+            ['git', 'rev-parse', 'HEAD'], isolation='host', timeout=None), work=None, adapter=hook)
+        self.assertEqual(result['execution'], 'ok')
+        self.assertRegex(result.stdout.decode().strip(), r'^[0-9a-f]{40}$')
+        self.assertEqual(hook.calls, [])
+        for isolation in ('host', 'docker'):
+            with self.subTest(isolation=isolation), self.assertRaisesRegex(ValueError, 'sandbox hook refuses'):
+                native_run.run(native_run.Intent('pcbnew_script', ['/usr/bin/false'],
+                    isolation=isolation, timeout=1), work=None, adapter=hook)

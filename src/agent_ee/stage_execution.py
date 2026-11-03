@@ -97,7 +97,7 @@ class ConfinementView(enum.Enum, metaclass=_ConfinementViewMeta):
         except (OSError, ValueError, IndexError) as exc:
             raise ConfinementError('stage confinement: malformed or unavailable mountinfo') from exc
 
-    def verify(self, mountinfo_text=None, source_path=None, *, _fab_templates=False):
+    def verify(self, mountinfo_text=None, source_path=None, *, _fab_templates=False, _pod_plan=False):
         """Validate confinement: tmpfs root, /proc, /dev, /tmp, read-only system mounts."""
         mounts = self.parse_mountinfo(mountinfo_text)
         special = {'/': 'tmpfs', '/proc': 'proc', '/dev': 'tmpfs', '/tmp': 'tmpfs',
@@ -108,7 +108,10 @@ class ConfinementView(enum.Enum, metaclass=_ConfinementViewMeta):
 
         if self == ConfinementView.STAGE_TOOL:
             required['/tool/agent-ee'] = 'ro'
-            readonly += ['/tool/agent-ee', '/tool/plan', '/app']
+            readonly += ['/tool/agent-ee', '/app']
+            if _pod_plan:
+                required['/tool/plan'] = 'ro'
+                readonly += ['/tool/plan']
             if _fab_templates:
                 required['/tool/fixtures/fab-export'] = 'ro'
                 readonly += ['/tool/fixtures/fab-export']
@@ -255,7 +258,7 @@ def stage_kicad_project(inputs, work, design_rel, suffixes=('.kicad_pro', '.kica
 class StageContext:
     """Unified adapter managing stage child execution within outer container confinement."""
 
-    def __init__(self, view=None, work=None, *, _fab_templates=False):
+    def __init__(self, view=None, work=None, *, _fab_templates=False, _pod_plan=False):
         if isinstance(view, (pathlib.PurePath, os.PathLike)) or (isinstance(view, str) and not any(view == m.value for m in ConfinementView)):
             work, view = view, None
         explicit = view is not None
@@ -266,8 +269,8 @@ class StageContext:
         self.work = self.scratch
         self.stage = self
         self._fab_templates = _fab_templates
-        if explicit or ConfinementView.is_confined():
-            self.view.verify(_fab_templates=self._fab_templates)
+        if explicit or _pod_plan or ConfinementView.is_confined():
+            self.view.verify(_fab_templates=self._fab_templates, _pod_plan=_pod_plan)
 
     def environment(self, inputs, work):
         """Construct the isolated child environment for KiCad and Python."""

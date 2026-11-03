@@ -5,7 +5,7 @@ native_run.Call and run(intent=..., **overrides), which performs the intent's re
 replacement intent, or overrides such as timeout= for the adapter arguments); it may act
 before or after run(), wrap it in try/finally, or not call it at all (to simulate a coordinator
 interrupted before the executor wrote its record). Install it with native_run.using(Hooked(...)).
-Host metadata probes pass through without invoking the sandbox hook.
+Only host source_revision probes pass through without invoking the sandbox hook.
 """
 
 from pathlib import Path
@@ -23,8 +23,10 @@ class Hooked(native_run.Sandbox):
             options = dict(inputs=inputs, work=work, timeout=timeout, mounts=mounts, cancel=cancel, **callbacks)
             return native_run.DEFAULT_ADAPTERS[intent.isolation].run(intent, **{**options, **overrides})
 
-        if intent.isolation != 'sandbox':
+        if intent.isolation == 'host' and intent.tool == 'source_revision':
             return run()
+        if intent.isolation != 'sandbox':
+            raise ValueError('sandbox hook refuses non-sandbox intents other than host source_revision')
         call = native_run.Call(intent, None if inputs is None else Path(inputs), None if work is None else Path(work),
                                timeout, tuple(mounts))
         self.calls.append(call)

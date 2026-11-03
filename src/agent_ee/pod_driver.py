@@ -447,7 +447,7 @@ def run_scaffold(recipe):
     recipe = read_json(recipe)
     from .stage_execution import ConfinementView, StageContext
     from . import native_run
-    context = StageContext(ConfinementView.STAGE_TOOL)
+    context = StageContext(ConfinementView.STAGE_TOOL, _pod_plan=True)
     with native_run.using(context):
         scaffold.scaffold(Path('/candidate') / recipe['envelope'], Path('/candidate') / recipe['parts'],
                           '/work/scaffold', scope_path='/tool/plan/scope.json')
