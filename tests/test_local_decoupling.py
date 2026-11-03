@@ -593,6 +593,216 @@ class LocalCopperTests(unittest.TestCase):
         router.assert_not_called()
 
 
+class ReviewRegressionTests(unittest.TestCase):
+    setUp = LocalCopperTests.setUp
+    save = LocalCopperTests.save
+    seed = LocalCopperTests.seed
+    filled = LocalCopperTests.filled
+    checked = LocalCopperTests.checked
+
+    def add_fp(self, ref, pads):
+        fp = self.k.FOOTPRINT(self.board)
+        fp.SetReference(ref)
+        self.board.Add(fp)
+        for number, x, y, net in pads:
+            self.add_pad(fp, number, x, y, net)
+        return fp
+
+    def add_pad(self, fp, number, x, y, net, size=700_000):
+        p = self.k.PAD(fp)
+        p.SetNumber(str(number))
+        p.SetAttribute(self.k.PAD_ATTRIB_SMD)
+        p.SetShape(self.k.PAD_SHAPE_RECT)
+        p.SetSize(self.k.VECTOR2I(size, size))
+        layers = self.k.LSET()
+        layers.AddLayer(self.k.F_Cu)
+        p.SetLayerSet(layers)
+        p.SetPosition(self.k.VECTOR2I(round(x*1e6), round(y*1e6)))
+        if net:
+            p.SetNet(self.board.FindNet(net))
+        fp.Add(p)
+        return p
+
+    def add_far_pads(self, count, net):
+        fp = self.add_fp('FAR', [])
+        for n in range(count):
+            i, j = divmod(n, 73)
+            self.add_pad(fp, n+1, 21+i*.25, 21+j*.25, net, 100_000)
+
+    def test_1100_distant_pads_do_not_exhaust_the_local_search(self):
+        self.add_far_pads(1100, None)
+        self.save()
+        receipt = self.seed()
+        self.assertEqual(local.verify(self.path, receipt)['status'], 'pass')
+        self.filled()
+        self.assertEqual(measure(self.path, contract())['outcome'], 'info')
+
+    def test_2100_distant_net_items_do_not_make_the_typed_check_unknown(self):
+        self.add_far_pads(2100, '/return')
+        self.save()
+        self.seed()
+        self.filled()
+        result = self.checked(contract())
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertEqual(result['details']['outcome'], 'info')
+
+    def escape_case(self, same_bank):
+        from copy import deepcopy
+        g = self.k.PCB_SHAPE(self.board)
+        g.SetShape(self.k.SHAPE_T_SEGMENT)
+        g.SetLayer(self.k.B_Cu)
+        g.SetStart(self.k.VECTOR2I(33_800_000, 30_000_000))
+        g.SetEnd(self.k.VECTOR2I(33_800_000, 32_000_000))
+        g.SetWidth(1_200_000)
+        self.board.Add(g)
+        doc = contract()
+        second = deepcopy(doc['relations'][0])
+        second['id'] = 'bulk' if same_bank else 'other-device'
+        if same_bank:
+            self.add_fp('BLK', [('1', 33, 30, '/foreign')])
+            fp = next(fp for fp in self.board.GetFootprints() if fp.GetReference() == 'BLK')
+            for p in fp.Pads():p.SetSize(self.k.VECTOR2I(200_000, 200_000))
+            self.add_fp('CAP2', [('1', 34.05, 27.6, '/rail'), ('2', 34.05, 29, '/return')])
+        else:
+            self.add_fp('DEV2', [('1', 36.5, 34, '/rail'), ('2', 34.1, 34, '/return')])
+            self.add_fp('CAP2', [('1', 36.5, 26.5, '/rail'), ('2', 34.1, 26.5, '/return')])
+            for leg in ('supply', 'return'):second[leg][0]['reference'] = 'DEV2'
+        for leg in ('supply', 'return'):second[leg][1]['reference'] = 'CAP2'
+        doc['relations'].append(second)
+        self.save()
+        return doc
+
+    def test_cross_bank_escape_search_finds_the_clear_detour(self):
+        doc = self.escape_case(False)
+        receipt = self.seed(doc)
+        self.assertEqual(local.verify(self.path, receipt)['status'], 'pass')
+        self.filled()
+        self.assertTrue(all(not b['return']['pin_bypasses_bank'] for b in measure(self.path, doc)['banks']))
+
+    def test_same_bank_escape_search_finds_the_clear_detour(self):
+        doc = self.escape_case(True)
+        receipt = self.seed(doc)
+        self.assertEqual(local.verify(self.path, receipt)['status'], 'pass')
+        self.filled()
+        self.assertFalse(measure(self.path, doc)['banks'][0]['return']['pin_bypasses_bank'])
+
+    def poison_return(self, receipt, points):
+        # Fault injection into a saved candidate proves the final guard remains
+        # independent of the search that normally avoids this geometry.
+        board = self.k.LoadBoard(str(self.path))
+        row = receipt['relations'][1]
+        leg = next(leg for leg in row['legs'] if leg['kind'] == 'return')
+        old = set(leg['tracks'])
+        for item in list(board.GetTracks()):
+            if item.m_Uuid.AsString() in old:board.Remove(item)
+        code = board.FindNet('/return').GetNetCode()
+        added = local._track(board, points, code, self.k.F_Cu, 400_000)
+        ids = [t.m_Uuid.AsString() for t in added]
+        leg['tracks'] = ids
+        row['copper'] = [uid for uid in row['copper'] if uid not in old] + ids
+        receipt['protected'] = [p for p in receipt['protected'] if p['uuid'] not in old] + [local.copper_identity(t) for t in added]
+        self.k.SaveBoard(str(self.path), board)
+        return receipt
+
+    def test_same_bank_escape_guard_rejects_a_planner_crossing(self):
+        doc = self.escape_case(True)
+        receipt = self.seed(doc)
+        receipt = self.poison_return(receipt, [(30_000_000,31_000_000), (32_225_000,31_775_000),
+            (33_775_000,31_775_000), (34_050_000,29_000_000)])
+        self.assertRaisesRegex(JobRefusal, 'generated legs meet outside', local.verify, self.path, receipt)
+
+    def test_cross_bank_guard_rejects_a_planner_crossing(self):
+        doc = self.escape_case(False)
+        receipt = self.seed(doc)
+        receipt = self.poison_return(receipt, [(34_100_000,34_000_000), (32_000_000,34_000_000),
+            (32_000_000,30_000_000), (34_100_000,30_000_000), (34_100_000,26_500_000)])
+        self.assertRaisesRegex(JobRefusal, 'generated legs meet outside', local.verify, self.path, receipt)
+
+    def two_devices(self, second_net='/return'):
+        from copy import deepcopy
+        if second_net != '/return':self.board.Add(self.k.NETINFO_ITEM(self.board, second_net))
+        fp = next(fp for fp in self.board.GetFootprints() if fp.GetReference() == 'IC')
+        self.add_pad(fp, '3', 30, 34, second_net)
+        fp = next(fp for fp in self.board.GetFootprints() if fp.GetReference() == 'OTHER')
+        next(p for p in fp.Pads() if p.GetNumber() == '2').SetNet(self.board.FindNet(second_net))
+        doc = contract()
+        second = deepcopy(doc['relations'][0]);second['id'] = 'second'
+        for leg in ('supply', 'return'):second[leg][1]['reference'] = 'OTHER'
+        second['return'][0]['pad'] = '3'
+        for endpoint in second['return']:endpoint['net'] = second_net
+        doc['relations'].append(second)
+        self.save()
+        return doc
+
+    def device_via(self, board, endpoint):
+        terminal = local.pad(board, endpoint)
+        via = self.k.PCB_VIA(board)
+        via.SetPosition(terminal.GetPosition());via.SetWidth(600_000);via.SetDrill(300_000)
+        via.SetViaType(self.k.VIATYPE_THROUGH);via.SetLayerPair(self.k.F_Cu, self.k.B_Cu)
+        via.SetNetCode(terminal.GetNetCode());board.Add(via)
+
+    def test_bank_without_a_plane_is_not_applicable_not_a_bypass(self):
+        doc = self.two_devices('/return2')
+        self.seed(doc);self.filled()
+        result = self.checked(doc)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        bank = result['details']['banks'][0]
+        self.assertFalse(bank['return']['pin_bypasses_bank'])
+        self.assertIsNone(bank['device_return_reaches_plane_only_through_bank_capacitors'])
+        self.assertEqual(bank['positive_statement_status'], 'not_applicable')
+        self.assertEqual(bank['device_returns_without_plane'], [doc['relations'][1]['return'][0]])
+
+    def test_bank_grades_the_second_device_pin_too(self):
+        doc = self.two_devices()
+        self.seed(doc)
+        board = self.k.LoadBoard(str(self.path));self.device_via(board, doc['relations'][1]['return'][0])
+        self.k.SaveBoard(str(self.path), board);self.filled()
+        bank = measure(self.path, doc)['banks'][0]
+        self.assertEqual(len(bank['return']['devices']), 2)
+        self.assertFalse(bank['return']['devices'][0]['pin_bypasses_bank'])
+        self.assertTrue(bank['return']['devices'][1]['pin_bypasses_bank'])
+        self.assertTrue(bank['return']['pin_bypasses_bank'])
+
+    def test_capacitor_plane_access_blocks_every_bank_device_pin(self):
+        doc = self.two_devices()
+        receipt = self.seed(doc)
+        ties = {uid for row in receipt['relations'] for leg in row['legs'] if leg['kind'] == 'plane_tie' for uid in leg['tracks']}
+        board = self.k.LoadBoard(str(self.path))
+        for item in list(board.GetTracks()):
+            if item.m_Uuid.AsString() in ties:board.Remove(item)
+        firstcap = local.pad(board, doc['relations'][0]['return'][1])
+        otherdev = local.pad(board, doc['relations'][1]['return'][0])
+        local._track(board, [local.position(firstcap), local.position(otherdev)], firstcap.GetNetCode(), self.k.F_Cu, 400_000)
+        self.device_via(board, doc['relations'][1]['return'][0])
+        self.k.SaveBoard(str(self.path), board);self.filled()
+        row = measure(self.path, doc)['records'][0]
+        self.assertIsNone(row['return']['capacitor_to_plane_mm'])
+        self.assertIn('return: capacitor has no native plane connection without the device pin', row['reasons'])
+
+    def test_identical_segment_reuse_is_explicitly_bank_scoped(self):
+        board = self.board
+        points = [(34_000_000,33_000_000),(36_000_000,33_000_000)]
+        code = board.FindNet('/return').GetNetCode()
+        first = local._track(board, points, code, self.k.F_Cu, 400_000)
+        ids = {t.m_Uuid.AsString() for t in first}
+        same = local._track(board, points, code, self.k.F_Cu, 400_000, reusable=ids)
+        other = local._track(board, points, code, self.k.F_Cu, 400_000, reusable=set())
+        self.assertEqual(same[0].m_Uuid.AsString(), first[0].m_Uuid.AsString())
+        self.assertNotEqual(other[0].m_Uuid.AsString(), first[0].m_Uuid.AsString())
+        from copy import deepcopy
+        doc = contract();second = deepcopy(doc['relations'][0]);second['id'] = 'other'
+        for leg in ('supply','return'):second[leg][0]['reference'] = 'OTHER'
+        doc['relations'].append(second)
+        rows = []
+        for relation, items in zip(doc['relations'], (first,other)):
+            ids = [t.m_Uuid.AsString() for t in items]
+            rows.append(dict(id=relation['id'], copper=ids, legs=[dict(kind='return', tracks=ids,
+                pads=[local.pad(board,p).m_Uuid.AsString() for p in relation['return']])]))
+        receipt = dict(contract=doc, relations=rows, protected=[local.copper_identity(t) for t in first+other], other_pads=[])
+        self.assertRaisesRegex(JobRefusal, 'generated legs meet outside', local.verify_geometry, board, receipt)
+
+
+
 class ContractTests(unittest.TestCase):
     def test_shared_returns_and_shared_supplies_form_transitive_banks(self):
         from copy import deepcopy
@@ -615,6 +825,18 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(local.validate(doc), doc)
         doc['banks'] = [dict(id='bank-1', relations=['cell'])]
         self.assertRaisesRegex(ValueError, 'automatically derived', local.validate, doc)
+
+    def test_bridge_relation_merges_two_existing_banks(self):
+        from copy import deepcopy
+        doc = contract()
+        second = deepcopy(doc['relations'][0]);second['id'] = 'second'
+        second['supply'][0]['pad'] = '3';second['return'][0]['pad'] = '4'
+        for leg in ('supply', 'return'):second[leg][1]['reference'] = 'OTHER'
+        bridge = deepcopy(second);bridge['id'] = 'bridge'
+        bridge['supply'][0]['pad'] = '1'
+        for leg in ('supply', 'return'):bridge[leg][1]['reference'] = 'THIRD'
+        doc['relations'] += [second,bridge]
+        self.assertEqual(local.banks(doc), [dict(id='bank-1', relations=['cell','second','bridge'])])
 
     def test_device_pad_cannot_also_require_its_own_capacitor_plane_entry(self):
         from copy import deepcopy

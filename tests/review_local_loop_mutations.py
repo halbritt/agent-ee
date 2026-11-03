@@ -31,9 +31,11 @@ MUTANTS = {'baseline': ([],
                'test_placement_job_guards.ControllerBoundaryTests',
                'test_local_return_seed']),
  'G1_no_capacitor_tie_via': ([('src/agent_ee/local_decoupling.py',
-                               'def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):\n'
+                               'def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None, '
+                               'reusable=()):\n'
                                '    import pcbnew as k\n',
-                               'def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):\n'
+                               'def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None, '
+                               'reusable=()):\n'
                                '    return []\n'
                                '    import pcbnew as k\n')],
                              ['test_local_decoupling']),
@@ -217,24 +219,70 @@ MUTANTS = {'baseline': ([],
                                       "        has_loops = ('local_loops' in model or 'connections' in model "
                                       'or '
                                       "mechanics.known_revision(recipe['declaration']['sources']['analysis/geometry-model.json']))\n")],
-                                    ['test_local_return_seed'])}
-
-# Bank-specific faults complement the original 31 reviewer mutations.
-MUTANTS.update({
-    'B1_partition_ignores_shared_return': ([(LD,
-        "terminals = {endpoint_key(relation[leg][0]) for leg in ('supply', 'return')}",
-        "terminals = {endpoint_key(relation['supply'][0])}")], T_LOCAL),
-    'B2_partition_ignores_shared_supply': ([(LD,
-        "terminals = {endpoint_key(relation[leg][0]) for leg in ('supply', 'return')}",
-        "terminals = {endpoint_key(relation['return'][0])}")], T_LOCAL),
-    'B3_block_only_one_bank_capacitor': ([(DL,
-        "return [pad(board, endpoint) for endpoint in endpoints.values()]",
-        "return [pad(board, endpoint) for endpoint in endpoints.values()][:1]")], T_LOCAL),
-    'B4_bank_bypass_always_false': ([(DL,
-        "pin_bypasses_bank=graph.bypass(first, capacitors),",
-        "pin_bypasses_bank=False,")], T_LOCAL),
-})
-
+                                    ['test_local_return_seed']),
+ 'B1_partition_ignores_shared_return': ([('src/agent_ee/local_decoupling.py',
+                                          "terminals = {endpoint_key(relation[leg][0]) for leg in ('supply', "
+                                          "'return')}",
+                                          "terminals = {endpoint_key(relation['supply'][0])}")],
+                                        ['test_local_decoupling']),
+ 'B2_partition_ignores_shared_supply': ([('src/agent_ee/local_decoupling.py',
+                                          "terminals = {endpoint_key(relation[leg][0]) for leg in ('supply', "
+                                          "'return')}",
+                                          "terminals = {endpoint_key(relation['return'][0])}")],
+                                        ['test_local_decoupling']),
+ 'B3_block_only_one_bank_capacitor': ([('src/agent_ee/decoupling_loops.py',
+                                        'return [pad(board, endpoint) for endpoint in endpoints.values()]',
+                                        'return [pad(board, endpoint) for endpoint in '
+                                        'endpoints.values()][:1]')],
+                                      ['test_local_decoupling']),
+ 'B4_bank_bypass_always_false': ([('src/agent_ee/decoupling_loops.py',
+                                   'pin_bypasses_bank=graph.bypass(first, capacitors),',
+                                   'pin_bypasses_bank=False,')],
+                                 ['test_local_decoupling']),
+ 'X1_flag_ignores_reaches_plane': ([('src/agent_ee/decoupling_loops.py',
+                                     "if not row['device_returns_without_plane'] else None)",
+                                     'if True else None)')],
+                                   ['test_local_decoupling']),
+ 'X2_banks_join_only_first_component': ([('src/agent_ee/local_decoupling.py',
+                                          'joined = [group for group in components if terminals & group[1]]',
+                                          'joined = [group for group in components if terminals & '
+                                          'group[1]][:1]')],
+                                        ['test_local_decoupling']),
+ 'X3_plane_access_blocks_only_own_device': ([('src/agent_ee/decoupling_loops.py',
+                                              'access = graph.plane_access(second, '
+                                              "board.GetLayerID(plane['layer']), devices)",
+                                              'access = graph.plane_access(second, '
+                                              "board.GetLayerID(plane['layer']), first)")],
+                                            ['test_local_decoupling']),
+ 'X4_escape_tracks_join_bank_group': ([('src/agent_ee/local_decoupling.py',
+                                        "                if leg['kind'] in ('supply', 'return'):\n"
+                                        "                    groups[uid].add(('bank-leg', "
+                                        "relation_banks[relation['id']], leg['kind'], "
+                                        'tracks[uid].GetNetname()))\n',
+                                        '                if True:\n'
+                                        "                    groups[uid].add(('bank-leg', "
+                                        "relation_banks[relation['id']], 'return' if leg['kind'] == "
+                                        "'plane_tie' else leg['kind'], tracks[uid].GetNetname()))\n")],
+                                      ['test_local_decoupling']),
+ 'X5_bank_grades_first_device_only': ([('src/agent_ee/decoupling_loops.py',
+                                        'endpoints = {endpoint_key(r[leg][0]): r[leg][0] for r in relations}',
+                                        'endpoints = {endpoint_key(r[leg][0]): r[leg][0] for r in '
+                                        'relations[:1]}')],
+                                      ['test_local_decoupling']),
+ 'X6_topology_refusal_disabled': ([('src/agent_ee/local_decoupling.py',
+                                    '            if key in entries:\n',
+                                    '            if False:\n')],
+                                  ['test_local_decoupling']),
+ 'X7_tie_ignores_device_direction': ([('src/agent_ee/local_decoupling.py',
+                                       'away_from=position(first), reusable=reusable)',
+                                       'away_from=None, reusable=reusable)')],
+                                     ['test_local_decoupling']),
+ 'X8_bank_leg_group_ignores_bank': ([('src/agent_ee/local_decoupling.py',
+                                      "groups[uid].add(('bank-leg', relation_banks[relation['id']], "
+                                      "leg['kind'], tracks[uid].GetNetname()))",
+                                      "groups[uid].add(('bank-leg', leg['kind'], "
+                                      'tracks[uid].GetNetname()))')],
+                                    ['test_local_decoupling'])}
 
 def run(name):
     edits, tests = MUTANTS[name]

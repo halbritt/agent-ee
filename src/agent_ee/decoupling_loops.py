@@ -15,15 +15,27 @@ from .storage import digest, read_json, write_json
 
 
 class CopperGraph:
-    def __init__(self, board, net):
+    def __init__(self, board, net, roots=None):
         import pcbnew as k
         from .rf_geometry import _polyset
         self.board, self.k = board, k
-        self.items = {i.m_Uuid.AsString(): i for i in
+        inventory = {i.m_Uuid.AsString(): i for i in
                       [p for fp in board.GetFootprints() for p in fp.Pads()] + list(board.GetTracks())
                       if i.GetNetname() == net}
-        if len(self.items) > 2048:
-            raise ValueError('native copper graph exceeds 2048 items')
+        conn = board.GetConnectivity()
+        if roots is None:
+            self.items = inventory
+        else:
+            pending = [pad(board, endpoint) for endpoint in roots]
+            reachable = {}
+            while pending:
+                item = pending.pop()
+                key = item.m_Uuid.AsString()
+                if key in reachable or key not in inventory:
+                    continue
+                reachable[key] = inventory[key]
+                pending.extend(list(conn.GetConnectedTracks(item)) + list(conn.GetConnectedPads(item)))
+            self.items = reachable
         if any(i.GetClass() == 'PCB_ARC' for i in self.items.values()):
             raise ValueError('arc centreline measurement is not supported')
         self.adj, self.ports, self.tags, self.entries = {}, {}, {}, []
@@ -205,7 +217,8 @@ def measure_bank(board, bank, relations, graphs):
             for endpoint in endpoints.values():
                 net = endpoint['net']
                 if net not in graphs:
-                    graphs[net] = CopperGraph(board, net)
+                    graphs[net] = CopperGraph(board, net, [endpoint for relation in relations
+                        for side in ('supply', 'return') for endpoint in relation[side] if endpoint['net'] == net])
                 graph = graphs[net]
                 first = pad(board, endpoint)
                 capacitors = bank_terminals(board, relations, leg, 1, net)
@@ -213,10 +226,13 @@ def measure_bank(board, bank, relations, graphs):
                                     reaches_plane=graph.bypass(first, []),
                                     bypass_paths=graph.bypass_evidence(first, capacitors)))
             row[leg] = dict(devices=devices, pin_bypasses_bank=any(d['pin_bypasses_bank'] for d in devices))
-        row['device_return_reaches_plane_only_through_bank_capacitors'] = all(
-            d['reaches_plane'] and not d['pin_bypasses_bank'] for d in row['return']['devices'])
+        row['device_returns_without_plane'] = [d['endpoint'] for d in row['return']['devices'] if not d['reaches_plane']]
+        row['positive_statement_status'] = 'not_applicable' if row['device_returns_without_plane'] else 'measured'
+        row['device_return_reaches_plane_only_through_bank_capacitors'] = (
+            all(not d['pin_bypasses_bank'] for d in row['return']['devices'])
+            if not row['device_returns_without_plane'] else None)
     except ValueError as exc:
-        row.update(outcome='unknown', reasons=[str(exc)],
+        row.update(outcome='unknown', reasons=[str(exc)], positive_statement_status='unknown',
                    device_return_reaches_plane_only_through_bank_capacitors=None)
     return row
 
@@ -243,7 +259,8 @@ def measure(board_path, document):
                 first, second = [pad(board, endpoint) for endpoint in relation[leg]]
                 net = first.GetNetname()
                 if net not in graphs:
-                    graphs[net] = CopperGraph(board, net)
+                    graphs[net] = CopperGraph(board, net, [endpoint for relation in document['relations']
+                        for side in ('supply', 'return') for endpoint in relation[side] if endpoint['net'] == net])
                 graph = graphs[net]
                 row[leg] = dict(net=net, surface_path=graph.path(first, second),
                                 path=graph.path(first, second, plane=True))

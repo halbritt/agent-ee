@@ -124,13 +124,58 @@ def _rules(board, terminal):
                 drill=max(int(rules.m_MinThroughDrill), int(cls.GetViaDrill())))
 
 
+def _subtract_box(box, opening):
+    x, y, u, v = box
+    a, b, c, d = opening
+    if c <= x or a >= u or d <= y or b >= v:
+        return [box]
+    a, b, c, d = max(x, a), max(y, b), min(u, c), min(v, d)
+    return [r for r in ((x, y, a, v), (c, y, u, v), (a, y, c, b), (a, d, c, v))
+            if r[0] < r[2] and r[1] < r[3]]
+
+
 def _obstacles(board, net, layer, margin, endpoints=()):
     items = ([p for fp in board.GetFootprints() for p in fp.Pads()]
              + list(board.GetTracks()) + list(board.GetDrawings()))
     allowed = {p.m_Uuid.AsString() for p in endpoints}
-    return [_box(item, margin) for item in items if item.IsOnLayer(layer)
-            and item.m_Uuid.AsString() not in allowed
-            and (item.GetClass() in ('PAD', 'PCB_VIA') or not hasattr(item, 'GetNetCode') or item.GetNetCode() != net)]
+    boxes = []
+    for item in items:
+        if not item.IsOnLayer(layer) or item.m_Uuid.AsString() in allowed:
+            continue
+        pieces = [_box(item, margin)]
+        if item.GetClass() == 'PCB_TRACK' and item.GetNetCode() == net:
+            # Allow a new branch to leave its declared shared pad. The rest
+            # of this track, including an escape's interior, remains blocked.
+            for terminal in endpoints:
+                if item.GetEffectiveShape(layer).Collide(terminal.GetEffectiveShape(layer), 1):
+                    pieces = [part for box in pieces for part in _subtract_box(box, _box(terminal, margin))]
+        boxes.extend(pieces)
+    return boxes
+
+
+def _local_path(a, b, boxes, *, clock, cancel_dir):
+    from .acquisition.local_return import _obstacle_path
+    from .placement_job import JobRefusal
+    # Each accepted path stays inside the region whose obstacles were counted.
+    # The final region covers every path allowed by the unchanged 12 mm bound.
+    refusal = None
+    for margin in (0, 500_000, 1_000_000, 2_000_000, 4_000_000, 6_000_000):
+        region = (min(a[0], b[0])-margin, min(a[1], b[1])-margin,
+                  max(a[0], b[0])+margin, max(a[1], b[1])+margin)
+        x, y, u, v = region
+        local = sorted({box for box in boxes if box[0] <= u and box[2] >= x and box[1] <= v and box[3] >= y})
+        try:
+            path = _obstacle_path(a, b, local, clock=clock, cancel_dir=cancel_dir)
+        except JobRefusal as exc:
+            if not any(text in str(exc) for text in ('obstacle population', 'obstacle search exceeds')):
+                raise
+            refusal = exc
+            continue
+        if path is not None and all(x <= p[0] <= u and y <= p[1] <= v for p in path):
+            return path
+    if refusal is not None:
+        raise refusal
+    return None
 
 
 def _layers(board, terminal):
@@ -142,13 +187,14 @@ def _layers(board, terminal):
     raise ValueError('unsupported local pad ' + terminal.GetParentFootprint().GetReference() + '.' + terminal.GetNumber())
 
 
-def _track(board, points, net, layer, width):
+def _track(board, points, net, layer, width, *, reusable=()):
     import pcbnew as k
     result = []
     for a, b in zip(points, points[1:]):
         if a == b:
             continue
         existing = next((t for t in board.GetTracks() if t.GetClass() == 'PCB_TRACK'
+                         and t.m_Uuid.AsString() in reusable
                          and t.GetNetCode() == net and t.GetLayer() == layer and t.GetWidth() == width
                          and {position_point(t.GetStart()), position_point(t.GetEnd())} == {a, b}
                          and t.IsLocked()), None)
@@ -171,8 +217,7 @@ def position_point(p):
     return int(p.x), int(p.y)
 
 
-def _leg(board, first, second, *, clock, cancel_dir):
-    from .acquisition.local_return import _obstacle_path
+def _leg(board, first, second, *, clock, cancel_dir, reusable=()):
     common = set(_layers(board, first)) & set(_layers(board, second))
     if not common:
         raise ValueError('local leg endpoints must share a copper face')
@@ -183,10 +228,10 @@ def _leg(board, first, second, *, clock, cancel_dir):
     width = max(int(board.GetDesignSettings().m_TrackMinWidth),
                 min(rules['width'], *(min(p.GetSize().x, p.GetSize().y) for p in (first, second))))
     boxes = _obstacles(board, first.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000, (first, second))
-    path = _obstacle_path(position(first), position(second), boxes, clock=clock, cancel_dir=cancel_dir)
+    path = _local_path(position(first), position(second), boxes, clock=clock, cancel_dir=cancel_dir)
     if path is None:
         raise ValueError('no clear local surface path within the 12 mm search budget')
-    return _track(board, path, first.GetNetCode(), layer, width)
+    return _track(board, path, first.GetNetCode(), layer, width, reusable=reusable)
 
 
 def _junction_in_pad(first, second, terminal, layer):
@@ -222,7 +267,7 @@ def _clear_tie_path(board, path, terminal, layer, width):
     return True
 
 
-def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):
+def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None, reusable=()):
     import pcbnew as k
     from .placement_job import _check_stop
     if terminal.FlashLayer(plane):
@@ -244,7 +289,7 @@ def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):
                   for b in _obstacles(board, terminal.GetNetCode(), l, margin)]
     front = _obstacles(board, terminal.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000, (terminal,))
     edge = board.GetBoardEdgesBoundingBox()
-    angles = sorted(range(0, 360, 45), key=lambda angle: (
+    angles = sorted(range(0, 360, 10), key=lambda angle: (
         0 if away_from is None else (away_from[0]-a[0])*math.cos(math.radians(angle))
         + (away_from[1]-a[1])*math.sin(math.radians(angle)), angle))
     for distance in (600_000, 800_000, 1_000_000, 1_250_000, 1_500_000, 2_000_000):
@@ -264,8 +309,7 @@ def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):
                 continue
             # Reuse the same visibility primitive for a short escape, and keep
             # its bound tighter than the general leg's bounded search.
-            from .acquisition.local_return import _obstacle_path
-            path = _obstacle_path(a, b, front, clock=clock, cancel_dir=cancel_dir)
+            path = _local_path(a, b, front, clock=clock, cancel_dir=cancel_dir)
             if path is None or sum(math.dist(p, q) for p, q in zip(path, path[1:])) > 2_000_000:
                 continue
             if not _clear_tie_path(board, path, terminal, layer, width):
@@ -279,7 +323,7 @@ def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):
             via.SetNetCode(terminal.GetNetCode())
             via.SetLocked(True)
             board.Add(via)
-            return [*_track(board, path, terminal.GetNetCode(), layer, width), via]
+            return [*_track(board, path, terminal.GetNetCode(), layer, width, reusable=reusable), via]
     raise ValueError('no local plane tie outside the land within 2 mm')
 
 
@@ -305,25 +349,30 @@ def seed(board_path, document, *, clock, cancel_dir=None):
         raise JobRefusal('local decoupling requires a native two-layer board')
     before = digest(board_path)
     rows, protected, tied, plane_ties = [], [], set(), {}
+    bank_ids = {rid: bank['id'] for bank in banks(document) for rid in bank['relations']}
+    bank_copper = {bank_id: set() for bank_id in bank_ids.values()}
     for relation in document['relations']:
         _check_stop(clock, cancel_dir)
         added, legs = [], []
+        reusable = bank_copper[bank_ids[relation['id']]]
         try:
             for leg in ('supply', 'return'):
                 first, second = [pad(board, p) for p in relation[leg]]
-                leg_items = _leg(board, first, second, clock=clock, cancel_dir=cancel_dir)
+                leg_items = _leg(board, first, second, clock=clock, cancel_dir=cancel_dir, reusable=reusable)
+                reusable.update(t.m_Uuid.AsString() for t in leg_items)
                 added += leg_items
                 legs.append(dict(kind=leg, pads=[p.m_Uuid.AsString() for p in (first, second)],
                                  tracks=[t.m_Uuid.AsString() for t in leg_items]))
                 for plane in document['planes']:
                     if plane['net'] == second.GetNetname():
                         target = board.GetLayerID(plane['layer'])
-                        tie_key = (second.m_Uuid.AsString(), target)
+                        tie_key = (bank_ids[relation['id']], second.m_Uuid.AsString(), target)
                         if tie_key not in plane_ties:
                             plane_ties[tie_key] = _tie(board, second, target, clock=clock, cancel_dir=cancel_dir,
-                                                       away_from=position(first))
+                                                       away_from=position(first), reusable=reusable)
                         tie_items = plane_ties[tie_key]
                         added += tie_items
+                        reusable.update(t.m_Uuid.AsString() for t in tie_items)
                         legs.append(dict(kind='plane_tie', pads=[second.m_Uuid.AsString()],
                                          tracks=[t.m_Uuid.AsString() for t in tie_items]))
                         tied.add(second.m_Uuid.AsString())
