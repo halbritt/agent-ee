@@ -1,10 +1,12 @@
-"""AGENTEE-219: pinned kicad-happy 2.3.1 PP-001/PR-001 false positives on an owned reproducer.
+"""AGENTEE-219: kicad-happy PP-001/PR-001 false positives on an owned reproducer.
 
-The pinned analyzer's false positives are recorded known limitations, never a
-pass: the real severity gate still reports them as errors (a defect). The
-proposed correction (an exact, vendored MIT patch, not adopted) must turn
-exactly those errors into evidence-bearing info notes, never silence, while the real violations and both agent-469 adversarial controls
-keep failing.
+The released analyzer's false positives are recorded known limitations, never
+a pass: the real severity gate still reports them as errors (a defect). The
+correction (an exact, vendored MIT patch that the image applies to the newest
+release) must turn exactly those errors into evidence-bearing info notes, never
+silence, while the real violations and both agent-469 adversarial controls keep
+failing. The release and corrected analyzers are rebuilt from whichever one is
+installed; the expectations hold for every release recorded in expected.json.
 """
 import importlib.util
 import os
@@ -15,18 +17,18 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from agent_ee import candidate, checks
 from agent_ee.happy_severity_gate import KIND, SCHEMA
-from agent_ee.kicad_happy import installation
+from agent_ee.kicad_happy import INSTALL_RECORD_SCHEMA, install_record, installation
 from agent_ee.storage import read_json, write_json
 from toolchain import require_toolchain
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURE = REPO / 'fixtures/kicad-happy/ac4-false-positives'
 BOARD = REPO / 'fixtures/kicad-happy/severity-gate/warning/gate.kicad_pcb'
-PINNED = Path(os.environ.get('AGENT_EE_KICAD_HAPPY', str(Path.home() / 'git/kicad-happy')))
+INSTALLED = Path(os.environ.get('AGENT_EE_KICAD_HAPPY', str(Path.home() / 'git/kicad-happy')))
+PATCH = FIXTURE / 'correction.patch'
 EXPECTED = read_json(FIXTURE / 'expected.json')
 LIMITATIONS = {e['finding_id'] for e in EXPECTED['known_analyzer_limitations']}
 VIOLATIONS = {e['finding_id'] for e in EXPECTED['real_violations']}
@@ -38,28 +40,39 @@ def missing_input(reason):
     raise unittest.SkipTest(reason)
 
 
-def corrected_checkout(destination, store=PINNED, patch=FIXTURE / 'correction.patch'):
-    """Reconstruct the proposed installation without a Git store or network.
+def git_apply(tree, patch, *flags):
+    return subprocess.run(['git', 'apply', *flags, str(Path(patch).resolve())], cwd=tree,
+                          capture_output=True, text=True, timeout=60)
 
-    Check both identities: a cleanly applying patch alone does not prove the
-    original installation or the resulting analyzer bytes are the qualified ones.
-    git apply is available in the CI image and rejects missing/conflicting hunks.
+
+def analyzer_pair(destination, store=INSTALLED, patch=PATCH):
+    """Rebuild (release, corrected) analyzer trees from the installed one, without Git or network.
+
+    The image installs the newest release with the correction applied; a plain
+    checkout is the release itself. The correction applies forward to a release
+    and in reverse to a corrected tree, so git apply tells which one is installed;
+    a patch that does neither fails loudly. With the image's install record, the
+    rebuilt release must have the identity the image build recorded for it.
     """
-    if installation(store)['sha256'] != EXPECTED['pinned']['installation_sha256']:
-        raise AssertionError(f'pinned kicad-happy bytes differ from the recorded identity: {store}')
     destination = Path(destination)
-    shutil.copytree(store, destination,
-                    ignore=shutil.ignore_patterns('.git', '__pycache__', '.pytest_cache'))
-    patch = Path(patch).resolve()
-    for flags in (['--check'], []):
-        result = subprocess.run(['git', 'apply', *flags, str(patch)], cwd=destination,
-                                capture_output=True, text=True, timeout=60)
-        if result.returncode:
-            raise AssertionError(f'kicad-happy correction patch failed ({patch}): '
-                                 f'{result.stderr.strip()}')
-    if installation(destination)['sha256'] != EXPECTED['corrected']['installation_sha256']:
-        raise AssertionError(f'corrected kicad-happy bytes differ from the recorded identity: {destination}')
-    return destination
+    trees = {}
+    for name in ('release', 'corrected'):
+        trees[name] = destination / name
+        shutil.copytree(store, trees[name], ignore=shutil.ignore_patterns('.git', '__pycache__', '.pytest_cache'))
+    if git_apply(trees['corrected'], patch, '--check').returncode == 0:
+        target, flags = trees['corrected'], []
+    elif git_apply(trees['release'], patch, '-R', '--check').returncode == 0:
+        target, flags = trees['release'], ['-R']
+    else:
+        raise AssertionError(f'kicad-happy correction patch failed ({patch}) on {store}: '
+                             f'{git_apply(trees["corrected"], patch, "--check").stderr.strip()}')
+    result = git_apply(target, patch, *flags)
+    if result.returncode:
+        raise AssertionError(f'kicad-happy correction patch failed ({patch}): {result.stderr.strip()}')
+    record = install_record(store)
+    if record is not None and installation(trees['release'])['sha256'] != record['release_sha256']:
+        raise AssertionError(f'rebuilt kicad-happy release differs from the install record {record["path"]}')
+    return trees['release'], trees['corrected']
 
 
 def analyze(root, work):
@@ -89,66 +102,71 @@ class FixtureTests(unittest.TestCase):
             sys.path.remove(str(FIXTURE))
         self.assertEqual(generate.schematic(), (FIXTURE / 'reproducer.kicad_sch').read_text())
         self.assertFalse(LIMITATIONS & VIOLATIONS)
-        self.assertEqual(EXPECTED['pinned']['status'], 'known_analyzer_limitation')
-        self.assertEqual(EXPECTED['corrected']['status'], 'proposed_not_adopted')
+        self.assertEqual(EXPECTED['release']['status'], 'known_analyzer_limitation')
+        self.assertEqual(EXPECTED['corrected']['status'], 'applied_in_image')
         self.assertNotIn(EXPECTED['corrected']['commit'],
                          {s['commit'] for s in EXPECTED['superseded']})
         notes = {n['finding_id'] for n in EXPECTED['corrected_notes']}
         self.assertFalse(notes & VIOLATIONS)
         self.assertEqual(set(EXPECTED['corrected_unresolved']) - VIOLATIONS, set())
 
-    def test_gitless_installation_reconstructs_exact_correction(self):
+    def test_gitless_installation_rebuilds_release_and_correction(self):
+        if not (INSTALLED / '.claude-plugin/plugin.json').is_file():
+            missing_input(f'kicad-happy installation unavailable at {INSTALLED}')
         with tempfile.TemporaryDirectory(prefix='agent-ee-ac4-portable-') as tmp:
             root = Path(tmp)
             store = root / 'gitless'
             # Match the image: installed tree, no .git or corrected-checkout env.
-            shutil.copytree(PINNED, store, ignore=shutil.ignore_patterns(
+            shutil.copytree(INSTALLED, store, ignore=shutil.ignore_patterns(
                 '.git', '__pycache__', '.pytest_cache'))
-            self.assertFalse((store / '.git').exists())
-            corrected = corrected_checkout(root / 'out', store=store)
-            self.assertEqual(installation(corrected)['sha256'],
-                             EXPECTED['corrected']['installation_sha256'])
-            self.assertEqual(installation(store)['sha256'],
-                             EXPECTED['pinned']['installation_sha256'])
+            release, corrected = analyzer_pair(root / 'out', store=store)
+            identities = {installation(tree)['sha256'] for tree in (release, corrected)}
+            self.assertEqual(len(identities), 2)
+            self.assertIn(installation(store)['sha256'], identities)
+            # The pair round-trips: the patch applies forward to one and in reverse to the other.
+            self.assertEqual(git_apply(release, PATCH, '--check').returncode, 0)
+            self.assertEqual(git_apply(corrected, PATCH, '-R', '--check').returncode, 0)
 
     def test_missing_or_invalid_patch_fails_loudly_even_without_strict_mode(self):
+        if not (INSTALLED / '.claude-plugin/plugin.json').is_file():
+            missing_input(f'kicad-happy installation unavailable at {INSTALLED}')
         with tempfile.TemporaryDirectory(prefix='agent-ee-ac4-patch-') as tmp:
             root = Path(tmp)
             invalid = root / 'invalid.patch'
             invalid.write_text('not a patch\n')
             conflict = root / 'conflict.patch'
-            conflict.write_text((FIXTURE / 'correction.patch').read_text().replace(
+            conflict.write_text(PATCH.read_text().replace(
                 'diff --git a/skills/', 'diff --git a/absent/').replace(
                 '--- a/skills/', '--- a/absent/').replace(
                 '+++ b/skills/', '+++ b/absent/'))
-            with mock.patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': '0'}):
-                for patch in (root / 'missing.patch', invalid, conflict):
-                    with self.subTest(patch=patch.name):
-                        with self.assertRaisesRegex(AssertionError, 'correction patch failed'):
-                            corrected_checkout(root / patch.stem, patch=patch)
+            for patch in (root / 'missing.patch', invalid, conflict):
+                with self.subTest(patch=patch.name):
+                    with self.assertRaisesRegex(AssertionError, 'correction patch failed'):
+                        analyzer_pair(root / patch.stem, patch=patch)
 
-    def test_unqualified_base_or_result_fails_identity_check(self):
-        with tempfile.TemporaryDirectory(prefix='agent-ee-ac4-identity-') as tmp:
-            root = Path(tmp)
-            for name in ('pinned', 'corrected'):
-                with self.subTest(identity=name):
-                    expected = {**EXPECTED, name: {**EXPECTED[name], 'installation_sha256': '0' * 64}}
-                    with mock.patch.dict(EXPECTED, expected):
-                        with self.assertRaisesRegex(AssertionError, name + ' kicad-happy bytes differ'):
-                            corrected_checkout(root / name)
+    def test_release_that_differs_from_the_install_record_fails(self):
+        if not (INSTALLED / '.claude-plugin/plugin.json').is_file():
+            missing_input(f'kicad-happy installation unavailable at {INSTALLED}')
+        with tempfile.TemporaryDirectory(prefix='agent-ee-ac4-record-') as tmp:
+            store = Path(tmp) / 'kicad-happy'
+            shutil.copytree(INSTALLED, store, ignore=shutil.ignore_patterns('.git', '__pycache__', '.pytest_cache'))
+            installed = installation(store)
+            write_json(Path(tmp) / 'kicad-happy.install.json', {
+                'schema': INSTALL_RECORD_SCHEMA, 'tag': 'v' + installed['version'], 'commit': '0' * 40,
+                'version': installed['version'], 'output_format': '1.4.0',
+                'installation_sha256': installed['sha256'], 'release_sha256': '0' * 64})
+            with self.assertRaisesRegex(AssertionError, 'differs from the install record'):
+                analyzer_pair(Path(tmp) / 'out', store=store)
 
 
 class AnalyzerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if not (PINNED / '.claude-plugin/plugin.json').is_file():
-            missing_input(f'pinned kicad-happy installation unavailable at {PINNED}')
+        if not (INSTALLED / '.claude-plugin/plugin.json').is_file():
+            missing_input(f'kicad-happy installation unavailable at {INSTALLED}')
         cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-ac4-')
         cls.root = Path(cls.tmp.name)
-        cls.corrected = corrected_checkout(cls.root / 'corrected')
-        for name, root in (('pinned', PINNED), ('corrected', cls.corrected)):
-            if installation(root)['sha256'] != EXPECTED[name]['installation_sha256']:
-                raise AssertionError(f'{name} kicad-happy bytes differ from the recorded identity: {root}')
+        cls.release, cls.corrected = analyzer_pair(cls.root / 'pair')
 
     @classmethod
     def tearDownClass(cls):
@@ -159,8 +177,8 @@ class AnalyzerTests(unittest.TestCase):
         path.mkdir()
         return path
 
-    def test_pinned_false_positives_are_recorded_limitations_not_a_pass(self):
-        report = analyze(PINNED, self.work('pinned'))
+    def test_release_false_positives_are_recorded_limitations_not_a_pass(self):
+        report = analyze(self.release, self.work('release'))
         self.assertEqual(errors(report), LIMITATIONS | VIOLATIONS)
 
     def test_corrected_states_evidence_and_keeps_real_violations_and_controls(self):
@@ -197,8 +215,7 @@ class AnalyzerTests(unittest.TestCase):
                  'requirements': ['requirements/expected.json', 'requirements/dispositions.json'],
                  'mutable_inputs': ['project/reproducer.kicad_sch', 'project/reproducer.kicad_pcb'],
                  'checks': [{'id': 'severity', 'kind': KIND, 'params': {
-                     'installation': str(root), 'installation_sha256': installation(root)['sha256'],
-                     'dispositions': 'requirements/dispositions.json'}}],
+                     'installation': str(root), 'dispositions': 'requirements/dispositions.json'}}],
                  'baseline': {'requirements': [{'id': 'R-severity', 'intent': 'acceptance',
                      'statement': 'No analyzer errors',
                      'source': {'path': 'requirements/expected.json', 'locator': '/real_violations'},
@@ -212,14 +229,14 @@ class AnalyzerTests(unittest.TestCase):
         candidate.capture(path, run)
         return checks.run_checks(run, time.monotonic() + 900)[0]
 
-    def test_severity_gate_keeps_pinned_limitations_blocking_and_corrected_controls_failing(self):
-        # Error dispositions never waive errors. The proposed analyzer's
+    def test_severity_gate_keeps_release_limitations_blocking_and_corrected_controls_failing(self):
+        # Error dispositions never waive errors. The corrected analyzer's
         # assumption-bearing info notes now require and accept exact IDs.
         # These dispositions cover this synthetic fixture only.
         waivers = [{'finding_id': fid, 'disposition': 'false_positive',
                     'rationale': 'AGENTEE-219 analyzer limitation; not a waiver',
                     'recorded_by': 'test author'} for fid in sorted(LIMITATIONS)]
-        for root, expected in ((PINNED, LIMITATIONS | VIOLATIONS), (self.corrected, VIOLATIONS)):
+        for root, expected in ((self.release, LIMITATIONS | VIOLATIONS), (self.corrected, VIOLATIONS)):
             with self.subTest(root=str(root)):
                 result = self.run_gate(root, waivers)
                 self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)

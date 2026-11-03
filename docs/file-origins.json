@@ -719,6 +719,7 @@
         "bin/",
         "docker/apt-retry.sh",
         "docker/image-context.json",
+        "docker/kicad-happy/",
         "docker/kicad-route/",
         "docker/ngspice/",
         "pyproject.toml",

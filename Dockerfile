@@ -111,18 +111,28 @@ RUN set -eu; \
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN /usr/local/share/agent-ee/kicad-route/install.sh install
 
+# kicad-happy analyzer: the newest release of the 2.x line at build time, with the
+# AGENTEE-219 correction applied (docker/kicad-happy/install.py). The build fails
+# if the correction no longer applies or an analyzer reports an output format
+# agent-ee does not read. /opt/kicad-happy.install.json records the tag, commit,
+# output format and installed-file identity; every run records them with its
+# analyzer evidence. Updating means rebuilding the image. The upstream ref listing
+# is this stage's cache key: a rebuild after an upstream release installs it, and
+# an unchanged release leaves the later layers cached.
+FROM native AS kicad-happy
+ADD https://github.com/aklofas/kicad-happy.git/info/refs?service=git-upload-pack /usr/local/share/agent-ee/kicad-happy/upstream-refs
+COPY docker/kicad-happy /usr/local/share/agent-ee/kicad-happy
+COPY src/agent_ee/data/kicad-happy-contract.json fixtures/kicad-happy/ac4-false-positives/correction.patch /usr/local/share/agent-ee/kicad-happy/
+COPY fixtures/kicad-happy/severity-gate/warning /usr/local/share/agent-ee/kicad-happy/probe
+RUN /usr/bin/python3 /usr/local/share/agent-ee/kicad-happy/install.py /opt/kicad-happy
+
 FROM native AS toolchain
 
-# Installed analyzer tool, kept outside the agent-ee package and candidate.
-# Runtime analysis remains networkless; only the image build fetches this pin.
-ARG KICAD_HAPPY_COMMIT=06840467ad0f5d76af45f64449b1f5ecb10f052f
+# The installed analyzer stays outside the agent-ee package and candidate.
+# Runtime analysis is networkless.
 ENV AGENT_EE_KICAD_HAPPY=/opt/kicad-happy
-RUN set -eu; \
-    git clone https://github.com/aklofas/kicad-happy.git /opt/kicad-happy; \
-    git -C /opt/kicad-happy checkout --detach "${KICAD_HAPPY_COMMIT}"; \
-    test "$(git -C /opt/kicad-happy rev-parse HEAD)" = "${KICAD_HAPPY_COMMIT}"; \
-    /usr/bin/python3 -c 'import json; assert json.load(open("/opt/kicad-happy/.claude-plugin/plugin.json"))["version"] == "2.3.1"'; \
-    rm -rf /opt/kicad-happy/.git
+COPY --from=kicad-happy /opt/kicad-happy /opt/kicad-happy
+COPY --from=kicad-happy /opt/kicad-happy.install.json /opt/kicad-happy.install.json
 
 # Test reference tool only: the fab-consistency zstd decoder is compared with
 # frames from the zstd CLI, from the same snapshot as the image's libzstd1.
