@@ -18,12 +18,12 @@ commit, so any change to the router is a new commit or a dirty tree:
 """
 import contextlib
 import importlib._bootstrap_external
-import importlib.util
 import io
 import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -271,8 +271,10 @@ class BoardRouteCacheTest(unittest.TestCase):
             commit_all(checkout, 'import router package')
             before = routing_adapter.preflight(checkout)
             # An unchecked hash-based cache of the router's own package, which git ignores.
+            # The checkout's own __pycache__, where an interpreter without a prefix looks, whatever
+            # prefix this test process runs with.
             source = checkout / 'src/kicad_route/__init__.py'
-            cache = Path(importlib.util.cache_from_source(str(source)))
+            cache = source.parent / '__pycache__' / f'{source.stem}.{sys.implementation.cache_tag}.pyc'
             cache.parent.mkdir(exist_ok=True)
             code = compile("raise SystemExit('UNRECORDED_CACHE_EXECUTED')", str(source), 'exec')
             cache.write_bytes(importlib._bootstrap_external._code_to_hash_pyc(code, b'\0' * 8, checked=False))
