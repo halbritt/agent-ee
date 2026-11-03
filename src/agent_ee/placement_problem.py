@@ -275,15 +275,20 @@ def _document(board, *, fixed_poses, edges, groups, rails):
 
 
 def _proximity(intent, rows):
-    """Declared proximity resolved to captured pad UUIDs; the solver refuses what it cannot score."""
-    by_ref = {r['native_ref']: r for r in rows if r['role'] == 'movable'}
+    """Declared proximity resolved to captured pad UUIDs; the solver refuses what it cannot score.
+
+    As in the engine, each side names one physical footprint (any role but ``silk_only``). A fixed
+    part keeps its pose and the preference moves the other part: a decoupling capacitor at a
+    fixed connector's supply pins is an ordinary design relation."""
+    physical = [r for r in rows if r['role'] != 'silk_only']
+    by_ref = {r['native_ref']: r for r in physical}
     proximity = []
     for index, row in enumerate(intent.get('proximity', [])):
         pads = row['pads']
         for key in ('ref', 'near'):
             ref = row[key]
-            if sum(r['native_ref'] == ref and r['role'] == 'movable' for r in rows) != 1:
-                raise JobRefusal(f'intent.proximity[{index}].{key}: must identify one movable footprint')
+            if sum(r['native_ref'] == ref for r in physical) != 1:
+                raise JobRefusal(f'intent.proximity[{index}].{key}: must identify one physical footprint')
             if ref in pads and set(pads[ref]) - {p['number'] for p in by_ref[ref]['pads']}:
                 raise JobRefusal(f'intent.proximity[{index}].pads.{ref}: selected pad is missing')
         a, b = by_ref[row['ref']], by_ref[row['near']]

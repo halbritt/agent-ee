@@ -105,6 +105,18 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual({k: v for k, v in measured.items() if k not in ('proximity', 'evaluate', 'problem_sha256')},
                          {k: v for k, v in captured.items() if k not in ('proximity', 'problem_sha256')})
 
+    def test_proximity_partner_may_be_fixed_as_in_the_engine(self):
+        # Benchmark r4 led-flasher attempt-002: a decoupling capacitor's device was a fixed connector.
+        # The engine scores any one physical footprint, but this builder refused the row.
+        row = {'ref': 'C1', 'near': 'H1', 'max_mm': 3.0, 'pads': {'C1': ['1'], 'H1': ['1']}}
+        captured, _ = problem_builder.capture(board(), bundle(proximity=[row]))
+        self.assertEqual({r['native_ref']: r['role'] for r in captured['footprints']}['H1'], 'fixed_body')
+        self.assertEqual([(p['ref'], p['near'], p['near_pads']) for p in captured['proximity']],
+                         [('C1', 'H1', ['00000000-0000-0000-0000-000000000004-0'])])
+        unknown = dict(row, near='R9', pads={'C1': ['1'], 'R9': ['1']})
+        with self.assertRaisesRegex(job.JobRefusal, r'intent\.proximity\[0\]\.near: must identify one physical'):
+            problem_builder.capture(board(), bundle(proximity=[unknown]))
+
     def test_one_role_rule(self):
         cases = {(False, False, False, False): 'movable', (False, False, True, False): 'fixed_body',
                  (False, True, False, False): 'movable', (False, True, True, False): 'fixed_body',
