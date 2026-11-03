@@ -168,6 +168,35 @@ The dual-gate runner scores each task as a 2-tuple `(Gate 1: PASS/FAIL, Gate 2: 
 
 ### Executing PCBSchemaGen Benchmarks
 
+Gate 1 requires a separate, clean checkout of
+[`HZou9/PCBSchemaGen_v2`](https://github.com/HZou9/PCBSchemaGen_v2) at
+`e07c545f4c01a8026480b1093ee503a926ce2be5`. The verifier code and knowledge
+graphs are external inputs; agent-ee does not redistribute them. Provision
+them before running either benchmark CLI:
+
+```bash
+git clone https://github.com/HZou9/PCBSchemaGen_v2 "$HOME/git/PCBSchemaGen_v2"
+git -C "$HOME/git/PCBSchemaGen_v2" checkout --detach e07c545f4c01a8026480b1093ee503a926ce2be5
+export PCBSCHEMAGEN_ROOT="$HOME/git/PCBSchemaGen_v2"
+```
+
+Install that checkout's `requirements.txt` in the Python environment used for
+the benchmark (`networkx>=3.0` and `pyyaml>=6.0`). Both CLIs also accept
+`--pcbschemagen-root DIR`; the default is `$PCBSCHEMAGEN_ROOT` or
+`~/git/PCBSchemaGen_v2`. The adapter verifies the revision and clean worktree,
+requires the knowledge graphs and task configuration, and records the verifier
+commit in Gate 1 reports. It never fetches a checkout or falls back to another
+one. A missing or invalid verifier produces a CLI input error (exit 2), without
+classifying the circuit as a topology failure or a semantic bypass.
+
+Translation, XML parsing and dependency-refusal tests use owned small fixtures.
+The real-verifier tests in `test_pcbschemagen_gate1` and
+`test_pcbschemagen_benchmark` require the external input. Without it, strict
+mode reports the `pcbschemagen-verifier` partition as **not executed** and
+fails the suite; it cannot report a pass. See
+[required external inputs](container.md#required-external-inputs) for container
+mounting and strict-suite reporting.
+
 #### Evaluating a Single Task Candidate
 To evaluate a candidate design against Task `104` (USB_DATA_LOGGER):
 

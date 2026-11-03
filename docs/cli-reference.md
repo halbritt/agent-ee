@@ -78,7 +78,7 @@ operation, with configuration and limits described in the closed-loop reference.
 | `adjudicate` | Decisions applied; does not imply the resulting review passes | Not a normal handled result | Decisions refused or evidence unavailable/stale |
 | `close-correction` | Correction invariants verified and event appended | Not a normal handled result | Closure refused or evidence unavailable/stale |
 | `pcbschemagen_gate1` | Gate 1 passed (`passed == True`) | Gate 1 failed | Invocation or runtime error |
-| `pcbschemagen_benchmark` | All evaluated tasks passed dual-gate evaluation | Any task failed either gate | Invocation error |
+| `pcbschemagen_benchmark` | All evaluated tasks passed dual-gate evaluation | Any task failed either gate | Invocation or verifier input error |
 
 Unexpected unhandled Python failures can have interpreter exit behavior outside
 this table. Do not infer acceptance from an arbitrary successful shell command.
@@ -481,7 +481,7 @@ Deterministic Gate 1 topological and ERC verifier adapter. It translates candida
 - `--netlist, -n NETLIST`: Path to native KiCad XML netlist.
 - `--task-id, -t TASK_ID`: Task identifier (e.g. `104` or `BUCK_AUX_LOGIC`).
 - `--task-name TASK_NAME`: Optional human-readable task name.
-- `--pcbschemagen-root DIR`: Root path to PCBSchemaGen repository (default: `$PCBSCHEMAGEN_ROOT` or `/home/halbritt/git/PCBSchemaGen_v2`).
+- `--pcbschemagen-root DIR`: Clean pinned PCBSchemaGen checkout (default: `$PCBSCHEMAGEN_ROOT` or `~/git/PCBSchemaGen_v2`). See [benchmark prerequisites](benchmarking-guide.md#executing-pcbschemagen-benchmarks).
 - `--captures CAPTURES`: Path to captured KiCad symbols directory.
 - `--std-snapshot FILE`: Reference design snapshot JSON.
 - `--rules RULES`: Topological rules JSON file.

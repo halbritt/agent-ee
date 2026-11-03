@@ -506,7 +506,7 @@ class RequiredInputTests(unittest.TestCase):
         for gap in ('toolchain', 'pod-retained-inputs'):
             with self.env(), self.assertRaisesRegex(ValueError, f'unknown required-input partition: {gap}'):
                 toolchain.unavailable(gap, 'absent')
-        self.assertEqual(toolchain.REQUIRED_INPUTS, ('fome-mc-store',))
+        self.assertEqual(toolchain.REQUIRED_INPUTS, ('fome-mc-store', 'pcbschemagen-verifier'))
 
     def test_fome_mc_store_requires_every_pinned_revision(self):
         env = dict(os.environ, GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_NOSYSTEM='1')

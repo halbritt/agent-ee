@@ -11,6 +11,8 @@ Covers:
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -35,6 +37,8 @@ from agent_ee.pcbschemagen_benchmark import (
     run_benchmark,
 )
 from agent_ee.storage import read_json, write_json
+from agent_ee.pcbschemagen_gate1 import PCBSchemaGenUnavailable
+from toolchain import require_pcbschemagen
 
 
 def _make_valid_tps54302_design() -> dict:
@@ -263,6 +267,7 @@ class TestDualGateEvaluation(unittest.TestCase):
     """Test execution of dual-gate evaluation across different candidate circuit conditions."""
 
     def setUp(self):
+        require_pcbschemagen()
         self.manifest = Tier1Manifest.load()
         self.task6 = self.manifest.get_task("6")
         self.assertIsNotNone(self.task6)
@@ -327,6 +332,8 @@ class TestDualGateEvaluation(unittest.TestCase):
         self.assertEqual(res.divergence_category, PHYSICAL_BOTTLENECK)
         self.assertEqual(res.dual_gate_status, "FAIL")
 
+
+class TestGate2Evaluation(unittest.TestCase):
     def test_gate2_evaluation_from_build_directory(self):
         """Test Gate 2 evaluation when given an existing build run directory."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -367,6 +374,7 @@ class TestDualGateBenchmarkRunnerSuite(unittest.TestCase):
     """Test full benchmark suite run, reporting, and JSON schema formatting."""
 
     def setUp(self):
+        require_pcbschemagen()
         self.manifest = Tier1Manifest.load()
 
     def test_run_benchmark_subset_and_report_schema(self):
@@ -439,6 +447,24 @@ class TestDualGateBenchmarkRunnerSuite(unittest.TestCase):
             report_data = read_json(out_path)
             self.assertEqual(report_data["schema"], SCHEMA)
             self.assertEqual(report_data["summary"]["dual_gate_passed"], 1)
+
+
+class TestBenchmarkVerifierBoundary(unittest.TestCase):
+    def test_missing_verifier_is_not_scored_as_a_circuit_failure(self):
+        task = Tier1Manifest.load().get_task('6')
+        with tempfile.TemporaryDirectory() as temp:
+            missing = Path(temp) / 'absent'
+            with self.assertRaisesRegex(PCBSchemaGenUnavailable, 'PCBSchemaGen verifier missing'):
+                evaluate_task(task, _make_valid_tps54302_design(), pcbschemagen_root=missing)
+            candidate = Path(temp) / 'candidate.json'
+            write_json(candidate, _make_valid_tps54302_design())
+            out = Path(temp) / 'report.json'
+            with contextlib.redirect_stderr(io.StringIO()) as error:
+                rc = main(['--task-id', '6', '--candidate', str(candidate),
+                           '--pcbschemagen-root', str(missing), '--out', str(out), '--quiet'])
+            self.assertEqual(rc, 2)
+            self.assertIn('Benchmark input error: PCBSchemaGen verifier missing', error.getvalue())
+            self.assertFalse(out.exists())
 
 
 if __name__ == "__main__":

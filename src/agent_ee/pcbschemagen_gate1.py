@@ -9,21 +9,67 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 from typing import Any, Optional, Sequence, Union
 
 DEFAULT_PCBSCHEMAGEN_ROOT = Path(
-    os.environ.get("PCBSCHEMAGEN_ROOT", "/home/halbritt/git/PCBSchemaGen_v2")
+    os.environ.get("PCBSCHEMAGEN_ROOT", str(Path.home() / "git/PCBSchemaGen_v2"))
 )
+PCBSCHEMAGEN_REPOSITORY = "https://github.com/HZou9/PCBSchemaGen_v2"
+PCBSCHEMAGEN_COMMIT = "e07c545f4c01a8026480b1093ee503a926ce2be5"
 SCHEMA = "agent-ee.pcbschemagen-gate1/1"
 
 
+class PCBSchemaGenInputError(RuntimeError):
+    """The external verifier cannot be used as a qualified benchmark input."""
+
+
+class PCBSchemaGenUnavailable(PCBSchemaGenInputError):
+    """The separately provisioned Gate 1 verifier input is absent."""
+
+
+def check_pcbschemagen_checkout(root: Union[str, Path]) -> Path:
+    """Require the pinned, clean external verifier and its knowledge graphs."""
+    root = Path(root).expanduser().resolve()
+    if not root.is_dir():
+        raise PCBSchemaGenUnavailable(
+            f"PCBSchemaGen verifier missing at {root}; provision {PCBSCHEMAGEN_REPOSITORY} "
+            f"at {PCBSCHEMAGEN_COMMIT} and set PCBSCHEMAGEN_ROOT or --pcbschemagen-root"
+        )
+    def git(*args):
+        result = subprocess.run(['git', '--no-optional-locks', '-C', str(root), *args],
+                                capture_output=True, text=True, timeout=10)
+        if result.returncode:
+            raise PCBSchemaGenInputError(f"PCBSchemaGen checkout at {root} cannot be verified: {result.stderr.strip()}")
+        return result.stdout.strip()
+    if git('rev-parse', 'HEAD') != PCBSCHEMAGEN_COMMIT:
+        raise PCBSchemaGenInputError(f"PCBSchemaGen checkout must be at {PCBSCHEMAGEN_COMMIT}: {root}")
+    if git('status', '--porcelain', '--untracked-files=all'):
+        raise PCBSchemaGenInputError(f"PCBSchemaGen checkout must be clean: {root}")
+    for name in ('framework/topo/kg_loader.py', 'framework/task_config.yaml',
+                 'component.json', 'kg_component.json', 'kg/kg_open_schematics.json'):
+        if not (root / name).is_file():
+            raise PCBSchemaGenInputError(f"PCBSchemaGen pinned input missing: {root / name}")
+    for module in ('yaml', 'networkx'):
+        if importlib.util.find_spec(module) is None:
+            raise PCBSchemaGenUnavailable(f"PCBSchemaGen Python dependency missing: {module}; "
+                                          "install the pinned checkout's requirements.txt")
+    return root
+
+
 def _ensure_topo_imports(pcbschemagen_root: Union[str, Path] = DEFAULT_PCBSCHEMAGEN_ROOT) -> None:
-    root_str = str(Path(pcbschemagen_root).resolve())
+    root = check_pcbschemagen_checkout(pcbschemagen_root)
+    for name, module in tuple(sys.modules.items()):
+        if name.startswith('framework.topo') and getattr(module, '__file__', None):
+            if not Path(module.__file__).resolve().is_relative_to(root):
+                raise PCBSchemaGenInputError(f"PCBSchemaGen module already loaded from another checkout: {name}")
+    root_str = str(root)
     if root_str not in sys.path:
         sys.path.insert(0, root_str)
 
@@ -580,6 +626,7 @@ def verify_gate1(
 
     report = {
         "schema": SCHEMA,
+        "verifier": {"repository": PCBSCHEMAGEN_REPOSITORY, "commit": PCBSCHEMAGEN_COMMIT},
         "task_id": task_id,
         "task_name": task_name or str(task_id or "UNKNOWN"),
         "status": status,

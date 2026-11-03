@@ -22,7 +22,8 @@ import sys
 from typing import Any, Optional, Sequence, Union
 
 from .design import DesignError, load as load_design, validate as validate_design
-from .pcbschemagen_gate1 import DEFAULT_PCBSCHEMAGEN_ROOT, Gate1Result, verify_gate1
+from .pcbschemagen_gate1 import (
+    DEFAULT_PCBSCHEMAGEN_ROOT, Gate1Result, PCBSchemaGenInputError, verify_gate1)
 from .storage import digest, read_json
 
 SCHEMA = "agent-ee.dual-gate-benchmark/1"
@@ -384,6 +385,9 @@ def evaluate_gate1_candidate(
             "rule_checks": g1_res.report.get("rule_checks", []),
             "llm_feedback": g1_res.report.get("llm_feedback", ""),
         }
+    except PCBSchemaGenInputError:
+        # An unavailable verifier says nothing about the candidate's topology.
+        raise
     except Exception as exc:
         return {
             "status": "FAIL",
@@ -885,14 +889,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.task_id:
         task_filter = [t.strip() for t in args.task_id.split(",") if t.strip()]
 
-    report = run_benchmark(
-        manifest=manifest,
-        candidates=candidates_map,
-        pcbschemagen_root=args.pcbschemagen_root,
-        captures_dir=args.captures_dir,
-        run_build=args.run_build,
-        task_ids=task_filter,
-    )
+    try:
+        report = run_benchmark(
+            manifest=manifest,
+            candidates=candidates_map,
+            pcbschemagen_root=args.pcbschemagen_root,
+            captures_dir=args.captures_dir,
+            run_build=args.run_build,
+            task_ids=task_filter,
+        )
+    except PCBSchemaGenInputError as exc:
+        sys.stderr.write(f"Benchmark input error: {exc}\n")
+        return 2
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

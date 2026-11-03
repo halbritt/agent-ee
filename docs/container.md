@@ -428,6 +428,20 @@ partition. Each test names the commit it reads (`df304f3`, `e7f5ae3`,
 was. They now read `FOME_MC_COMMIT` (`1289f31`) through `fome_mc_checkout`, a
 scratch clone that shares the store's objects. The store itself is only read.
 
+The `pcbschemagen-verifier` partition covers real-verifier tests in
+`test_pcbschemagen_gate1` and `test_pcbschemagen_benchmark`. It requires a clean
+external checkout of `https://github.com/HZou9/PCBSchemaGen_v2` at
+`e07c545f4c01a8026480b1093ee503a926ce2be5`, including `framework/topo`,
+`framework/task_config.yaml`, `component.json`, `kg_component.json` and
+`kg/kg_open_schematics.json`. Install the checkout's Python requirements in
+the test environment. Agent-ee does not vendor this verifier or its graphs.
+Provision it outside the image and mount it read-only into the test container,
+then set `PCBSCHEMAGEN_ROOT` to that container path. The default is
+`~/git/PCBSchemaGen_v2`. See the
+[benchmarking guide](benchmarking-guide.md#executing-pcbschemagen-benchmarks).
+The current image and CI workflow do not provision it automatically. Adapter
+translation and dependency-refusal tests run without it.
+
 [test_pod_j1_courtyard.py](../tests/test_pod_j1_courtyard.py) uses committed
 fixtures and needs only the public TE drawing of the AMPSEAL connector, which
 this repository does not republish. Point `AGENT_EE_J1_DRAWING` at the exact
@@ -436,20 +450,22 @@ PDF, as described in the
 drawing fails these tests in every mode. `AGENT_EE_POD_INPUTS` is an optional
 complete override for a host with the captured inputs; CI leaves it unset.
 
-These tests are required. Without the fome-mc store, a test skips by default.
+These tests are required. Without the fome-mc store or PCBSchemaGen verifier,
+the affected test skips by default.
 Under `AGENT_EE_REQUIRE_TOOLCHAIN=1` it always fails, with a message naming the
 partition; no environment setting turns it into a skip or a pass. The strict
 runner reports each such failure as a required test not executed, by partition,
 in an error annotation and in the job summary. The run still fails. A present
 store whose pinned file does not verify also fails. The J1 tests fail directly,
 with their loader's message, and the strict runner reports them as ordinary
-errors. `fome-mc-store` is the only partition; the former `pod-retained-inputs`
+errors. The partitions are `fome-mc-store` and `pcbschemagen-verifier`;
+the former `pod-retained-inputs`
 partition was removed once the J1 tests read `AGENT_EE_J1_DRAWING` directly,
 and `unavailable` refuses it as unknown. The strict runner also refuses an
 expected failure (`unittest.expectedFailure`), which unittest itself counts as
 a success.
 
-Project CI provisions both inputs on the runner, outside the image build, the
+Project CI provisions the fome-mc store and J1 drawing on the runner, outside the image build, the
 test processes and every tool sandbox. The owner's delegate authorized this
 on 2026-10-19.
 

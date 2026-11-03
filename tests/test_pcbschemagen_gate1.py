@@ -1,12 +1,18 @@
 """Unit tests for pcbschemagen_gate1 (Gate 1 Topo Verifier Adapter)."""
 
+import contextlib
+import io
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
 from agent_ee.pcbschemagen_gate1 import (
-    Gate1KGStore,
+    PCBSCHEMAGEN_COMMIT,
+    PCBSchemaGenInputError,
+    PCBSchemaGenUnavailable,
+    check_pcbschemagen_checkout,
     design_to_snapshot,
     filter_headers_from_snapshot,
     is_external_header,
@@ -15,6 +21,24 @@ from agent_ee.pcbschemagen_gate1 import (
     resolve_canonical_part_id,
     verify_gate1,
 )
+from toolchain import require_pcbschemagen
+
+
+class FixtureKGStore:
+    """Owned pin metadata for translation tests; no external verification behavior."""
+
+    def __init__(self):
+        self.component_map = {
+            'TPS54302': {'pins': [dict(num=str(n), name=name) for n, name in
+                                enumerate(('GND', 'SW', 'VIN', 'FB', 'EN', 'BOOT'), 1)]},
+            'ADS1115IDGS': {'pins': [dict(num='3', name='GND'), dict(num='8', name='VDD')]},
+        }
+
+    def get_component_info(self, part_id):
+        return self.component_map.get(part_id)
+
+    def has_component(self, part_id):
+        return part_id in self.component_map
 
 
 def _make_valid_tps54302_design():
@@ -87,7 +111,7 @@ class TestPCBSchemaGenGate1Translation(unittest.TestCase):
     """Test translation from agent-ee.design/1 and KiCad XML netlist into framework/topo snapshots."""
 
     def setUp(self):
-        self.kg = Gate1KGStore()
+        self.kg = FixtureKGStore()
 
     def test_translation_from_design_statement(self):
         design = _make_valid_tps54302_design()
@@ -128,11 +152,7 @@ class TestPCBSchemaGenGate1Translation(unittest.TestCase):
         self.assertEqual(vin_eps["U1"]["pin_name"], "VIN")
 
     def test_translation_from_kicad_xml_netlist(self):
-        sample_netlist = Path(
-            "build/acquisition-release/release-build-v7/stages/07-package-63a92a61a95149678ee3178e64133b22/review/work/erc/stage-subject/native-netlist.xml"
-        )
-        if not sample_netlist.exists():
-            self.skipTest(f"Sample netlist not found at {sample_netlist}")
+        sample_netlist = Path(__file__).parent / 'fixtures/pcbschemagen-adapter.xml'
 
         snapshot = netlist_to_snapshot(sample_netlist, kg_store=self.kg)
         comps = {c["ref"]: c for c in snapshot["components"]}
@@ -186,6 +206,9 @@ class TestPCBSchemaGenGate1Translation(unittest.TestCase):
 
 class TestPCBSchemaGenGate1Verification(unittest.TestCase):
     """Test Gate 1 verification execution, rule checks, and error reporting."""
+
+    def setUp(self):
+        require_pcbschemagen()
 
     def test_valid_circuit_passes_gate1(self):
         design = _make_valid_tps54302_design()
@@ -333,3 +356,25 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
             # 2. Missing args returns 2
             rc_bad = main([])
             self.assertEqual(rc_bad, 2)
+
+
+class TestVerifierBoundary(unittest.TestCase):
+    def test_missing_checkout_is_explicit_even_after_a_verifier_was_loaded(self):
+        with tempfile.TemporaryDirectory() as temp:
+            missing = Path(temp) / 'absent'
+            with self.assertRaisesRegex(PCBSchemaGenUnavailable, 'PCBSchemaGen verifier missing'):
+                verify_gate1(_make_valid_tps54302_design(), pcbschemagen_root=missing)
+            with contextlib.redirect_stderr(io.StringIO()) as error:
+                rc = main(['--design', 'unused.json', '--pcbschemagen-root', str(missing)])
+            self.assertEqual(rc, 2)
+            self.assertIn(PCBSCHEMAGEN_COMMIT, error.getvalue())
+            self.assertIn('PCBSCHEMAGEN_ROOT', error.getvalue())
+
+    def test_wrong_revision_is_an_input_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            subprocess.run(['git', 'init', '-q', temp], check=True, capture_output=True)
+            subprocess.run(['git', '-C', temp, '-c', 'user.name=fixture', '-c', 'user.email=fixture@invalid',
+                            'commit', '-q', '--allow-empty', '-m', 'Owned verifier boundary fixture'],
+                           check=True, capture_output=True)
+            with self.assertRaisesRegex(PCBSchemaGenInputError, 'must be at ' + PCBSCHEMAGEN_COMMIT):
+                check_pcbschemagen_checkout(temp)

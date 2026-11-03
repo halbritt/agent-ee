@@ -93,7 +93,7 @@ def require_toolchain(*, native=False, tools=()):
 # Named partitions of required inputs that this repository does not carry.
 # Under AGENT_EE_REQUIRE_TOOLCHAIN=1 an absent one always fails the test; the
 # strict runner names those failures, and no setting turns them into a pass.
-REQUIRED_INPUTS = ('fome-mc-store',)
+REQUIRED_INPUTS = ('fome-mc-store', 'pcbschemagen-verifier')
 MISSING_INPUT = 'AGENT_EE_REQUIRE_TOOLCHAIN=1: required input {gap} missing: '
 
 
@@ -106,6 +106,16 @@ def unavailable(gap, reason):
     if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') != '1':
         raise unittest.SkipTest(reason)
     raise AssertionError(MISSING_INPUT.format(gap=gap) + reason)
+
+
+def require_pcbschemagen():
+    """External verifier integrations require the adapter's clean pinned checkout."""
+    from agent_ee.pcbschemagen_gate1 import (
+        DEFAULT_PCBSCHEMAGEN_ROOT, PCBSchemaGenUnavailable, check_pcbschemagen_checkout)
+    try:
+        return check_pcbschemagen_checkout(DEFAULT_PCBSCHEMAGEN_ROOT)
+    except PCBSchemaGenUnavailable as exc:
+        unavailable('pcbschemagen-verifier', str(exc))
 
 
 def fome_mc_store(repository, *revisions):

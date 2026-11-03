@@ -43,7 +43,7 @@ RENDER_CHANGE_PATHS = {
     'tests/test_strict_suite.py', 'tests/test_toolchain.py',
 }
 # tests/toolchain.py REQUIRED_INPUTS and MISSING_INPUT (tests/test_strict_suite.py keeps them equal).
-REQUIRED_INPUTS = ('fome-mc-store',)
+REQUIRED_INPUTS = ('fome-mc-store', 'pcbschemagen-verifier')
 MISSING = re.compile(r'AGENT_EE_REQUIRE_TOOLCHAIN=1: required input (?P<gap>%s) missing: (?P<reason>[^\n]*)'
                      % '|'.join(map(re.escape, REQUIRED_INPUTS)))
 CHILD = r'''
