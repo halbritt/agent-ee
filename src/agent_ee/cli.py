@@ -218,7 +218,8 @@ def main(argv=None, *, host=None):
     renders.add_argument("--jobs", type=int, choices=(1, 2, 3), default=3, help="concurrent views (default: 3)")
     renders.add_argument("--timeout", type=float, default=1200, help="maximum seconds per view (default: 1200)")
     renders.add_argument("--models", help="local stock-model directory; maps KiCad model-library variables")
-    renders.add_argument("--fetch-models", action="store_true", help="fetch referenced stock models into --models from pinned official KiCad sources")
+    renders.add_argument("--fetch-models", action="store_true", help="fetch referenced stock models into --models from the official KiCad library at the "
+                         "installed release's tag (6.0.11 as a legacy fallback)")
     request = sub.add_parser("evidence-request", help="export an inert request from a retained concern")
     request.add_argument("run")
     request.add_argument("--finding", required=True)

@@ -229,7 +229,7 @@ class ModelClosureTests(unittest.TestCase):
             self.assertEqual((model['status'], model['resolution_source']), ('unresolved', 'unresolved'))
 
     def test_legacy_kisys3dmod_follows_kicad10_model_dir_like_kicad_cli(self):
-        # Observed with the pinned kicad-cli 10.0.7 (AGENTEE-428): its own value
+        # Observed with kicad-cli 10.0.7 (AGENTEE-428): its own value
         # wins, else the process KICAD10_3DMODEL_DIR (environment, then built-in
         # default); a project text variable KICAD10_3DMODEL_DIR does not feed it.
         library, alternate = self.root / 'stock', self.root / 'alternate'
