@@ -3,6 +3,7 @@
 from .check_registry import register as _register_check
 from . import check_prerequisites as _requires
 import json
+import re
 from pathlib import Path
 
 from .candidate import safe_relative
@@ -43,14 +44,21 @@ def capability(params, files, inputs):
     if inputs is None:
         raise ValueError('qualification requires captured inputs')
     qualification = load_json(Path(inputs) / params['qualification'])
-    exact_keys(qualification, 'schema profile native_writer fixture_sha256 sources')
-    if (qualification['schema'] != 'agent-ee.netclass-qualification/1' or
+    exact_keys(qualification, 'schema profile native_release native_writer fixture_sha256 sources')
+    if (qualification['schema'] != 'agent-ee.netclass-qualification/2' or
             qualification['profile'] != PROFILE or qualification['sources'] != SOURCES or
-            not isinstance(qualification['native_writer'], str) or
-            line_release(qualification['native_writer'].split('-', 1)[0]) is None or
+            not writer_agrees(qualification['native_release'], qualification['native_writer']) or
             qualification['fixture_sha256'] != 'b6926d42f788c322d057974fd76feb970434914950aee8d01d66303706c1b9ff'):
         raise ValueError('unsupported netclass qualification')
     return {'immutable_inputs':[params['qualification']], 'predicates':['netclass:default-completeness']}
+
+
+def writer_agrees(release, build):
+    """The writer's release (pcbnew.Version()) is a 10.x release and its build string
+    (GetBuildVersion()) is that release, as built from source or packaged
+    (`10.0.8-10.0.8~ubuntu24.04.1`). Prereleases, nightly and other suffixes do not agree."""
+    return (line_release(release) is not None and isinstance(build, str) and
+            re.fullmatch(re.escape(release) + r'(?:-' + re.escape(release) + r'(?:~[0-9A-Za-z.+]+)?)?', build) is not None)
 
 
 def evaluate(project):

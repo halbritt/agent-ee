@@ -1,8 +1,8 @@
 """Generate an empty project using the installed KiCad native settings writer.
 
 Run with the installed KiCad's system Python (any 10.x release); no design files or
-source project needed. It prints `native_writer: <build version>`, the writer
-build a qualification records. An optional argument names the output path; the default
+source project needed. It prints `native_release: <pcbnew.Version()>` and
+`native_writer: <pcbnew.GetBuildVersion()>`, which a qualification records. An optional argument names the output path; the default
 replaces the fixture.
 """
 from pathlib import Path
@@ -23,4 +23,5 @@ if __name__ == '__main__':
         if not manager.SaveProject() or not path.is_file():
             raise SystemExit('native project save failed')
         target.write_bytes(path.read_bytes())
+    print('native_release:', pcbnew.Version())
     print('native_writer:', writer)

@@ -85,32 +85,38 @@ class NetclassTests(unittest.TestCase):
         self.assertEqual(renamed['details']['missing'], [{'class':'Default','keys':sorted(complete)}])
 
     def test_fixture_is_reproduced_by_native_writer(self):
-        # The installed writer, whichever 10.x release it is, reproduces the derivation's bytes
-        # and names its own build, which a qualification records as native_writer.
+        # The installed writer, whichever 10.x release it is, reproduces the derivation's bytes and
+        # names its release and build, which a qualification records and checks against each other.
         require_toolchain(native=True)
+        from agent_ee.netclass_completeness import writer_agrees
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)/'native.kicad_pro'
             generated = subprocess.run(['/usr/bin/python3', str(FIXTURE/'generate.py'), str(out)],
                                        capture_output=True, text=True, timeout=120)
             self.assertEqual(generated.returncode, 0, generated.stderr)
-            writers = [line.split(': ', 1)[1] for line in generated.stdout.splitlines()
-                       if line.startswith('native_writer: ')]
-            self.assertEqual(len(writers), 1, generated.stdout)
-            self.assertTrue(writers[0].startswith(recorded_kicad_version() + '-'), writers[0])
+            printed = dict(line.split(': ', 1) for line in generated.stdout.splitlines()
+                           if line.startswith(('native_release: ', 'native_writer: ')))
+            self.assertEqual(printed['native_release'], recorded_kicad_version())
+            self.assertTrue(writer_agrees(printed['native_release'], printed['native_writer']), printed)
             self.assertEqual(out.read_bytes(), (FIXTURE/'native.kicad_pro').read_bytes())
 
-    def test_qualification_names_a_writer_build_of_the_10x_line(self):
+    def test_qualification_release_and_writer_build_must_agree(self):
         from agent_ee.netclass_completeness import capability
         params = {'project': 'native.kicad_pro', 'qualification': 'qualification.json'}
         files = dict.fromkeys(params.values(), '0' * 64)
+        cases = ((('10.0.7', '10.0.7-10.0.7~ubuntu24.04.1'), True), (('10.0.8', '10.0.8-10.0.8~ubuntu24.04.1'), True),
+                 (('10.0.8', '10.0.8'), True),
+                 (('10.0.8', '10.0.8-rc1'), False), (('10.0.7', '10.0.7-45-g1234abc'), False),
+                 (('10.0.8', '10.0.8-garbage'), False), (('10.0.8', '10.0.7-10.0.7~ubuntu24.04.1'), False),
+                 (('10.0.8-rc1', '10.0.8-rc1'), False), (('9.0.7', '9.0.7-9.0.7~ubuntu24.04.1'), False),
+                 (('10.0.8', None), False))
         with tempfile.TemporaryDirectory() as tmp:
             inputs = Path(tmp)
-            for writer, accepted in (('10.0.7-10.0.7~ubuntu24.04.1', True), ('10.0.8-10.0.8~ubuntu24.04.1', True),
-                                     ('9.0.7-9.0.7~ubuntu24.04.1', False), ('', False), (None, False)):
+            for (release, writer), accepted in cases:
                 qualification = read_json(FIXTURE/'qualification.json')
-                qualification['native_writer'] = writer
+                qualification.update(native_release=release, native_writer=writer)
                 write_json(inputs/'qualification.json', qualification)
-                with self.subTest(writer=writer):
+                with self.subTest(release=release, writer=writer):
                     if accepted:
                         self.assertEqual(capability(params, files, inputs)['predicates'], ['netclass:default-completeness'])
                     else:
