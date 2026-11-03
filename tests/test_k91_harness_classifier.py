@@ -485,16 +485,19 @@ class ContractRulesTest(unittest.TestCase):
                                         'other file': lambda r: r.update(file='routing/candidate/project/rc.kicad_pcb')},
                  'c_stale_input': {'input not stale': lambda r: r.update(board_sha256=r['receipt_board_sha256']),
                                    'verify called': lambda r: r.update(consumer_verify=observed())},
-                 'a_mismatched_runtime': {'host accepted': lambda r: r.update(host_binding=observed()),
-                                          'host unrelated': lambda r: r['host_binding']['exception'][0].update(
-                                              message='something else'),
+                 # Control A is judged by A2: the fresh binding of M must be accepted and record M.
+                 'a_mismatched_runtime': {'host refused': lambda r: r.update(host_binding=raised()),
+                                          'host records L': lambda r: r['host_binding'].update(
+                                              value={'commit': ProductionConsumerTest.bind['commit']}),
                                           'run_step called': lambda r: r.update(consumer_run_step=observed('x'))}}
         for name, cases in edits.items():
             for label, edit in cases.items():
                 with self.subTest(name=name, edit=label):
                     record = self.record(name)
                     edit(record)
-                    self.assertEqual(classify.consumer_state(record, name), classify.INCOMPLETE)
+                    state = (a2.consumer_state(record, name, ProductionConsumerTest.identities) if name == a2.CONTROL
+                             else classify.consumer_state(record, name))
+                    self.assertEqual(state, classify.INCOMPLETE)
 
     def test_missing_or_malformed_observations_are_incomplete(self):
         keys = ('consumer', 'consumer_run_step', 'consumer_verify', 'consumer_adopt', 'direct_adopt', 'design_before',
