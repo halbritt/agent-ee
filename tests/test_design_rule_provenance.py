@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import re
 import sys
 import unittest
 
@@ -14,7 +15,7 @@ from agent_ee.storage import digest, json_bytes, read_json, write_json
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_scaffold import ScaffoldFixture
 from test_scaffold_producer import ProducerFixture
-from toolchain import require_toolchain
+from toolchain import recorded_kicad_version, require_toolchain
 from test_add_planes import PlaneFixture
 from owner_fixture import cite, citation, owner_rules
 
@@ -631,11 +632,16 @@ class NativeDefaultTableTest(unittest.TestCase):
             bind_project(project, record)
             write_json(board.with_suffix('.kicad_pro'), project)
             script = ('import pcbnew,sys; '
-                'assert pcbnew.GetBuildVersion().startswith(sys.argv[2]); '
+                'print(pcbnew.GetBuildVersion()); '
                 'b=pcbnew.LoadBoard(sys.argv[1]); pcbnew.SaveBoard(sys.argv[1],b)')
-            result = subprocess.run(['/usr/bin/python3', '-c', script, str(board), VERSION],
+            result = subprocess.run(['/usr/bin/python3', '-c', script, str(board)],
                                     capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stderr)
+            # The table records the release it was first observed on (VERSION); the installed
+            # release, whichever it is, must save the same defaults.
+            self.assertRegex(VERSION, r'^10\.\d+\.\d+$')
+            self.assertRegex(result.stdout.strip().splitlines()[-1],
+                             '^' + re.escape(recorded_kicad_version()) + r'(?:\D|$)')
             saved = read_json(board.with_suffix('.kicad_pro'))
             rows = geometry_defaults(saved, {})
             self.assertEqual({r['setting']: r['value'] for r in rows},

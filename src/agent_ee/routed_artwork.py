@@ -1,4 +1,4 @@
-"""Receipted routed-board silk translations, exact field poses, or pinned text-size growth."""
+"""Receipted routed-board silk translations, exact field poses, or receipted text-size growth."""
 import argparse
 import copy
 from decimal import Decimal, InvalidOperation
@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 
+from .kicad_quirks import MIN_TEXT_HEIGHT_DEFAULT_MM, omitted_min_text_height
 from .symbol_library import children, parse_sexpr, nanometres
 from .storage import digest, read_json, write_json
 
@@ -470,9 +471,9 @@ def _text_minimum(project):
             raise ValueError('text-size project rules malformed')
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError('text-size project rules malformed') from exc
-    # Retained native 10.0.7 DRC on the exact original project proves this
-    # omitted-setting default. Production checks that runtime before applying it.
-    value = settings.get('rules', {}).get('min_text_height', '0.8')
+    # KiCad's omitted-setting default for the classified 10.0 series (kicad_quirks).
+    # Production checks the release its native DRC recorded before applying it.
+    value = settings.get('rules', {}).get('min_text_height', MIN_TEXT_HEIGHT_DEFAULT_MM)
     result = nanometres(str(value))
     if not 0 < result <= 10**7:
         raise ValueError('text-size project height minimum unsupported')
@@ -1120,8 +1121,8 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
     before_pin = artwork_drc_pin(original, before)
     board = k.LoadBoard(str(output))
     if text_sizes is not None:
-        if before.get('kicad_version') != '10.0.7':
-            raise ValueError('text-size native default requires KiCad 10.0.7')
+        if omitted_min_text_height(before.get('kicad_version')) != MIN_TEXT_HEIGHT_DEFAULT_MM:
+            raise ValueError(f"text-size native default is unclassified for KiCad {before.get('kicad_version')!r}")
         _apply_text_sizes(k, board, text_sizes)
         artwork = dict(text_sizes=text_sizes, moved_fields=[])
     elif field_poses is not None:

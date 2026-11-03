@@ -7,10 +7,14 @@ from pathlib import Path
 
 from .candidate import safe_relative
 from .hardware_interface import exact_keys, unique_object
+from .kicad_install import line_release
 from .storage import digest, write_json
 
+# Derivation record: the Default key set comes from native NETCLASS(name, true) +
+# saveNetclass at KiCad tag 10.0.7 (SOURCES) and that writer's empty-project bytes
+# (fixture_sha256). The check reads captured project bytes and runs no KiCad. A
+# qualification names the 10.x writer build that reproduced those bytes.
 PROFILE = 'kicad-10.0.7-net-settings-5'
-# Native NETCLASS(name, true) + saveNetclass, KiCad tag 10.0.7.
 DEFAULT_KEYS = frozenset('name priority schematic_color pcb_color tuning_profile '
     'wire_width bus_width line_style clearance track_width via_diameter via_drill '
     'microvia_diameter microvia_drill diff_pair_width diff_pair_gap diff_pair_via_gap'.split())
@@ -42,7 +46,8 @@ def capability(params, files, inputs):
     exact_keys(qualification, 'schema profile native_writer fixture_sha256 sources')
     if (qualification['schema'] != 'agent-ee.netclass-qualification/1' or
             qualification['profile'] != PROFILE or qualification['sources'] != SOURCES or
-            qualification['native_writer'] != '10.0.7-10.0.7~ubuntu24.04.1' or
+            not isinstance(qualification['native_writer'], str) or
+            line_release(qualification['native_writer'].split('-', 1)[0]) is None or
             qualification['fixture_sha256'] != 'b6926d42f788c322d057974fd76feb970434914950aee8d01d66303706c1b9ff'):
         raise ValueError('unsupported netclass qualification')
     return {'immutable_inputs':[params['qualification']], 'predicates':['netclass:default-completeness']}

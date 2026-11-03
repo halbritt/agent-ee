@@ -6,14 +6,48 @@ import math
 from fractions import Fraction
 from pathlib import Path
 
+from .kicad_install import RELEASE_MAJOR, line_release
 from .measurements import finite, evaluate_limits
 from .storage import digest, identity, read_json, write_json
 
 POLICY = 'endpoint-planar-dc/2'
 RESIDUAL = 1e-9
-TOOLS = {'/usr/bin/python3': 'e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f',
-         '/usr/lib/python3/dist-packages/pcbnew.py': '50740b1aeed153349ffe000c7e2c39d9fd75d1cdf49118897f5df5bf957b8458',
-         '/usr/lib/python3/dist-packages/_pcbnew.so': 'ba821c4719fbb6e51c378ae98f7db4254a214eb9e39e4822bb88833c986513f8'}
+# The native tools the geometry probe runs. A check measures their SHA-256 when it
+# starts, records them in its analysis receipt (and a run in its launch expectation)
+# and refuses a change while it runs. No fixed digest or KiCad version is required:
+# the KiCad release is the one installed, recorded with the probe's geometry.
+TOOL_PATHS = ('/usr/bin/python3', '/usr/lib/python3/dist-packages/pcbnew.py',
+              '/usr/lib/python3/dist-packages/_pcbnew.so')
+KICAD_LINE = f'{RELEASE_MAJOR}.x'
+
+
+def tools():
+    """{path: sha256} of the native tools present on this host, measured now."""
+    return {path: digest(path) for path in TOOL_PATHS if Path(path).is_file()}
+
+
+def native_tools():
+    """The tool identity a check records; ValueError when a tool is missing."""
+    found = tools()
+    missing = [path for path in TOOL_PATHS if path not in found]
+    if missing:
+        raise ValueError('DC native tool unavailable: ' + ', '.join(missing))
+    return found
+
+
+def unchanged_tools(recorded):
+    """Refuse when a native tool differs from the identity the check recorded at its start."""
+    current = tools()
+    for path in TOOL_PATHS:
+        if current.get(path) != recorded.get(path):
+            raise ValueError('DC native tool changed during extraction: ' + path)
+
+
+def native_version(version, label):
+    """The recorded pcbnew/kicad-cli release when it is one of the 10.x line, else ValueError."""
+    if line_release(version) is None:
+        raise ValueError(f'{label} from KiCad {version!r} is outside the KiCad {KICAD_LINE} line')
+    return version
 
 
 def qualification(c=None):
@@ -21,7 +55,7 @@ def qualification(c=None):
         from .dc_rail import qualification as rail_qualification
         return rail_qualification()
     return {'schema': 'agent-ee.dc-qualification/1', 'policy': POLICY,
-            'pcbnew_version': '10.0.7', 'tools': TOOLS,
+            'kicad_line': KICAD_LINE, 'tool_paths': list(TOOL_PATHS),
             'model_sha256': digest(__file__),
             'probe_sha256': digest(Path(__file__).with_name('dc_geometry_probe.py')),
             'max_edges': 128, 'max_nodes': 32, 'max_loads': 8,
@@ -342,8 +376,9 @@ def qualify_substrate(geo, c):
 
 def extract_network(geo, c):
     validate_contract(c)
-    if geo['schema'] != 'agent-ee.dc-geometry/2' or geo['pcbnew_version'] != '10.0.7':
-        raise ValueError('unqualified native geometry version')
+    if geo['schema'] != 'agent-ee.dc-geometry/2':
+        raise ValueError('unqualified native geometry schema')
+    native_version(geo['pcbnew_version'], 'native geometry')
     if geo['zones'] or geo['copper_graphics']:
         raise ValueError('unmodeled zones or copper graphics')
     if len(set(geo['footprint_refs'])) != len(geo['footprint_refs']):
@@ -448,9 +483,8 @@ def check_dc_path(ctx):
         c, _ = load_inputs(ctx.params, ctx.manifest['files'], ctx.inputs)
         if ctx.scope.get('empirical'):
             raise ValueError('empirical transfer to dimensional DC envelopes is unqualified')
-        for path, sha in TOOLS.items():
-            if digest(path) != sha:
-                raise ValueError('DC native tool identity requires requalification: ' + path)
+        # The tools this check runs, recorded; they must not change while it runs.
+        receipt['tools'] = native_tools()
         board = ctx.candidate_path(ctx.scope['board'])
         if digest(ctx.inputs / ctx.scope['board']) != ctx.manifest['files'][ctx.scope['board']]:
             raise ValueError('native board differs from captured candidate')
@@ -463,12 +497,12 @@ def check_dc_path(ctx):
         ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.dc_geometry_probe',
                      board, '--out', '/work/geometry.json'], timeout=60)
         ctx.evidence('geometry.json')
-        for path, sha in TOOLS.items():
-            if digest(path) != sha:
-                raise ValueError('DC native tool changed during extraction: ' + path)
+        unchanged_tools(receipt['tools'])
         receipt['contract'] = c
         receipt['board_sha256'] = ctx.manifest['files'][ctx.scope['board']]
-        network = extract_network(ctx.load_json('geometry.json', 'native DC geometry'), c)
+        geometry = ctx.load_json('geometry.json', 'native DC geometry')
+        receipt['pcbnew_version'] = geometry.get('pcbnew_version')
+        network = extract_network(geometry, c)
         write_json(ctx.work / 'network.json', network)
         ctx.evidence('network.json')
         receipt['network'] = network

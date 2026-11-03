@@ -260,5 +260,37 @@ class NativeRenderTests(unittest.TestCase):
         self.assertNotEqual(checks[0]['execution'], 'ok')
 
 
+class RendererVersionTests(unittest.TestCase):
+    """The installed kicad-cli release is recorded with the renderer; no one release is required.
+
+    No KiCad runs: the version and export commands are stand-ins."""
+
+    def test_releases_of_the_10x_line_are_recorded_and_others_refused(self):
+        from agent_ee import schematic_render
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tool = root / 'tool'
+            tool.write_bytes(b'stand-in binary')
+            for version, refused in (('10.0.8', None), ('10.1.0', None), ('9.0.7', 'not a release of the KiCad 10.x line'),
+                                     ('10.0.8-rc1', 'not a release of the KiCad 10.x line')):
+                outputs = {'kicad-cli-version': version, 'pdftoppm-version': 'pdftoppm version 24.02.0'}
+
+                def command(argv, out, label):
+                    if label in outputs:
+                        return outputs[label]
+                    raise ValueError('no export in this test')
+                with self.subTest(version=version), \
+                        patch.object(schematic_render, '_command', side_effect=command), \
+                        patch.object(schematic_render.shutil, 'which', return_value=str(tool)):
+                    manifest = schematic_render.render(root, 'absent.kicad_sch', root / f'out-{version}', 'candidate')
+                    self.assertEqual(manifest['status'], 'missing')
+                    if refused:
+                        self.assertIn(refused, manifest['error'])
+                        self.assertNotIn('renderer', manifest)
+                    else:
+                        self.assertEqual(manifest['renderer']['tools']['kicad-cli'],
+                                         {'path': str(tool), 'version': version, 'binary_sha256': digest(tool)})
+
+
 if __name__ == '__main__':
     unittest.main()

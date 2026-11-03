@@ -17,6 +17,7 @@ import uuid
 
 from ..placement_job import JobRefusal, JobStopped, _check_stop, drc, verify_rule_loading
 from ..dc_rail import NONCONDUCTIVE_IGNORES
+from ..kicad_install import line_release
 from ..net_constraints import rule_forms, template_rules
 from ..storage import canonical, write_json
 from ..symbol_library import children, nanometres, parse_sexpr
@@ -394,7 +395,8 @@ def _no_suppression(captured):
 def _legal(report):
     if (not isinstance(report, dict)
             or report.get('$schema') != 'https://schemas.kicad.org/drc.v1.json'
-            or report.get('kicad_version') != '10.0.7'
+            # Any release of the 10.x line; the report records the one that ran.
+            or line_release(report.get('kicad_version')) is None
             or report.get('coordinate_units') != 'mm'):
         raise JobRefusal('local return: unknown native DRC schema/version/units')
     severities = report.get('included_severities')

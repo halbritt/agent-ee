@@ -124,9 +124,12 @@ class FixtureGeneratorDeterminismTest(unittest.TestCase):
                         self.assertEqual(produced.read_bytes(), (FIXTURES / board).read_bytes(),
                                          f'{label}: {produced.name}')
 
-    def test_generators_refuse_unqualified_pcbnew(self):
-        reports = {'10.0.8': "lambda: '10.0.8'", '99.0.0': "lambda: '99.0.0'", 'empty': "lambda: ''",
-                   'none': 'lambda: None', 'raises': "lambda: (_ for _ in ()).throw(RuntimeError('no version'))"}
+    def test_generators_refuse_pcbnew_outside_the_10_x_line(self):
+        # Any 10.x release may regenerate the boards (the byte tests compare its output);
+        # other lines, prereleases and unknown versions are refused before anything is written.
+        reports = {'9.0.7': "lambda: '9.0.7'", '99.0.0': "lambda: '99.0.0'", '10.0.8-rc1': "lambda: '10.0.8-rc1'",
+                   'empty': "lambda: ''", 'none': 'lambda: None',
+                   'raises': "lambda: (_ for _ in ()).throw(RuntimeError('no version'))"}
         with tempfile.TemporaryDirectory(prefix='agent-ee-ee367-') as tmp:
             for name in GENERATED:
                 generator = FIXTURES / name / 'generate.py'
@@ -140,18 +143,18 @@ class FixtureGeneratorDeterminismTest(unittest.TestCase):
                             ['/usr/bin/python3', '-B', '/candidate/run.py'])
                         console = (work / 'console.log').read_text()
                         self.assertNotEqual(record['exit_code'], 0, console[-2000:])
-                        self.assertRegex(console, r'not the qualified 10\.0\.7|version unknown')
+                        self.assertRegex(console, r'not a release of the KiCad 10\.x line|version unknown')
                         self.assertFalse((work / 'out').exists(), 'refused generator wrote output')
-                with self.subTest(fixture=name, mode='make_board', version='10.0.8'):
+                with self.subTest(fixture=name, mode='make_board', version='11.0.0'):
                     label = f'{name}-make-board'
                     arguments = "Path('/work/out.kicad_pcb')" + (', 2' if name == 'fab-export' else '')
                     record, work = self.run_sandboxed(Path(tmp), label, {'generate.py': generator, 'run.py': (
-                        "import pcbnew, runpy\nfrom pathlib import Path\npcbnew.Version = lambda: '10.0.8'\n"
+                        "import pcbnew, runpy\nfrom pathlib import Path\npcbnew.Version = lambda: '11.0.0'\n"
                         f"runpy.run_path('/candidate/generate.py')['make_board']({arguments})\n")},
                         ['/usr/bin/python3', '-B', '/candidate/run.py'])
                     console = (work / 'console.log').read_text()
                     self.assertNotEqual(record['exit_code'], 0, console[-2000:])
-                    self.assertIn('not the qualified 10.0.7', console)
+                    self.assertIn('not a release of the KiCad 10.x line', console)
                     self.assertFalse((work / 'out.kicad_pcb').exists(), 'refused generator wrote a board')
 
 

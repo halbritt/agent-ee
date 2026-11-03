@@ -9,7 +9,7 @@ import math
 import re
 from pathlib import Path
 
-from .dc_path import TOOLS, exact_fields, positive
+from .dc_path import KICAD_LINE, TOOL_PATHS, exact_fields, native_version, positive, unchanged_tools
 from .measurements import finite, evaluate_limits
 from .storage import digest, identity, write_json
 
@@ -24,7 +24,7 @@ ROUNDING_ALLOWANCE = 1e-12
 
 def qualification():
     return {'schema': 'agent-ee.dc-qualification/2', 'policy': POLICY,
-            'pcbnew_version': '10.0.7', 'tools': TOOLS,
+            'kicad_line': KICAD_LINE, 'tool_paths': list(TOOL_PATHS),
             'model_sha256': digest(__file__),
             'probe_sha256': digest(Path(__file__).with_name('dc_geometry_probe.py')),
             'dispatcher_sha256': digest(Path(__file__).with_name('dc_path.py')),
@@ -114,8 +114,9 @@ def barrel_resistance(drill_nm, c):
 
 def validate_geometry(g, c):
     exact_fields(g, 'schema pcbnew_version enabled_copper_layers tracks pads zones copper_graphics', 'geometry')
-    if g['schema'] != 'agent-ee.dc-rail-geometry/1' or g['pcbnew_version'] != '10.0.7':
-        raise ValueError('native DC geometry requires requalification')
+    if g['schema'] != 'agent-ee.dc-rail-geometry/1':
+        raise ValueError('native DC geometry schema requires requalification')
+    native_version(g['pcbnew_version'], 'native DC geometry')
     layers = g['enabled_copper_layers']
     if not isinstance(layers, list) or len(set(layers)) != len(layers) or set(layers) != set(c['layers']):
         raise ValueError('declared layers differ from enabled native copper layers')
@@ -208,8 +209,7 @@ def check(ctx, c, receipt):
     receipt['prerequisite'] = prior
     if prior['projection'] or prior['outcome'] != 'pass':
         raise ValueError('whole-net DC bound requires a passing full native DRC')
-    if prior['kicad_version'] != '10.0.7':
-        raise ValueError('native DRC version requires DC requalification')
+    native_version(prior['kicad_version'], 'prerequisite native DRC')
     if any(report[key] for key in ('violations', 'unconnected_items', 'schematic_parity')):
         raise ValueError('whole-net DC bound requires native DRC without findings')
     if any(item.get('key') not in NONCONDUCTIVE_IGNORES for item in report['ignored_checks']):
@@ -217,10 +217,10 @@ def check(ctx, c, receipt):
     receipt['ignored_nonconductive_checks'] = report['ignored_checks']
     ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.dc_geometry_probe', '--rail',
                  ctx.candidate_path(ctx.scope['board']), '--out', '/work/geometry.json'], timeout=60)
-    for path, sha in TOOLS.items():
-        if digest(path) != sha:
-            raise ValueError('DC native tool changed during extraction: ' + path)
-    analysis = bound(ctx.load_json('geometry.json', 'native rail geometry'), c)
+    unchanged_tools(receipt['tools'])
+    geometry = ctx.load_json('geometry.json', 'native rail geometry')
+    receipt['pcbnew_version'] = geometry.get('pcbnew_version')
+    analysis = bound(geometry, c)
     metrics = {p['id'] + '_drop': {'value': analysis['paths'][p['id']]['drop_bound_v'],
         'lower': 0., 'upper': analysis['paths'][p['id']]['drop_bound_v'], 'unit': 'V',
         'condition': condition(c, p), 'envelope_policy': POLICY} for p in c['paths']}

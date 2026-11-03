@@ -73,8 +73,9 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
             required_runtime.add(native_requirements[spec['kind']])
         params = spec.get('params', {})
         if spec.get('kind') == 'dc_path':
-            from .dc_path import TOOLS
-            tools.update(TOOLS)
+            # The DC tools as measured at launch: the run records them and refuses a change.
+            from .dc_path import tools as dc_tools
+            tools.update(dc_tools())
         if spec.get('kind') == 'datasheet_facts':
             extractor = params['extractor']
             tools[extractor['path']] = extractor['sha256']

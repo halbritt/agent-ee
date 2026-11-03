@@ -281,6 +281,15 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
         self.assertTrue((self.output / 'trial-1' / 'drc.json').is_file())
         self.assertNotEqual(record['trials'][0]['path_nm'], record['trials'][1]['path_nm'])
 
+    def test_native_drc_of_any_release_of_the_10x_line_is_read(self):
+        # The report names the installed release, recorded with it; no one version is required.
+        for version in ('10.0.7', '10.0.8', '10.1.0'):
+            with self.subTest(version=version):
+                self.assertTrue(local._legal(dict(native_report(), kicad_version=version)))
+        for version in ('11.0.0', '10.0.7-45-gdeadbeef', None):
+            with self.subTest(version=version), self.assertRaisesRegex(JobRefusal, 'schema/version/units'):
+                local._legal(dict(native_report(), kicad_version=version))
+
     def test_all_collisions_or_unknown_drc_never_publish(self):
         reports = [native_report([dict(type='clearance', severity='error', description='collision', items=[])]),
                    native_report([dict(type='edge_clearance', severity='warning', description='edge', items=[])]),
@@ -298,7 +307,7 @@ class AcquisitionLocalReturnTest(unittest.TestCase):
             report = native_report()
             report['ignored_checks'] = value
             reports.append(report)
-        for key, value in (('$schema', 'unknown-schema'), ('kicad_version', '10.0.6'),
+        for key, value in (('$schema', 'unknown-schema'), ('kicad_version', '9.0.7'), ('kicad_version', '10.0.8-rc1'),
                            ('coordinate_units', 'in'), ('unconnected_items', ['malformed']),
                            ('unconnected_items', [dict(type='clearance', severity='error', description='misclassified', items=[])]),
                            ('ignored_checks', [DRC_METADATA['ignored_checks'][0]] * 2)):

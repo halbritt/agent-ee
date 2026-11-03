@@ -9,7 +9,7 @@ Every footprint, symbol, part-binding value and coordinate here is synthetic and
 written for agent-ee; nothing is copied from FOME-MC, a donor, a supplier or a
 third-party library. The LCSC-style numbers (C9000xx) and manufacturer/part-number
 strings are placeholders that exercise BOM grouping; they make no sourcing
-claim. Boards require the qualified native pcbnew installation:
+claim. Boards require a native pcbnew installation of the KiCad 10.x line:
 
     /usr/bin/python3 fixtures/fab-export/generate.py fixtures/fab-export
 """
@@ -19,7 +19,9 @@ from pathlib import Path
 
 NAMESPACE = uuid.UUID('6f1d7e0a-3c55-4a8e-9a43-0f3b1a2b5c11')
 ROOT = 'fab'
-QUALIFIED_PCBNEW = '10.0.7'
+# The committed boards were made with pcbnew 10.0.7; any release of the 10.x line may
+# regenerate them, and the fixture tests compare its bytes with the committed ones.
+QUALIFIED_LINE = '10'
 
 # ref: (symbol, value, footprint, LCSC, Manufacturer, Partnumber, dnp, side, x, y, nets by pin)
 PARTS = {
@@ -148,14 +150,17 @@ def pod_copper(p, board, nets, vec):
 
 
 def qualified_pcbnew():
-    """Import pcbnew, refusing any version but the one the committed boards were made with."""
+    """Import pcbnew, refusing a version that is not a MAJOR.MINOR.PATCH release of the 10.x line."""
+    import re
     import pcbnew as p
     try:
         version = p.Version()
     except Exception as exc:
-        raise RuntimeError(f'pcbnew version unknown ({exc!r}); fixture boards need {QUALIFIED_PCBNEW}') from exc
-    if version != QUALIFIED_PCBNEW:
-        raise RuntimeError(f'pcbnew {version!r} is not the qualified {QUALIFIED_PCBNEW}; refusing to generate boards')
+        raise RuntimeError(f'pcbnew version unknown ({exc!r}); fixture boards need a KiCad '
+                           f'{QUALIFIED_LINE}.x release') from exc
+    if not isinstance(version, str) or not re.fullmatch(QUALIFIED_LINE + r'\.\d+\.\d+', version):
+        raise RuntimeError(f'pcbnew {version!r} is not a release of the KiCad {QUALIFIED_LINE}.x line; '
+                           'refusing to generate boards')
     return p
 
 

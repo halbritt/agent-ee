@@ -22,7 +22,7 @@ from agent_ee.netlist_parity import compare, resolved_inventory, validate_policy
 from agent_ee.schematic_emitter import emit_schematic
 from agent_ee.symbol_library import children, parse_sexpr
 from test_schematic_emitter import PROJECT, captures, load, native_netlist, native_project, run_native, tables
-from toolchain import require_toolchain
+from toolchain import recorded_kicad_version, require_toolchain
 
 ROOT_FILE, CHILD_FILE = 'two_level.kicad_sch', 'filter.kicad_sch'
 
@@ -216,7 +216,7 @@ class NativeHierarchyTests(unittest.TestCase):
         run_native(project, work / 'netlist', 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
                    '-o', '/work/design.xml', '/candidate/' + ROOT_FILE)
         erc = json.loads((work / 'erc' / 'erc.json').read_text())
-        self.assertEqual(erc['kicad_version'], '10.0.7')
+        self.assertEqual(erc['kicad_version'], recorded_kicad_version())
         return project, work, erc
 
     def test_two_level_erc_netlist_and_current_format(self):

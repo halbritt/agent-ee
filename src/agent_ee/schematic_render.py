@@ -14,6 +14,7 @@ import zlib
 from pathlib import Path
 
 from .candidate import safe_relative, verify_snapshot
+from .kicad_install import line_release
 from .schematic_lint import load_sheets
 from .storage import digest, identity, read_json, write_json
 from .symbol_library import children
@@ -27,6 +28,7 @@ PDF_OPTIONS = ['--black-and-white', '--exclude-drawing-sheet',
                '--exclude-pdf-property-popups', '--exclude-pdf-hierarchical-links',
                '--exclude-pdf-metadata']
 RASTER_OPTIONS = ['-r', str(DPI), '-aa', 'no', '-aaVector', 'no', '-singlefile']
+PDFTOPPM_VERSION = '24.02.0'
 # Owned 3 by 5 glyphs, kept independent of installed fonts.
 GLYPHS = dict(zip('0123456789mxy', (
     '111101101101111', '010110010010111', '111001111100111', '111001111001111',
@@ -157,15 +159,23 @@ def render(inputs, root, out, candidate_id):
                 'sheets': {}, 'limitations': ['Visual evidence only; no engineering verdict.']}
     try:
         tools = {}
-        for name, args, version in (('kicad-cli', ['version'], '10.0.7'),
-                                    ('pdftoppm', ['-v'], '24.02.0')):
+        for name, args in (('kicad-cli', ['version']), ('pdftoppm', ['-v'])):
             path = shutil.which(name)
             if path is None:
                 raise ValueError(f'{name} unavailable; missing visual evidence')
             actual = _command([path, *args], out, name + '-version')
-            expected = version if name == 'kicad-cli' else 'pdftoppm version ' + version
-            if not actual or actual.splitlines()[0] != expected:
-                raise ValueError(f'{name} requires pinned version {version}, observed {actual!r}')
+            first = actual.splitlines()[0] if actual else ''
+            if name == 'kicad-cli':
+                # The installed KiCad release, recorded; any release of the 10.x line.
+                version = line_release(first)
+                if version is None:
+                    raise ValueError(f'kicad-cli {first!r} is not a release of the KiCad 10.x line; '
+                                     'missing visual evidence')
+            else:
+                # Raster bytes follow the base image's poppler, an exact snapshot version.
+                version = PDFTOPPM_VERSION
+                if first != 'pdftoppm version ' + version:
+                    raise ValueError(f'pdftoppm requires the image version {version}, observed {actual!r}')
             tools[name] = {'path': path, 'version': version, 'binary_sha256': digest(path)}
         renderer = {'tools': tools, 'pdf_options': PDF_OPTIONS, 'raster_options': RASTER_OPTIONS,
                     'implementation_sha256': digest(__file__), 'python': sys.version,

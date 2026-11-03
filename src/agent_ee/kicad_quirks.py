@@ -1,4 +1,9 @@
-"""KiCad 10.0.x report-format quirk guards keyed on the pinned kicad-cli (AGENTEE-66).
+"""KiCad 10.0.x behaviour keyed on the recorded KiCad version (AGENTEE-66).
+
+The image installs the newest KiCad 10.0 release when it is built and every run
+records the release it used (kicad_install). Where KiCad's behaviour differs between
+releases, the handling here is chosen from that recorded version, never from one
+fixed version, and a release outside the classified range gets no assumed behaviour.
 
 ERC JSON coordinates. `kicad-cli sch erc --format json` in KiCad 10.0.6 and
 earlier 10.0.x releases writes every violation item `pos` at 1/100 of its true
@@ -16,6 +21,12 @@ builds (`10.0.6-45-g...`), a version run that failed and a report whose own
 are information loss only: ERC violation counts do not depend on them. Under
 scale_x100 the item description text is kept verbatim although lengths inside
 it are at the same 1/100 scale; the recorded limitation says so.
+
+Omitted board text-height minimum. A project without `rules.min_text_height`
+gets KiCad's design-setting default, 0.8 mm, observed by native DRC on 10.0.7.
+A stable series keeps its design-setting defaults, so the 10.0 series is
+classified; another series, a prerelease or an unknown version gets None and
+the caller refuses (`omitted_min_text_height`).
 
 BOM variants. `kicad-cli sch export bom --variant NAME` exits 0 and silently
 exports the default variant when NAME is undefined, and a schematic whose
@@ -38,6 +49,8 @@ DESCRIPTION_LIMITATION = ('item descriptions are kicad-cli text verbatim; length
                           'at the uncorrected 1/100 scale')
 # Schematic internal unit is 100 nm; corrected values are rounded to it.
 MM_DECIMALS = 4
+# rules.min_text_height default (mm) of the classified 10.0 series.
+MIN_TEXT_HEIGHT_DEFAULT_MM = '0.8'
 # Variant-clause tokens KiCad 10.0.7 writes; anything else is reported, and
 # `exclude_from_bom` is refused because kicad-cli cannot load the schematic.
 VARIANT_TOKENS = frozenset(('name', 'dnp', 'exclude_from_sim', 'in_bom', 'on_board', 'in_pos_files', 'field'))
@@ -63,6 +76,16 @@ def erc_coordinate_regime(version):
     record['regime'] = 'scale_x100' if patch <= LAST_SCALED_PATCH else 'native'
     record['scale'] = SCALE[record['regime']]
     return record
+
+
+def omitted_min_text_height(version):
+    """KiCad's rules.min_text_height default (mm, as text) for the recorded `version`.
+
+    None when the version is not a release of the classified 10.0 series."""
+    match = RELEASE_RE.fullmatch(version) if isinstance(version, str) else None
+    if not match or tuple(map(int, match.groups()[:2])) != (10, 0):
+        return None
+    return MIN_TEXT_HEIGHT_DEFAULT_MM
 
 
 def _number(value):

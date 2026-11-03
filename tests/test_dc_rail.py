@@ -191,6 +191,16 @@ class RailBoundTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 dc_rail.bound(g, declaration())
 
+    def test_geometry_of_any_release_of_the_10x_line_is_bounded(self):
+        # The probe records the installed pcbnew release; the bound does not depend on one version.
+        expected = dc_rail.bound(geometry(), declaration())
+        for version in ('10.0.7', '10.0.8', '10.1.0'):
+            with self.subTest(version=version):
+                self.assertEqual(dc_rail.bound({**geometry(), 'pcbnew_version': version}, declaration()), expected)
+        for version in ('9.0.7', '11.0.0', '10.0.8-rc1', '', None):
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, 'outside the KiCad 10.x line'):
+                dc_rail.bound({**geometry(), 'pcbnew_version': version}, declaration())
+
     def test_layer_and_inventory_omissions_refuse(self):
         g = geometry()
         g['enabled_copper_layers'].append('In1.Cu')

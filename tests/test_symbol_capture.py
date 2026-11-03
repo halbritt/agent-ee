@@ -24,7 +24,7 @@ from agent_ee.symbol_capture import (LIMITS, CaptureError, bind_resolved, captur
 from agent_ee.symbol_library import (NODE_LIMIT, LibraryError, children, parse_library, parse_sexpr,
                                      resolve_symbol)
 from test_schematic_emitter import PROJECT, ROOT, native_netlist, run_native
-from toolchain import require_toolchain
+from toolchain import recorded_kicad_version, require_toolchain
 
 STOCK = Path('/usr/share/kicad/symbols/MCU_ST_STM32H7.kicad_sym')
 HEADER = '\t(version 20251024)\n\t(generator "agent_ee_test")\n\t(generator_version "10.0")\n'
@@ -539,7 +539,7 @@ class NativeCaptureTests(unittest.TestCase):
         run_native(project, work, 'kicad-cli', 'sch', 'erc', '--format', 'json', '--severity-all',
                    '--units', 'mm', '-o', '/work/erc.json', f'/candidate/{name}.kicad_sch')
         erc = json.loads((work / 'erc.json').read_text())
-        self.assertEqual(erc['kicad_version'], '10.0.7')
+        self.assertEqual(erc['kicad_version'], recorded_kicad_version())
         return [v for sheet in erc['sheets'] for v in sheet['violations']], work
 
     def test_emitted_sheet_embedding_capture_passes_native_erc_and_netlist(self):

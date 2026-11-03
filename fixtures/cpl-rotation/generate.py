@@ -12,7 +12,7 @@ header with a 1.7 mm square pin 1 and a 1.7 mm round pin 2 placed at (20,20)
 0 deg, (30,20) 90 deg, (40,20) 180 deg, (50,20) 270 deg and (60,20) 45 deg. U1
 sits at 90 deg like the SOIC-8 that JLCPCB rendered a quarter turn off.
 
-Boards require the qualified native pcbnew installation:
+Boards require a native pcbnew installation of the KiCad 10.x line:
 
     /usr/bin/python3 fixtures/cpl-rotation/generate.py fixtures/cpl-rotation
 """
@@ -24,7 +24,9 @@ from pathlib import Path
 
 NAMESPACE = uuid.UUID('2b8f6c1e-7d4a-4f0e-9c35-5a1e0b7d2c64')
 ROOT = 'cpl'
-QUALIFIED_PCBNEW = '10.0.7'
+# The committed boards were made with pcbnew 10.0.7; any release of the 10.x line may
+# regenerate them, and the fixture tests compare its bytes with the committed ones.
+QUALIFIED_LINE = '10'
 HEADER = 'agent_cpl:PinHeader_1x02_P2.54mm_owned'
 BIND = ('Owned Fixture Works',)
 # ref: (symbol, value, footprint, LCSC, part number, side, x, y, angle)
@@ -99,14 +101,17 @@ def schematic():
 
 
 def qualified_pcbnew():
-    """Import pcbnew, refusing any version but the one the committed boards were made with."""
+    """Import pcbnew, refusing a version that is not a MAJOR.MINOR.PATCH release of the 10.x line."""
+    import re
     import pcbnew as p
     try:
         version = p.Version()
     except Exception as exc:
-        raise RuntimeError(f'pcbnew version unknown ({exc!r}); fixture boards need {QUALIFIED_PCBNEW}') from exc
-    if version != QUALIFIED_PCBNEW:
-        raise RuntimeError(f'pcbnew {version!r} is not the qualified {QUALIFIED_PCBNEW}; refusing to generate boards')
+        raise RuntimeError(f'pcbnew version unknown ({exc!r}); fixture boards need a KiCad '
+                           f'{QUALIFIED_LINE}.x release') from exc
+    if not isinstance(version, str) or not re.fullmatch(QUALIFIED_LINE + r'\.\d+\.\d+', version):
+        raise RuntimeError(f'pcbnew {version!r} is not a release of the KiCad {QUALIFIED_LINE}.x line; '
+                           'refusing to generate boards')
     return p
 
 

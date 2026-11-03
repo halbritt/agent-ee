@@ -15,8 +15,9 @@ import unittest
 from pathlib import Path
 
 from agent_ee import candidate, checks, executor, generate as g
-from agent_ee.kicad_quirks import (VariantError, erc_coordinate_regime, erc_locations,
-                                   schematic_variant_clauses, validate_bom_variants, variant_registry)
+from agent_ee.kicad_quirks import (MIN_TEXT_HEIGHT_DEFAULT_MM, VariantError, erc_coordinate_regime, erc_locations,
+                                   omitted_min_text_height, schematic_variant_clauses, validate_bom_variants,
+                                   variant_registry)
 from agent_ee.storage import digest
 
 try:
@@ -74,6 +75,18 @@ class CoordinateRegimeTest(unittest.TestCase):
             record = erc_coordinate_regime(version)
             self.assertEqual((record['regime'], record['scale']), ('withheld', None), version)
             self.assertTrue(record['reason'], version)
+
+
+class TextHeightDefaultTest(unittest.TestCase):
+    """The omitted rules.min_text_height default is keyed on the recorded release (routed_artwork)."""
+
+    def test_classified_series_releases_get_the_default(self):
+        for version in ('10.0.0', '10.0.7', '10.0.8', '10.0.12'):
+            self.assertEqual(omitted_min_text_height(version), MIN_TEXT_HEIGHT_DEFAULT_MM, version)
+
+    def test_other_series_and_unknown_versions_get_none(self):
+        for version in ('10.1.0', '9.0.7', '11.0.0', '10.0.8-rc1', '10.0.7-45-g0123abcd', '', None, 10.07):
+            self.assertIsNone(omitted_min_text_height(version), version)
 
 
 class ErcOracleTest(unittest.TestCase):
@@ -258,7 +271,7 @@ class NativeVariantTest(unittest.TestCase):
 
 
 class NativeErcCheckTest(unittest.TestCase):
-    """The real erc check records the pinned-version regime and the oracle locations."""
+    """The real erc check records the regime of the installed, recorded release and the oracle locations."""
 
     @classmethod
     def setUpClass(cls):

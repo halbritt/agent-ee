@@ -25,7 +25,7 @@ from agent_ee.connectivity_ir import resolve_intent
 from agent_ee.schematic_emitter import EmissionError, _geometry, _plan, transformed_pin
 from agent_ee.symbol_library import ParsedLibraries, children, nanometres, parse_sexpr
 from test_schematic_emitter import PROJECT, captures, emit, load, native_netlist, native_project, run_native, tables
-from toolchain import require_toolchain
+from toolchain import recorded_kicad_version, require_toolchain
 
 REPO = Path(__file__).resolve().parents[1]
 # Rows output of main 9cb4f12 (before AGENTEE-222) for the owned fixtures.
@@ -545,7 +545,7 @@ class PresentationNativeTests(unittest.TestCase):
         run_native(project, work / 'netlist', 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
                    '-o', '/work/design.xml', sch)
         erc = json.loads((work / 'erc/erc.json').read_text())
-        self.assertEqual(erc['kicad_version'], '10.0.7')
+        self.assertEqual(erc['kicad_version'], recorded_kicad_version())
         return project, work, erc
 
     def test_erc_netlist_parity_and_native_resave(self):

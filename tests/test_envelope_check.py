@@ -343,11 +343,12 @@ class NativeEnvelopeTests(unittest.TestCase):
         self.assertIn('copper_weight_oz', results[-1]['summary'])
 
     def test_actual_native_outline_and_layers_controls(self):
+        from tests.toolchain import recorded_kicad_version
         for criterion in ('outline/1', 'layers/1'):
             with self.subTest(criterion=criterion):
                 ctx = self.run_native(criterion)
                 self.assertEqual((ctx.result['execution'], ctx.result['outcome']), ('ok', 'pass'))
-                self.assertEqual(ctx.result['details']['pcbnew_version'], '10.0.7')
+                self.assertEqual(ctx.result['details']['pcbnew_version'], recorded_kicad_version())
                 self.assertIn('work/envelope/envelope-probe.json', ctx.result['evidence'])
                 self.assertEqual(ctx.result['details']['board_sha256'], ctx.manifest['files']['board.kicad_pcb'])
                 self.assertEqual(ctx.result['details']['envelope']['sha256'], ctx.manifest['files']['envelope.json'])

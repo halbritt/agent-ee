@@ -158,7 +158,9 @@ class NativeDCPathTests(unittest.TestCase):
             with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), contextlib.redirect_stdout(io.StringIO()):
                 status = run_review(root / 'scope.json', root / 'run', 180, host=self.host)
             result = verify(root / 'run', host=self.host)
-            self.assertEqual(result['launch_expectation']['declared_tools'], dc_path.TOOLS)
+            # The launch expectation records the tools measured at launch, not fixed digests.
+            self.assertEqual(result['launch_expectation']['declared_tools'], dc_path.tools())
+            self.assertEqual(set(dc_path.tools()), set(dc_path.TOOL_PATHS))
             self.assertIn('pcbnew', result['launch_expectation']['required_runtime'])
             self.assertEqual(status, int(board == 'narrow'), result)
             self.assertEqual(result['outcome'], 'defects_or_unresolved' if board == 'narrow' else 'criteria_satisfied', result)
@@ -302,8 +304,15 @@ p.SaveBoard(path,b)
             descriptor = describe_check(ctx.spec, check_specs=[ctx.spec], files=files, scope=ctx.scope, inputs=ctx.inputs)
             self.assertEqual(descriptor['status'], 'unsupported', descriptor)
         write_json(ctx.inputs / 'contract.json', contract())
-        with patch.dict(dc_path.TOOLS, {'/usr/bin/python3': '0' * 64}):
-            with self.assertRaisesRegex(checks.CheckError, 'requalification'):
+        measured = dc_path.tools()
+        changed = {**measured, '/usr/bin/python3': '0' * 64}
+        with patch.object(dc_path, 'tools', side_effect=[measured, changed]):
+            with self.assertRaisesRegex(checks.CheckError, 'changed during extraction: /usr/bin/python3'):
+                dc_path.check_dc_path(ctx)
+        receipt = read_json(ctx.work / 'analysis.json')
+        self.assertEqual(receipt['tools'], measured)
+        with patch.object(dc_path, 'tools', return_value={}):
+            with self.assertRaisesRegex(checks.CheckError, 'DC native tool unavailable'):
                 dc_path.check_dc_path(ctx)
 
     def test_native_failure_and_partial_solver_never_supply_metrics(self):

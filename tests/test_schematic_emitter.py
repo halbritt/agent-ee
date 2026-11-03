@@ -22,9 +22,9 @@ from agent_ee.executor import execute
 from agent_ee.schematic_emitter import emit_schematic, main, publish, transformed_pin
 from agent_ee.symbol_library import children, parse_sexpr
 try:
-    from toolchain import require_toolchain
+    from toolchain import recorded_kicad_version, require_toolchain
 except ImportError:  # module-qualified invocation from the repository root
-    from tests.toolchain import require_toolchain
+    from tests.toolchain import recorded_kicad_version, require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1] / 'fixtures/generation'
 PROJECT = ROOT / 'project'
@@ -1033,7 +1033,7 @@ class NativeEmissionTests(unittest.TestCase):
         run_native(project, work / 'netlist', 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
                    '-o', '/work/design.xml', sch)
         erc = json.loads((work / 'erc' / 'erc.json').read_text())
-        self.assertEqual(erc['kicad_version'], '10.0.7')
+        self.assertEqual(erc['kicad_version'], recorded_kicad_version())
         return project, work, erc, native_netlist(work / 'netlist' / 'design.xml')
 
     def test_regulator_erc_netlist_and_current_format(self):

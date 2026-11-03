@@ -81,6 +81,29 @@ def prerequisite_problem(native=False, tools=()):
     return None
 
 
+@functools.lru_cache(maxsize=None)
+def recorded_kicad_version():
+    """The KiCad release this toolchain records: the image install record's version.
+
+    Native tests compare the release a report, binding or save names with it, never
+    with a fixed version (docs/container.md "KiCad"). A host install has no record; the
+    sandboxed kicad-cli's own report is used instead. Call after require_toolchain."""
+    from agent_ee.kicad_install import line_release, read_install_record
+    installed = read_install_record()
+    if installed is not None:
+        return installed['record']['version']
+    with tempfile.TemporaryDirectory(prefix='agent-ee-kicad-version-') as tmp:
+        root = Path(tmp)
+        (root / 'inputs').mkdir()
+        (root / 'work').mkdir()
+        result = subprocess.run(sandbox_argv(root / 'inputs', root / 'work', ['kicad-cli', 'version']),
+                                capture_output=True, text=True, timeout=30)
+    version = result.stdout.strip()
+    if result.returncode or line_release(version) is None:
+        raise AssertionError(f'kicad-cli reports no release of the KiCad 10.x line: {version!r} {result.stderr}')
+    return version
+
+
 def require_toolchain(*, native=False, tools=()):
     problem = prerequisite_problem(native, tuple(tools))
     if problem:
