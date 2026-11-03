@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from toolchain import require_kicad_route, require_toolchain
 
@@ -404,7 +405,7 @@ class CustodyTests(unittest.TestCase):
         # 2. Design-declared model: route_failed allows repair attempt
         declared_prob = {'mechanics': {'schema': 'agent-ee.source-mechanics/1', 'custody': 'design-declared'}}
         rep_declared = {'routing_trials': [{'status': 'route_failed'}]}
-        with unittest.mock.patch.object(job, '_pose_solver', return_value={'status': 'no_incumbent', 'runtime': {}}):
+        with mock.patch.object(job, '_pose_solver', return_value={'status': 'no_incumbent', 'runtime': {}}):
             res2 = job._repair_shortlist(declared_prob, shortlist, [diagnostic],
                                          checkout=self.dir, runtime={}, clock=job.Clock(10),
                                          job_dir=self.dir, attempt=1, report=rep_declared,
