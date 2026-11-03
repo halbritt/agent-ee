@@ -23,7 +23,7 @@ def validate(document):
         text(plane['net'])
         if plane['layer'] not in ('F.Cu', 'B.Cu'):
             raise ValueError('local copper currently supports a two-layer stack')
-    ids, plane_returns = set(), {}
+    ids = set()
     for row in document['relations']:
         required = {'id', 'supply', 'return'}
         if not isinstance(row, dict) or not required <= row.keys() or row.keys() - required - {'max_loop_mm', 'basis'}:
@@ -49,6 +49,14 @@ def validate(document):
                 raise ValueError(row['id'] + ': positive finite max_loop_mm and measurement basis required')
         elif 'basis' in row:
             raise ValueError('basis requires a loop limit')
+    return document
+
+
+def validate_topology(document):
+    """Generation feasibility is separate from measuring an existing board."""
+    validate(document)
+    plane_returns = {}
+    for row in document['relations']:
         # Separate entries for a shared device pin necessarily bypass each
         # other's capacitor. Placement cannot repair this declared topology.
         for leg in ('supply', 'return'):
@@ -293,7 +301,7 @@ def seed(board_path, document, *, clock, cancel_dir=None):
     """Write only a disposable candidate. Required failures name the relation."""
     import pcbnew as k
     from .placement_job import JobRefusal, _check_stop
-    validate(document)
+    validate_topology(document)
     board = k.LoadBoard(str(board_path))
     if board is None or board.GetCopperLayerCount() != 2:
         raise JobRefusal('local decoupling requires a native two-layer board')

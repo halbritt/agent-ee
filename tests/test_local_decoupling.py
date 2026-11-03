@@ -536,14 +536,15 @@ class ContractTests(unittest.TestCase):
         second['id'] = 'other-cell'
         second['return'][1]['reference'] = 'OTHER'
         doc['relations'].append(second)
+        self.assertEqual(local.validate(doc), doc)  # Existing boards can still be audited.
         with self.assertRaisesRegex(ValueError, r'other-cell and cell: shared plane-net device pad IC.2'):
-            local.validate(doc)
+            local.validate_topology(doc)
         second['return'][0]['reference'] = 'OTHER'
         second['return'][1]['reference'] = 'BYP'
-        self.assertEqual(local.validate(doc), doc)
+        self.assertEqual(local.validate_topology(doc), doc)
         second['return'][1]['reference'] = 'IC'
         with self.assertRaisesRegex(ValueError, 'bypasses its capacitor through another plane entry'):
-            local.validate(doc)
+            local.validate_topology(doc)
 
     def test_malformed_limits_and_unknown_fields_refuse(self):
         for limit in (True, -1, 0, float('inf'), float('nan')):

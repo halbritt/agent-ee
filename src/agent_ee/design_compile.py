@@ -507,7 +507,7 @@ def envelope(design, root):
 
 
 def placement(design, root):
-    from .local_decoupling import BASIS, SCHEMA, validate as validate_local
+    from .local_decoupling import BASIS, SCHEMA, validate_topology as validate_local
     relations = []
     for index, pair in enumerate(design['decoupling'], 1):
         row = dict(id='decoupling-' + str(index))
