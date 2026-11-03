@@ -3,7 +3,8 @@
 Usage: python3 -I generate.py <kicad footprint root> <output.json> [<release>]
 
 <release> is the kicad-footprints release of that root, by default the one the
-image install record (/opt/kicad.install.json) names. The table is named for it,
+image install record (/opt/kicad.install.json) names, else the installed Debian
+package's. The table is named for it,
 kicad-<release>-lcsc-1, and agent-ee selects the table of the installed release
 (generate.package_map_path). After a KiCad update, run this in the rebuilt image
 and commit the new table.
@@ -120,14 +121,25 @@ def packages(footprint_table):
     return table
 
 
-def installed_release():
-    """The kicad-footprints release the image install record names."""
-    record = Path(os.environ.get('AGENT_EE_KICAD_INSTALL_RECORD') or '/opt/kicad.install.json')
-    package = json.loads(record.read_text())['packages']['kicad-footprints']
-    match = re.fullmatch(r'(?:\d+:)?(\d+\.\d+\.\d+)(?:[~+-].*)?', package)
+def upstream(package):
+    match = re.fullmatch(r'(?:\d+:)?(\d+\.\d+\.\d+)(?:[~+-].*)?', package or '')
     if match is None:
         raise SystemExit(f'kicad-footprints {package!r} names no release')
     return match[1]
+
+
+def installed_release():
+    """The installed kicad-footprints release: the image install record, else the Debian package
+    database of a host without one (as agent_ee.generate.footprint_release reads them)."""
+    record = Path(os.environ.get('AGENT_EE_KICAD_INSTALL_RECORD') or '/opt/kicad.install.json')
+    if record.is_file():
+        return upstream(json.loads(record.read_text())['packages']['kicad-footprints'])
+    status = Path('/var/lib/dpkg/status')
+    for stanza in (status.read_text(errors='replace').split('\n\n') if status.is_file() else []):
+        fields = dict(line.split(': ', 1) for line in stanza.splitlines() if ': ' in line and not line.startswith(' '))
+        if fields.get('Package') == 'kicad-footprints' and fields.get('Status', '').endswith(' installed'):
+            return upstream(fields.get('Version'))
+    raise SystemExit('the installed kicad-footprints release is unknown; pass it as the third argument')
 
 
 def main(root, output, release=None):

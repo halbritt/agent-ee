@@ -398,7 +398,10 @@ def write_scaffold(rundir, prep):
         mapping = scaffold / 'rung1-package-map.json'
         if mapping.exists():
             raise PrepareFailure('parts bundle uses reserved package-map path')
-        shutil.copyfile(g.package_map_path(), mapping)
+        try:
+            shutil.copyfile(g.package_map_path(), mapping)
+        except ValueError as exc:
+            raise PrepareFailure('package map: ' + str(exc)) from exc
     write_json(generation / 'footprints.json', footprints)
     write_json(generation / 'placement-policy.json', packing_policy(prep['params'], outline))
     golden, golden_record = golden_netlist(rundir / 'golden-export')

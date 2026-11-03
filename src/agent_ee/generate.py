@@ -72,28 +72,47 @@ CATALOG_HEADER_SCHEMAS = {
 PACKAGE_MAPS = REPO_ROOT / 'references/package-map'
 
 
-def package_map_path():
-    """The package map derived from the installed footprint library release.
+DPKG_STATUS = Path('/var/lib/dpkg/status')
 
-    Tables are references/package-map/kicad-<release>-lcsc-1.json. The image install
-    record names the installed kicad-footprints release; without a record, or without a
-    table for that release, the table of the newest release is used. Either way the run
-    records the table's version (package_consistency details.mapping)."""
-    from .kicad_install import read_install_record, release, upstream_version
-    tables = {release(p.name[len('kicad-'):-len('-lcsc-1.json')]): p
-              for p in PACKAGE_MAPS.glob('kicad-*-lcsc-1.json')}
-    tables.pop(None, None)
-    if not tables:
-        return PACKAGE_MAPS / 'missing-package-map.json'
-    try:
-        installed = read_install_record()
-    except (OSError, ValueError):
-        installed = None
+
+def footprint_release():
+    """(release, source): the installed kicad-footprints release and where it was read.
+
+    The image install record names it. A host without a record is asked through its
+    Debian package database. A corrupt record raises ValueError, and so does a host where
+    neither names a release: the package map cannot be chosen without it."""
+    from .kicad_install import read_install_record, upstream_version
+    installed = read_install_record()
     if installed is not None:
-        wanted = release(upstream_version(installed['record']['packages']['kicad-footprints']))
-        if wanted in tables:
-            return tables[wanted]
-    return tables[max(tables)]
+        return upstream_version(installed['record']['packages']['kicad-footprints']), installed['path']
+    try:
+        stanzas = DPKG_STATUS.read_text(encoding='utf-8', errors='replace').split('\n\n')
+    except OSError:
+        stanzas = []
+    for stanza in stanzas:
+        fields = dict(line.split(': ', 1) for line in stanza.splitlines() if ': ' in line and not line.startswith(' '))
+        if fields.get('Package') == 'kicad-footprints' and fields.get('Status', '').endswith(' installed'):
+            version = upstream_version(fields.get('Version'))
+            if version:
+                return version, str(DPKG_STATUS)
+    raise ValueError('the installed kicad-footprints release is unknown: no KiCad install record and no '
+                     'installed kicad-footprints package; name the package map release explicitly')
+
+
+def package_map_path(release=None):
+    """The package map of a kicad-footprints release; by default the installed one (footprint_release).
+
+    Tables are references/package-map/kicad-<release>-lcsc-1.json. A release without a
+    committed table refuses with ValueError: generate it in the image of that release with
+    references/package-map/generate.py. Users record the table's version with their output."""
+    source = 'requested'
+    if release is None:
+        release, source = footprint_release()
+    path = PACKAGE_MAPS / f'kicad-{release}-lcsc-1.json'
+    if not path.is_file():
+        raise ValueError(f'no package map for kicad-footprints {release} ({source}); generate '
+                         f'references/package-map/{path.name} with references/package-map/generate.py')
+    return path
 
 
 # Captured footprint library map for library-less footprints in the 4-column fome-mc BOM
@@ -635,7 +654,10 @@ def captured_footprint_map():
     if _CAPTURED_FOOTPRINT_MAP is not None:
         return dict(_CAPTURED_FOOTPRINT_MAP)
     table = dict(FOME_FOOTPRINT_MAP)
-    package_map_file = package_map_path()
+    try:
+        package_map_file = package_map_path()
+    except ValueError as exc:
+        raise StageFailure(f'package map: {exc}') from exc
     if package_map_file.is_file():
         package_map = json.loads(package_map_file.read_text())
         for full_name in package_map.get('footprints', {}):

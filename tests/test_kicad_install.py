@@ -102,25 +102,41 @@ class InstallRecordTests(unittest.TestCase):
                     read_install_record(path)
 
 
+def dockerfile_instructions():
+    """The Dockerfile's instructions with continuation lines joined."""
+    joined = (ROOT / 'Dockerfile').read_text().replace('\\\n', ' ')
+    return [line.strip() for line in joined.splitlines() if line.strip() and not line.lstrip().startswith('#')]
+
+
 class InstallerStageTests(unittest.TestCase):
-    """docker/kicad/install.py loads from the stage layout the Dockerfile's COPY lines give."""
+    """docker/kicad/install.py runs from the stage layout the Dockerfile's COPY lines give."""
 
     def test_installer_reads_the_shared_contract_and_counts_the_probe_board(self):
-        dockerfile = (ROOT / 'Dockerfile').read_text()
-        self.assertIn('COPY docker/kicad/install.py src/agent_ee/kicad_install.py /usr/local/share/agent-ee/kicad/',
-                      dockerfile)
-        self.assertIn('COPY fixtures/dc-path/straight.kicad_pcb /usr/local/share/agent-ee/kicad/probe/board.kicad_pcb',
-                      dockerfile)
-        self.assertIn('/usr/bin/python3 /usr/local/share/agent-ee/kicad/install.py /opt/kicad.install.json',
-                      dockerfile)
-        self.assertNotIn('KICAD_VERSION', dockerfile)
+        instructions = dockerfile_instructions()
+        copies = {}
+        for line in instructions:
+            words = line.split()
+            if words[0] == 'COPY' and not any(word.startswith('--from=') for word in words):
+                *sources, destination = [word for word in words[1:] if not word.startswith('--')]
+                for source in sources:
+                    copies[source] = destination
+        stage = copies['docker/kicad/install.py']
+        # The shared contract sits beside the installer and the owned board under probe/.
+        self.assertEqual(copies['src/agent_ee/kicad_install.py'], stage)
+        self.assertEqual(copies['fixtures/dc-path/straight.kicad_pcb'], stage + 'probe/board.kicad_pcb')
+        self.assertTrue(any(line.startswith('RUN ') and stage + 'install.py' in line and '/opt/kicad.install.json' in line
+                            for line in instructions))
+        # No KiCad version is fixed in the Dockerfile.
+        self.assertFalse(any(line.startswith('ARG KICAD') for line in instructions))
         with tempfile.TemporaryDirectory() as directory:
-            stage = Path(directory)
-            (stage / 'probe').mkdir()
-            shutil.copyfile(ROOT / 'docker/kicad/install.py', stage / 'install.py')
-            shutil.copyfile(ROOT / 'src/agent_ee/kicad_install.py', stage / 'kicad_install.py')
-            shutil.copyfile(ROOT / 'fixtures/dc-path/straight.kicad_pcb', stage / 'probe/board.kicad_pcb')
-            spec = importlib.util.spec_from_file_location('kicad_installer', stage / 'install.py')
+            root = Path(directory)
+            for source in ('docker/kicad/install.py', 'src/agent_ee/kicad_install.py', 'fixtures/dc-path/straight.kicad_pcb'):
+                target = root / copies[source].lstrip('/')
+                if copies[source].endswith('/'):
+                    target = target / Path(source).name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / source, target)
+            spec = importlib.util.spec_from_file_location('kicad_installer', root / stage.lstrip('/') / 'install.py')
             installer = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(installer)
             self.assertEqual(installer.contract.INSTALL_RECORD_SCHEMA, kicad_install.INSTALL_RECORD_SCHEMA)
@@ -128,25 +144,53 @@ class InstallerStageTests(unittest.TestCase):
 
 
 class PackageMapSelectionTests(unittest.TestCase):
-    """The package map of the installed footprint release, else the newest table; the run records which."""
+    """The package map of the installed footprint release, or a refusal; never another release's table."""
 
-    def test_selection_follows_the_recorded_footprint_release(self):
-        tables = sorted(p.name for p in generate.PACKAGE_MAPS.glob('kicad-*-lcsc-1.json'))
-        self.assertIn('kicad-10.0.7-lcsc-1.json', tables)
-        newest = max(tables, key=lambda name: kicad_install.release(name[len('kicad-'):-len('-lcsc-1.json')]))
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'kicad.install.json'
-            with patch.dict(os.environ, {kicad_install.RECORD_ENV: str(path)}):
-                self.assertEqual(generate.package_map_path().name, newest)
-                for version, expected in (('10.0.7', 'kicad-10.0.7-lcsc-1.json'), ('10.0.99', newest)):
-                    with self.subTest(version=version):
-                        path.write_text(json.dumps(record(version)))
-                        selected = generate.package_map_path()
-                        self.assertEqual(selected.name, expected)
-                        table = json.loads(selected.read_text())
-                        self.assertEqual(table['version'], selected.name[:-len('.json')])
-                        self.assertEqual(table['derivation']['footprint_library'],
-                                         'kicad-footprints ' + selected.name[len('kicad-'):-len('-lcsc-1.json')])
+    def setUp(self):
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.record_path, self.status = directory / 'kicad.install.json', directory / 'status'
+        self.enterContext(patch.dict(os.environ, {kicad_install.RECORD_ENV: str(self.record_path)}))
+        self.enterContext(patch.object(generate, 'DPKG_STATUS', self.status))
+
+    def dpkg(self, version, status='install ok installed'):
+        self.status.write_text(f'Package: kicad\nStatus: {status}\nVersion: {version}\n\n'
+                               f'Package: kicad-footprints\nStatus: {status}\nVersion: {version}\n'
+                               'Description: KiCad footprints\n multi-line description\n')
+
+    def test_the_recorded_or_installed_footprint_release_selects_its_table(self):
+        self.record_path.write_text(json.dumps(record('10.0.7')))
+        self.dpkg('10.0.8~ubuntu26.04.1')
+        self.assertEqual(generate.footprint_release(), ('10.0.7', str(self.record_path)))
+        selected = generate.package_map_path()
+        self.assertEqual(selected.name, 'kicad-10.0.7-lcsc-1.json')
+        table = json.loads(selected.read_text())
+        self.assertEqual((table['version'], table['derivation']['footprint_library']),
+                         ('kicad-10.0.7-lcsc-1', 'kicad-footprints 10.0.7'))
+        # A host without an install record reads its installed package.
+        self.record_path.unlink()
+        self.assertEqual(generate.footprint_release(), ('10.0.8', str(self.status)))
+        self.assertEqual(generate.package_map_path().name, 'kicad-10.0.8-lcsc-1.json')
+        # An explicitly requested release is used as named.
+        self.assertEqual(generate.package_map_path('10.0.7').name, 'kicad-10.0.7-lcsc-1.json')
+
+    def test_missing_table_corrupt_record_or_unknown_release_refuses(self):
+        self.record_path.write_text(json.dumps(record('10.0.99')))
+        with self.assertRaisesRegex(ValueError, 'no package map for kicad-footprints 10.0.99'):
+            generate.package_map_path()
+        self.record_path.write_text('{')
+        with self.assertRaisesRegex(ValueError, 'not JSON'):
+            generate.package_map_path()
+        self.record_path.unlink()
+        for status in (None, 'deinstall ok config-files'):
+            with self.subTest(dpkg=status):
+                if status is None:
+                    self.status.write_text('Package: kicad\nStatus: install ok installed\nVersion: 10.0.8\n')
+                else:
+                    self.dpkg('10.0.8', status)
+                with self.assertRaisesRegex(ValueError, 'release is unknown'):
+                    generate.package_map_path()
+        with self.assertRaisesRegex(ValueError, 'no package map for kicad-footprints 9.0.7'):
+            generate.package_map_path('9.0.7')
 
 
 if __name__ == '__main__':

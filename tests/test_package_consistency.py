@@ -15,14 +15,17 @@ from agent_ee.baseline import freeze_evidence, load_baseline, validate_witnesses
 from agent_ee.candidate import capture, verify_snapshot
 from agent_ee.catalog import capture_catalog
 from agent_ee.checks import CheckError, Ctx, parse_xml_netlist, run_checks
-from agent_ee.generate import package_map_path
+from agent_ee.generate import footprint_release, package_map_path
+from agent_ee.kicad_install import release as release_tuple
 from agent_ee.package_consistency import check_package_consistency, evaluate, load_table, validate_table
 from agent_ee.storage import canonical, digest, read_json, write_json
 from toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
-# The table of the installed footprint release (newest committed one without an install record).
-TABLE = package_map_path()
+# Any committed table serves the pure table tests (the newest release's); the native test
+# selects the table of the installed footprint release.
+TABLE = max((ROOT / 'references/package-map').glob('kicad-*-lcsc-1.json'),
+            key=lambda path: release_tuple(path.name[len('kicad-'):-len('-lcsc-1.json')]))
 FIXTURE = ROOT / 'fixtures/package-consistency'
 
 
@@ -60,13 +63,14 @@ class TableTests(unittest.TestCase):
     def test_committed_table_is_generated_from_the_installed_library_names(self):
         # The installed footprint release, named by the install record, has its own committed table.
         require_toolchain(native=True)
-        release = table_generator.installed_release()
-        self.assertEqual(TABLE.name, f'kicad-{release}-lcsc-1.json')
+        # The installed release (image install record, else the host's package) is passed explicitly.
+        release, source = footprint_release()
+        installed = package_map_path(release)
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / 'table.json'
-            table_generator.main('/usr/share/kicad/footprints', output)
-            self.assertEqual(output.read_bytes(), TABLE.read_bytes(),
-                             f'installed footprint library {release} differs from its committed table')
+            table_generator.main('/usr/share/kicad/footprints', output, release)
+            self.assertEqual(output.read_bytes(), installed.read_bytes(),
+                             f'installed footprint library {release} ({source}) differs from its committed table')
 
     def test_invalid_tables_are_refused(self):
         base = json.loads(TABLE.read_text())
