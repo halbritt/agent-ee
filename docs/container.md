@@ -37,7 +37,7 @@ hosted run exposed a user-namespace requirement, handled below.
 | Bubblewrap 0.9.0 | `0.9.0-1ubuntu0.3` | Exact apt version; build fails unless `bwrap --version` is `bubblewrap 0.9.0` and the binary is not setuid |
 | Python 3.12 | `python3=3.12.3-0ubuntu2.1` | Exact apt version; build fails unless the interpreter reports 3.12 |
 | PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
-| kicad-happy 2.3.1 | Commit `06840467ad0f5d76af45f64449b1f5ecb10f052f` | Installed at `/opt/kicad-happy`, outside the package; build validates commit and plugin metadata |
+| kicad-happy, newest 2.x release at build time (v2.3.2 on 2026-11-03) | Not fixed in the Dockerfile: the version used is recorded per run. Tag, commit, output format and installed-file identity are written to `/opt/kicad-happy.install.json` | Installed at `/opt/kicad-happy`, outside the package, by [docker/kicad-happy/install.py](../docker/kicad-happy/install.py) with the AGENTEE-219 correction. The build fails if the correction no longer applies or an analyzer reports an output format outside [the contract](../src/agent_ee/data/kicad-happy-contract.json). Rebuild the image to update ([Versions](kicad-happy.md#versions)) |
 | zstd CLI (tests only) | `zstd=1.5.5+dfsg2-2build1.1` | Exact apt version, the image's `libzstd1` version; reference frames for the fab-consistency decoder test |
 | kicad-route with KRT 0.23.1 | kicad-route `c4af095ed07593b63d7886c139fcb7e5c2e774f4`, owned engine (fork lineage `0494a05e`) | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
 | Rust placement engine | This checkout's `crates/placement-engine`, committed Cargo lock and digest-pinned Rust 1.99.1 compiler | Locked dependency acquisition, offline Rust unit tests and release build, then source/binary receipt verification in the final image |
@@ -87,8 +87,9 @@ stale or missing indexes. Snapshot URLs, package version pins and signature
 verification remain unchanged.
 
 `doctor` reports the installed PDF extractor binary and, when
-`AGENT_EE_KICAD_HAPPY` names an installation, the analyzer version and its
-source-file hashes. Optional tools absent from a basic installation do not
+`AGENT_EE_KICAD_HAPPY` names an installation, the analyzer version, its
+source-file hashes and identity, and the tag and commit from its install record
+(null without one). Optional tools absent from a basic installation do not
 become required merely by running doctor. An explicitly configured broken
 analyzer does fail the probe.
 

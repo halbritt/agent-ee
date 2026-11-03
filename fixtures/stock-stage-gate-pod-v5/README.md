@@ -17,6 +17,9 @@ Reduced:
 
 - `candidate.json` keeps the run's `schema`, `candidate_id` and full `scope`
   verbatim. `files` is limited to the board, schematic and catalog hashes.
+  Its severity check's `installation_sha256` (`ba9f02f1…`, kicad-happy 2.3.1) is
+  what that run declared. Since 2026-11-03 this field is a recorded legacy
+  declaration, never a requirement, so it stays as captured.
 - `baseline-id.json` holds only the run's `baseline_id`. The full baseline
   compiles from the entire captured input tree. That tree includes third-party
   library content, so it is not reproduced here. The campaign passes its

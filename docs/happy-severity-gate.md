@@ -1,28 +1,30 @@
 # Installed analyzer severity gate
 
 `kicad_happy_severity_gate` implements the owner's 2026-10-18 criterion-4
-policy. It runs pinned kicad-happy **2.3.1** schematic, full PCB, cross-analysis
-and EMC scripts in the existing networkless sandbox. All four output envelopes
-must be **1.4.0**. It invokes no thermal, SPICE-enhanced, lifecycle or network
+policy. It runs the installed kicad-happy schematic, full PCB, cross-analysis
+and EMC scripts in the existing networkless sandbox, and records the version
+used ([Versions](kicad-happy.md#versions)). All four output envelopes must be
+**1.4.0**. It invokes no thermal, SPICE-enhanced, lifecycle or network
 option. The separate [`kicad_happy`](kicad-happy.md) kind retains its declared-rule
 policy and its schematic/PCB/thermal/EMC stages.
 
-Use a scope/2 or scope/3 baseline. The complete parameter object has three fields:
+Use a scope/2 or scope/3 baseline. The parameter object has two fields:
 
 ```json
 {
   "installation": "/absolute/path/to/kicad-happy",
-  "installation_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "dispositions": "requirements/analyzer-dispositions.json"
 }
 ```
 
-Replace the illustrative installation path and hash with the installed checkout
-and `agent_ee.kicad_happy.installation(path)['sha256']`. The shared helper pins
+Replace the illustrative installation path with the installed analyzer
+(`/opt/kicad-happy` in the image). The shared helper records the identity of
 all files under `skills/` and `.claude-plugin/` except bytecode/test caches,
-rejects symlinks and unsupported plugin metadata, checks before/after identity
-and records executed Python source hashes. Public `verify` and preflight detect
-installation drift for both kinds.
+rejects symlinks and unrecognized plugin metadata, checks before/after identity
+and records executed Python source hashes. Scopes written earlier may also carry
+`installation_sha256`; it is recorded, never required. Public `verify` checks a
+finished run's installation record against that run's own evidence, and a run
+refuses an installation change before it completes, for both kinds.
 
 `dispositions` names a captured file also listed in `scope.requirements`.
 It must be immutable: the baseline freezes its bytes and check parameters;
@@ -110,15 +112,24 @@ error caused by removing its ground zone. Run the native regression with:
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_happy_severity_gate -v
 ```
 
-Set `AGENT_EE_KICAD_HAPPY` when the pinned installation is outside
+Set `AGENT_EE_KICAD_HAPPY` when the installation is outside
 `$HOME/git/kicad-happy`. The strict host run also includes the legacy analyzer,
 registration, baseline, checks and preflight tests. Container qualification is
 separate from this host evidence.
 
-## Known analyzer limitations (pinned 2.3.1)
+kicad-happy 2.3.2 changed three rules. PP-001 skips gate-driver bootstrap pins,
+PU-001 skips a pin with a no-connect marker that is alone on its net, and RS-001 on a rail recognised only
+by name reports `heuristic` confidence with empty `pins`. RS-001 keeps its
+severity and `finding_id`, so its dispositions still match. A disposition for a
+finding that a newer release no longer reports is listed in
+`unused_disposition_ids` and fails nothing. The owned fixtures give equal reports
+under 2.3.1 and 2.3.2 apart from run ids and input paths.
 
-Two pinned heuristics require further topology and assumption analysis
-(AGENTEE-219, found on the native-v5 pod criterion-4 run):
+## Known analyzer limitations
+
+Two heuristics in the released analyzer (2.3.1 and 2.3.2) require further
+topology and assumption analysis (AGENTEE-219, found on the native-v5 pod
+criterion-4 run):
 
 - PP-001 (`audit_power_pin_dc_paths`) counts a net as supplied only by name,
   connector or a passive bridge. It ignores another component's `power_out`
@@ -136,10 +147,11 @@ the two agent-469 adversarial controls: a P-MOSFET gate divider with a competing
 pull-up to the source, and an I2C device whose chip-select has both a passive
 pull-up and an MCU GPIO.
 
-`tests.test_happy_ac4_false_positives` asserts the pinned errors through the
-real gate. It also asserts what a proposed correction does with them. The
-correction is an exact kicad-happy commit recorded in the fixture's
-`expected.json`. It is conservative: unknown is never pass.
+`tests.test_happy_ac4_false_positives` asserts the release's errors through the
+real gate. It also asserts what the correction does with them. The correction
+is an exact kicad-happy commit recorded in the fixture's `expected.json`, and
+the image applies it to the newest release. It is conservative: unknown is never
+pass.
 
 - A PP-001 pin it sources only through another component's `power_out` pin
   (whose owner must itself be powered) or through a P-MOSFET whose gate the
@@ -159,33 +171,41 @@ superseded.
 The correction reuses a PP-001 limitation's finding ID for its info note
 (same rule and component, new severity). Such an assumption-bearing note now
 requires and accepts an exact disposition. Dispositions are immutable captured
-requirements; changing analyzer pins or native assumptions requires reviewing
-the dispositions against that candidate and recapturing the baseline. ID equality
+requirements; a new analyzer release or changed native assumptions requires
+reviewing the dispositions against that candidate and recapturing the baseline. ID equality
 does not verify datasheet evidence. The native regression proves a missing or
 mismatched ID gives a defect, and an exact disposition on an isolated owned
 assumption fixture can pass. No real-pod dispositions are authored here.
 
-The real pod has six assumption-bearing info findings needing datasheet-backed
-adjudication by the pod lane before AC4 can pass with the proposed analyzer:
+With the correction applied to 2.3.1, the real pod had six assumption-bearing
+info findings needing datasheet-backed adjudication by the pod lane before AC4
+can pass:
 `schematic:PP-001:u4`, `schematic:PP-001:u5`, `schematic:PP-001:u6`,
 `schematic:PP-001:u7`, `schematic:PP-001:u11`, `schematic:PP-001:u12`.
 The two SPI pull-up errors clear only by positive topology evidence. This is
-not pin adoption or a passing pod acceptance run.
+not a passing pod acceptance run, and no pod criterion-4 run has been made with
+the image's analyzer.
 
-The test copies the pinned installation into a temporary directory and applies
-[the retained MIT correction patch](../fixtures/kicad-happy/ac4-false-positives/correction.patch).
-It checks the base installation identity before applying the patch and the
-corrected installation identity afterwards, using the same `installation()`
-function as production. Both identities were computed from the real commits
-recorded in `expected.json`. Missing patches, rejected hunks and identity
-mismatches fail loudly. No corrected checkout, Git object store, network or
+The image build applies
+[the retained MIT correction patch](../fixtures/kicad-happy/ac4-false-positives/correction.patch)
+to the newest release and fails if it no longer applies. The test rebuilds both
+analyzers from whichever one is installed, in temporary directories. The patch
+applies forward to a release, such as a plain `$HOME/git/kicad-happy` checkout,
+and in reverse to the image's corrected installation. A patch that does neither
+fails loudly. With the image's install record, the rebuilt release must have the
+release identity that the build recorded, computed with the same `installation()`
+function as production. `expected.json` records the identities observed with
+2.3.1 and 2.3.2 as provenance; the test asserts the reproducer's findings, not
+those identities. No corrected checkout, Git object store, network or
 `AGENT_EE_KICAD_HAPPY_CORRECTED` override is needed, including in the CI image
-whose pinned installation has no `.git` directory. The patch and its upstream
+whose installation has no `.git` directory. The patch and its upstream
 MIT notice are classified in `docs/file-origins.json`.
 
 Numeric or `~` diode pin names without explicit `pin_function` metadata remain
 unresolved. The raw schematic parser does not populate that metadata; this
 portability change does not qualify those cases.
 
-The correction is not adopted. Adopting it changes the analyzer pin and
-requires requalification plus a criterion-4 rerun.
+Since 2026-11-03 the image applies the correction (`applied_in_image` in
+`expected.json`). The owned reproducer requalifies it whenever the image's test
+suite runs. The pod's criterion-4 has not been rerun with it, and the upstream
+submission is still open ([third-party origins](third-party-origins.md)).

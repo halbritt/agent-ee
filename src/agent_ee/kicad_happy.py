@@ -100,8 +100,9 @@ def legacy_declaration(params):
 def require_release_line(version):
     """Refuse a release outside the contract line, whatever its envelope reports.
 
-    A different major release changes keys under the same envelope format (v3 renames
-    summary keys), so the release line is part of the output contract."""
+    A different major release can change keys under the same envelope format (the
+    unreleased v3.0.0 drops the EMC findings' `title` key and still writes 1.4.0),
+    so the release line is part of the output contract."""
     from .checks import CheckError
     match = re.match(r'(\d+)\.\d+\.\d+', version)
     if not match or int(match[1]) != CONTRACT['release_major']:

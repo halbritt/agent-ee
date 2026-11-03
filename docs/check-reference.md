@@ -1002,16 +1002,19 @@ the raw `details.measurements`; they answer different questions.
 
 ## Installed kicad-happy
 
-`kind: "kicad_happy"` runs the installed v2.3.1 schematic, full PCB, thermal
+`kind: "kicad_happy"` runs the installed 2.x schematic, full PCB, thermal
 and EMC analyzers with schema `1.4.0`. The installed tree stays external.
 No lifecycle, datasheet sync, distributor or SPICE-enhanced option is invoked.
 Tool execution has no network and receives the immutable candidate read-only.
 
-Parameters are explicit: `installation` is the installed checkout's absolute
-path; `installation_sha256` pins the conservative `skills/` and
-`.claude-plugin/` inventory (excluding Python/test caches). Compute it using
-`agent_ee.kicad_happy.installation(path)["sha256"]` before authoring the scope.
-The pin, rule declarations and bounds become baseline criteria in scope/2.
+Parameters are explicit: `installation` is the installed analyzer's absolute
+path. Each run records the version used: version, tag and commit from the
+image's install record, and the identity of the conservative `skills/` and
+`.claude-plugin/` inventory (excluding Python/test caches), in
+`details.installation` and `work/<id>/installation.json`. No version or digest
+is declared; a legacy `installation_sha256` is recorded, never required. A
+release outside the 2.x line is unsupported ([Versions](kicad-happy.md#versions)).
+Rule declarations and bounds become baseline criteria in scope/2.
 Changes require a new baseline. Symlinks in the inventoried tree are refused.
 
 `rules` is a list of records with `id`, `analyzer`, `rule_id`, exact native
@@ -1034,8 +1037,10 @@ inventory and executed Python helper hashes remain under `work/<id>/`.
 raw JSON path/pointer and explicit satisfied/violation/not-evaluated status.
 An absent blocking evaluation is unsupported, never clean. Invalid JSON is
 malformed; unrecognized envelopes/findings are unsupported; crashes remain
-failed execution. `verify` rehashes the installed inventory, including helper
-and data bytes, and refuses drift. The usual scope/2 seal and requirement/check
+failed execution. A run refuses an installation whose helper or data bytes
+change before it completes. `verify` checks a finished run's installation record
+against that run's saved `installation.json` and `executed.json`, not the
+installation now on the host. The usual scope/2 seal and requirement/check
 witness remain mandatory for accepting a coordinator finding.
 
 Native qualification tests use `AGENT_EE_KICAD_HAPPY` to locate an installation
@@ -1046,20 +1051,21 @@ inside the common completion image remains separate.
 
 ## Installed kicad-happy severity gate
 
-`kind: "kicad_happy_severity_gate"` runs the installed v2.3.1 schematic, full
+`kind: "kicad_happy_severity_gate"` runs the installed 2.x schematic, full
 PCB, cross-analysis and EMC analyzers offline in the sandbox. It requires a
-scope/2 or scope/3 baseline and exactly `installation`, `installation_sha256`
-and `dispositions` parameters. The installation pin follows the existing
-`kicad_happy` inventory. `dispositions` is a captured immutable requirement file
+scope/2 or scope/3 baseline and exactly `installation` and `dispositions`
+parameters; a legacy `installation_sha256` is accepted and recorded. The run
+records the installation as the `kicad_happy` kind does. `dispositions` is a captured immutable requirement file
 using `agent-ee.happy-dispositions/1`; every warning or assumption-bearing finding ID requires its own
 record with `disposition: accepted_risk|false_positive`, `rationale` and
 `recorded_by`. No disposition can waive an error.
 
-The AC4 false-positive regression reconstructs its proposed analyzer from a
-retained MIT patch against the verified pinned installation and verifies the
-resulting identity; it requires no host-only correction checkout or Git objects.
-The installed v2.3.1 limitations remain blocking; see the
-[limitation record](happy-severity-gate.md#known-analyzer-limitations-pinned-231).
+The AC4 false-positive regression rebuilds the release and corrected analyzers
+from the installed one with a retained MIT patch, which the image applies to the
+newest release. In the image it checks the rebuilt release against the install
+record; it requires no host-only correction checkout or Git objects. The
+release's limitations remain blocking; see the
+[limitation record](happy-severity-gate.md#known-analyzer-limitations).
 
 Every error is `ok/defect`. A warning, or any severity with nonempty native
 `assumptions` or `source_path: assumed`, is also a defect without an exact-ID
@@ -1069,14 +1075,14 @@ warnings and assumptions. Valid reports with no errors and every warning and
 assumption dispositioned are `ok/pass`; unknown,
 missing or malformed analyzer output stays unknown. The exact disposition bytes,
 raw reports and normalized native/disposition pointers are cited and sealed;
-preflight and public `verify` recheck the installed pin. Scope/3 predicates are
+public `verify` checks the recorded installation against the run's own evidence. Scope/3 predicates are
 `happy-severity:no-errors/1` and `happy-severity:warnings-dispositioned/1`.
 See the [schema, failure boundaries and original fixtures](happy-severity-gate.md).
 Thermal and SPICE are excluded from this kind. Existing `kicad_happy` stages and
 policy are unchanged. This is a severity policy over emitted findings, not
-complete analyzer rule coverage or electrical/EMC certification. Pinned 2.3.1
-PP-001 and PR-001 have [known false positives](happy-severity-gate.md#known-analyzer-limitations-pinned-231)
-that stay blocking errors until a requalified pin replaces them.
+complete analyzer rule coverage or electrical/EMC certification. The released
+analyzer's PP-001 and PR-001 have [known false positives](happy-severity-gate.md#known-analyzer-limitations);
+they stay blocking errors without the correction that the image applies.
 
 ## Hardware interface invariants
 

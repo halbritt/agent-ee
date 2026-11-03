@@ -158,7 +158,7 @@ class SeverityPolicyTests(unittest.TestCase):
         self.assertEqual(evaluate(data, recorded)['undispositioned_warning_ids'], [])
 
     def test_disposition_for_a_finding_a_newer_release_drops_is_unused_not_failing(self):
-        # kicad-happy 2.3.2 (#53) no longer reports PU-001 on a pin with a no-connect marker.
+        # kicad-happy 2.3.2 (#53) no longer reports PU-001 on a no-connect pin alone on its net.
         # A disposition recorded against the older output is reported unused and fails nothing.
         recorded = dispositions({'schema': SCHEMA, 'dispositions': [entry('schematic:PU-001:u3')]})
         result = evaluate(reports(), recorded)

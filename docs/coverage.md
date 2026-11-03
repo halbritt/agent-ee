@@ -281,8 +281,8 @@ and policy review; old evidence never gains new audited coverage automatically.
 
 ## Installed analyzer coverage
 
-The `kicad_happy` check invokes the owner's installed v2.3.1 analyzers and
-retains schema `1.4.0` outputs. Its [adapter contracts](kicad-happy.md) define the
+The `kicad_happy` check invokes the installed 2.x analyzers, records the
+version used, and retains schema `1.4.0` outputs. Its [adapter contracts](kicad-happy.md) define the
 exact supported topology, native branches, immutable operating assumptions and
 skip behavior. Running all four analyzers does not qualify every detector.
 

@@ -4,11 +4,14 @@ The separate [severity gate](happy-severity-gate.md) runs schematic, PCB,
 cross-analysis and EMC with an error/warning policy. This page describes the
 existing `kicad_happy` declared-rule check.
 
-The `kicad_happy` check runs the installed checkout, never a vendored analyzer.
-The exercised installation is `/home/halbritt/git/kicad-happy` commit
-`06840467ad0f5d76af45f64449b1f5ecb10f052f`, plugin metadata **2.3.1**, with
-schematic, PCB, thermal and EMC output envelopes **1.4.0**. Installation alone
-is not qualification. The original [fixture assumptions](../fixtures/kicad-happy/qualified/requirements.md)
+The `kicad_happy` check runs the installed analyzer, never a vendored copy.
+Each run uses the version that is installed and records it (see
+[Versions](#versions)). The owned fixtures were exercised with releases 2.3.1
+(commit `06840467ad0f5d76af45f64449b1f5ecb10f052f`) and 2.3.2 (commit
+`2fd9aa0fe2d620f36627d9221e8b1393987ae38e`). Both write schematic, PCB, thermal
+and EMC output envelopes **1.4.0**, and their reports on every owned fixture are
+equal apart from run ids and input paths. Installation alone is not qualification. The original
+[fixture assumptions](../fixtures/kicad-happy/qualified/requirements.md)
 and [RC expectations](../fixtures/kicad-happy/EXPECTATIONS.md) define the
 exercised envelope.
 
@@ -16,16 +19,62 @@ All stages run in the existing networkless native-tool sandbox against the
 immutable candidate, with the installation read-only. Datasheet synchronization,
 distributor lookups and SPICE-enhanced analysis are not invoked. Native reports,
 commands, logs, conservative installed-file inventory and executed source hashes
-are retained. Every file under `skills/` and `.claude-plugin/` is pinned except
-bytecode/test caches; this intentionally includes unexecuted helpers/data.
-Symlinks and unrecognized plugin metadata are unsupported. The runner ignores
-installed bytecode. Before/after identity and public `verify` detect installation
-changes; they do not defend against privileged concurrent host mutation.
+are retained. The installed-file identity covers every file under `skills/` and
+`.claude-plugin/` except bytecode/test caches; this intentionally includes
+unexecuted helpers/data. Symlinks and unrecognized plugin metadata are
+unsupported. The runner ignores installed bytecode. A before/after identity
+check refuses an installation that changes while the analyzers run, and a run
+refuses one that changes before the run completes. These checks do not defend
+against privileged concurrent host mutation.
+
+## Versions
+
+The image installs the newest release of the 2.x line when it is built:
+[docker/kicad-happy/install.py](../docker/kicad-happy/install.py) takes the
+highest `vX.Y.Z` tag (pre-releases and the moving `v2` and `v2.3` tags are
+ignored), applies the AGENTEE-219
+[correction](../fixtures/kicad-happy/ac4-false-positives/EXPECTATIONS.md), and
+runs every analyzer on an owned probe project. It writes
+`/opt/kicad-happy.install.json` with the source, tag, commit, version, output
+format, the release and installed-file identities, and the correction's
+SHA-256. On 2026-11-03 the build installed v2.3.2.
+
+Each check records what it used in `details.installation` and in its evidence
+file `work/<id>/installation.json`. The record has the root, the version, the
+tag and commit from the install record (`null` for a plain checkout without one),
+the installed-file identity `sha256`, the file inventory, and the install record.
+The installed version is not compared with any fixed version. These cases are
+refused as `unsupported`:
+
+- a release outside the 2.x line. A different major release can change keys
+  under the same envelope format;
+- any analyzer envelope whose `schema_version` is not listed in
+  [kicad-happy-contract.json](../src/agent_ee/data/kicad-happy-contract.json)
+  (today only `1.4.0`);
+- an install record that does not describe the installed files.
+
+To update, rebuild the image. The upstream ref listing is the cache key of the
+image's `kicad-happy` build stage, so a rebuild after an upstream release
+installs that release, and an unchanged release keeps the later layers cached.
+The build fails if the correction no longer applies or an analyzer reports an
+unlisted output format. Then the update needs a re-derived correction, or adapter
+and gate checks before the new format is added to the contract file. A host
+checkout is updated with Git; runs record whatever it holds, with tag and commit
+unknown.
+
+`agent-ee verify` checks a finished run's analyzer record against that run's own
+evidence: the saved `installation.json` must equal the record, the file
+inventory must give the recorded identity, and every executed helper must be in
+it. The installation now on the host is not consulted, so old runs stay
+verifiable after an update.
 
 ## Declarations and evidence
 
-`params.installation` names the checkout; `installation_sha256` is the
-`installation(path)['sha256']` inventory identity. `rules`, `counted_rules` and
+`params.installation` names the installation; the run records its identity (see
+[Versions](#versions)). Scopes written earlier may carry `installation_sha256`.
+It is accepted and recorded as `details.declared_installation_sha256`, never
+required; a value that differs from the installed identity adds a limitation.
+`rules`, `counted_rules` and
 `blocking_rules` are explicit lists. Blocking IDs must be counted, declared and
 unique. Every rule has a unique `id`, `analyzer`, exact `rule_id`, native
 `components`, and finite inclusive `min` and/or `max` bounds.

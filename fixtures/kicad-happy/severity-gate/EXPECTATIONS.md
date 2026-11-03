@@ -13,7 +13,8 @@ Neither is a fabrication design. Generate with system Python and pcbnew:
 /usr/bin/python3 fixtures/kicad-happy/severity-gate/generate.py
 ```
 
-Independent policy expectations for pinned kicad-happy 2.3.1:
+Independent policy expectations, observed with kicad-happy 2.3.1 and unchanged
+under 2.3.2 (the version a run used is in its evidence):
 
 - `warning`: no error findings. Schematic DS-002 warns about absent datasheets;
   EMC VS-001 warns about via stitching. The two exact native finding IDs have

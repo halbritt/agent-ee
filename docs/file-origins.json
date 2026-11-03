@@ -559,7 +559,8 @@
         "repository": "https://github.com/aklofas/kicad-happy",
         "revisions": {
           "06840467ad0f5d76af45f64449b1f5ecb10f052f": "v2.3.1 patch base",
-          "60ad2290819477357c9101627b83ce2d6096a000": "Owner-authorized isolated correction; not adopted"
+          "60ad2290819477357c9101627b83ce2d6096a000": "Owner-authorized isolated correction; applied by the image build to the newest 2.x release since 2026-11-03",
+        "2fd9aa0fe2d620f36627d9221e8b1393987ae38e": "v2.3.2; the patch applies (image build, 2026-11-03)"
         },
         "license_file": "LICENSE"
       },
@@ -575,7 +576,7 @@
         "class": "owner-relayed",
         "applies": "publication of fixtures/kicad-happy/ac4-false-positives/correction.patch with its MIT notice correction-LICENSE.txt, under the upstream MIT license (Copyright (c) 2025 Andrew Klofas), from 2026-10-22",
         "caveat": "The decision question framed the patch as not yet landed, but commit 51f7bcf4a785edb14b790306400eaca3088c5188 had already published it to the public agent-ee repository on 2026-10-19. Publication between 2026-10-19 and 2026-10-22 was therefore not owner-authorized at the time; the authorization applies from 2026-10-22.",
-        "open_follow_ups": "Not done: submitting the fix to upstream aklofas/kicad-happy, and moving the kicad-happy pin once upstream lands it."
+        "open_follow_ups": "Not done: submitting the fix to upstream aklofas/kicad-happy. Since 2026-11-03 the image build applies the patch to the newest 2.x release instead of holding a fixed version; a release the patch no longer applies to, such as one that already includes the fix, fails the build until the correction is re-derived or removed."
       },
       "evidence": [
         "fixtures/kicad-happy/ac4-false-positives/correction-LICENSE.txt",

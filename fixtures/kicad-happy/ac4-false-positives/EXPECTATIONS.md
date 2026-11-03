@@ -16,7 +16,7 @@ board; only schematic-analyzer error identities are asserted.
 
 Independent expectations (`expected.json` records the exact finding IDs):
 
-| Part | Mechanism | Pinned 2.3.1 | Proposed correction |
+| Part | Mechanism | Release (2.3.1, 2.3.2) | Correction (applied in the image) |
 | --- | --- | --- | --- |
 | U2 | `U1.SW` (power_out) → L1 → `MID_NODE` → U2 `IN` | PP-001 error (false positive) | PP-001 `info`; assumption: U1 is powered and its `power_out` regulation is trusted |
 | U4 | `U3.OUT` (power_out) on `REF_BUF` → U4 `VREF` | PP-001 error (false positive) | PP-001 `info`; same assumption for U3 |
@@ -31,10 +31,11 @@ Independent expectations (`expected.json` records the exact finding IDs):
 The superseded proposal b8ab8b4 cleared U11 and U12. Every finding ID, note
 and assumption the test asserts is recorded in `expected.json`.
 
-The pinned findings are recorded known analyzer limitations, not a pass: the
-severity gate reports them as errors, and a disposition naming them waives
-nothing. The correction is a proposal at an exact kicad-happy commit; adopting it
-is a pin change that needs requalification.
+The release's findings are recorded known analyzer limitations, not a pass:
+the severity gate reports them as errors, and a disposition naming them waives
+nothing. The correction is an exact kicad-happy commit. Since 2026-11-03 the
+image build applies it to the newest release and fails if it no longer applies;
+this reproducer requalifies it in the image test suite.
 
 Assumption-bearing info findings require exact immutable dispositions in the
 severity gate; missing or mismatched IDs give a defect. The native test also
@@ -43,9 +44,14 @@ exact disposition can pass while a mismatched ID fails. These synthetic test
 entries are not real-pod adjudications. Plain info remains unrestricted and a
 disposition on plain info stays unused.
 
-The test reconstructs the correction from `correction.patch`, the exact diff
-between the pinned and proposed commits (including the upstream tests and
-notes). `correction-LICENSE.txt` retains Andrew Klofas's MIT notice. The source
+`correction.patch` is the exact diff between the 2.3.1 release and the
+correction commit (including the upstream tests and notes); it also applies to
+2.3.2. `correction-LICENSE.txt` retains Andrew Klofas's MIT notice. The source
 schematic remains an owned fixture; the patch is separately attributed software.
-Both installation identities in `expected.json` are checked before any corrected
-analyzer runs; no corrected Git objects or alternate checkout are required.
+The test rebuilds the release and the corrected analyzer from whichever one is
+installed: the patch applies forward to a release and in reverse to the image's
+corrected installation. In the image, the rebuilt release must match the release
+identity in `/opt/kicad-happy.install.json`. `expected.json` records the
+identities observed with 2.3.1 and 2.3.2 as provenance, each with a note; the
+test asserts the findings, not those identities. No corrected Git objects or
+alternate checkout are required.

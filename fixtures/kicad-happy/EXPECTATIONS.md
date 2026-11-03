@@ -7,7 +7,8 @@ and fc=15.915494 Hz. A declared cutoff interval [150,170] Hz therefore
 passes the control and fails the seed, independently of the analyzer's math.
 The native ERC/DRC controls and seeded fixtures remain unchanged.
 
-The installed v2.3.1 schematic output rounds cutoff to two decimal places.
+The schematic output of kicad-happy 2.3.1 and 2.3.2 rounds cutoff to two
+decimal places; each run records the version it used.
 The qualified calculation is `schematic/RC-DET`, low-pass topology, exact
 component set C1/R1, `cutoff_hz` or `time_constant_s`. It is a calculation
 record, not a native violation flag: the coordinator compares the declared bounds.
