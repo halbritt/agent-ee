@@ -423,6 +423,9 @@ class LocalCopperTests(unittest.TestCase):
         # Sharing a supply segment is valid; both returns select the same capacitor.
         second['return'][0]['reference'] = 'OTHER'
         doc['relations'].append(second)
+        other = next(fp for fp in self.board.GetFootprints() if fp.GetReference() == 'OTHER')
+        next(p for p in other.Pads() if p.GetNumber() == '2').SetPosition(self.k.VECTOR2I(30_000_000,33_000_000))
+        self.save()
         self.seed(doc)
         native = self.k.LoadBoard(str(self.path))
         identities = []
@@ -690,6 +693,19 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertTrue(items[0].GetEffectiveShape(self.k.F_Cu).Collide(items[1].GetEffectiveShape(self.k.F_Cu),100_000))
         self.assertEqual(local.verify_geometry(self.board,receipt)['status'],'pass')
 
+    def test_saved_separation_report_uses_floor_and_records_exemptions(self):
+        receipt,items=self.close_pair(gap=150_000)
+        self.save();result=local.separation_report(self.path,receipt)
+        self.assertEqual(result['floor_mm'],.1)
+        self.assertEqual(result['outcome'],'pass')
+        self.assertEqual(len(result['pairs']),1)
+        self.assertAlmostEqual(result['pairs'][0]['minimum_gap_mm_lower_bound'],.15,places=5)
+        for item in items:self.board.Remove(item)
+        receipt,items=self.close_pair(same_bank=True)
+        self.save();result=local.separation_report(self.path,receipt)
+        self.assertFalse(result['pairs'])
+        self.assertEqual(len(result['exempt_pairs']),1)
+
     def test_shared_return_can_reach_a_small_second_capacitor_without_class_clearance(self):
         from copy import deepcopy
         self.add_fp('CAP2', [('1', 32, 28, '/rail'), ('2', 32, 30.55, '/return')])
@@ -699,6 +715,7 @@ class ReviewRegressionTests(unittest.TestCase):
         doc = contract();second = deepcopy(doc['relations'][0]);second['id'] = 'small-cap'
         for leg in ('supply','return'):second[leg][1]['reference'] = 'CAP2'
         doc['relations'].append(second)
+        doc['planes'] = []  # This regression isolates leg search, not a tiny-land escape.
         self.save();receipt = self.seed(doc)
         self.assertEqual(local.verify(self.path,receipt)['status'],'pass')
         self.filled();result = measure(self.path,doc)
