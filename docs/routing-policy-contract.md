@@ -22,9 +22,14 @@ The [routing adapter](routing-adapter.md) remains the authority for the protocol
 This page adds no check, threshold or schema that code reads. It adopts no pod
 value: adoption stays with the pod lane.
 
-Current pin: the commit and exact tracked `bin/` and `src/` hash map in
-`src/agent_ee/data/kicad-route-pin.json` (AGENTEE-539; since 2026-10-25 the
-commit is `c4af095e`).
+Router version: none is named here. Since 2026-11-03 every attempt runs the
+kicad-route checkout at the commit it holds and records it in its adapter report:
+`tool.commit`, `tool.clean`, `tool.code_sha256` and `tool.code_files` (the
+summary's `router_version_record`). A dirty tree or an unreadable commit is
+refused; a result outside the contract below is refused by `classify`. The
+committed table `src/agent_ee/data/kicad-route-pin.json` that named one commit
+and its file digests (AGENTEE-539, last at `995891ae`) is retired; reports
+written with it verify against the commit they recorded.
 Optional targeted thermal reservation, pair matching and permitted pair layers
 are used by the placement job; the stage adapter's default request and result
 shapes are unchanged. The source
@@ -215,7 +220,7 @@ stage receipt:
 | Effective per-net class values | retained `facts/reference-facts.json` `nets[net_name].{netclass, track_width, clearance, via_diameter, via_drill}`, bound to the input board hash |
 | Layer stack | retained reference facts `copper_layers`, `stackup` |
 | Layer policy | `report.request.layer_policy`; `result.settings.backend_args`, `pour_area_loss_pct`; derived record `layer_policy_records[N]` |
-| kicad-route code | `report.tool.commit` equal to `PIN`; `identity_before/after.code` for `bin/` and `src/`; `PINNED_CODE` inside the adapter bytes |
+| kicad-route code | `report.tool.commit`, `tool.clean`, `tool.code_sha256` and `tool.code_files`, recorded per attempt and named by `adapter.compatibility`; `identity_before/after.code` for `bin/` and `src/` |
 | Engine and installed state | `identity_before/after.state` (`.venv-krt`, or the selected `.router-generations/<hex>`), the state-manifest digest, `result.backend` (`version`, `build`, `commit`, `source_sha256`, and `runtime` bound to the verified engine) |
 | Toolchain | `report.tool.{kicad_route, python, kicad_cli}.sha256`, KiCad template library tables |
 | Adapter and execution | receipt mount identities, `state.json.routing_binding.adapter_sha256`, exact sandbox argv and environment |
@@ -239,9 +244,9 @@ Gaps. None of these is captured today:
   root, predecessor or campaign round.
 - **No resource measurements.** RSS, host identity and repair or history counters
   are not recorded.
-- **kicad-route `schemas/` is outside the code pin.** `verify_code` covers only
-  `bin/` and `src/`. agent-ee checks exact key sets itself and does not validate
-  against the JSON Schema files.
+- **kicad-route `schemas/` is outside the code digest.** `tool.code_sha256` covers
+  only `bin/` and `src/`; the clean-tree state covers every tracked file. agent-ee
+  checks exact key sets itself and does not validate against the JSON Schema files.
 
 ## 3. Consumer impact of `campaign/2` and `routability-experiment/1`
 
@@ -284,34 +289,30 @@ configuration's `input` and `captured_input_sha256`) is the `work/input` the
 adapter observes by digest; an optional rules file there that is a link or
 special file is refused, never read as absent. The real replay covers two-layer route_demo
 current-policy evidence, clean and protected, graded with each receipt's own
-execution identity by the consumer's helpers. The adapter cannot run those
-receipts before a re-pin, so integration activation stays gated.
-That producer is not pinned or qualified. The pin does not produce this evidence, so steps 1-3 and 5-7 below
-still apply when agent-ee re-pins.
+execution identity by the consumer's helpers. Those receipts come from a
+kicad-route commit other than the one an installed checkout holds, so integration
+activation stays gated until kicad-route `main` carries that producer.
+That producer is not qualified, and the current checkout does not produce this
+evidence, so steps 1-3 and 5-7 below still apply when kicad-route moves to that producer.
 
-The code pin is still byte-exact over every tracked `bin/` and `src/` file,
-including `src/kicad_route/campaign.py`. A campaign-only change therefore stops
-every agent-ee routing step:
+Until 2026-11-03 the commit table was byte-exact over every tracked `bin/` and
+`src/` file, including `src/kicad_route/campaign.py`, so a campaign-only change
+stopped every agent-ee routing step before the router ran. Now such a change is
+a new commit that runs and is recorded (`tool.commit`, `tool.code_sha256`); only
+an uncommitted change refuses (the tree is dirty).
 
-- a changed file is refused as `tool file differs from pin`;
-- a new module, such as a sidecar producer, is refused as `unpinned file in tool code`.
+When kicad-route moves to a commit with that work:
 
-The refusal happens before the router runs. Nothing upgrades automatically.
-
-When agent-ee re-pins onto a commit with that work:
-
-1. **Pin data file.** Rewrite `src/agent_ee/data/kicad-route-pin.json`: the new
-   `pin` commit and the `code` map regenerated from every tracked `bin/` and
-   `src/` blob at it, including `campaign.py`, the engine under
-   `src/kicad_route/router/` and any new module. Update the pin identity test
-   (`tests.test_kicad_route_repin`). No adapter line changes: the host preflight,
-   the sandbox attempt and the step mount all read this one file.
-2. **Installed state.** Rebuild the engine and state for the new pin. Point
-   `docker/kicad-route/install.sh` `KICAD_ROUTE_COMMIT` and the host
-   `build/kicad-route-pin-<sha>` checkout at it. Since `b577449` the state manifest
+1. **Recorded version.** Nothing in agent-ee names the commit: the next image
+   build installs kicad-route `main`, and a host checkout runs at its clean
+   commit. Each attempt's report records it.
+2. **Installed state.** Rebuild the engine and state for the new commit: rebuild
+   the image (`docker/kicad-route/install.sh` resolves `main`, or takes the
+   `KICAD_ROUTE_COMMIT` build argument), or update the host checkout's state.
+   Since `b577449` the state manifest
    is bound to its location: record it where the sandbox mounts it
    (`/opt/kicad-route`, or `/opt/kicad-route-state` for a separate state). `preflight` must report no
-   problems, because `verify_state` imports the pin's own `engine` and
+   problems, because `verify_state` imports the checkout's own `engine` and
    `statemanifest` and checks the manifest digests.
 3. **Schema acceptance.** The adapter checks exact shapes:
    - schema strings in `semantics`;
@@ -352,18 +353,20 @@ When agent-ee re-pins onto a commit with that work:
 6. **Frozen bindings and evidence.** Campaigns that froze the adapter hash
    (`policy_files['kicad_route_attempt.py']`, `state.json.routing_binding`)
    refuse the new adapter until the binding is recaptured. Via-budget pilot bases
-   bind the router identity, so they need a new pilot. Results from older pins
-   do not transfer by editing hashes.
+   bind the router identity, so they need a new pilot. A campaign continues only
+   on the commit its routing binding recorded. Results from an older commit keep
+   verifying against that commit and do not transfer by editing hashes.
 7. **Qualification and text.** Run every test that imports the adapter or needs
    the router against the new checkout, with `AGENT_EE_REQUIRE_TOOLCHAIN=1` and
    zero skips. They include `test_kicad_route_native`, `test_kicad_route_adapter`,
-   `test_kicad_route_stage_receipt`, `test_owned_router_pin`,
-   `test_kicad_route_repin`, `test_kicad_route_generations`, `test_routing_adapter`,
+   `test_kicad_route_stage_receipt`, `test_owned_router_state`,
+   `test_kicad_route_result_semantics`, `test_kicad_route_version_record`,
+   `test_kicad_route_generations`, `test_routing_adapter`,
    `test_routing_campaign`, `test_route_layer_policy`, `test_per_net_layers`,
    `test_layer_policy_lineage`, `test_via_budget_pilot`, `test_pour_budget`,
    `test_rf_layer_wiring`, `test_gnss_rf_path` and `test_routing_policy_contract`.
-   Add a pin qualification record to the [routing adapter](routing-adapter.md)
-   page. Update the pin text in `Dockerfile`, `README.md`,
+   Add a qualification record for the commit to the [routing adapter](routing-adapter.md)
+   page. Update the router text in `Dockerfile`, `README.md`,
    `docs/check-reference.md`, `docs/container.md`, `docs/generator-roadmap.md`,
    `docs/rung1-qualified.md`, `docs/pod-composition.md`,
    `docs/pod-can-routing.md`, `docs/gnss-rf-path.md`, `docs/rf-review.md`, the

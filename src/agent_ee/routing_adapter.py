@@ -1,4 +1,4 @@
-"""Coordinator half of the pinned kicad-route routing adapter (AGENTEE-93).
+"""Coordinator half of the kicad-route routing adapter (AGENTEE-93).
 
 `step()` declares one routing attempt in the AGENTEE-95 `agent-ee.stage-step/1`
 form: the coordinator, never the writer, runs it in the networkless sandbox
@@ -6,17 +6,20 @@ with the kicad-route checkout, its state directory and the attempt script
 mounted read-only. `verify()` re-derives the attempt's outcome from the retained
 bytes alone, so a report the attempt wrote is never taken on its word.
 
+kicad-route is used at the commit its checkout holds; each attempt records that
+commit, the clean-tree state and a code digest (kicad_route_attempt.checkout_record).
+A finished attempt is verified against what it recorded, not against this host's
+checkout. Work that continues a campaign must run on the checkout its binding
+recorded (validate_live_binding).
+
 Routing receipts and reports are provenance. A routed proposal still needs
 agent-ee's own fresh checks after capture (DRC with schematic parity and zero
 unconnected items, copper-width/1, compiled routing rules) before anything is
 accepted.
 """
 
-import contextlib
-import contextvars
 import json
 import os
-import re
 from pathlib import Path, PurePosixPath
 
 from . import kicad_route_attempt as attempt
@@ -30,84 +33,59 @@ BINDING_MOUNTS = [{'source': str(ADAPTER_SOURCE.with_name(name)),
 # Hashing the adapter, code and state mounts, and retaining diagnostics, happen
 # after the router's own timeout inside the same step budget.
 STEP_MARGIN_S = 300
-COMPATIBILITY = re.compile(r'kicad-route@([0-9a-f]{40})\Z')
 
 
 class StaleRoutingEvidence(ValueError):
-    """Routing evidence produced by another kicad-route pin (AGENTEE-450).
+    """Work would continue on routing evidence recorded with another kicad-route commit.
 
-    Results do not transfer between pins: the report is refused for every new
-    comparison, adoption or baseline, whatever else it says. Its retained bytes
-    stay as they are; this only names why they no longer qualify."""
+    A finished attempt verifies against the commit it recorded. Continuing a campaign
+    (another routing turn on its frozen binding) needs this host's checkout to be the
+    one the binding recorded; otherwise the campaign is rerun on the current checkout.
+    Retained bytes stay as they are; this only names why they cannot be continued."""
 
-    def __init__(self, pin, expected, what='routing attempt'):
-        super().__init__(f'stale routing evidence: {what} claims a different kicad-route pin {pin}, '
-                         f'not the pinned {expected}; rerun it on the current pin')
-        self.pin, self.expected = pin, expected
+    def __init__(self, recorded, current, what='campaign routing binding'):
+        super().__init__(f'stale routing evidence: {what} recorded kicad-route {recorded}, but the checkout '
+                         f'is now {current}; rerun it on the current checkout')
+        self.recorded, self.current = recorded, current
 ARTIFACTS = ('routing/adapter-report.json', 'routing/kicad-route.stdout', 'routing/kicad-route.stderr',
              'routing/attempt/result.json', 'routing/attempt/attempt.json', 'routing/attempt/RESULT.md',
              'routing/attempt/snapshot.json', 'routing/attempt/validate', 'routing/attempt/facts',
              'routing/attempt/work', 'routing/' + attempt.ORIGINAL_STAGE)
 
 
-def pinned_layout(pin_file=None):
-    """The host layout of a pinned router run: the pin record and the file it is read from.
+def legacy_claim(report):
+    """The commit a report written before 2026-11-03 recorded as its tool.pin, else None.
 
-    The production pin is the package's data file; a test passes its fake checkout's
-    pin file instead of changing module globals. The file is mounted beside the
-    sandbox script, which reads the same bytes."""
-    path = Path(pin_file).resolve() if pin_file is not None else attempt.PIN_FILE.resolve()
-    record = attempt.load_pin(path)
-    return {'pin': record['pin'], 'code': record['code'], 'pin_file': str(path)}
+    Those reports compared the checkout with a committed table of one commit's file
+    digests (retired); they keep verifying against the commit they recorded."""
+    tool = report.get('tool') if isinstance(report, dict) else None
+    return tool.get('pin') if isinstance(tool, dict) and 'pin' in tool else None
 
 
-# A layout a caller qualifies for the runs it starts in this context (see qualified_layout).
-_LAYOUT = contextvars.ContextVar('agent_ee_router_layout', default=None)
+def preflight(checkout, state=None, backend='builtin'):
+    """Host-side identity without running routing or installation.
 
-
-@contextlib.contextmanager
-def qualified_layout(layout):
-    """Qualify layout (pinned_layout of a fake checkout's pin file) for every pinned router run,
-    preflight, step and binding started in this context, instead of the package pin."""
-    token = _LAYOUT.set(layout)
-    try:
-        yield layout
-    finally:
-        _LAYOUT.reset(token)
-
-
-def current_layout():
-    """The qualified layout: a context's qualified_layout, else the package pin."""
-    return _LAYOUT.get() or pinned_layout()
-
-
-def preflight(checkout, state=None, backend='builtin', *, layout=None):
-    """Host-side identity without running git, routing or installation.
-
-    Running `git status` could rewrite the checkout's index, so HEAD is read
-    from the git files and code is compared with the pinned blob hashes, by the
-    same attempt.preflight the sandbox runs."""
-    layout = layout or current_layout()
+    The checkout is recorded and qualified by the same attempt.preflight the sandbox
+    runs: HEAD from the git files, the clean-tree state from git with optional locks
+    off, and the code digest. Any clean commit qualifies; the result names it."""
     checkout = Path(checkout).resolve()
     state = Path(state).resolve() if state is not None else checkout
-    commit, _, problems = attempt.preflight(checkout, state, backend, layout, mounted_at=attempt.SANDBOX[
+    record, _, problems = attempt.preflight(checkout, state, backend, mounted_at=attempt.SANDBOX[
         'checkout' if state == checkout else 'state'])
-    return {'checkout': str(checkout), 'state': str(state), 'commit': commit, 'pin': layout['pin'],
+    return {'checkout': str(checkout), 'state': str(state), **record,
             'executable_sha256': digest(checkout / 'bin/kicad-route') if (checkout / 'bin/kicad-route').is_file() else None,
             'adapter_sha256': digest(ADAPTER_SOURCE), 'problems': problems}
 
 
 def step(*, project, board, schematic, name, label, checkout, state=None, budget=300, timeout=None,
-         backend='builtin', diff_pairs=None, layer_policy=None, experiment_policy=None, layout=None):
+         backend='builtin', diff_pairs=None, layer_policy=None, experiment_policy=None):
     """The AGENTEE-95 step declaration for one attempt. Raises ValueError if the tool does not qualify.
 
     layer_policy (AGENTEE-231) is the declared allowed signal layers, optional KRT
     layer costs, pour area-loss bound and optional RF reference plane.
     experiment_policy (AGENTEE-442) is a five-field routability-policy/1 declaration the
-    router receives as --experiment-policy; its experiment evidence is retained or refused.
-    layout (pinned_layout) is the qualified pin; its pin file is mounted beside the script."""
-    layout = layout or current_layout()
-    check = preflight(checkout, state, backend, layout=layout)
+    router receives as --experiment-policy; its experiment evidence is retained or refused."""
+    check = preflight(checkout, state, backend)
     if check['problems']:
         raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))
     timeout = timeout if timeout is not None else 2 * budget + 300
@@ -122,15 +100,17 @@ def step(*, project, board, schematic, name, label, checkout, state=None, budget
     if experiment_policy is not None:
         args += ['--experiment-policy', attempt.canonical_json(experiment_policy)]
     request = attempt.parse_request(args)  # the same validation the sandbox applies
-    return _step(request, check['checkout'], check['state'] if separate else None, layout)
+    return _step(request, check['checkout'], check['state'] if separate else None)
 
 
-def _step(request, checkout, state, layout=None):
-    """Pure declaration construction, also used for retained campaign replay."""
-    layout = layout or current_layout()
+def _step(request, checkout, state, legacy_table=None):
+    """Pure declaration construction, also used for retained campaign replay.
+
+    legacy_table is the host path a retained step (2026-10-26 to 2026-11-03) mounted
+    the retired commit table from; new steps mount no table."""
     mounts = [{'source': str(ADAPTER_SOURCE), 'at': ADAPTER_AT},
               {'source': checkout, 'at': attempt.SANDBOX['checkout']}, *BINDING_MOUNTS,
-              {'source': layout['pin_file'], 'at': attempt.PIN_AT}]
+              *([{'source': legacy_table, 'at': attempt.LEGACY_TABLE_AT}] if legacy_table is not None else [])]
     if state is not None:
         mounts.append({'source': state, 'at': attempt.SANDBOX['state']})
     target = f'{request["project"]}/{request["board"]}'
@@ -143,7 +123,7 @@ def _step(request, checkout, state, layout=None):
 
 
 def validate_declaration(value):
-    """Strict campaign opt-in; command, mounts, pin and environment are not configurable."""
+    """Strict campaign opt-in; command, mounts and environment are not configurable."""
     required = {'schema', 'project', 'board', 'schematic', 'name', 'label', 'checkout'}
     optional = {'state', 'budget', 'timeout', 'backend', 'diff_pairs', 'layer_policy', 'experiment_policy'}
     if (not isinstance(value, dict) or value.get('schema') != 'agent-ee.routing-adapter/1' or
@@ -175,7 +155,7 @@ def validate_declaration(value):
             **({'experiment_policy': request['experiment_policy']} if 'experiment_policy' in request else {})}
 
 
-def campaign_spec(declaration, manifest, mutable):
+def campaign_spec(declaration, manifest, mutable, legacy_table=None):
     value = validate_declaration(declaration)
     scope = manifest['scope']
     stages = scope.get('stages')
@@ -185,10 +165,10 @@ def campaign_spec(declaration, manifest, mutable):
     schematic = f'{value["project"]}/{value["schematic"]}'
     if board != scope['board'] or schematic != scope['schematic'] or board not in mutable:
         raise ValueError('routing adapter must select the scope board/schematic and a mutable board')
-    return declaration_spec(value)
+    return declaration_spec(value, legacy_table)
 
 
-def declaration_spec(value):
+def declaration_spec(value, legacy_table=None):
     """The step a validated declaration runs, without the campaign scope checks."""
     from .stage_receipts import validate_step
     request = attempt.parse_request(_request_argv({
@@ -198,32 +178,59 @@ def declaration_spec(value):
         **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {}),
         **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {}),
         **({'experiment_policy': value['experiment_policy']} if 'experiment_policy' in value else {})}))
-    return validate_step(_step(request, value['checkout'], value['state']), host=False)
+    return validate_step(_step(request, value['checkout'], value['state'], legacy_table), host=False)
+
+
+def checkout_of(spec):
+    """The host checkout a routing step mounts."""
+    return Path({m['at']: m['source'] for m in spec['mounts']}[attempt.SANDBOX['checkout']])
 
 
 def campaign_binding(declaration, manifest, mutable):
+    """A campaign's frozen routing step: the step, the observed tool mounts, the adapter digest
+    and the kicad-route commit the (clean) checkout held when the campaign bound it."""
     from .stage_receipts import observe_tool
     spec = campaign_spec(declaration, manifest, mutable)
     validate_campaign_step(spec)
-    return {'spec': spec, 'tool': observe_tool(spec), 'pin': current_layout()['pin'],
+    return {'spec': spec, 'tool': observe_tool(spec), 'commit': attempt.checkout_commit(checkout_of(spec)),
             'adapter_sha256': digest(ADAPTER_SOURCE)}
 
 
 def validate_binding(binding, declaration, manifest, mutable, policy_files):
-    pin = current_layout()['pin']
-    if (isinstance(binding, dict) and isinstance(binding.get('pin'), str) and
-            re.fullmatch(r'[0-9a-f]{40}', binding['pin']) and binding['pin'] != pin):
-        raise StaleRoutingEvidence(binding['pin'], pin, 'campaign routing binding')
-    expected = campaign_spec(declaration, manifest, mutable)
-    if (not isinstance(binding, dict) or set(binding) != {'spec', 'tool', 'pin', 'adapter_sha256'} or
-            binding['spec'] != expected or binding['pin'] != pin or
-            binding['adapter_sha256'] != policy_files['kicad_route_attempt.py']):
+    """A retained campaign's routing binding against what it recorded: its declaration's step,
+    the adapter digest of the captured policy and a recorded kicad-route commit. This host's
+    checkout is not compared; validate_live_binding does that before a campaign continues.
+
+    A binding written before 2026-11-03 records its commit as 'pin', and one written from
+    2026-10-26 also mounted the retired commit table: its step is rebuilt with that mount."""
+    key = 'pin' if isinstance(binding, dict) and 'pin' in binding else 'commit'
+    if (not isinstance(binding, dict) or set(binding) != {'spec', 'tool', key, 'adapter_sha256'} or
+            not isinstance(binding[key], str) or not attempt.COMMIT.match(binding[key]) or
+            not isinstance(binding['spec'], dict) or not isinstance(binding['spec'].get('mounts'), list)):
+        raise ValueError('campaign routing binding differs from its declaration or captured policy')
+    legacy_table = next((m['source'] for m in binding['spec']['mounts'] if key == 'pin' and isinstance(m, dict)
+                         and m.get('at') == attempt.LEGACY_TABLE_AT and isinstance(m.get('source'), str)), None)
+    expected = campaign_spec(declaration, manifest, mutable, legacy_table)
+    if binding['spec'] != expected or binding['adapter_sha256'] != policy_files['kicad_route_attempt.py']:
         raise ValueError('campaign routing binding differs from its declaration or captured policy')
     return expected
 
 
 def validate_live_binding(binding):
+    """Before a campaign continues: this host's checkout holds the commit the binding recorded,
+    and the adapter, checkout and backend state are unchanged since binding. A binding that
+    recorded another commit, or the retired commit table, is stale for continuation."""
     from .stage_receipts import observe_tool
+    try:
+        current = attempt.checkout_commit(checkout_of(binding['spec']))
+    except (OSError, UnicodeDecodeError, KeyError, TypeError) as exc:
+        raise ValueError(f'cannot read the routing checkout commit: {exc}') from exc
+    if 'pin' in binding:
+        raise StaleRoutingEvidence(binding['pin'], current, 'campaign routing binding (retired commit table)')
+    if not isinstance(binding.get('commit'), str):
+        raise ValueError('campaign routing binding records no kicad-route commit')
+    if binding['commit'] != current:
+        raise StaleRoutingEvidence(binding['commit'], current)
     spec = validate_campaign_step(binding['spec'])
     if digest(ADAPTER_SOURCE) != binding['adapter_sha256'] or observe_tool(spec) != binding['tool']:
         raise ValueError('routing adapter, checkout or backend state changed since campaign binding')
@@ -239,26 +246,26 @@ def validate_campaign_step(spec, *, host=True):
     checkout = mounts.get(attempt.SANDBOX['checkout'])
     separate = request['state'] == 'separate'
     state = mounts.get(attempt.SANDBOX['state']) if separate else None
-    expected_mounts = {ADAPTER_AT, attempt.SANDBOX['checkout'], attempt.PIN_AT, *(m['at'] for m in BINDING_MOUNTS)}
+    expected_mounts = {ADAPTER_AT, attempt.SANDBOX['checkout'], *(m['at'] for m in BINDING_MOUNTS)}
     if separate:
         expected_mounts.add(attempt.SANDBOX['state'])
+    if not host and attempt.LEGACY_TABLE_AT in mounts:
+        # Retained steps of 2026-10-26 to 2026-11-03 also mounted the retired commit table.
+        expected_mounts.add(attempt.LEGACY_TABLE_AT)
     if (set(mounts) != expected_mounts or spec['argv'][:4] != [attempt.PYTHON, '-I', '-B', ADAPTER_AT] or
             (host and mounts[ADAPTER_AT] != str(ADAPTER_SOURCE))):
-        raise ValueError('campaign routing step differs from the pinned adapter command or mounts')
+        raise ValueError('campaign routing step differs from the adapter command or mounts')
     if host:
         if any(mounts[m['at']] != m['source'] for m in BINDING_MOUNTS):
             raise ValueError('routing binding helper mounts differ from captured policy')
-        layout = current_layout()
-        if mounts[attempt.PIN_AT] != layout['pin_file']:
-            raise ValueError('routing pin mount differs from the qualified pin file')
-        check = preflight(checkout, state, request['backend'], layout=layout)
+        check = preflight(checkout, state, request['backend'])
         if check['problems']:
             raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))
         if checkout != check['checkout'] or (state is not None and state != check['state']):
             raise ValueError('routing mount sources must use resolved host paths')
     _receipt_step({'spec': spec}, request)
     if spec['timeout_s'] != request['timeout_s'] + STEP_MARGIN_S:
-        raise ValueError('campaign routing step differs from the pinned adapter timeout')
+        raise ValueError('campaign routing step differs from the adapter timeout')
     return spec
 
 
@@ -344,9 +351,10 @@ def verify(run, inputs=None, *, receipt=None, layout=None):
     receipt, anchored by the campaign, is what authenticates them, and this
     function never replaces it.
 
-    layout overrides the production sandbox layout and pin (the fixture
-    router's tests supply theirs). Tool claims are compared with it, never
-    taken from the report."""
+    layout overrides the production sandbox layout (the fixture router's tests
+    supply theirs). Tool claims are compared with it and with the checkout the
+    report recorded, never with this host's checkout: a finished attempt verifies
+    on a host whose kicad-route has moved on."""
     run = Path(run)
     report = _report(run)
     try:
@@ -357,18 +365,10 @@ def verify(run, inputs=None, *, receipt=None, layout=None):
 
 def _verify(run, report, inputs, receipt, layout):
     routing = run / 'routing'
-    expected_pin = (layout or {}).get('pin', current_layout()['pin'])
-    claimed = COMPATIBILITY.match(report['adapter'].get('compatibility') or '') if isinstance(
-        report['adapter'], dict) else None
-    if claimed and claimed.group(1) != expected_pin:
-        # Checked first: an older pin's report may not even parse under today's request rules.
-        raise StaleRoutingEvidence(claimed.group(1), expected_pin)
     request = attempt.parse_request(_request_argv(report['request']))
     if request != report['request']:
         raise ValueError('routing adapter request is not a valid adapter request')
-    qualified = current_layout()
-    expected = {**attempt.default_layout(request), 'pin': qualified['pin'], 'code': qualified['code'],
-                **(layout or {})}
+    expected = {**attempt.default_layout(request), **(layout or {})}
     if receipt is not None:
         _receipt_step(receipt, request)
         if inputs is not None and inputs != receipt['inputs']:
@@ -401,8 +401,9 @@ def _verify(run, report, inputs, receipt, layout):
         raise ValueError('reported router exit differs from the observed process exit')
     _tool_claims(report, request, expected, ran=process is not None)
     _staged(routing, report, request, expected, ran=process is not None)
-    if report['tool_version'] != attempt.TOOL_VERSION:
-        raise ValueError('routing tool version is not the pinned unknown')
+    if report['tool_version'] != (attempt.TOOL_VERSION if legacy_claim(report) is None else
+                                  attempt.LEGACY_TOOL_VERSION):
+        raise ValueError('routing tool version is not the recorded unknown')
     if report['reproducibility'] != attempt.REPRODUCIBILITY[request['backend']]:
         raise ValueError(f'routing reproducibility label is not the {request["backend"]} label')
     candidate = routing / 'candidate' / request['project'] / request['board']
@@ -478,7 +479,7 @@ def _verify(run, report, inputs, receipt, layout):
     return {'classification': classification, 'proposal': proposal, 'coverage': coverage,
             'pair_coverage': pairs,
             'router_exit': sem['exit_code'], 'candidate_sha256': (report['candidate'] or {}).get('sha256'),
-            'backend': backend, 'tool_version': dict(attempt.TOOL_VERSION),
+            'backend': backend, 'tool_version': dict(report['tool_version']),
             'reproducibility': attempt.REPRODUCIBILITY[request['backend']],
             **({'layer_policy': policy} if policy is not None else {}),
             **({'experiment': experiment} if experiment is not None else {})}
@@ -533,17 +534,32 @@ def _policy_grade(routing, report, request, result, classification):
 
 
 def _tool_claims(report, request, layout, *, ran):
-    """The tool identity the report claims, against the pin and layout rather than itself."""
+    """The tool identity the report claims, against its own checkout record and the layout.
+
+    A report records the commit it ran (tool.commit, named by adapter.compatibility), its
+    clean-tree state and code digest. A report written before 2026-11-03 records the
+    commit of the retired commit table as tool.pin instead, and ran only at that commit."""
     tool = report['tool']
     executable = str(Path(layout['checkout']) / 'bin' / 'kicad-route')
-    if (report['adapter'] != {'compatibility': f'kicad-route@{layout["pin"]}'} or tool['pin'] != layout['pin'] or
-            tool['kicad_route']['path'] != executable):
-        raise ValueError('routing attempt claims a different kicad-route pin or location')
+    legacy = legacy_claim(report)
+    if legacy is not None:
+        claim_ok = isinstance(legacy, str) and attempt.COMMIT.match(legacy) is not None and \
+            report['adapter'] == {'compatibility': f'kicad-route@{legacy}'}
+    else:
+        claim_ok = all(k in tool for k in attempt.CHECKOUT_KEYS) and \
+            report['adapter'] == attempt.adapter_claim(tool['commit'])
+    if not claim_ok or tool['kicad_route']['path'] != executable:
+        raise ValueError('routing attempt claims a different kicad-route commit or location')
     if not ran:
         return
     # The router starts only after these preconditions held, so an attempt that ran must show them.
-    if tool['commit'] != layout['pin'] or tool['kicad_route']['sha256'] != layout['code'].get('bin/kicad-route'):
-        raise ValueError('routing attempt ran a kicad-route that is not the pinned code')
+    if legacy is not None:
+        if tool['commit'] != legacy:
+            raise ValueError('routing attempt ran a kicad-route commit other than the one it recorded')
+    elif not (isinstance(tool['commit'], str) and attempt.COMMIT.match(tool['commit']) and tool['clean'] is True and
+              isinstance(tool['code_sha256'], str) and attempt.SHA256.match(tool['code_sha256']) and
+              type(tool['code_files']) is int and tool['code_files'] > 0):
+        raise ValueError('routing attempt ran without a recorded clean kicad-route commit and code digest')
     probes = report['state_write_probe']
     if layout['probe'] is not None:
         targets = [str(t) for t in layout['probe']]
@@ -828,9 +844,9 @@ def validate_router_options(router_config):
 def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owned_copper=False, budget_s,
                      grid_step_mm=None, pair_layers=None, pair_impedance=None, intra_pair_match=None,
                      bus=None, length_match=None, ac_match=None):
-    """Build the pinned kicad-route CLI command for board-only / schematic-optional invocations."""
+    """Build the kicad-route CLI command for board-only / schematic-optional invocations."""
     argv = [attempt.PYTHON, '-B', str(Path(checkout) / 'bin' / 'kicad-route'), 'run', '--out', str(out_dir),
-            '--json', '--backend', attempt.PIN_BACKEND_NAMES['builtin'], '--dir', str(staged_dir),
+            '--json', '--backend', attempt.CLI_BACKEND_NAMES['builtin'], '--dir', str(staged_dir),
             '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', design_name,
             '--label', 'placement-job', '--protect', 'locked' if owned_copper else 'existing',
             '--budget', str(int(budget_s)), '--diff-pairs', 'auto']
@@ -892,7 +908,7 @@ def board_retry_argv(argv, retry_dir, budget_s, feedback, pads, board_path):
 
 
 def spokes_argv(checkout, run_dir):
-    """Build the pinned kicad-route spokes diagnostic command."""
+    """Build the kicad-route spokes diagnostic command."""
     return [attempt.PYTHON, '-B', str(Path(checkout) / 'bin/kicad-route'), 'spokes', str(run_dir)]
 
 

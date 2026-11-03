@@ -425,13 +425,13 @@ class ChildCancellationTests(Fixture):
 
     def test_cancel_during_route_and_drc_bounds_stalled_children(self):
         from agent_ee import kicad_route_attempt
-        from tests.kicad_route_fixture import make_checkout, make_layout
+        from tests.kicad_route_fixture import commit_all, make_checkout
         for phase in ('route', 'drc'):
             with self.subTest(phase=phase):
                 cancel = self.dir / 'CANCEL'
                 cancel.unlink(missing_ok=True)
                 started_file = self.dir / f'{phase}-started'
-                # The fixture checkout, qualified by its own pin file, with a stalling router.
+                # The fixture checkout, a clean commit, with a stalling router committed in it.
                 checkout, _ = make_checkout(self.dir / f'router-{phase}', 'complete')
                 shim = checkout / 'bin/kicad-route' if phase == 'route' else self.dir / 'kicad-cli'
                 shim.parent.mkdir(exist_ok=True)
@@ -439,6 +439,7 @@ class ChildCancellationTests(Fixture):
                                 f'Path({str(started_file)!r}).write_text(str(os.getpid()))\n'
                                 'time.sleep(20)\n')
                 shim.chmod(0o755)
+                commit_all(checkout, 'stalling router')
                 stopped = threading.Event()
                 def cancel_child():
                     limit = time.monotonic() + 2
@@ -457,12 +458,9 @@ class ChildCancellationTests(Fixture):
                     with self.assertRaisesRegex(Exception, 'cancelled'):
                         if phase == 'route':
                             optional = {'clock': clock, 'cancel_dir': self.dir} if 'clock' in inspect.signature(job.route).parameters else {}
-                            code = {rel: kicad_route_attempt.digest(checkout / rel)
-                                    for rel in ('bin/kicad-route', 'src/kicad_route/__init__.py')}
                             with patch.object(kicad_route_attempt, 'PYTHON', sys.executable):
                                 job.route(self.dir, self.dir / 'route', checkout, budget_s=10, timeout_s=10,
-                                          home=self.dir / 'home', layout=make_layout(self.dir / 'pin', code),
-                                          **optional)
+                                          home=self.dir / 'home', **optional)
                         else:
                             optional = {'clock': clock, 'cancel_dir': self.dir} if 'clock' in inspect.signature(job.drc).parameters else {}
                             with patch.dict(os.environ, {'PATH': str(self.dir) + os.pathsep + os.environ['PATH']}):

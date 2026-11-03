@@ -1,19 +1,18 @@
-"""Owned-engine manifest drift refuses before any routing process starts."""
+"""Owned-engine manifest drift and a dirty checkout refuse before any routing process starts."""
 import importlib.util
 import json
 import py_compile
 import struct
 from pathlib import Path
-import shutil
 import tempfile
 import unittest
 
 from agent_ee import kicad_route_attempt as attempt, routing_adapter
-from tests.test_kicad_route_generations import derive_state
+from tests.test_kicad_route_generations import copy_tool, derive_state
 from tests.toolchain import require_kicad_route
 
 
-class OwnedRouterPinTests(unittest.TestCase):
+class OwnedRouterStateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.checkout = require_kicad_route()
@@ -21,13 +20,16 @@ class OwnedRouterPinTests(unittest.TestCase):
     def test_installed_manifest_and_included_engine_qualify(self):
         self.assertEqual(routing_adapter.preflight(self.checkout)['problems'], [])
         self.assertFalse((self.checkout / 'vendor/krt').exists())
-        self.assertIn('src/kicad_route/router/rust_router/Cargo.lock', attempt.PINNED_CODE)
-        self.assertIn('src/kicad_route/router/UPSTREAM.json', attempt.PINNED_CODE)
+        # The owned engine's source and lock are part of the code digest an attempt records.
+        files, problems = attempt.code_files(self.checkout)
+        self.assertEqual(problems, [])
+        self.assertIn('src/kicad_route/router/rust_router/Cargo.lock', files)
+        self.assertIn('src/kicad_route/router/UPSTREAM.json', files)
 
     def test_missing_digest_wrong_source_and_replaced_module_refuse(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
-            # Only the runtime is mutable in this probe. Source is the real pin; the
+            # Only the runtime is mutable in this probe. Source is the real checkout; the
             # qualified engine is laid out legacy-style whatever the checkout's layout.
             original = derive_state(self.checkout, state, 'legacy', copy_venv=True)
             (state / 'manifest.json').unlink()
@@ -57,32 +59,24 @@ class OwnedRouterPinTests(unittest.TestCase):
                     else:
                         self.assertTrue(problems, label)
 
-    def test_wrong_commit_and_dirty_owned_source_refuse(self):
+    def test_unreadable_commit_and_dirty_owned_source_refuse(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            for top in ('bin', 'src'):
-                shutil.copytree(self.checkout / top, root / top,
-                                ignore=shutil.ignore_patterns('__pycache__'))
-            (root / '.git').mkdir()
-            (root / '.git/HEAD').write_text('0' * 40 + '\n')
-            check = routing_adapter.preflight(root, self.checkout)
-            self.assertTrue(any('checkout HEAD' in p for p in check['problems']))
-            (root / '.git/HEAD').write_text(attempt.PIN + '\n')
+            root = copy_tool(self.checkout, Path(tmp) / 'tool')
+            self.assertEqual(attempt.checkout_record(root)[1], [])
             (root / 'src/kicad_route/router/UPSTREAM.json').write_text('{}')
             check = routing_adapter.preflight(root, self.checkout)
-            self.assertTrue(any('tool file differs from pin' in p for p in check['problems']))
+            self.assertIs(check['clean'], False)
+            self.assertTrue(any('uncommitted or untracked changes:  M src/kicad_route/router/UPSTREAM.json' in p
+                                for p in check['problems']), check['problems'])
+            (root / '.git/HEAD').write_text('0' * 39 + '\n')
+            check = routing_adapter.preflight(root, self.checkout)
+            self.assertTrue(any(p.startswith("checkout HEAD '" + '0' * 39 + "' is not a commit")
+                                for p in check['problems']), check['problems'])
 
     def test_ignored_bytecode_cannot_replace_verified_engine_source(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / 'tool'
-            for top in ('bin', 'src'):
-                shutil.copytree(self.checkout / top, root / top,
-                                ignore=shutil.ignore_patterns('__pycache__'))
-            # A checkout has its pyproject.toml; without it the pin looks for a home state.
-            shutil.copyfile(self.checkout / 'pyproject.toml', root / 'pyproject.toml')
-            (root / '.git').mkdir()
-            (root / '.git/HEAD').write_text(attempt.PIN + '\n')
-            # The pin binds its manifest to the sandbox location of a checkout state
+            root = copy_tool(self.checkout, Path(tmp) / 'tool')
+            # kicad-route binds its manifest to the sandbox location of a checkout state
             # (/opt/kicad-route), so the copy reuses the qualified runtime as its own state.
             derive_state(self.checkout, root, 'legacy')
             self.assertEqual(routing_adapter.preflight(root)['problems'], [])
@@ -97,7 +91,8 @@ class OwnedRouterPinTests(unittest.TestCase):
             # would accept this cache even though its code is unrelated.
             data[8:16] = struct.pack('<II', int(source.stat().st_mtime), source.stat().st_size)
             cache.write_bytes(data)
-            self.assertEqual(attempt.verify_code(root), [])
+            # The ignored cache is neither code nor a change to the checkout.
+            self.assertEqual(attempt.code_files(root), attempt.code_files(self.checkout))
             self.assertEqual(routing_adapter.preflight(root)['problems'], [])
 
     def test_state_manifest_must_describe_the_sandbox_location(self):
@@ -110,13 +105,7 @@ class OwnedRouterPinTests(unittest.TestCase):
                          attempt.SANDBOX['checkout'])
         # The qualified checkout used as a separate state describes the wrong mount point.
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / 'tool'
-            for top in ('bin', 'src'):
-                shutil.copytree(self.checkout / top, root / top, ignore=shutil.ignore_patterns('__pycache__'))
-            # A checkout has its pyproject.toml; without it the pin looks for a home state.
-            shutil.copyfile(self.checkout / 'pyproject.toml', root / 'pyproject.toml')
-            (root / '.git').mkdir()
-            (root / '.git/HEAD').write_text(attempt.PIN + '\n')
+            root = copy_tool(self.checkout, Path(tmp) / 'tool')
             problems = routing_adapter.preflight(root, self.checkout)['problems']
             self.assertEqual(problems, [
                 "state manifest describes '/opt/kicad-route', not the sandbox state '/opt/kicad-route-state'; "
@@ -134,9 +123,9 @@ class OwnedRouterPinTests(unittest.TestCase):
                 if described == attempt.SANDBOX['state']:
                     self.assertEqual(attempt.verify_state(self.checkout, state, mounted_at=described), [])
 
-    def test_a_generation_outside_the_pins_selection_rules_is_refused(self):
-        # A router generation qualifies only as the pin selects it and when built from the
-        # pinned source (tests/test_kicad_route_generations.py); a malformed selection never does.
+    def test_a_generation_outside_kicad_routes_selection_rules_is_refused(self):
+        # A router generation qualifies only as kicad-route selects it and when built from the
+        # checkout's source (tests/test_kicad_route_generations.py); a malformed selection never does.
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
             m = derive_state(self.checkout, state, 'legacy')

@@ -61,7 +61,6 @@ DEFAULT_SEEDS = 4
 PHASE_STOP_GRACE_S = 5
 # Where the author seat sees a KiCad root that is outside the host /usr it already shows.
 SEAT_KICAD_ROOT = '/kicad'
-ROUTER_PIN = Path(__file__).with_name('data') / 'kicad-route-pin.json'
 
 ITEM_RULE = ('A requirement item is one sentence of REQUIREMENTS.md, or one row of a Markdown table; a '
              'sentence never spans a heading, paragraph, list item or table row. Headings and table header '
@@ -768,18 +767,26 @@ def code_identity():
                 git_dirty=dirty)
 
 
-def router_pin():
-    """The packaged kicad-route pin record the build checks the router against."""
+def router_checkout():
+    """The kicad-route checkout builds route with as the run starts: its commit, clean-tree state
+    and code digest (kicad_route_attempt.checkout_record), and why it would be refused. The build
+    uses AGENT_EE_KICAD_ROUTE_CHECKOUT, else the image's /opt/kicad-route; every routing attempt
+    also records the checkout it ran in its own report."""
+    from .kicad_route_attempt import checkout_record
+    path = Path(os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT') or '/opt/kicad-route')
+    if not path.is_dir():
+        return dict(path=str(path), error='no kicad-route checkout')
     try:
-        return dict(path=str(ROUTER_PIN), sha256=digest(ROUTER_PIN), pin=json.loads(ROUTER_PIN.read_bytes())['pin'])
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        return dict(path=str(ROUTER_PIN), error=f'{type(exc).__name__}: {exc}')
+        record, problems = checkout_record(path)
+    except (OSError, ValueError) as exc:
+        return dict(path=str(path), error=f'{type(exc).__name__}: {exc}')
+    return dict(path=str(path), **record, problems=problems)
 
 
 def run_identity(options, requirements):
-    """What produced a report: tool source, router pin, author, bounds and UTC start time."""
+    """What produced a report: tool source, router checkout, author, bounds and UTC start time."""
     profile = options['review_profile']
-    return dict(started_at=utc_now(), agent_ee=code_identity(), router_pin=router_pin(),
+    return dict(started_at=utc_now(), agent_ee=code_identity(), router=router_checkout(),
         author=options['author'], bounds={k: options[k] for k in ('max_attempts', 'max_seconds', 'author_seconds',
             'search_retries')},
         review_profile=None if profile is None else dict(path=str(profile), sha256=digest(profile)),
@@ -1026,7 +1033,7 @@ def _generate(requirements_path, out, options, identity=None):
                     elif not row['refusal_classes']:
                         row['tool_gap'] = 'Refusal does not name a design field'
                 if exc.stage in ('build', 'placement-routing') and any(s in feedback for s in
-                        ('is not the pinned', 'kicad-route pin', 'pinned code', 'router checkout')):
+                        ('router checkout', 'checkout HEAD', 'kicad-route checkout', 'kicad-route commit')):
                     report['status'] = 'runtime_refused'
                     break
             except KeyboardInterrupt:

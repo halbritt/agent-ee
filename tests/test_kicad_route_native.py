@@ -445,15 +445,11 @@ class NativeKicadRouteTest(unittest.TestCase):
         self.assertEqual(vias, [(0.25, 0.15)])
         self.assertIn('annular_width', codes)
 
-    def test_a_pinned_checkout_with_a_broken_krt_runtime_fails_the_prerequisite(self):
+    def test_a_clean_checkout_with_a_broken_krt_runtime_fails_the_prerequisite(self):
         """An empty venv without an installed-engine manifest refuses at preflight."""
-        broken = self.root / 'broken-route'
-        for top in ('bin', 'src'):
-            shutil.copytree(self.checkout / top, broken / top, ignore=shutil.ignore_patterns('__pycache__'))
-        # A checkout has its pyproject.toml; without it the pin looks for a home state.
-        shutil.copyfile(self.checkout / 'pyproject.toml', broken / 'pyproject.toml')
-        (broken / '.git').mkdir()
-        (broken / '.git/HEAD').write_text(attempt.PIN + '\n')
+        from tests.test_kicad_route_generations import copy_tool
+        # A clean checkout of the configured commit; its installed state is ignored by git.
+        broken = copy_tool(self.checkout, self.root / 'broken-route')
         subprocess.run(['/usr/bin/python3', '-m', 'venv', '--without-pip', str(broken / '.venv-krt')], check=True)
         (broken / 'vendor/krt/py_router').mkdir(parents=True)
         (broken / 'vendor/krt/py_router/route.py').write_text('')
@@ -520,7 +516,7 @@ class NativePrerequisiteTest(unittest.TestCase):
             result = self.run_native(checkout=Path(tmp) / 'kicad-route')
         self.assertNotEqual(result.returncode, 0, result.stderr)
         self.assertIn('does not qualify', result.stderr)
-        self.assertIn(f'is not the pinned {attempt.PIN}', result.stderr)
+        self.assertIn('cannot read the checkout HEAD', result.stderr)
         self.assertIn('missing installed backend dependency: KICAD_ROUTE_STATE/.venv-krt/bin/python',
                       result.stderr)
         self.assertNotIn('skipped', result.stderr)

@@ -786,7 +786,7 @@ class GenerateTests(ScriptedLoop):
         self.responses = [self.response()]
         def build(attempt):
             self.build_report(attempt, accepted=False, stage='placement-routing',
-                              reason='kicad-route checkout is not the pinned commit')
+                              reason='router preflight: router checkout has 1 uncommitted or untracked changes')
             return dict(execution='failed', exit_code=1)
         with self.with_build(build):
             report = self.generate(max_attempts=3)
@@ -1217,7 +1217,7 @@ class BenchmarkTests(ScriptedLoop):
         self.responses = [self.response()]
         def build(attempt):
             self.build_report(attempt, accepted=False, stage='placement-routing',
-                              reason='kicad-route checkout is not the pinned commit')
+                              reason='router preflight: router checkout has 1 uncommitted or untracked changes')
             return dict(execution='failed', exit_code=1)
         with self.with_build(build):
             report = loop.benchmark(directory, self.root / 'benchmark', max_attempts=3)
@@ -1363,8 +1363,12 @@ class BenchmarkTests(ScriptedLoop):
         self.assertEqual(run['author'], 'codex:gpt-6.1-sol:high')
         self.assertEqual(run['bounds'], dict(max_attempts=2, max_seconds=2400, author_seconds=300, search_retries=1))
         self.assertRegex(run['agent_ee']['tree_sha256'], '^[0-9a-f]{64}$')
-        pin = json.loads((ROOT / 'src/agent_ee/data/kicad-route-pin.json').read_text())
-        self.assertEqual(run['router_pin']['pin'], pin['pin'])
+        # The run records the router checkout it starts with, as checkout_record reads it.
+        self.assertNotIn('router_pin', run)
+        if 'error' not in run['router']:
+            from agent_ee.kicad_route_attempt import checkout_record
+            record, problems = checkout_record(Path(run['router']['path']))
+            self.assertEqual(run['router'], dict(path=run['router']['path'], **record, problems=problems))
         self.assertEqual(self.saved('benchmark/a/generate-report.json')['run'], run)
 
     def test_interrupt_lists_the_design_in_flight_and_every_design_not_started(self):

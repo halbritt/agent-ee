@@ -1,13 +1,12 @@
-"""The kicad-route current owned-engine re-pin (AGENTEE-450).
+"""kicad-route's result semantics through the adapter (AGENTEE-450).
 
 Policy cases use the coordinator-owned fixture router from kicad_route_fixture.py,
-which mirrors the pin's result contract. Native cases run the real pinned
-kicad-route through the adapter and the networkless sandbox, read-only, on
-original boards authored here:
+which mirrors kicad-route's result contract. Native cases run the configured
+kicad-route checkout, at whatever commit it holds (recorded per attempt), through
+the adapter and the networkless sandbox, read-only, on original boards authored here:
 
-- the adapter accepts the new producer and refuses evidence from another pin
-  with a typed StaleRoutingEvidence, without rewriting it;
-- the pin's copper-custody pointer is bound to the retained bytes and never graded;
+- the adapter accepts the current producer's results;
+- kicad-route's copper-custody pointer is bound to the retained bytes and never graded;
 - native terminal preservation (KICADROUTE-98) gates eligibility: a partially
   joined net keeps its joined pads, a capped raw DRC report never yields a board;
 - an invalid complete candidate never delivers a board while a valid incomplete one does;
@@ -26,13 +25,10 @@ from agent_ee import generate
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee.executor import execute
-from tests.kicad_route_fixture import FAKE_PIN
 from tests.test_kicad_route_adapter import REQUEST, Case
 from tests.toolchain import require_kicad_route, require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
-OLD_PIN = '5f1c072b86e0caee82c7656226c4d0e3ec580a58'
-FIXTURE_RECEIPT = ROOT / 'fixtures/rc/stages/receipts'  # retained at 08179cd, never rewritten
 
 
 def rewrite_report(case, change):
@@ -52,9 +48,9 @@ def relabel_result(case, change):
     rewrite_report(case, lambda r: r['retained'].update({'attempt/result.json': attempt.digest(path)}))
 
 
-class RepinPolicyTest(unittest.TestCase):
+class ResultSemanticsPolicyTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-repin-')
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-route-semantics-')
         self.addCleanup(self.tmp.cleanup)
         self.count = 0
 
@@ -62,33 +58,6 @@ class RepinPolicyTest(unittest.TestCase):
         self.count += 1
         with contextlib.redirect_stdout(io.StringIO()):
             return Case(Path(self.tmp.name) / str(self.count), scenario).run(argv)
-
-    def test_new_pin_identity(self):
-        self.assertEqual(attempt.PIN, '995891ae8852f6524815d5f06ad3a062f40ed8e0')
-        self.assertNotEqual(attempt.PIN, OLD_PIN)
-        self.assertEqual(attempt.default_layout(attempt.parse_request(REQUEST))['pin'], attempt.PIN)
-        # The pin's owned engine and the modules added since 5f1c072 are byte-pinned.
-        for rel in ('src/kicad_route/engine.py', 'src/kicad_route/copper_ownership.py',
-                    'src/kicad_route/native_components.py', 'src/kicad_route/backend_names.py',
-                    'src/kicad_route/router/rust_router/Cargo.lock'):
-            self.assertIn(rel, attempt.PINNED_CODE)
-
-    def test_ci_image_installs_the_packaged_router_pin(self):
-        # The image's install.sh lagged five re-pins behind (c4af095 against 995891ae), so every
-        # strict-suite router test refused the image's own checkout (2026-11-03 baseline).
-        script = Path(__file__).resolve().parents[1] / 'docker/kicad-route/install.sh'
-        pins = [line.split('=', 1)[1] for line in script.read_text().splitlines()
-                if line.startswith('KICAD_ROUTE_COMMIT=')]
-        self.assertEqual(pins, [attempt.PIN])
-
-    def test_pin_is_data_not_logic(self):
-        # AGENTEE-539: a re-pin rewrites the pin data file and this identity test, no adapter line.
-        self.assertEqual(attempt.load_pin(), {'schema': attempt.PIN_SCHEMA, 'pin': attempt.PIN,
-                                              'code': attempt.PINNED_CODE})
-        for module in (attempt, routing_adapter):
-            source = Path(module.__file__).read_text()
-            self.assertNotIn(attempt.PIN, source)
-            self.assertFalse(any(sha in source for sha in attempt.PINNED_CODE.values()))
 
     def test_emitted_backend_name_is_canonical(self):
         self.assertEqual(attempt.parse_request(REQUEST)['backend'], 'builtin')
@@ -119,8 +88,8 @@ class RepinPolicyTest(unittest.TestCase):
         unavailable = self.run_case('custody_unavailable')
         self.assertEqual(unavailable.exit, 0, unavailable.report['semantics'])
         self.assertEqual(unavailable.verify()['proposal'], 'eligible')
-        for scenario, reason in (('custody_missing', 'result.json shape differs from the pinned tool'),
-                                 ('custody_authority', 'copper_ownership differs from the pinned tool'),
+        for scenario, reason in (('custody_missing', 'result.json shape differs from the result contract'),
+                                 ('custody_authority', 'copper_ownership differs from the result contract'),
                                  ('custody_forged', 'copper ownership record differs from its result pointer')):
             with self.subTest(scenario):
                 case = self.run_case(scenario)
@@ -134,10 +103,10 @@ class RepinPolicyTest(unittest.TestCase):
         freerouting = {**case.report['request'], 'backend': 'freerouting'}
         self.assertEqual(attempt.semantics(0, {**result, 'backend': {**result['backend'], 'name': 'freerouting'}},
                                            None, False, True, freerouting),
-                         ('contradiction', ['result.json shape differs from the pinned tool']))
+                         ('contradiction', ['result.json shape differs from the result contract']))
         failed = {**result, 'process': {'status': 'FAIL', 'reasons': ['x']}, 'exit_code': 1}
         self.assertEqual(attempt.semantics(1, failed, None, False, True, case.report['request']),
-                         ('contradiction', ['result.json shape differs from the pinned tool']))
+                         ('contradiction', ['result.json shape differs from the result contract']))
 
     def test_custody_record_changed_after_retention_is_refused(self):
         case = self.run_case('complete')
@@ -186,44 +155,8 @@ class RepinPolicyTest(unittest.TestCase):
                          ('incomplete', 'eligible_partial'))
         self.assertTrue((valid.work / 'routing/candidate/project/rc.kicad_pcb').is_file())
 
-    def test_old_pin_evidence_is_a_typed_stale_refusal(self):
-        # A receipt retained at an older pin keeps its bytes and is refused as stale.
-        before = {p: p.read_bytes() for p in FIXTURE_RECEIPT.rglob('*') if p.is_file()}
-        with self.assertRaises(routing_adapter.StaleRoutingEvidence) as caught:
-            routing_adapter.verify(FIXTURE_RECEIPT)
-        self.assertEqual(caught.exception.pin, '08179cdc97d08864da127f14d53ac46cf5a27851')
-        self.assertEqual(caught.exception.expected, attempt.PIN)
-        self.assertEqual({p: p.read_bytes() for p in FIXTURE_RECEIPT.rglob('*') if p.is_file()}, before)
-        # An honest attempt relabelled as produced by 5f1c072: stale before anything else.
-        case = self.run_case('complete')
-        self.assertEqual(case.verify()['proposal'], 'eligible')
-        rewrite_report(case, lambda r: (r['adapter'].update(compatibility=f'kicad-route@{OLD_PIN}'),
-                                        r['tool'].update(pin=OLD_PIN, commit=OLD_PIN)))
-        with self.assertRaises(routing_adapter.StaleRoutingEvidence) as caught:
-            case.verify()
-        self.assertEqual((caught.exception.pin, caught.exception.expected), (OLD_PIN, FAKE_PIN))
-        self.assertIn('stale routing evidence', str(caught.exception))
-        # A frozen campaign binding captured on the old pin is stale too.
-        binding = {'spec': {}, 'tool': {}, 'pin': OLD_PIN, 'adapter_sha256': '0' * 64}
-        with self.assertRaises(routing_adapter.StaleRoutingEvidence):
-            routing_adapter.validate_binding(binding, None, None, None, None)
-
-    def test_mismatched_evidence_is_refused_but_not_called_stale(self):
-        for label, change, message in (
-                ('malformed compatibility', lambda r: r['adapter'].update(compatibility='kicad-route@5f1c072'),
-                 'different kicad-route pin or location'),
-                ('current pin, other commit ran', lambda r: r['tool'].update(commit=OLD_PIN),
-                 'not the pinned code')):
-            with self.subTest(label):
-                case = self.run_case('complete')
-                rewrite_report(case, change)
-                with self.assertRaisesRegex(ValueError, message) as caught:
-                    case.verify()
-                self.assertNotIsInstance(caught.exception, routing_adapter.StaleRoutingEvidence)
-
-
-class RepinNativeTest(unittest.TestCase):
-    """The real b577449 checkout through the adapter, read-only, on original boards."""
+class ResultSemanticsNativeTest(unittest.TestCase):
+    """The configured checkout through the adapter, read-only, on original boards."""
 
     @classmethod
     def setUpClass(cls):
@@ -231,19 +164,21 @@ class RepinNativeTest(unittest.TestCase):
 
     def setUp(self):
         require_toolchain(native=True)
-        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-repin-native-')
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-route-semantics-native-')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
     def test_installed_build_identity(self):
         check = routing_adapter.preflight(self.checkout)
         self.assertEqual(check['problems'], [])
-        self.assertEqual(check['commit'], attempt.PIN)
+        record, problems = attempt.checkout_record(self.checkout)
+        self.assertEqual((problems, record['clean']), ([], True))
+        self.assertEqual(check['commit'], record['commit'])
         manifest = json.loads((self.checkout / 'manifest.json').read_text())
         self.assertEqual(manifest['state_dir'], attempt.SANDBOX['checkout'])
-        self.assertEqual((manifest['kicad_route']['commit'], manifest['krt']['commit']), (attempt.PIN, attempt.PIN))
-        # Either layout the pin installs, built from the pinned source (the image's install.sh
-        # builds the legacy one; `kicad-route update` a router generation).
+        self.assertEqual(manifest['kicad_route']['commit'], record['commit'])
+        # Either layout kicad-route installs, built from the checkout's source (the image's
+        # install.sh builds the legacy one; `kicad-route update` a router generation).
         generation = manifest['krt']['generation']
         self.assertEqual(attempt.state_generation(self.checkout), (generation, []))
         if generation is not None:
@@ -252,7 +187,7 @@ class RepinNativeTest(unittest.TestCase):
             self.assertEqual(manifest['krt']['source_path'], f'{generation}/router')
         module = manifest['krt']['extension_module']
         self.assertEqual(attempt.digest(self.checkout / module['path']), module['sha256'])
-        self.assertEqual(check['executable_sha256'], attempt.PINNED_CODE['bin/kicad-route'])
+        self.assertEqual(check['executable_sha256'], attempt.digest(self.checkout / 'bin/kicad-route'))
 
     def candidate(self, script, name):
         """An original board in the RC project's place; schematic and project unchanged."""
@@ -277,13 +212,14 @@ class RepinNativeTest(unittest.TestCase):
         result = json.loads((work / 'routing/attempt/result.json').read_text())
         return record, report, summary, result, work
 
-    def test_partial_net_keeps_its_joined_pads_on_the_pin(self):
+    def test_partial_net_keeps_its_joined_pads(self):
         placed = self.candidate(PARTIAL_BOARD, 'partial')
         record, report, summary, result, work = self.route(placed, 'partial-native', 120)
         self.assertIn(record['exit_code'], (0, 2), report['semantics'])
         self.assertIn(summary['proposal'], ('eligible', 'eligible_partial'))
         self.assertEqual(result['backend']['name'], 'builtin')
-        self.assertEqual(result['backend']['commit'], attempt.PIN)
+        self.assertEqual(result['backend']['commit'], report['tool']['commit'])
+        self.assertEqual(report['adapter'], {'compatibility': f"kicad-route@{report['tool']['commit']}"})
         completion = result['validation']['net_completion']
         self.assertEqual((completion['status'], completion['split_components'], completion['nets_lost']),
                          ('PASS', [], []))

@@ -1,4 +1,4 @@
-"""One pinned kicad-route attempt inside the networkless sandbox (AGENTEE-93).
+"""One kicad-route attempt inside the networkless sandbox (AGENTEE-93).
 
 This is the in-sandbox half of the routing adapter. It imports only the
 standard library, so the coordinator can run it as
@@ -6,9 +6,12 @@ standard library, so the coordinator can run it as
 read-only script mount whose bytes it hashes. Exact net binding reuses the
 shared net_binding and symbol_library modules, mounted read-only beside it.
 
-The adapter checks kicad-route's versioned result contract and the mounted
-code byte for byte against one qualified pin. Unknown schemas and changed
-code are refused. The router's argv and environment come from constants and
+kicad-route is used at whatever commit its checkout holds. Each attempt fixes
+that version for the run and records it in its report (tool.commit, tool.clean,
+tool.code_sha256): a checkout with uncommitted or untracked changes, or one whose
+commit cannot be read, is refused before anything runs. The adapter checks
+kicad-route's versioned result contract; unknown schemas and result shapes are
+refused (`classify`), so a router change fails closed. The router's argv and environment come from constants and
 coordinator-declared arguments matched against fixed patterns; nothing the
 writer controls reaches them, and ``--backend-env``, ``--force``, ``--canary``
 and ``--rev`` are never passed. ``--backend-arg`` carries only KRT's
@@ -36,29 +39,18 @@ import sys
 import time
 from pathlib import Path, PurePosixPath
 
-PIN_SCHEMA = 'agent-ee.kicad-route-pin/1'
-# The pin is data: one hashed file beside this script, on the same read-only mount.
-PIN_FILE = Path(__file__).with_name('data') / 'kicad-route-pin.json'
-PIN_AT = '/opt/agent-ee-routing/data/kicad-route-pin.json'
-
-
-def load_pin(path=PIN_FILE):
-    """The qualified pin record at path: the kicad-route commit and the SHA-256 of every
-    tracked bin/ and src/ blob at it, including the owned engine. Malformed records raise."""
-    value = json.loads(Path(path).read_bytes())
-    if (not isinstance(value, dict) or set(value) != {'schema', 'pin', 'code'} or value['schema'] != PIN_SCHEMA or
-            not isinstance(value['pin'], str) or not re.fullmatch(r'[0-9a-f]{40}', value['pin']) or
-            not isinstance(value['code'], dict) or not value['code'] or
-            any(not isinstance(k, str) or not isinstance(v, str) or not re.fullmatch(r'[0-9a-f]{64}', v)
-                for k, v in value['code'].items())):
-        raise ValueError(f'malformed kicad-route pin record {path}')
-    return value
-
-
-_PINNED = load_pin()
-PIN = _PINNED['pin']
-PINNED_CODE = _PINNED['code']
 RESULT_SCHEMA = 'kicad-route/route/1'
+COMMIT = re.compile(r'[0-9a-f]{40}\Z')
+# Clean-tree state comes from git with optional locks off, so a read-only checkout is
+# never written; repository configuration cannot start a monitor or a hook.
+GIT = '/usr/bin/git'
+GIT_STATUS = (GIT, '-c', 'safe.directory=*', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null',
+              '-c', 'core.untrackedCache=false', 'status', '--porcelain=v1', '-z', '--untracked-files=all',
+              '--ignore-submodules=none')
+GIT_ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0',
+           'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
+# The checkout record every report holds in `tool` (checkout_record).
+CHECKOUT_KEYS = ('commit', 'clean', 'code_sha256', 'code_files')
 
 REPORT_SCHEMA = 'agent-ee.kicad-route-attempt/1'
 # Every report has exactly these keys, whatever the outcome.
@@ -67,7 +59,12 @@ REPORT_KEYS = {'schema', 'adapter', 'request', 'reproducibility', 'tool_version'
                'candidate_editor_state', 'candidate_files', 'rejected_candidate_sha256', 'inputs', 'tool',
                'state_write_probe', 'identity_before', 'identity_after', 'semantics', 'identity'}
 TOOL_VERSION = {'status': 'unknown', 'value': None,
-                'reason': 'kicad-route at the pin has no --version; identity is the pinned code'}
+                'reason': 'kicad-route has no --version; identity is the recorded checkout commit and code digest'}
+# Reports written before 2026-11-03 compared the checkout with a committed table of one
+# commit's file digests and carry tool.pin; they verify against what they recorded.
+LEGACY_TOOL_VERSION = {'status': 'unknown', 'value': None,
+                       'reason': 'kicad-route at the pin has no --version; identity is the pinned code'}
+LEGACY_TABLE_AT = '/opt/agent-ee-routing/data/kicad-route-pin.json'
 NO_BACKEND = {'status': 'unknown', 'value': None, 'reason': 'no result.json'}
 SANDBOX = {'work': '/work', 'candidate': '/candidate', 'checkout': '/opt/kicad-route',
            'state': '/opt/kicad-route-state'}
@@ -86,8 +83,8 @@ PYTHON = '/usr/bin/python3'
 # bytes), and names are normalized only to compare or look up.
 BACKEND_ALIASES = {'krt': 'builtin'}
 BACKENDS = ('builtin', 'krt', 'freerouting')
-# What the pinned cli.py is given for --backend: the canonical name, whatever the request spelled.
-PIN_BACKEND_NAMES = {'builtin': 'builtin', 'krt': 'builtin', 'freerouting': 'freerouting'}
+# What cli.py is given for --backend: the canonical name, whatever the request spelled.
+CLI_BACKEND_NAMES = {'builtin': 'builtin', 'krt': 'builtin', 'freerouting': 'freerouting'}
 
 
 def canonical_backend(name):
@@ -95,14 +92,14 @@ def canonical_backend(name):
     return BACKEND_ALIASES.get(name, name) if isinstance(name, str) else name
 
 
-# Installed backend inputs the pinned cli.py reads under KICAD_ROUTE_STATE, in the
+# Installed backend inputs cli.py reads under KICAD_ROUTE_STATE, in the
 # legacy layout (no router generation selected; the image's install.sh builds this).
 STATE_COMPONENTS = {'krt': ('.venv-krt',), 'builtin': ('.venv-krt',), 'freerouting': ('vendor/freerouting',)}
 STATE_REQUIRED = {'krt': ('.venv-krt/bin/python',), 'builtin': ('.venv-krt/bin/python',),
                   'freerouting': ('vendor/freerouting',)}
-# A router generation (`kicad-route update` at the pin) is one directory under the state
+# A router generation (`kicad-route update`) is one directory under the state
 # that holds the copied engine source and its venv; the manifest's krt.generation selects
-# it. These are the files the pin's common.router_generation requires before selecting it.
+# it. These are the files kicad-route's common.router_generation requires before selecting it.
 GENERATION = re.compile(r'\.router-generations/[0-9a-f]{32}\Z')
 GENERATION_REQUIRED = ('installation.json', 'router/VERSION', 'router/UPSTREAM.json', 'venv/bin/python')
 
@@ -111,7 +108,7 @@ def state_generation(state):
     """The router generation the state manifest at `state` selects, or None (legacy layout).
 
     Returns (generation, problems). An absent or unreadable manifest selects nothing
-    here; verify_state reports it. A selection the pin would not resolve, or one
+    here; verify_state reports it. A selection kicad-route would not resolve, or one
     outside STATE/.router-generations, is a problem, never a fallback to .venv-krt."""
     try:
         manifest = json.loads((Path(state) / 'manifest.json').read_bytes())
@@ -152,7 +149,7 @@ def generation_of_components(backend, components):
 
 
 def runtime_paths(layout, generation):
-    """backend.runtime as the pin reports it when it runs the engine verified in this layout."""
+    """backend.runtime as kicad-route reports it when it runs the engine verified in this layout."""
     checkout, state = Path(layout['checkout']), Path(layout['state'])
     if generation is None:
         return {'source': str(checkout / 'src/kicad_route/router'), 'venv': str(state / '.venv-krt'),
@@ -161,18 +158,18 @@ def runtime_paths(layout, generation):
             'generation': str(state / generation)}
 SAFE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z')
 STAMP = re.compile(r'\d{8}T\d{6}\.\d{6}Z\Z')
-# Every top-level result.json/attempt.json key cli.run_attempt writes at PIN
+# Every top-level result.json/attempt.json key cli.run_attempt writes
 # (protect=existing). Any other shape is an incompatible tool.
 RESULT_KEYS = {'schema', 'measurement', 'evidence', 'tool_identity', 'sandbox', 'kind', 'backend',
                'input', 'settings', 'scope', 'unsupported', 'floor', 'process',
                'routing', 'validation', 'candidate', 'run_dir', 'runtime_s', 'tool_versions',
                'finished_utc', 'exit_code', 'ledger'}
-# Added by the pin only for a builtin attempt whose process passed (KICADROUTE copper custody).
+# Added by kicad-route only for a builtin attempt whose process passed (KICADROUTE copper custody).
 # It is provenance with replay_authority false; agent-ee binds its bytes and never grades from it.
 COPPER_OWNERSHIP_RECORD = 'validate/copper-ownership.json'
 COPPER_OWNERSHIP_BOUND = {'status', 'record', 'sha256', 'coverage', 'replay_authority'}
 COPPER_OWNERSHIP_UNAVAILABLE = {'status', 'reasons', 'replay_authority'}
-# Nested keys the pin adds (KICADROUTE generations and measurement qualification): every
+# Nested keys kicad-route adds (KICADROUTE generations and measurement qualification): every
 # result.json's process carries measurement_qualification, and an owned-engine result's
 # backend carries the runtime it executed, which must be the engine verified before the run.
 MEASUREMENT_QUALIFICATION = {'measurement', 'build_reproducible', 'reasons'}
@@ -1245,38 +1242,13 @@ def checkout_commit(checkout):
     return None
 
 
-def preflight(checkout, state, backend, pinned, *, mounted_at):
-    """The one precondition sequence of a pinned router run, host-side and in the sandbox.
+def code_files(checkout):
+    """(file map, problems): the SHA-256 of every file under the checkout's bin/ and src/.
 
-    pinned holds the qualified 'pin' commit and 'code' map (load_pin, or a test
-    layout). The checkout HEAD must equal the pin and its code match byte for byte;
-    the state is verified only when the code is clean; then the router generation is
-    selected and its required entries must exist. mounted_at is where the sandbox sees
-    the state. Returns (commit, generation, problems); nothing runs, installs or writes."""
-    checkout, state = Path(checkout), Path(state)
-    problems, commit = [], None
-    try:
-        commit = checkout_commit(checkout)
-    except OSError as exc:
-        problems.append(f'cannot read the checkout HEAD: {exc}')
-    if commit != pinned['pin']:
-        problems.append(f'checkout HEAD {commit} is not the pinned {pinned["pin"]}')
-    code_problems = verify_code(checkout, pinned['code'])
-    problems += code_problems
-    if not code_problems:
-        problems += verify_state(checkout, state, backend, pinned['code'], mounted_at=mounted_at)
-    generation, selection = state_generation(state)
-    problems += selection
-    for rel in state_required(backend, generation):
-        if not os.path.lexists(state / rel):
-            problems.append(f'missing installed backend dependency: KICAD_ROUTE_STATE/{rel}')
-    return commit, generation, problems
-
-
-def verify_code(checkout, pinned=None):
-    """Problems with the mounted tool code relative to the pinned blob hashes."""
-    checkout, pinned = Path(checkout), PINNED_CODE if pinned is None else pinned
-    problems, seen = [], {}
+    Python bytecode caches are not code here (the router runs with -B and its own cache
+    prefix), but a link or special file anywhere in these trees is a problem."""
+    checkout = Path(checkout)
+    problems, files = [], {}
     for top in ('bin', 'src'):
         if not (checkout / top).is_dir() or (checkout / top).is_symlink():
             problems.append(f'missing tool directory {top}/')
@@ -1288,42 +1260,104 @@ def verify_code(checkout, pinned=None):
                     problems.append(f'link or special file in pycache: {top}/{rel}')
                 continue
             if entry[0] == 'file':
-                seen[f'{top}/{rel}'] = entry[1]
+                files[f'{top}/{rel}'] = entry[1]
             elif entry[0] != 'dir':
                 problems.append(f'link or special file in tool code: {top}/{rel}')
-    for rel in sorted(set(seen) | set(pinned)):
-        if rel not in seen:
-            problems.append(f'pinned file missing: {rel}')
-        elif rel not in pinned:
-            problems.append(f'unpinned file in tool code: {rel}')
-        elif seen[rel] != pinned[rel]:
-            problems.append(f'tool file differs from pin: {rel}')
-    return problems
+    return files, problems
 
 
-def verify_state(checkout, state, backend='builtin', pinned=None, mounted_at=None):
-    """Verify the owned engine using the qualified tool's state-manifest reader.
+def tree_status(checkout):
+    """(clean, entries): whether git reports the checkout's tracked tree unchanged from HEAD
+    with no untracked files that are not ignored. clean is None, with the reason as the one
+    entry, when git cannot tell."""
+    try:
+        result = subprocess.run([*GIT_STATUS[:1], '-C', str(checkout), *GIT_STATUS[1:]], capture_output=True,
+                                timeout=300, env=GIT_ENV, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, [f'{type(exc).__name__}: {exc}']
+    if result.returncode:
+        return None, [result.stderr.decode('utf-8', 'replace').strip()[-500:] or f'git exit {result.returncode}']
+    entries = [e for e in result.stdout.decode('utf-8', 'replace').split('\0') if e]
+    return not entries, entries
 
-    Called only after verify_code succeeds. Synthetic adapter-policy fixtures
-    supply their own code map without an engine; production PINNED_CODE always
-    includes it. No routing, installation or network is performed here.
 
-    The pinned tool binds a state manifest to the directory it describes
+def checkout_record(checkout):
+    """(record, problems): the router checkout as an attempt records it (CHECKOUT_KEYS).
+
+    The commit is HEAD read from the git files; clean is git's view of the tree
+    (tree_status); code_sha256 and code_files are the canonical identity and size of
+    code_files(). There is no list of expected commits or digests: any commit runs and
+    is recorded. A HEAD that is missing or not a commit, a dirty tree, a tree whose
+    state git cannot report, and links in the code are problems that refuse the run."""
+    checkout = Path(checkout)
+    problems, commit = [], None
+    try:
+        commit = checkout_commit(checkout)
+    except (OSError, UnicodeDecodeError) as exc:
+        problems.append(f'cannot read the checkout HEAD: {exc}')
+    else:
+        if not isinstance(commit, str) or not COMMIT.match(commit):
+            problems.append(f'checkout HEAD {commit!r} is not a commit')
+            commit = None
+    files, code_problems = code_files(checkout)
+    problems += code_problems
+    clean, entries = tree_status(checkout)
+    if clean is None:
+        problems.append('cannot tell whether the router checkout is clean: ' + '; '.join(entries))
+    elif not clean:
+        problems.append(f'router checkout has {len(entries)} uncommitted or untracked changes: '
+                        + ', '.join(entries[:5]) + (' ...' if len(entries) > 5 else ''))
+    record = {'commit': commit, 'clean': clean, 'code_sha256': canonical_identity(files) if files else None,
+              'code_files': len(files)}
+    return record, problems
+
+
+def adapter_claim(commit):
+    """report.adapter: the kicad-route commit the attempt recorded, or 'unknown' when HEAD was unreadable."""
+    return {'compatibility': f'kicad-route@{commit if isinstance(commit, str) and COMMIT.match(commit) else "unknown"}'}
+
+
+def preflight(checkout, state, backend, *, mounted_at):
+    """The one precondition sequence of a router run, host-side and in the sandbox.
+
+    The checkout is recorded (checkout_record) and must be a clean commit; the state
+    is verified only then; then the router generation is selected and its required
+    entries must exist. mounted_at is where the sandbox sees the state. Returns
+    (record, generation, problems); nothing runs, installs or writes."""
+    checkout, state = Path(checkout), Path(state)
+    record, problems = checkout_record(checkout)
+    if not problems:
+        problems += verify_state(checkout, state, backend, mounted_at=mounted_at)
+    generation, selection = state_generation(state)
+    problems += selection
+    for rel in state_required(backend, generation):
+        if not os.path.lexists(state / rel):
+            problems.append(f'missing installed backend dependency: KICAD_ROUTE_STATE/{rel}')
+    return record, generation, problems
+
+
+def verify_state(checkout, state, backend='builtin', mounted_at=None):
+    """Verify the owned engine using the checkout's own state-manifest reader.
+
+    Called only for a clean checkout. A checkout without the owned engine source
+    (src/kicad_route/engine.py: the coordinator's synthetic fixture router) has no
+    installed engine to verify. No routing, installation or network is performed here.
+
+    kicad-route binds a state manifest to the directory it describes
     (`state_dir`) and refuses to start anywhere else. mounted_at is where the
     routing sandbox presents this state (SANDBOX['checkout'] by default): a
     manifest recorded for any other directory would only fail inside the
     sandbox, so it is refused here first. The remaining checks read the files
     at `state`, wherever the caller sees them.
 
-    Both layouts the pin installs qualify, and only when built from the pinned
-    source: the legacy one (no generation; engine in the checkout, venv at
-    .venv-krt, as the image's install.sh builds it) and a router generation
+    Both layouts kicad-route installs qualify, and only when built from the
+    checkout's own source: the legacy one (no generation; engine in the checkout,
+    venv at .venv-krt, as the image's install.sh builds it) and a router generation
     (`kicad-route update`; STATE/.router-generations/<hex>/ holds a copy of the
     source and its venv). A generation's digest is compared with the checkout's
     SOURCE_ROOT, never with itself, so a stale generation is refused.
     """
-    pinned = PINNED_CODE if pinned is None else pinned
-    if canonical_backend(backend) != 'builtin' or 'src/kicad_route/engine.py' not in pinned:
+    if canonical_backend(backend) != 'builtin' or not (Path(checkout) / 'src/kicad_route/engine.py').is_file():
         return []
     mounted_at = SANDBOX['checkout'] if mounted_at is None else str(mounted_at)
     script = r'''
@@ -1344,21 +1378,21 @@ if m.get('state_dir') != str(mounted_at):
                     f"{str(mounted_at)!r}; record it with `kicad-route state-manifest` where "
                     f"KICAD_ROUTE_STATE is {str(mounted_at)!r}")
 k = m.get('krt') or {}
-# The installed engine must be built from the pinned source in the verified checkout.
-# Under a router generation both the manifest and the pin's engine.ROOT describe the
+# The installed engine must be built from the source in the verified checkout.
+# Under a router generation both the manifest and kicad-route's engine.ROOT describe the
 # generation's own copy, so the reference is always the checkout's SOURCE_ROOT: a
 # generation built from any other commit (kicad-route doctor still passes it) differs.
-pinned_source = engine.source_sha256(engine.SOURCE_ROOT)
+checkout_source = engine.source_sha256(engine.SOURCE_ROOT)
 generation = k.get('generation')
 if generation is not None and not (isinstance(generation, str) and GENERATION.match(generation)):
     problems.append(f'state manifest selects an invalid router generation {generation!r}')
     generation = venv_path = None
 else:
     venv_path = f'{generation}/venv' if generation else '.venv-krt'
-if k.get('source_sha256') != pinned_source:
+if k.get('source_sha256') != checkout_source:
     problems.append('owned engine source digest differs' + (
-        f'; router generation {generation} was built from commit {k.get("commit")}, not the pinned '
-        f'source {pinned_source}: rerun `kicad-route update` at the pin' if generation else ''))
+        f'; router generation {generation} was built from commit {k.get("commit")}, not the checkout '
+        f'source {checkout_source}: rerun `kicad-route update` at this checkout' if generation else ''))
 module = (k.get('extension_module') or {}).get('path')
 if venv_path is not None:
     venv = state / venv_path
@@ -1373,15 +1407,15 @@ if venv_path is not None and (k.get('venv') or {}).get('path') != venv_path:
     problems.append('unexpected routing environment path')
 if generation:
     # The generation runs its own copy of the source: its recorded paths stay, so the
-    # drift check below hashes that copy against the digest just bound to the pin.
+    # drift check below hashes that copy against the digest just bound to the checkout.
     if (k.get('source_path') != f'{generation}/router' or
             (k.get('requirements') or {}).get('path') != f'{generation}/router/requirements.txt'):
         problems.append('router generation source or requirements path is not the generation copy')
     record = common.load_json(state / generation / 'installation.json')
     if (not isinstance(record, dict) or not isinstance(record.get('source'), dict) or
-            record['source'].get('source_sha256') != pinned_source or
+            record['source'].get('source_sha256') != checkout_source or
             record.get('extension_sha256') != (k.get('extension_module') or {}).get('sha256')):
-        problems.append('router generation installation record differs from the pinned source or module')
+        problems.append('router generation installation record differs from the checkout source or module')
 elif k:
     # The manifest was installed on the host. The immutable source is mounted at a
     # different absolute path inside the sandbox, and a separate state holds no
@@ -1457,7 +1491,7 @@ def parse_request(argv):
             raise RequestError('diff-pairs must be auto and requires the builtin (krt) backend')
         request['diff_pairs'] = 'auto'
     if '--layer-policy' in raw:
-        # The pin refuses --backend-arg with --diff-pairs; freerouting has no KRT layer costs.
+        # kicad-route refuses --backend-arg with --diff-pairs; freerouting has no KRT layer costs.
         if canonical_backend(request['backend']) != 'builtin' or '--diff-pairs' in raw:
             raise RequestError('layer-policy requires the builtin (krt) backend without diff-pairs')
         request['layer_policy'] = parse_layer_policy(raw['--layer-policy'])
@@ -1521,14 +1555,14 @@ def default_layout(request):
     checkout = Path(SANDBOX['checkout'])
     state = checkout if request['state'] == 'checkout' else Path(SANDBOX['state'])
     return {'work': Path(SANDBOX['work']), 'candidate': Path(SANDBOX['candidate']), 'checkout': checkout,
-            'state': state, 'pin': PIN, 'code': PINNED_CODE, 'probe': None}
+            'state': state, 'probe': None}
 
 
 def tool_argv(request, layout):
     routing = Path(layout['work']) / 'routing'
     return [PYTHON, '-B', '-X', f'pycache_prefix={routing / "pycache"}',
             str(Path(layout['checkout']) / 'bin' / 'kicad-route'), 'run',
-            '--out', str(routing / 'out'), '--json', '--backend', PIN_BACKEND_NAMES[request['backend']],
+            '--out', str(routing / 'out'), '--json', '--backend', CLI_BACKEND_NAMES[request['backend']],
             '--dir', str(staged_dir(request, layout)),
             '--board', request['board'], '--schematic', request['schematic'],
             '--name', request['name'], '--label', request['label'],
@@ -1603,7 +1637,7 @@ def missing_reports(retained):
 
 
 def fingerprint(files):
-    """The pinned tool's input fingerprint over a reference snapshot's file hashes."""
+    """kicad-route's input fingerprint over a reference snapshot's file hashes."""
     return hashlib.sha256(''.join(f'{n}\0{d}\n' for n, d in sorted(files.items())).encode()).hexdigest()
 
 
@@ -1692,7 +1726,7 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
     declared = request.get('experiment_policy')
     if not isinstance(attempt, dict) or set(attempt) != ATTEMPT_KEYS | ({'pairs', 'pair_routing'} if paired else set()) | (
             {'experiment_policy'} if declared is not None else set()):
-        return 'contradiction', ['attempt.json missing or shaped differently from the pinned tool']
+        return 'contradiction', ['attempt.json missing or shaped differently from the result contract']
     # KICADROUTE-91 (a0ed434 onward) records the declaration it loaded in attempt.json.
     if declared is not None:
         try:
@@ -1717,7 +1751,7 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
 
 
 def result_problems(result, exit_code, *, backend, paired):
-    """What makes a parsed result.json differ from the pinned tool's contract, in contract order.
+    """What makes a parsed result.json differ from the result contract, in contract order.
 
     The request-independent half of every route's classification: schema version,
     key set, copper ownership and runtime shapes, and statuses that agree with the
@@ -1731,13 +1765,13 @@ def result_problems(result, exit_code, *, backend, paired):
     if (not isinstance(result, dict) or
             set(result) - {'experiment'} !=
             RESULT_KEYS | ({'pairs'} if paired else set()) | ({'copper_ownership'} if custody else set())):
-        return ['result.json shape differs from the pinned tool']
+        return ['result.json shape differs from the result contract']
     if custody and not copper_ownership_shape(result['copper_ownership']):
-        return ['copper_ownership differs from the pinned tool']
+        return ['copper_ownership differs from the result contract']
     if not measurement_shape(result):
-        return ['process.measurement_qualification differs from the pinned tool']
+        return ['process.measurement_qualification differs from the result contract']
     if canonical_backend(backend) == 'builtin' and not runtime_shape(result.get('backend')):
-        return ['backend.runtime differs from the pinned tool']
+        return ['backend.runtime differs from the result contract']
     if (canonical_backend(backend) != 'builtin' and isinstance(result.get('backend'), dict) and
             'runtime' in result['backend']):
         return ['backend.runtime is reported by a backend that has none']
@@ -1757,9 +1791,9 @@ OUTCOMES = ('accepted', 'policy_failed', 'refused')
 
 
 def classify(data, exit_code, *, backend='builtin', paired=None):
-    """The one classification of a pinned router run's result.json bytes, for every route.
+    """The one classification of a router run's result.json bytes, for every route.
 
-    Returns (outcome, reasons): 'refused' when the bytes do not qualify as the pin's
+    Returns (outcome, reasons): 'refused' when the bytes do not qualify as kicad-route's
     result for this exit (unparseable, unknown schema or shape, contradictory
     statuses), 'accepted' when the process passed, routing is COMPLETE with nothing
     unconnected and validation passed, and 'policy_failed' for every other well-formed
@@ -1814,10 +1848,10 @@ def verdict(result):
 
 
 def terminal_problems(result):
-    """An eligible attempt must carry the pin's native terminal preservation (KICADROUTE-98).
+    """An eligible attempt must carry kicad-route's native terminal preservation (KICADROUTE-98).
 
     Every originally joined pad group, including subsets of incomplete nets, must stay
-    joined; the pin reports that as validation.net_completion from native terminal
+    joined; kicad-route reports that as validation.net_completion from native terminal
     partitions, not from the capped DRC list. Missing or failing evidence, a split group,
     or a COMPLETE route whose native terminals are still split is never eligible."""
     validation = result.get('validation') if isinstance(result, dict) else None
@@ -1839,7 +1873,7 @@ def terminal_problems(result):
 
 
 def measurement_shape(result):
-    """process.measurement_qualification as the pin writes it, agreeing with the top-level measurement."""
+    """process.measurement_qualification as kicad-route writes it, agreeing with the top-level measurement."""
     process = result.get('process')
     value = process.get('measurement_qualification') if isinstance(process, dict) else None
     return (isinstance(value, dict) and set(value) == MEASUREMENT_QUALIFICATION and
@@ -1869,7 +1903,7 @@ def runtime_problems(request, layout, generation, result):
 
 
 def copper_ownership_shape(value):
-    """The pin's copper-custody pointer: bound to one retained record, or unavailable with reasons."""
+    """kicad-route's copper-custody pointer: bound to one retained record, or unavailable with reasons."""
     if not isinstance(value, dict) or value.get('replay_authority') is not False:
         return False
     if value.get('status') == 'bound':
@@ -2146,7 +2180,7 @@ def layer_policy_grade(policy, attempt_dir, result, classification, board):
 def per_net_layer_grade(policy, facts, sha):
     """All routed copper of declared nets, including input copper and full via spans.
 
-    Reuse the pinned native board inventory; no pre-existing-copper exemption.
+    Reuse kicad-route's native board inventory; no pre-existing-copper exemption.
     An absent declaration is unknown, never implied by the global allowlist. Every
     graded item names the validated board hash it is evidence for (board_sha256)
     and the declaration it graded, so a consumer binds it to one candidate.
@@ -2377,7 +2411,7 @@ def _no_links_between(base, path):
 
 def _project_with_sibling_links(root, project, siblings, candidate_root):
     """The names of the links beside the real project directory in root, or None
-    unless root holds that directory and only the links the pinned
+    unless root holds that directory and only the links kicad-route's
     copy_project/make_snapshot place for ${KIPRJMOD}/../<dir> library paths: named
     for a top-level input directory, reading literally <staged input root>/<name>.
     The links are read, never followed."""
@@ -2645,7 +2679,7 @@ def attempt(request, layout, cancel=None):
         raise RequestError('routing/ already exists; an attempt needs a fresh private OUT')
     for sub in ('home', 'tmp', 'attempt'):
         (routing / sub).mkdir(parents=True)
-    report = {'schema': REPORT_SCHEMA, 'adapter': {'compatibility': f'kicad-route@{layout["pin"]}'},
+    report = {'schema': REPORT_SCHEMA, 'adapter': None,
               'request': request, 'reproducibility': REPRODUCIBILITY[request['backend']],
               'tool_version': dict(TOOL_VERSION), 'backend': dict(NO_BACKEND),
               'process': None, 'discovery': None, 'missing_artifacts': [], 'retained': {},
@@ -2669,8 +2703,10 @@ def attempt(request, layout, cancel=None):
         if f'{project}/{name}' not in inputs:
             problems.append(f'candidate lacks {project}/{name}')
     problems += constraint_binding_problems(candidate_root, request)
-    commit, generation, qualification = preflight(checkout, state, request['backend'], layout, mounted_at=state)
-    report['tool'] = {'commit': commit, 'pin': layout['pin'],
+    record, generation, qualification = preflight(checkout, state, request['backend'], mounted_at=state)
+    # The version this attempt runs is fixed here and recorded; nothing compares it with a list.
+    report['adapter'] = adapter_claim(record['commit'])
+    report['tool'] = {**record,
                       'kicad_route': _executable(checkout / 'bin' / 'kicad-route'),
                       'python': _executable(PYTHON), 'kicad_cli': _executable('/usr/bin/kicad-cli'),
                       'kicad_share_templates': {t: _executable(f'/usr/share/kicad/template/{t}')['sha256']

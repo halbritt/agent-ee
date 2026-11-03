@@ -71,16 +71,16 @@ def load(scripts):
 
 class Matrix:
     def __init__(self, k, c, root):
-        from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
+        from tests.kicad_route_fixture import make_candidate, make_checkout
         from tests.test_routing_experiment_boundary import CURRENT
         self.k, self.c, self.root, self.make = k, c, Path(root), make_candidate
         self.rows, self.count, self.attacks = [], 0, {}
-        checkout, code = make_checkout(self.root / 'checkout', {'name': 'complete'})
+        checkout, _ = make_checkout(self.root / 'checkout', {'name': 'complete'})
         self.mismatch, _ = make_checkout(self.root / 'mismatch', {'name': 'complete'})
         with (self.mismatch / 'src/kicad_route/__init__.py').open('a') as handle:
             handle.write('# another runtime\n')
-        self.pinned = k.pinned(self.root, FAKE_PIN, code)
-        self.pinned.__enter__()
+        self.production = k.production()
+        self.production.__enter__()
         self.decl = k.declaration(checkout, project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
                                   name='rc', budget=5, timeout=30, policy=CURRENT)
         self.bind = k.binding(self.decl)
@@ -95,7 +95,7 @@ class Matrix:
                                        make_candidate, BOARD)
 
     def close(self):
-        self.pinned.__exit__(None, None, None)
+        self.production.__exit__(None, None, None)
 
     def fresh(self, label):
         self.count += 1
@@ -261,10 +261,13 @@ class Matrix:
         self.check_row('round-1 mismatch-replay: today\'s verifier refuses the pre-staging report at its own pin',
                        'ValueError: routing attempt inputs have unknown or missing fields',
                        self.outcome(lambda: self.mismatch_replay(manifest, routing_adapter)), 'ee442 composition')
-        self.check_row('round-1 mismatch-replay: today\'s verifier refuses the pre-staging report as stale at the '
-                       'production pin', 'StaleRoutingEvidence',
-                       self.outcome(lambda: self.mismatch_replay(manifest, routing_adapter, pin=None)).split(':')[0],
-                       'ee442 composition')
+        # Since 2026-11-03 a finished report verifies against the commit it recorded, so the production
+        # verifier no longer calls this report stale; it refuses the pre-staging inputs, as above.
+        self.check_row('round-1 mismatch-replay: today\'s production verifier reads the pre-staging report at '
+                       'its recorded commit and refuses its inputs, not as stale',
+                       'ValueError: routing attempt inputs have unknown or missing fields',
+                       self.outcome(lambda: self.mismatch_replay(manifest, routing_adapter, pin=None)),
+                       'ee442 composition; router version recorded per attempt (2026-11-03)')
         base = c.v1_controls_as_v2(manifest)['controls']['a_mismatched_runtime']
         for key in ('router_exit', 'candidate_sha256'):
             record = copy.deepcopy(base)

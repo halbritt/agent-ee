@@ -19,6 +19,9 @@ from agent_ee.run_record import runtime_files
 from agent_ee.preflight import runtime_drift
 
 
+# subprocess.run itself, kept before the doctor tests patch it.
+REAL_RUN = subprocess.run
+
 class DoctorTests(unittest.TestCase):
     """Doctor reports each probed tool's version and the hash of the binary it relies on."""
 
@@ -49,6 +52,8 @@ class DoctorTests(unittest.TestCase):
         return None if name in self.missing else str(self.binaries[name]) if name in self.binaries else None
 
     def run_probe(self, command, **kwargs):
+        if command[0] == '/usr/bin/git':
+            return REAL_RUN(command, **kwargs)  # the router checkout record reads git, not a probe
         self.calls.append(command)
         if command[0] in self.missing:
             raise FileNotFoundError(2, "No such file or directory", command[0])
@@ -305,11 +310,13 @@ class DoctorTests(unittest.TestCase):
         self.assertIn('error', report['prerequisites']['pcbnew'])
         self.assertIn('error', report['prerequisites']['python3'])
 
-    def test_requested_router_checkout_is_required_and_reports_its_pin(self):
+    def test_requested_router_checkout_is_required_and_reports_its_commit(self):
         code, report = self.doctor('--checks-only', '--router-checkout', str(self.root / 'missing-router'))
         self.assertEqual(code, 1)
         router = report['prerequisites']['kicad-route']
-        self.assertEqual(len(router['pin']), 40)
+        # A missing checkout has no commit to record; nothing names an expected one.
+        self.assertEqual((router['commit'], router['clean']), (None, None))
+        self.assertNotIn('pin', router)
         self.assertTrue(router['problems'])
         self.assertIsNone(router['sha256'])
 

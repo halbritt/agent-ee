@@ -14,7 +14,7 @@ from unittest.mock import patch
 from agent_ee import campaign, routing_adapter as routing, run_record, stage_receipts
 from agent_ee.run_record import policy_files, runtime_files
 from agent_ee.storage import digest, identity, read_json, write_json
-from tests.kicad_route_fixture import make_checkout, make_layout
+from tests.kicad_route_fixture import make_checkout
 from tests import test_kicad_route_native as native_fixture
 from tests import test_stage_receipts as campaign_fixture
 from tests.toolchain import require_kicad_route, require_toolchain
@@ -53,15 +53,13 @@ class RoutingCampaignTests(unittest.TestCase):
             'finding_retry_limit': 3}
 
     def spec(self, scenario='complete', *, separate=False):
-        checkout, code = make_checkout(self.root / 'checkout', scenario)
+        checkout, _ = make_checkout(self.root / 'checkout', scenario)
         state = None
         if separate:
             state = self.root / 'state'
             state.mkdir()
             for rel in ('.venv-krt', 'vendor'):
                 shutil.move(checkout / rel, state / rel)
-        # The production adapter, qualified against the fixture checkout's pin file.
-        self.enterContext(routing.qualified_layout(make_layout(self.root / 'pin', code)))
         return {'schema': 'agent-ee.routing-adapter/1', 'project': 'design', 'board': 'rc.kicad_pcb',
                 'schematic': 'rc.kicad_sch', 'name': 'rc', 'label': 'campaign', 'checkout': str(checkout),
                 'state': str(state) if state else None, 'budget': 5, 'timeout': 30}

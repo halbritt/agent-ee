@@ -17,7 +17,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))  # ADAPTED: checkout-relative, not cwd-relative
 import k91_consumer as k, k91_classify as c
 from agent_ee import campaign, routing_adapter, stage_receipts
-from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
+from tests.kicad_route_fixture import make_candidate, make_checkout
 from tests.test_routing_experiment_boundary import CURRENT
 observations={}; stacks=[]
 original=campaign.run_implementation_steps
@@ -41,10 +41,10 @@ class ReasonProbeTest(unittest.TestCase):
     def test_reviewer_reason_probe(self):
         global observations, stacks
         with tempfile.TemporaryDirectory(prefix='review442-reasons-') as temp:
-            root=Path(temp); checkout,code=make_checkout(root/'checkout',{'name':'complete'})
+            root=Path(temp); checkout,_=make_checkout(root/'checkout',{'name':'complete'})
             mismatch,_=make_checkout(root/'mismatch',{'name':'complete'})
             with (mismatch/'src/kicad_route/__init__.py').open('a') as f:f.write('# different runtime\n')
-            with k.pinned(root,FAKE_PIN,code), patch.object(campaign,'run_implementation_steps',witness):
+            with k.production(), patch.object(campaign,'run_implementation_steps',witness):
                 decl=k.declaration(checkout,project='project',board='rc.kicad_pcb',schematic='rc.kicad_sch',name='rc',budget=5,timeout=30,policy=CURRENT)
                 bind=k.binding(decl); work=root/'positive/1'; work.mkdir(parents=True)
                 positive=k.consume(work,make_candidate(root/'positive/design'),bind)

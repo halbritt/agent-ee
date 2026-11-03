@@ -114,7 +114,7 @@ def main(argv=None):
                 'harness_sha256': v1.sha256(__file__), 'classifier_sha256': v1.sha256(classify.__file__),
                 'consumer_sha256': v1.sha256(consumer.__file__), 'base_harness_sha256': v1.sha256(v1.__file__),
                 'production_adapter_sha256': v1.sha256(routing_adapter.ADAPTER_SOURCE),
-                'production_pin': attempt.PIN,
+                'router_version': 'recorded per attempt (tool.commit, tool.clean, tool.code_sha256)',
                 'limits': {'router_s': args.router_limit_s, 'total_s': args.total_limit_s, 'budget_s': args.budget},
                 'qualified': False}
 
@@ -137,18 +137,17 @@ def main(argv=None):
         write()
         print(json.dumps(manifest['stopped'], indent=2))
         return 3
-    code = v1.code_map(checkout, args.commit)
-    if attempt.verify_code(checkout, code):
-        raise SystemExit('checkout work tree differs from its commit: ' + '; '.join(attempt.verify_code(checkout, code)))
-    manifest['pin'] = {'commit': args.commit, 'code_files': len(code),
-                       'code_sha256': hashlib.sha256(json.dumps(code, sort_keys=True).encode()).hexdigest()}
+    record, problems = attempt.checkout_record(checkout)
+    if problems or record['commit'] != args.commit:
+        raise SystemExit(f'checkout is not a clean {args.commit}: ' + '; '.join(problems or [str(record['commit'])]))
+    manifest['router'] = record
     policy = {'schema': 'routability-policy/1', 'experiment_class': 'current-policy',
               'allowed_trace_layers': ['F.Cu', 'B.Cu'], 'allowed_via_spans': [['F.Cu', 'B.Cu']],
               'rule_areas_sha256': args.rule_areas_sha256}
     manifest['policy'] = {'declared': policy, 'canonical_sha256': hashlib.sha256(
         attempt.canonical_json(policy).encode()).hexdigest()}
-    with consumer.pinned(out, args.commit, code) as adapter:
-        manifest['pinned_adapter'] = adapter
+    with consumer.production() as adapter:
+        manifest['production_adapter'] = adapter
         decl = consumer.declaration(checkout, project='project', board=args.board, schematic=args.schematic,
                                     name=args.name, budget=args.budget, timeout=args.router_limit_s, policy=policy)
         bind = consumer.binding(decl)

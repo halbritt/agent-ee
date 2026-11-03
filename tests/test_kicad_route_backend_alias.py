@@ -114,9 +114,9 @@ class PinnedBackendNamesTest(unittest.TestCase):
         out = json.loads(subprocess.run(['/usr/bin/python3', '-I', '-B', '-c', script, str(checkout)], check=True,
                                         capture_output=True, text=True, timeout=60).stdout)
         self.assertEqual(out['choices'], ['builtin', 'freerouting'])
-        # The pin parses 'krt' as a deprecated alias of 'builtin': exactly PIN_BACKEND_NAMES.
-        self.assertEqual(out['parsed'], attempt.PIN_BACKEND_NAMES)
-        self.assertEqual(attempt.PIN_BACKEND_NAMES, {'builtin': 'builtin', 'krt': 'builtin', 'freerouting': 'freerouting'})
+        # The pin parses 'krt' as a deprecated alias of 'builtin': exactly CLI_BACKEND_NAMES.
+        self.assertEqual(out['parsed'], attempt.CLI_BACKEND_NAMES)
+        self.assertEqual(attempt.CLI_BACKEND_NAMES, {'builtin': 'builtin', 'krt': 'builtin', 'freerouting': 'freerouting'})
         self.assertIn('--backend krt is an alias for builtin', out['warned'])
         self.assertEqual({n: attempt.canonical_backend(n) for n in out['parsed']}, out['parsed'])
         # The state manifest keeps the pre-rename key: the owned engine is manifest['krt'].

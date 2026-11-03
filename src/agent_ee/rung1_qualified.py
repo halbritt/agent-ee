@@ -11,7 +11,7 @@ experimental stand-in with the owned module now on main:
   captured ``agent-ee.footprint-libraries/1`` manifest, into the empty scaffold board;
 - placement: the campaign ``placement_adapter`` (AGENTEE-91) with the pinned placer helper
   ``placer_runner`` (AGENTEE-54); no row fallback;
-- routing: ``routing_adapter.step`` (AGENTEE-93) on the pinned kicad-route checkout;
+- routing: ``routing_adapter.step`` (AGENTEE-93) on the kicad-route checkout, recorded per attempt;
 - fab: the ``fab_export`` (AGENTEE-23) and ``fab_consistency`` (AGENTEE-73) checks and, with a
   ``--cpl-inputs`` capture, ``cpl_rotation`` with a receipted export step (AGENTEE-126); a
   rotation status outside ``fab_package.DONE_ROTATION_STATUSES`` keeps "done" false; a
@@ -50,8 +50,8 @@ REPO_ROOT = PACKAGE_ROOT.parent
 STEPS_DIR = REPO_ROOT / 'fixtures' / 'rung1' / 'qualified' / 'steps'
 ENVELOPE = 'generation/envelope/envelope.json'
 IMAGE_KICAD_ROUTE = Path('/opt/kicad-route')
-# The pinned kicad-route checkout: AGENT_EE_KICAD_ROUTE_CHECKOUT when set, else the
-# standard image path. routing_adapter.preflight still qualifies whatever is named.
+# The kicad-route checkout: AGENT_EE_KICAD_ROUTE_CHECKOUT when set, else the standard
+# image path. routing_adapter.preflight records and qualifies whatever is named.
 DEFAULT_KICAD_ROUTE = Path(os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT') or IMAGE_KICAD_ROUTE)
 LAYOUT_NAMESPACE = str(uuid.uuid5(uuid.NAMESPACE_URL, 'https://github.com/halbritt/agent-ee/rung1-qualified/1'))
 STAGE_ORDER = ['schematic', 'placement', 'routing', 'verification', 'fab']

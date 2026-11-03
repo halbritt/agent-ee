@@ -12,15 +12,12 @@ from pathlib import Path
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee import stage_receipts
-from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout, make_layout
+from tests.kicad_route_fixture import make_candidate, make_checkout
 from tests.toolchain import require_toolchain
 
-DRIVER = ('import json, sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
+DRIVER = ('import sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
           'import kicad_route_attempt as a\n'
-          'cfg = json.load(open("/opt/driver/layout.json"))\n'
-          'layout = a.default_layout(a.parse_request(sys.argv[1:]))\n'
-          'layout.update(pin=cfg["pin"], code=cfg["code"])\n'
-          'sys.exit(a.main(sys.argv[1:], layout))\n')
+          'sys.exit(a.main(sys.argv[1:]))\n')
 
 
 class StageReceiptRoutingTest(unittest.TestCase):
@@ -31,16 +28,13 @@ class StageReceiptRoutingTest(unittest.TestCase):
 
     def receipt(self, scenario):
         root = Path(self.tmp.name) / scenario
-        checkout, code = make_checkout(root / 'checkout', scenario)
-        self.pin = {'pin': FAKE_PIN, 'code': code}
+        checkout, self.commit = make_checkout(root / 'checkout', scenario)
         design = make_candidate(root / 'design')
         driver = root / 'driver'
         driver.mkdir()
-        (driver / 'layout.json').write_text(json.dumps({'pin': FAKE_PIN, 'code': code}))
         (driver / 'run.py').write_text(DRIVER)
         spec = routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
-                                    name='rc', label='step-1', checkout=checkout, budget=5, timeout=30,
-                                    layout=make_layout(root / 'pin', code))
+                                    name='rc', label='step-1', checkout=checkout, budget=5, timeout=30)
         spec['argv'][3] = '/opt/driver/run.py'
         spec['mounts'].append({'source': str(driver), 'at': '/opt/driver'})
         receipt_dir = root / 'receipts/1-kicad-route-builtin'
@@ -54,7 +48,7 @@ class StageReceiptRoutingTest(unittest.TestCase):
         self.assertEqual(receipt['changed'], ['project/rc.kicad_pcb'])
         self.assertEqual(receipt['tool']['reported_version']['status'], 'unknown')
         self.assertEqual(receipt['tool']['backend']['value']['name'], 'builtin')
-        summary = routing_adapter.verify(receipt_dir / 'run', receipt=receipt, layout=self.pin)
+        summary = routing_adapter.verify(receipt_dir / 'run', receipt=receipt)
         self.assertEqual(summary['candidate_sha256'], receipt['outputs']['project/rc.kicad_pcb'])
         self.assertEqual(summary['backend'], receipt['tool']['backend'])
         stage_receipts.adopt(receipt_dir, receipt, design)
@@ -68,7 +62,7 @@ class StageReceiptRoutingTest(unittest.TestCase):
     def test_partial_attempt_is_adoptable_as_partial(self):
         receipt, receipt_dir, design = self.receipt('incomplete')
         self.assertEqual((receipt['exit_code'], receipt['status']), (2, 'partial'))
-        self.assertEqual(routing_adapter.verify(receipt_dir / 'run', receipt=receipt, layout=self.pin)['coverage'],
+        self.assertEqual(routing_adapter.verify(receipt_dir / 'run', receipt=receipt)['coverage'],
                          'routing_incomplete')
         stage_receipts.adopt(receipt_dir, receipt, design)
 
@@ -84,7 +78,7 @@ class StageReceiptRoutingTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     stage_receipts.adopt(receipt_dir, receipt, design)
                 self.assertEqual(attempt.files_of(attempt.tree(design)), before)
-                routing_adapter.verify(receipt_dir / 'run', receipt=receipt, layout=self.pin)
+                routing_adapter.verify(receipt_dir / 'run', receipt=receipt)
 
     def test_the_report_must_agree_with_its_own_receipt(self):
         complete, complete_dir, _ = self.receipt('complete')
@@ -92,7 +86,7 @@ class StageReceiptRoutingTest(unittest.TestCase):
         # Each run verifies against its own receipt, and neither against the other's.
         for run_dir, receipt in ((complete_dir, partial), (partial_dir, complete)):
             with self.assertRaisesRegex(ValueError, 'stage receipt'):
-                routing_adapter.verify(run_dir / 'run', receipt=receipt, layout=self.pin)
+                routing_adapter.verify(run_dir / 'run', receipt=receipt)
         tampers = {
             'exit differs from the routing adapter exit': lambda r: r.update(exit_code=2),
             'output differs from the routed candidate': lambda r: r['outputs'].update(
@@ -108,7 +102,7 @@ class StageReceiptRoutingTest(unittest.TestCase):
                 receipt = json.loads(json.dumps(complete))
                 tamper(receipt)
                 with self.assertRaisesRegex(ValueError, message):
-                    routing_adapter.verify(complete_dir / 'run', receipt=receipt, layout=self.pin)
+                    routing_adapter.verify(complete_dir / 'run', receipt=receipt)
 
 
 if __name__ == '__main__':

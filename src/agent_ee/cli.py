@@ -276,7 +276,7 @@ def main(argv=None, *, host=None):
     doctor_parser.add_argument("--checks-only", action="store_true",
                                help="probe only the native check toolchain, not reviewer harnesses")
     doctor_parser.add_argument('--router-checkout', type=Path,
-                               help='also verify the pinned routing checkout and installed backend')
+                               help='also record and verify the routing checkout (clean commit) and installed backend')
     bench = sub.add_parser("bench-review", help="capture bench evidence and rerun calibrated checks/reviews")
     bench.add_argument("run")
     bench.add_argument("report")

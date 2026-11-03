@@ -2,13 +2,13 @@
   "schema": "agent-ee.routing-policy-contract-example/1",
   "status": "documentation example for KICADROUTE-91 (AGENTEE-388); no agent-ee code reads this file. tests/test_routing_policy_contract.py checks it against the adapter constants",
   "sources": {
-    "agent_ee": "81e387ee (AGENTEE-450 re-pin base; contract first written at f06b30bc)",
+    "agent_ee": "81e387ee (AGENTEE-450 base; contract first written at f06b30bc; the router version rule changed on 2026-11-03)",
     "fome_mc": "8c42f2ee3e7c5c77c51e21632a8900bfbef23726",
-    "kicad_route_pin_file": "src/agent_ee/data/kicad-route-pin.json"
+    "kicad_route": "the checkout each attempt runs, at the commit it holds; no commit is named here"
   },
   "adapter": {
-    "pin_file": "src/agent_ee/data/kicad-route-pin.json",
-    "pin_file_rule": "agent-ee.kicad-route-pin/1: the qualified kicad-route commit and the SHA-256 of every tracked bin/ and src/ blob at it, campaign.py and the owned engine included; mounted read-only beside the sandbox script and hashed with its mounts",
+    "router_version_record": ["commit", "clean", "code_sha256", "code_files"],
+    "router_version_rule": "every attempt records, in its adapter report tool field, the kicad-route checkout's HEAD commit, git's clean-tree state and the SHA-256 identity and count of its bin/ and src/ files; a dirty tree or a missing or unparseable commit is refused before the router runs; verify reads a finished attempt's own record; a campaign continues only on the commit its binding recorded",
     "command": "run",
     "consumes": {
       "result": ["kicad-route/route/1", "kicad-route/route/2"],
@@ -109,7 +109,7 @@
       "effective_netclass_per_net": "retained facts/reference-facts.json nets[net_name].{netclass,track_width,clearance,via_diameter,via_drill}",
       "layer_stack": "retained facts/reference-facts.json copper_layers, stackup",
       "layer_policy": "report.request.layer_policy, result.settings.backend_args and pour_area_loss_pct",
-      "tool_code": "report.tool.commit == PIN; identity_before/after.code (bin, src); PINNED_CODE inside the adapter bytes",
+      "tool_code": "report.tool.commit, clean, code_sha256 and code_files recorded per attempt and named by adapter.compatibility; identity_before/after.code (bin, src)",
       "engine_and_state": "identity_before/after.state (.venv-krt, or the selected .router-generations/<hex>), state_manifest digest, result.backend (version, build, commit, source_sha256, runtime bound to the verified engine)",
       "toolchain": "report.tool.{python,kicad_cli,kicad_route}.sha256 and kicad_share_templates",
       "adapter_and_binding": "receipt mounts, state.json.routing_binding.adapter_sha256"

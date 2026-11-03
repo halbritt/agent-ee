@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 from agent_ee import stage_receipts
 from tests import test_routing_experiment_boundary as boundary
-from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
+from tests.kicad_route_fixture import make_candidate, make_checkout
 from tests.toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -256,12 +256,12 @@ class ProductionConsumerTest(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-k91-consumer-')
         cls.root = root = Path(cls.tmp.name)
         cls.consumer = load('k91_consumer')
-        checkout, code = make_checkout(root / 'checkout', {'name': 'complete'})
+        checkout, commit = make_checkout(root / 'checkout', {'name': 'complete'})
         mismatch, _ = make_checkout(root / 'mismatch', {'name': 'complete'})
         with (mismatch / 'src/kicad_route/__init__.py').open('a') as handle:
             handle.write('# another runtime\n')
-        cls.code = code
-        with cls.consumer.pinned(root, FAKE_PIN, code) as adapter:
+        cls.commit = commit
+        with cls.consumer.production() as adapter:
             cls.adapter = adapter
             cls.decl = cls.consumer.declaration(checkout, project='project', board='rc.kicad_pcb',
                                                 schematic='rc.kicad_sch', name='rc', budget=5, timeout=30,
@@ -338,7 +338,7 @@ class ProductionConsumerTest(unittest.TestCase):
 
     def test_an_untampered_replay_is_accepted_and_adopted_by_the_same_consumer(self):
         # Counterexample at the real boundary: the replay plumbing refuses nothing itself.
-        with self.consumer.pinned(self.root, FAKE_PIN, self.code) as adapter, \
+        with self.consumer.production() as adapter, \
                 self.consumer.disposable_receipt(self.work) as work:
             record = self.consumer.consume(work, make_candidate(self.root / 'counterexample/design'), self.bind,
                                            replay=True, direct_design=make_candidate(self.root / 'counterexample/direct'))

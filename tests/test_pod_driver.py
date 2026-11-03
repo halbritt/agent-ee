@@ -15,8 +15,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_scaffold import ScaffoldFixture
 from toolchain import fome_mc_store, require_toolchain
-from agent_ee import pod_driver as pod, routing_adapter
-from tests.kicad_route_fixture import make_checkout, make_layout
+from agent_ee import pod_driver as pod
+from tests.kicad_route_fixture import make_checkout
 from agent_ee.storage import read_json, write_json, digest, identity
 from agent_ee.stage_receipts import validate_pre_receipt
 from agent_ee import spec_record
@@ -93,8 +93,7 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
             step=dict(schema='agent-ee.stage-step/1',step=name,stage=stage,
                 argv=['/usr/bin/false'],writes={output:'design/'+output},adoptable_exits=[0],timeout_s=600)
             steps.append(step)
-        checkout, code = make_checkout(self.root/'router','complete')
-        self.enterContext(routing_adapter.qualified_layout(make_layout(self.root/'router-pin',code)))
+        checkout, _ = make_checkout(self.root/'router','complete')
         route=dict(schema='agent-ee.routing-adapter/1',project='project',board='design.kicad_pcb',
                    schematic='design.kicad_sch',name='pod',label='campaign',checkout=str(checkout),budget=300,timeout=900)
         profile=read_json(ROOT/'profiles/pod-review.json')

@@ -21,7 +21,7 @@ from unittest.mock import patch
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee.executor import execute
-from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout, make_layout
+from tests.kicad_route_fixture import make_candidate, make_checkout
 from tests.toolchain import require_toolchain
 
 REQUEST = ['--project', 'project', '--board', 'rc.kicad_pcb', '--schematic', 'rc.kicad_sch',
@@ -43,13 +43,12 @@ def files_under(root, skip=()):
 class Case:
     def __init__(self, root, scenario, *, probe=(), state=None):
         self.root = Path(root)
-        self.checkout, self.code = make_checkout(self.root / 'checkout', scenario)
+        self.checkout, self.commit = make_checkout(self.root / 'checkout', scenario)
         self.candidate = make_candidate(self.root / 'candidate')
         self.work = self.root / 'work'
         self.work.mkdir()
         self.layout = {'work': self.work, 'candidate': self.candidate, 'checkout': self.checkout,
-                       'state': state or self.checkout, 'pin': FAKE_PIN, 'code': self.code,
-                       'probe': None if probe is None else list(probe)}
+                       'state': state or self.checkout, 'probe': None if probe is None else list(probe)}
 
     def run(self, argv=REQUEST):
         self.inputs = attempt.files_of(attempt.tree(self.candidate))
@@ -59,7 +58,7 @@ class Case:
         return self
 
     def verify(self, inputs=None, **kwargs):
-        """Production verify, told the fixture router's pin and host layout."""
+        """Production verify, told the fixture router's host layout."""
         return routing_adapter.verify(self.work, self.inputs if inputs is None else inputs,
                                       layout=self.layout, **kwargs)
 
@@ -163,7 +162,7 @@ class AdapterPolicyTest(unittest.TestCase):
         # The checks the schematic-less board route lacked: schema, key set and the observed exit.
         for changed, reason in (({**result, 'schema': 'kicad-route/route/9'}, 'unknown result schema version'),
                                 ({k: v for k, v in result.items() if k != 'settings'},
-                                 'result.json shape differs from the pinned tool')):
+                                 'result.json shape differs from the result contract')):
             self.assertEqual(attempt.classify(json.dumps(changed).encode(), 0), ('refused', [reason]))
         self.assertEqual(attempt.classify(json.dumps(result).encode(), 2)[0], 'refused')
         self.assertEqual(attempt.classify(b'{not json', 0)[0], 'refused')
@@ -342,14 +341,14 @@ class AdapterPolicyTest(unittest.TestCase):
         self.assertEqual(list(case.checkout.rglob('.agent-ee-write-probe-*')), [])
         self.assertFalse((case.work / 'routing/out').exists())
 
-    def test_unpinned_code_wrong_commit_or_missing_dependency_is_not_run(self):
+    def test_dirty_code_unreadable_commit_or_missing_dependency_is_not_run(self):
         mutations = {
-            'tool file differs from pin: bin/kicad-route':
+            'uncommitted or untracked changes:  M bin/kicad-route':
                 lambda c: (c.checkout / 'bin/kicad-route').write_text('#!/usr/bin/python3\nraise SystemExit(0)\n'),
-            'unpinned file in tool code: src/kicad_route/sitecustomize.py':
+            'uncommitted or untracked changes: ?? src/kicad_route/sitecustomize.py':
                 lambda c: (c.checkout / 'src/kicad_route/sitecustomize.py').write_text(''),
-            f'checkout HEAD {"0" * 40} is not the pinned {FAKE_PIN}':
-                lambda c: (c.checkout / '.git/refs/heads/main').write_text('0' * 40 + '\n'),
+            "checkout HEAD 'not-a-commit' is not a commit":
+                lambda c: (c.checkout / '.git/refs/heads/main').write_text('not-a-commit\n'),
             'missing installed backend dependency: KICAD_ROUTE_STATE/.venv-krt/bin/python':
                 lambda c: (c.checkout / '.venv-krt/bin/python').unlink(),
             'candidate lacks project/rc.kicad_sch':
@@ -363,7 +362,8 @@ class AdapterPolicyTest(unittest.TestCase):
                 mutate(case)
                 case.run()
                 self.assertEqual(case.exit, attempt.EXIT_REQUEST)
-                self.assertIn(reason, case.report['semantics']['reasons'])
+                self.assertTrue(any(reason in r for r in case.report['semantics']['reasons']),
+                                case.report['semantics']['reasons'])
                 self.assertIsNone(case.report['process'])
                 self.assertEqual(routing_adapter.verify(case.work, layout=case.layout)['classification'],
                                  'not_run')
@@ -526,23 +526,22 @@ class AdapterPolicyTest(unittest.TestCase):
 
     def test_step_declares_a_networkless_coordinator_attempt(self):
         case = self.case('complete')
-        with self.assertRaisesRegex(ValueError, 'not the pinned'):
-            routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
-                                 name='rc', label='step-1', checkout=case.checkout)
-        layout = make_layout(case.checkout.parent / 'pin', case.code)
         spec = routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
-                                    name='rc', label='step-1', checkout=case.checkout, budget=60, layout=layout)
+                                    name='rc', label='step-1', checkout=case.checkout, budget=60)
         with self.assertRaises(ValueError):
             routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
-                                 name='rc', label='bad label', checkout=case.checkout, layout=layout)
+                                 name='rc', label='bad label', checkout=case.checkout)
+        (case.checkout / 'src/kicad_route/__init__.py').write_text('# edited\n')
+        with self.assertRaisesRegex(ValueError, 'uncommitted or untracked changes'):
+            routing_adapter.step(project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
+                                 name='rc', label='step-1', checkout=case.checkout)
         self.assertEqual(spec['argv'][:4], ['/usr/bin/python3', '-I', '-B', routing_adapter.ADAPTER_AT])
         self.assertEqual(attempt.parse_request(spec['argv'][4:])['state'], 'checkout')
-        # The pin data file is mounted beside the script, where the sandbox reads it.
+        # The adapter, its helpers and the checkout; no list of commits or digests is mounted.
         self.assertEqual(spec['mounts'], [
             {'source': str(routing_adapter.ADAPTER_SOURCE), 'at': routing_adapter.ADAPTER_AT},
             {'source': str(case.checkout.resolve()), 'at': '/opt/kicad-route'},
-            *routing_adapter.BINDING_MOUNTS, {'source': layout['pin_file'], 'at': attempt.PIN_AT}])
-        self.assertEqual(attempt.PIN_AT, str(Path(routing_adapter.ADAPTER_AT).parent / 'data/kicad-route-pin.json'))
+            *routing_adapter.BINDING_MOUNTS])
         self.assertEqual(spec['writes'], {'project/rc.kicad_pcb': 'routing/candidate/project/rc.kicad_pcb'})
         self.assertEqual(spec['adoptable_exits'], [0, 2])
         self.assertNotIn('version_argv', spec)
@@ -659,9 +658,9 @@ class RetainedVerificationTest(unittest.TestCase):
             with self.subTest(args=args), self.assertRaisesRegex(attempt.RequestError, 'diff-pairs'):
                 attempt.parse_request(REQUEST + args)
 
-    def test_a_fixture_attempt_is_not_a_pinned_kicad_route_attempt(self):
-        case = self.case('complete')
-        with self.assertRaisesRegex(ValueError, 'different kicad-route pin'):
+    def test_a_host_fixture_attempt_does_not_verify_at_the_sandbox_location(self):
+        case = self.case('complete').run()
+        with self.assertRaisesRegex(ValueError, 'different kicad-route commit or location'):
             routing_adapter.verify(case.work, case.inputs)
 
     def test_eligible_mutations_of_retained_evidence_are_refused(self):
@@ -680,7 +679,7 @@ class RetainedVerificationTest(unittest.TestCase):
             'reported exit': (dict(report=lambda r: r['semantics'].update(exit_code=3)),
                               'differs from the observed process exit'),
             'tool pin and commit': (dict(report=lambda r: r['tool'].update(pin='0' * 40, commit='0' * 40)),
-                                    'different kicad-route pin'),
+                                    'different kicad-route commit'),
             'unknown result version': (dict(files={'result.json': lambda v: v.update(
                 schema='kicad-route/route/999')}), 'classify as contradiction'),
             'candidate board hash': (dict(files=set_validation(candidate_board_sha256=other)),
@@ -701,13 +700,14 @@ class RetainedVerificationTest(unittest.TestCase):
             'process and reported exit': (dict(report=lambda r: (r['process'].update(exit_code=3),
                                                                  r['semantics'].update(exit_code=3))),
                                           'classify as contradiction'),
-            'commit only': (dict(report=lambda r: r['tool'].update(commit='0' * 40)), 'not the pinned code'),
-            'executable bytes': (dict(report=lambda r: r['tool']['kicad_route'].update(sha256=other)),
-                                 'not the pinned code'),
+            'commit only': (dict(report=lambda r: r['tool'].update(commit='0' * 40)), 'different kicad-route commit'),
+            'dirty recorded': (dict(report=lambda r: r['tool'].update(clean=False)), 'recorded clean kicad-route'),
+            'code digest dropped': (dict(report=lambda r: r['tool'].update(code_sha256=None)),
+                                    'recorded clean kicad-route'),
             'executable location': (dict(report=lambda r: r['tool']['kicad_route'].update(path='/tmp/kicad-route')),
-                                    'different kicad-route pin'),
+                                    'different kicad-route commit'),
             'adapter compatibility': (dict(report=lambda r: r['adapter'].update(compatibility='kicad-route@main')),
-                                      'different kicad-route pin'),
+                                      'different kicad-route commit'),
             'write probe accepted': (dict(report=lambda r: r.update(state_write_probe=[
                 {'directory': str(r['tool']['kicad_route']['path']), 'refused': False, 'errno': None}])),
                                      'OS-refused write probe'),
@@ -767,7 +767,7 @@ class RetainedVerificationTest(unittest.TestCase):
             ('backend_failure', 'malformed result'): (dict(report=lambda r: None),
                                                       'is a contradiction'),
             ('validation_failed', 'commit'): (dict(report=lambda r: r['tool'].update(commit='0' * 40)),
-                                              'not the pinned code'),
+                                              'different kicad-route commit'),
             ('validation_failed', 'bound candidate'): (dict(report=lambda r: r.update(
                 candidate_files={'rc.kicad_pcb': 'f' * 64})), 'records a bound candidate'),
             ('refused', 'reported exit'): (dict(report=lambda r: r['semantics'].update(exit_code=None)),
@@ -792,13 +792,13 @@ class RetainedVerificationTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     case.verify()
 
-    def test_a_not_run_attempt_cannot_claim_router_output_or_another_pin(self):
+    def test_a_not_run_attempt_cannot_claim_router_output_or_another_commit(self):
         case = self.case('complete', probe=None)
         self.assertEqual(case.verify()['classification'], 'not_run')
         for label, change, message in (
                 ('discovery', lambda r: r.update(discovery={'attempt_dir': None, 'problems': []}), 'router output'),
                 ('reasons', lambda r: r['semantics'].update(reasons=[]), 'without its reasons'),
-                ('pin', lambda r: r['tool'].update(pin='0' * 40), 'different kicad-route pin')):
+                ('pin', lambda r: r['tool'].update(pin='0' * 40), 'different kicad-route commit')):
             with self.subTest(label):
                 path = case.work / 'routing/adapter-report.json'
                 original = path.read_bytes()
@@ -1222,22 +1222,18 @@ class SandboxedAdapterTest(unittest.TestCase):
     def sandboxed(self, scenario):
         root = Path(self.tmp.name) / (scenario if isinstance(scenario, str) else scenario['name'])
         root.mkdir()
-        checkout, code = make_checkout(root / 'checkout', scenario)
-        self.pin = {'pin': FAKE_PIN, 'code': code}
+        checkout, self.commit = make_checkout(root / 'checkout', scenario)
         candidate = make_candidate(root / 'candidate')
         driver = root / 'driver'
         driver.mkdir()
-        # The production script reads the fixture pin from its mounted pin data file.
         (driver / 'run.py').write_text(
             'import sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
             'import kicad_route_attempt as a\n'
             'sys.exit(a.main(sys.argv[1:]))\n')
-        pin_file = make_layout(root / 'pin', code)['pin_file']
         before = attempt.tree(checkout)
         work = root / 'work'
         record = execute(candidate, work, ['/usr/bin/python3', '-I', '-B', '/opt/driver/run.py', *REQUEST],
                          timeout=60, extra_ro=[(routing_adapter.ADAPTER_SOURCE, routing_adapter.ADAPTER_AT),
-                                               (pin_file, attempt.PIN_AT),
                                                (checkout, '/opt/kicad-route'), (driver, '/opt/driver')])
         self.assertEqual(attempt.tree(checkout), before, 'host checkout/state changed')
         report = json.loads((work / 'routing/adapter-report.json').read_text())
@@ -1254,16 +1250,16 @@ class SandboxedAdapterTest(unittest.TestCase):
         write = json.loads((work / 'routing/attempt/validate/state-write.json').read_text())
         self.assertEqual(write['outcome'], 'OSError:30')
         inputs = attempt.files_of(attempt.tree(candidate))
-        self.assertEqual(routing_adapter.verify(work, inputs, layout=self.pin)['proposal'], 'eligible')
-        # The fixture router is not the pinned kicad-route; production verify says so.
-        with self.assertRaisesRegex(ValueError, 'different kicad-route pin'):
-            routing_adapter.verify(work, inputs)
+        # Production verify reads the commit the sandboxed attempt recorded from the read-only checkout.
+        self.assertEqual(routing_adapter.verify(work, inputs)['proposal'], 'eligible')
+        self.assertEqual((report['tool']['commit'], report['tool']['clean']), (self.commit, True))
+        self.assertEqual(report['adapter'], {'compatibility': f'kicad-route@{self.commit}'})
 
     def test_exit_three_in_the_sandbox_delivers_no_board(self):
         record, report, work, candidate = self.sandboxed('validation_failed')
         self.assertEqual(record['exit_code'], 3)
         self.assertFalse(os.path.lexists(work / 'routing/candidate'))
-        self.assertEqual(routing_adapter.verify(work, layout=self.pin)['classification'], 'validation_failed')
+        self.assertEqual(routing_adapter.verify(work)['classification'], 'validation_failed')
 
 
 if __name__ == '__main__':

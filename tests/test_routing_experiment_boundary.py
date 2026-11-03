@@ -32,7 +32,7 @@ from unittest.mock import patch
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee import stage_receipts
-from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout, make_layout
+from tests.kicad_route_fixture import make_candidate, make_checkout
 from tests.toolchain import require_toolchain
 
 # HOOK (AGENTEE-442), REAL NATIVE REPLAY. agent-507's final frozen K91 producer
@@ -57,12 +57,9 @@ CURRENT = {'schema': 'routability-policy/1', 'experiment_class': 'current-policy
            'allowed_trace_layers': ['F.Cu', 'B.Cu'], 'allowed_via_spans': [['F.Cu', 'B.Cu']],
            'rule_areas_sha256': AREAS}
 HISTORICAL = {**CURRENT, 'experiment_class': 'historical-all-layer'}
-DRIVER = ('import json, sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
+DRIVER = ('import sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
           'import kicad_route_attempt as a\n'
-          'cfg = json.load(open("/opt/driver/layout.json"))\n'
-          'layout = a.default_layout(a.parse_request(sys.argv[1:]))\n'
-          'layout.update(pin=cfg["pin"], code=cfg["code"])\n'
-          'sys.exit(a.main(sys.argv[1:], layout))\n')
+          'sys.exit(a.main(sys.argv[1:]))\n')
 REFUSALS = {'tamper': 'tampered', 'missing_file': 'missing', 'omit': 'missing', 'malformed': 'malformed',
             'malformed_reference': 'malformed', 'escape': 'malformed', 'cwd_relative': 'malformed',
             'second_sidecar': 'malformed', 'no_policy_identity': 'malformed', 'unknown_schema': 'unknown_schema',
@@ -85,16 +82,14 @@ class ExperimentBoundaryTest(unittest.TestCase):
 
     def routing_step(self, root, scenario, experiment_policy=None, project='project', board='rc.kicad_pcb',
                      schematic='rc.kicad_sch', name='rc'):
-        """The adapter's step declaration over the fixture router, driven with its pin."""
-        checkout, code = make_checkout(root / 'checkout', scenario)
-        self.pin = {'pin': FAKE_PIN, 'code': code}
+        """The adapter's step declaration over the fixture router, at its recorded commit."""
+        checkout, self.commit = make_checkout(root / 'checkout', scenario)
         driver = root / 'driver'
         driver.mkdir()
-        (driver / 'layout.json').write_text(json.dumps(self.pin))
         (driver / 'run.py').write_text(DRIVER)
         spec = routing_adapter.step(project=project, board=board, schematic=schematic,
                                     name=name, label='step-1', checkout=checkout, budget=5, timeout=30,
-                                    experiment_policy=experiment_policy, layout=make_layout(root / 'pin', code))
+                                    experiment_policy=experiment_policy)
         spec['argv'][3] = '/opt/driver/run.py'
         spec['mounts'].append({'source': str(driver), 'at': '/opt/driver'})
         return spec
@@ -114,7 +109,7 @@ class ExperimentBoundaryTest(unittest.TestCase):
         return receipt, receipt_dir, design, report
 
     def verify(self, receipt_dir, receipt):
-        return routing_adapter.verify(receipt_dir / 'run', receipt=receipt, layout=self.pin)
+        return routing_adapter.verify(receipt_dir / 'run', receipt=receipt)
 
     def test_current_policy_evidence_is_retained_in_the_adopted_receipt(self):
         receipt, receipt_dir, design, report = self.receipt({'name': 'complete'}, CURRENT)
@@ -558,7 +553,7 @@ class ExperimentBoundaryTest(unittest.TestCase):
                 ('settings omit', {'settings_policy': 'omit'}, settings),
                 ('settings other', {'settings_policy_edit': {'experiment_class': 'historical-all-layer'}}, settings),
                 ('attempt omit', {'attempt_policy': 'omit'},
-                 'attempt.json missing or shaped differently from the pinned tool'),
+                 'attempt.json missing or shaped differently from the result contract'),
                 ('attempt other', {'attempt_policy_edit': {'allowed_via_spans': []}}, recorded)):
             with self.subTest(label):
                 receipt, receipt_dir, design, report = self.receipt({'name': 'complete', **scenario}, CURRENT)
@@ -638,7 +633,7 @@ class ExperimentBoundaryTest(unittest.TestCase):
                     self.verify(receipt_dir, receipt)
                 # Without the receipt, re-derivation still refuses the self-consistent forgery.
                 with self.assertRaisesRegex(ValueError, message):
-                    routing_adapter.verify(receipt_dir / 'run', layout=self.pin)
+                    routing_adapter.verify(receipt_dir / 'run')
                 sidecar.write_bytes(original)
         (routing / 'adapter-report.json').write_bytes(honest)
         self.assertEqual(self.verify(receipt_dir, receipt)['experiment']['status'], 'retained')
@@ -648,7 +643,7 @@ class ExperimentBoundaryTest(unittest.TestCase):
         report['retained']['attempt/agent-ee-experiment-policy.json'] = attempt.digest(policy)
         attempt.write_report(routing / 'adapter-report.json', report)
         with self.assertRaisesRegex(ValueError, 'experiment policy file differs'):
-            routing_adapter.verify(receipt_dir / 'run', layout=self.pin)
+            routing_adapter.verify(receipt_dir / 'run')
 
     def test_the_synthetic_sidecar_is_schema_valid_and_requalified_like_a_real_one(self):
         receipt, receipt_dir, _, report = self.receipt({'name': 'complete'}, CURRENT)
@@ -1010,7 +1005,6 @@ class ExperimentBoundaryTest(unittest.TestCase):
     def test_the_contract_names_the_replayed_producer_and_claims_no_qualification(self):
         self.assertIn(K91_REVIEWED['producer_commit'], attempt.EXPERIMENT_CONTRACT)
         self.assertIn('unpinned, not qualified', attempt.EXPERIMENT_CONTRACT)
-        self.assertNotEqual(K91_REVIEWED['producer_commit'], attempt.PIN)
 
 
     def test_json_number_and_nesting_limits_are_typed_refusals_not_crashes(self):
@@ -2058,12 +2052,13 @@ class NotRunExperimentTest(unittest.TestCase):
     def test_a_not_run_attempt_records_absent_evidence_without_a_policy_file(self):
         with tempfile.TemporaryDirectory(prefix='agent-ee-route-k91-') as tmp:
             root = Path(tmp)
-            checkout, code = make_checkout(root / 'checkout', 'complete')
+            checkout, _ = make_checkout(root / 'checkout', 'complete')
+            # An uncommitted edit: the router never runs on a dirty checkout.
+            (checkout / 'src/kicad_route/__init__.py').write_text('# uncommitted\n')
             candidate = make_candidate(root / 'candidate')
             work = root / 'work'
             work.mkdir()
-            layout = {'work': work, 'candidate': candidate, 'checkout': checkout, 'state': checkout,
-                      'pin': 'e' * 40, 'code': code, 'probe': []}
+            layout = {'work': work, 'candidate': candidate, 'checkout': checkout, 'state': checkout, 'probe': []}
             argv = ['--project', 'project', '--board', 'rc.kicad_pcb', '--schematic', 'rc.kicad_sch',
                     '--name', 'rc', '--label', 'step-1', '--budget', '5', '--timeout', '30',
                     '--experiment-policy', attempt.canonical_json(CURRENT)]

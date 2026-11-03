@@ -1,15 +1,22 @@
 """A coordinator-owned stand-in for kicad-route, for adapter exit-policy tests only.
 
-It writes the pinned tool's OUT layout and report shapes for a named scenario.
+It writes kicad-route's OUT layout and report shapes for a named scenario.
 It does not route, validate or run KiCad: its results test how the adapter
 classifies and retains an attempt, never what kicad-route or KRT would do.
 """
-import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
 
-FAKE_PIN = 'f' * 40
+# A fixed author, committer and date make the fixture checkout's commit a function of its files.
+GIT_ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'LC_ALL': 'C', 'GIT_CONFIG_NOSYSTEM': '1',
+           'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_AUTHOR_NAME': 'agent-ee fixture',
+           'GIT_AUTHOR_EMAIL': 'fixture@agent-ee.invalid', 'GIT_AUTHOR_DATE': '2026-11-03T00:00:00Z',
+           'GIT_COMMITTER_NAME': 'agent-ee fixture', 'GIT_COMMITTER_EMAIL': 'fixture@agent-ee.invalid',
+           'GIT_COMMITTER_DATE': '2026-11-03T00:00:00Z'}
+# What a kicad-route checkout ignores: installed state and the fixture's own scenario.
+GITIGNORE = '/scenario.json\n/.venv-krt/\n/vendor/\n/manifest.json\n/.router-generations/\n__pycache__/\n'
 
 SCRIPT = r'''#!/usr/bin/python3
 import datetime, hashlib, json, os, shutil, signal, subprocess, sys, time
@@ -83,7 +90,7 @@ if name == 'reference_differs':
 files = {p.name: sha(p) for p in sorted(ref.iterdir())}
 write(run / 'snapshot.json', {'project': project, 'files': files})
 fingerprint = hashlib.sha256(''.join(f'{n}\0{d}\n' for n, d in sorted(files.items())).encode()).hexdigest()
-# As the pin's facts.py: the input board's hash and its tracks (and vias, when a scenario states them).
+# As kicad-route's facts.py: the input board's hash and its tracks (and vias, when a scenario states them).
 via_facts = 'vias_by_label' in scenario or 'reference_vias' in scenario
 write(run / 'facts/reference-facts.json', {'nets': {}, 'tracks': scenario.get('reference_tracks', []),
                                            'sha256': scenario.get('reference_sha256', files.get(board)),
@@ -163,9 +170,9 @@ if process_ok:
     marker = 'EXIT3-SENTINEL' if name == 'validation_failed' else 'routed by fixture'
     with open(cand / board, 'a') as f:
         f.write(f'\n# {marker}\n')
-    # As kicad-cli pcb drc --save-board does at the pin.
+    # As kicad-cli pcb drc --save-board does in kicad-route.
     (cand / (Path(board).stem + '.kicad_prl')).write_text('{"board": {}}\n')
-    # As copy_project/make_snapshot at the pin: a link beside the project for each
+    # As kicad-route's copy_project/make_snapshot: a link beside the project for each
     # ${KIPRJMOD}/../<dir> library directory, reading the resolved input path
     # (/candidate/<dir> in the sandbox; the fixture's --dir parent here).
     for where, entry, kind, target in scenario.get('siblings', []):
@@ -182,7 +189,7 @@ if process_ok:
             path.symlink_to(run / f'moved-{where}')
     checks = [{'check': 'footprints', 'status': 'PASS'}]
     if area_bound is not None and not scenario.get('no_pour'):
-        # The pin's pour_integrity record and delta, graded against the declared bound.
+        # kicad-route's pour_integrity record and delta, graded against the declared bound.
         layers = scenario.get('pour_layers', [{'net_layer': 'GND@In1.Cu', 'area_mm2': [100.0, 100.0],
                                                 'area_delta_pct': 0.0}])
         over = [r for r in layers if r['area_delta_pct'] is not None and -r['area_delta_pct'] > area_bound]
@@ -203,7 +210,7 @@ board_sha = sha(cand / board) if process_ok else None
 validation = {'status': 'PASS', 'reasons': [], 'delivered_board_sha256': board_sha,
               'validated_board_sha256': board_sha, 'candidate_board_sha256': board_sha,
               'refill_modified_board': False, 'restored_project_files': []}
-# The pin's native terminal preservation (KICADROUTE-98), from native partitions.
+# kicad-route's native terminal preservation (KICADROUTE-98), from native partitions.
 deficit = 0 if routing_status == 'COMPLETE' else 2
 validation['net_completion'] = {'status': 'PASS', 'nets_connected_in_input': 0, 'nets_lost': [],
                                 'split_components': []}
@@ -252,7 +259,7 @@ result = {'schema': 'kicad-route/route/1', 'measurement': False, 'evidence': {},
           'finished_utc': '2026-10-17T00:00:00+00:00', 'exit_code': code, 'ledger': {}}
 if paired:
     result.update(schema='kicad-route/route/2', pairs=[{**p, 'routed': True} for p in plans])
-# The pin's nested additions: measurement qualification on every process record, and the
+# kicad-route's nested additions: measurement qualification on every process record, and the
 # runtime an owned-engine result executed (the selected router generation, else legacy).
 result['process']['measurement_qualification'] = {
     'measurement': False, 'build_reproducible': None, 'reasons': ['no repeat evidence for this build']}
@@ -284,7 +291,7 @@ if name == 'measurement_missing':
     del result['process']['measurement_qualification']
 if name == 'measurement_disagrees':
     result['process']['measurement_qualification']['measurement'] = True
-# The pin adds copper custody to a builtin attempt whose process passed (AGENTEE-450).
+# kicad-route adds copper custody to a builtin attempt whose process passed (AGENTEE-450).
 if opts['--backend'] == 'builtin' and process_ok and name != 'custody_missing':
     if name == 'custody_unavailable':
         result['copper_ownership'] = {'status': 'unavailable', 'reasons': ['fixture custody unavailable'],
@@ -590,12 +597,26 @@ sys.exit(scenario.get('exit', code))
 '''
 
 
+def git(root, *argv):
+    """git in the fixture checkout, with no user or system configuration; returns stdout."""
+    return subprocess.run(['git', '-C', str(root), *argv], check=True, capture_output=True, text=True,
+                          env=GIT_ENV).stdout.strip()
+
+
+def commit_all(root, message):
+    """Commit every change in the fixture checkout; returns the new HEAD commit."""
+    git(root, 'add', '-A')
+    git(root, 'commit', '-q', '--allow-empty', '-m', message)
+    return git(root, 'rev-parse', 'HEAD')
+
+
 def make_checkout(root, scenario):
-    """A fake checkout with the pinned layout; returns (path, pinned code map)."""
+    """A fake kicad-route checkout, a clean commit of its own git repository, with the
+    scenario and installed state ignored as in kicad-route; returns (path, commit)."""
     root = Path(root)
-    (root / '.git/refs/heads').mkdir(parents=True)
-    (root / '.git/HEAD').write_text('ref: refs/heads/main\n')
-    (root / '.git/refs/heads/main').write_text(FAKE_PIN + '\n')
+    root.mkdir(parents=True)
+    git(root, 'init', '-q', '-b', 'main')
+    (root / '.gitignore').write_text(GITIGNORE)
     (root / 'bin').mkdir()
     (root / 'bin/kicad-route').write_text(SCRIPT)
     os.chmod(root / 'bin/kicad-route', 0o755)
@@ -607,20 +628,7 @@ def make_checkout(root, scenario):
     (root / '.venv-krt/bin').mkdir(parents=True)
     (root / '.venv-krt/bin/python').symlink_to('/usr/bin/python3')
     (root / 'scenario.json').write_text(json.dumps(scenario if isinstance(scenario, dict) else {'name': scenario}))
-    code = {rel: hashlib.sha256((root / rel).read_bytes()).hexdigest()
-            for rel in ('bin/kicad-route', 'src/kicad_route/__init__.py')}
-    return root, code
-
-
-def make_layout(root, code, pin=FAKE_PIN):
-    """The fixture checkout's qualified layout: its pin record written as the pin data file
-    the sandbox script reads from its mount, as routing_adapter.pinned_layout returns it."""
-    from agent_ee import routing_adapter
-    from agent_ee.kicad_route_attempt import PIN_SCHEMA
-    path = Path(root) / 'kicad-route-pin.json'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({'schema': PIN_SCHEMA, 'pin': pin, 'code': code}, indent=1, sort_keys=True) + '\n')
-    return routing_adapter.pinned_layout(path)
+    return root, commit_all(root, 'fixture router')
 
 
 def make_candidate(root, project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch'):

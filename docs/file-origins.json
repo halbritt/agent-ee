@@ -4023,13 +4023,13 @@
     },
     {
       "paths": [
-        "tests/test_owned_router_pin.py"
+        "tests/test_owned_router_state.py"
       ],
       "kind": "owned-source",
       "origins": [
         "AE"
       ],
-      "reviewed": "Original AGENTEE-277 owned-engine pin and manifest-drift boundary tests. Uses existing local routing installation read-only and disposable copies; imports no third-party designs or library files."
+      "reviewed": "Original AGENTEE-277 owned-engine manifest-drift and clean-checkout boundary tests. Uses existing local routing installation read-only and disposable clean clones; imports no third-party designs or library files."
     },
     {
       "paths": [

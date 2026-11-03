@@ -1,17 +1,17 @@
-"""Router generations and the pin's nested result keys (AGENTEE-450, agent-508 findings).
+"""Router generations and kicad-route's nested result keys (AGENTEE-450, agent-508 findings).
 
 kicad-route b577449 installs the owned engine in one of two layouts: the legacy
 one (no generation selected: engine in the checkout, venv at .venv-krt; the
 image's docker/kicad-route/install.sh builds this) and a router generation
 (`kicad-route update`: STATE/.router-generations/<hex>/ holds a copy of the
 engine source and its own venv, selected by the manifest's krt.generation).
-Both qualify, and only when built from the pinned source: a generation is
+Both qualify, and only when built from the checkout's own source: a generation is
 compared with the verified checkout's SOURCE_ROOT, never with itself, so a
 stale generation that `kicad-route doctor` still passes is refused.
 
 Policy cases use the fixture router. State cases derive both layouts from the
 configured qualified checkout (whichever layout it has) without rebuilding the
-engine. The native case runs the real pin through the sandbox on a generation
+engine. The native case runs the real checkout through the sandbox on a generation
 layout and checks the result keys it adds: copper_ownership,
 process.measurement_qualification and backend.runtime.
 """
@@ -27,7 +27,7 @@ from pathlib import Path
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee.executor import execute
-from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout, make_layout
+from tests.kicad_route_fixture import make_candidate, make_checkout
 from tests.test_kicad_route_adapter import REQUEST, Case
 from tests.toolchain import require_kicad_route, require_toolchain
 
@@ -36,7 +36,7 @@ GENERATION = '.router-generations/' + 'a' * 32
 
 
 def select_generation(state, generation=GENERATION, files=attempt.GENERATION_REQUIRED):
-    """A fixture state whose manifest selects a generation holding the files the pin requires."""
+    """A fixture state whose manifest selects a generation holding the files kicad-route requires."""
     for rel in files:
         path = Path(state) / generation / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -60,7 +60,7 @@ def engine_of(checkout):
 def derive_state(checkout, state, layout, *, copy_venv=False):
     """The qualified engine re-laid out under `state` as 'legacy' or 'generation'.
 
-    The source is the pinned SOURCE_ROOT and the venv the qualified one (linked, or
+    The source is the checkout's SOURCE_ROOT and the venv the qualified one (linked, or
     copied when the state must be mounted elsewhere); the manifest is the checkout's
     with its krt paths moved. Nothing is rebuilt: hashes stay the verified ones."""
     source, venv, record = engine_of(checkout)
@@ -94,18 +94,18 @@ def derive_state(checkout, state, layout, *, copy_venv=False):
 
 
 def copy_tool(checkout, root):
-    """The checkout's tracked tool files with HEAD at the pin, without its installed state."""
-    state = {'.git', '.venv-krt', '.router-generations', 'manifest.json', 'build', 'vendor'}
-    caches = shutil.ignore_patterns('__pycache__', '*.pyc')
-    shutil.copytree(checkout, root, ignore=lambda d, names: (
-        caches(d, names) | (state & set(names) if Path(d) == Path(checkout) else set())))
-    (root / '.git').mkdir()
-    (root / '.git/HEAD').write_text(attempt.PIN + '\n')
+    """A clean checkout of the checkout's HEAD commit at root, without its installed state."""
+    root.mkdir(parents=True)
+    git = ['git', '-c', 'safe.directory=*', '-c', 'advice.detachedHead=false', '-C', str(root)]
+    env = {'PATH': '/usr/bin:/bin', 'HOME': str(root), 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+    for argv in (['init', '-q'], ['fetch', '-q', str(Path(checkout).resolve()), 'HEAD'],
+                 ['checkout', '-q', '--detach', 'FETCH_HEAD']):
+        subprocess.run(git + argv, check=True, capture_output=True, env=env)
     return root
 
 
 def pin_drift(checkout, state):
-    """The pin's own manifest-vs-disk check (what `kicad-route doctor` relies on)."""
+    """kicad-route's own manifest-vs-disk check (what `kicad-route doctor` relies on)."""
     script = ('import json, sys; from pathlib import Path; sys.path.insert(0, sys.argv[1] + "/src"); '
               'from kicad_route import statemanifest; s = Path(sys.argv[2]); '
               'print(json.dumps(statemanifest.verify(json.loads((s / "manifest.json").read_text()), s)))')
@@ -230,7 +230,7 @@ class LayoutPolicyTest(unittest.TestCase):
             case.verify()
 
     def test_nested_result_keys_are_exact(self):
-        for scenario, reason in (('runtime_extra_key', 'backend.runtime differs from the pinned tool'),
+        for scenario, reason in (('runtime_extra_key', 'backend.runtime differs from the result contract'),
                                  ('measurement_missing', 'process.measurement_qualification differs'),
                                  ('measurement_disagrees', 'process.measurement_qualification differs')):
             with self.subTest(scenario=scenario):
@@ -337,29 +337,26 @@ class SandboxedGenerationTest(unittest.TestCase):
 
     def test_the_generation_is_mounted_read_only_and_probed(self):
         root = Path(self.tmp.name)
-        checkout, code = make_checkout(root / 'checkout', 'complete')
+        checkout, _ = make_checkout(root / 'checkout', 'complete')
         select_generation(checkout)
         candidate = make_candidate(root / 'candidate')
         driver = root / 'driver'
         driver.mkdir()
-        # The production script reads the fixture pin from its mounted pin data file.
         (driver / 'run.py').write_text(
             'import sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
             'import kicad_route_attempt as a\n'
             'sys.exit(a.main(sys.argv[1:]))\n')
-        pin_file = make_layout(root / 'pin', code)['pin_file']
         work = root / 'work'
         record = execute(candidate, work, ['/usr/bin/python3', '-I', '-B', '/opt/driver/run.py', *REQUEST],
                          timeout=60, extra_ro=[(routing_adapter.ADAPTER_SOURCE, routing_adapter.ADAPTER_AT),
-                                               (pin_file, attempt.PIN_AT),
                                                (checkout, '/opt/kicad-route'), (driver, '/opt/driver')])
         report = json.loads((work / 'routing/adapter-report.json').read_text())
         self.assertEqual(record['exit_code'], 0, report['semantics'])
         probes = report['state_write_probe']
         self.assertEqual([p['directory'] for p in probes], ['/opt/kicad-route', f'/opt/kicad-route/{GENERATION}'])
         self.assertTrue(all(p['refused'] and p['errno'] == 'EROFS' for p in probes), probes)
-        self.assertEqual(routing_adapter.verify(work, attempt.files_of(attempt.tree(candidate)),
-                                                layout={'pin': FAKE_PIN, 'code': code})['proposal'], 'eligible')
+        self.assertEqual(routing_adapter.verify(work, attempt.files_of(attempt.tree(candidate)))['proposal'],
+                         'eligible')
 
 
 class GenerationStateTest(unittest.TestCase):
@@ -409,7 +406,7 @@ class GenerationStateTest(unittest.TestCase):
         self.assertEqual(len([p for p in problems if p.startswith('owned engine source digest differs; router '
                                                                   f'generation {GENERATION} was built from commit f42b879')]),
                          1, problems)
-        self.assertIn('router generation installation record differs from the pinned source or module', problems)
+        self.assertIn('router generation installation record differs from the checkout source or module', problems)
 
     def test_a_generation_must_hold_its_own_source_venv_and_record(self):
         cases = {
@@ -424,7 +421,7 @@ class GenerationStateTest(unittest.TestCase):
             'checkout source': 'router generation source or requirements path is not the generation copy',
             'legacy venv': 'unexpected routing environment path',
             'module elsewhere': f'manifest must identify the installed {GENERATION}/venv grid_router extension',
-            'record': 'router generation installation record differs from the pinned source or module',
+            'record': 'router generation installation record differs from the checkout source or module',
             'invalid selection': "state manifest selects an invalid router generation '.router-generations/g1'",
             'edited copy': 'state manifest drift: krt.source_sha256',
         }

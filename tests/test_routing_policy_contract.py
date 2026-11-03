@@ -1,9 +1,10 @@
 """The KICADROUTE-91 routing policy contract summary agrees with the adapter (AGENTEE-388).
 
-docs/routing-policy-contract.json is documentation. These checks make a re-pin
-or a protocol change fail here until the contract page and summary are updated.
+docs/routing-policy-contract.json is documentation. These checks make a protocol
+or record change fail here until the contract page and summary are updated.
 """
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -30,14 +31,12 @@ class ContractSummaryTests(unittest.TestCase):
         self.contract = load()
         self.adapter = self.contract['adapter']
 
-    def test_pin_is_the_pin_data_file(self):
-        # The summary names the one pin data file; a re-pin never edits this page.
-        self.assertEqual(self.adapter['pin_file'], attempt.PIN_FILE.relative_to(ROOT).as_posix())
-        self.assertEqual(self.contract['sources']['kicad_route_pin_file'], self.adapter['pin_file'])
-        self.assertEqual(attempt.load_pin(ROOT / self.adapter['pin_file']),
-                         {'schema': attempt.PIN_SCHEMA, 'pin': attempt.PIN, 'code': attempt.PINNED_CODE})
-        # campaign.py is pinned although agent-ee never runs the campaign command.
-        self.assertIn('src/kicad_route/campaign.py', attempt.PINNED_CODE)
+    def test_the_router_version_is_recorded_per_attempt(self):
+        # The summary names the record every report holds; it names no commit and no file list.
+        self.assertEqual(self.adapter['router_version_record'], list(attempt.CHECKOUT_KEYS))
+        self.assertNotIn('pin_file', self.adapter)
+        self.assertIsNone(re.search(r'\b[0-9a-f]{40}\b', self.contract['sources']['kicad_route']))
+        self.assertFalse((ROOT / 'src/agent_ee/data/kicad-route-pin.json').exists())
 
     def test_consumed_schema_versions(self):
         consumes = self.adapter['consumes']
@@ -79,7 +78,7 @@ class ContractSummaryTests(unittest.TestCase):
                               'measurement': False, 'build_reproducible': None, 'reasons': ['synthetic']}},
                           routing={'status': 'COMPLETE'},
                           validation={'status': 'PASS'}, **({'pairs': []} if paired else {}),
-                          # The pin's custody pointer on every builtin process-PASS result.
+                          # kicad-route's custody pointer on every builtin process-PASS result.
                           copper_ownership={'status': 'unavailable', 'reasons': ['synthetic'],
                                             'replay_authority': False})
             keys = attempt.ATTEMPT_KEYS | ({'pairs', 'pair_routing'} if paired else set())
@@ -91,9 +90,9 @@ class ContractSummaryTests(unittest.TestCase):
                     record['schema'] = f'kicad-route/attempt/{attempt_version}'
                     outcome = attempt.semantics(0, {**result, 'schema': f'kicad-route/route/{result_version}'},
                                                 record, False, True, asked)
-                    self.assertNotIn('result.json shape differs from the pinned tool', outcome[1])
-                    self.assertNotIn('process.measurement_qualification differs from the pinned tool', outcome[1])
-                    self.assertNotIn('backend.runtime differs from the pinned tool', outcome[1])
+                    self.assertNotIn('result.json shape differs from the result contract', outcome[1])
+                    self.assertNotIn('process.measurement_qualification differs from the result contract', outcome[1])
+                    self.assertNotIn('backend.runtime differs from the result contract', outcome[1])
                     if 'unknown result schema version' not in outcome[1]:
                         results.setdefault(paired, set()).add(result_version)
                         if 'unknown attempt schema version' not in outcome[1]:
@@ -165,22 +164,23 @@ class ContractSummaryTests(unittest.TestCase):
     def test_documentation_references_the_summary(self):
         page = (ROOT / 'docs/routing-policy-contract.md').read_text()
         self.assertIn('routing-policy-contract.json', page)
-        self.assertIn(self.adapter['pin_file'], page)
+        for key in attempt.CHECKOUT_KEYS:
+            self.assertIn(f'`tool.{key}`', page)
 
 
-class PinnedCheckoutContractTests(unittest.TestCase):
-    """The configured pinned checkout matches what the summary says about it."""
+class ConfiguredCheckoutContractTests(unittest.TestCase):
+    """The configured checkout, at whatever commit it holds, matches what the summary says about it."""
 
     @classmethod
     def setUpClass(cls):
         cls.checkout = require_kicad_route()
 
-    def test_campaign_bytes_and_refusal_schema(self):
-        self.assertEqual(attempt.digest(self.checkout / 'src/kicad_route/campaign.py'),
-                         attempt.PINNED_CODE['src/kicad_route/campaign.py'])
+    def test_refusal_schema_and_campaign_record_kind(self):
+        # campaign.py is part of the recorded code digest although agent-ee never runs the campaign command.
+        self.assertIn('src/kicad_route/campaign.py', attempt.code_files(self.checkout)[0])
         schema = json.loads((self.checkout / 'schemas/refusal-1.json').read_text())
         self.assertEqual(schema['properties']['reason_class']['enum'], load()['adapter']['refusal_reason_classes'])
-        # The pin's campaign record is a different kind that agent-ee never reads.
+        # kicad-route's campaign record is a different kind that agent-ee never reads.
         source = (self.checkout / 'src/kicad_route/campaign.py').read_text()
         self.assertIn('contract.schema_id("route-campaign", major=2)', source)
         self.assertIn('kicad-route/route-campaign/2', load()['adapter']['never_consumed'])

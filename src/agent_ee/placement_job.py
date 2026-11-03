@@ -2,7 +2,7 @@
 
 Order (chief 531, b4a5857a): native capture -> Rust prepared model with
 incremental search -> shortlist native materialize/save/reload/constraint
-check -> pinned router process -> final save/reload/native checks.
+check -> router process (recorded checkout) -> final save/reload/native checks.
 
 The controller is the only orchestration layer. Individual search moves stay
 inside one Rust process (``agent-ee-placement``, schema
@@ -1431,13 +1431,13 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
-          bus=None, length_match=None, ac_match=None, layout=None, local_decoupling=None,
+          bus=None, length_match=None, ac_match=None, local_decoupling=None,
           defer_local_fallback=False, local_fallback_reason=None):
-    """Pinned kicad-route process on a fresh copy of one materialized candidate.
+    """kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
-    the pinned CLI is invoked with the adapter's own argv shape and identity checks.
-    layout (routing_adapter.pinned_layout) overrides the qualified pin."""
+    the CLI is invoked with the adapter's own argv shape and identity checks, on a
+    clean checkout whose commit the adapter preflight records."""
     from . import routing_adapter
     clock = clock or Clock(timeout_s)
     _check_stop(clock, cancel_dir)
@@ -1447,7 +1447,7 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             local.validate_topology(local_decoupling)
         except ValueError as exc:
             raise JobRefusal('local decoupling contract: ' + str(exc)) from exc
-    check = routing_adapter.preflight(checkout, layout=layout)
+    check = routing_adapter.preflight(checkout)
     if check['problems']:
         raise JobRefusal('router preflight: ' + '; '.join(check['problems']))
     route_dir = Path(route_dir)
@@ -2588,7 +2588,7 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None, identitie
     identities['kicad_cli'] = cli.stdout.decode().strip()
     router = routing_adapter.preflight(config['router']['checkout'])
     identities['router'] = {k: router.get(k) for k in (
-        'checkout', 'commit', 'pin', 'executable_sha256', 'adapter_sha256')}
+        'checkout', 'commit', 'clean', 'code_sha256', 'code_files', 'executable_sha256', 'adapter_sha256')}
     problems = list(router['problems'])
     if cli.returncode != 0:
         problems.append('kicad-cli unavailable')

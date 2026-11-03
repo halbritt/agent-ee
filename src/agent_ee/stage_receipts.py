@@ -43,9 +43,8 @@ REPORT_DEPTH = 64
 TREE_DEPTH = 128
 # Every lookup below a run root opens one component at a time and never follows a link.
 NOFOLLOW = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
-# routing_adapter._step mounts these standalone helpers, and the pin data file, individually.
-QUALIFIED_LIVE_HELPERS = frozenset({'kicad_route_attempt.py', 'net_binding.py', 'symbol_library.py',
-                                    'data/kicad-route-pin.json'})
+# routing_adapter._step mounts these standalone helpers individually.
+QUALIFIED_LIVE_HELPERS = frozenset({'kicad_route_attempt.py', 'net_binding.py', 'symbol_library.py'})
 VERSION_TIMEOUT_S = 30
 # Linux CLOCK_REALTIME_COARSE, the clock that stamps file status changes; not exported by time.
 CLOCK_REALTIME_COARSE = 5
