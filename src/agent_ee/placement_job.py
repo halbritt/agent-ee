@@ -2049,8 +2049,12 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         with clock.phase('export'):
             _check_stop(clock, job_dir)
             route_input = selected.get('local_prepared_directory', selected['directory'])
-            local_seed = None
-            if 'mechanics' in normalized and local_routing_applies(normalized['mechanics']):
+            local_seed = selected.get('local_routing_seed')
+            if local_seed is not None:
+                from . import local_return_seed
+                trial['local_routing'] = local_return_seed.verify(
+                    Path(route_input) / 'board.kicad_pcb', local_seed, clock=clock, cancel_dir=job_dir)
+            elif 'mechanics' in normalized and local_routing_applies(normalized['mechanics']):
                 # Seed only the mechanics recipe's named local loops, and never an
                 # exploratory or invalid pose. Other designs route without this seed.
                 if (not _placement_eligible(selected)
@@ -2099,7 +2103,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 queue.append({**selected, 'local_fallback_reason': routed.get('local_decoupling', routed['reason']),
                               'local_prepared_directory': routed.get('prepared_directory', selected['directory']),
                               'generated_relation_count': routed.get('generated_relation_count', 0),
-                              'original_router_budget_s': budget})
+                              'original_router_budget_s': budget, 'local_routing_seed': local_seed})
                 total_relations = len(local_contract['relations']) if local_contract else 0
                 queue[number + 1:] = sorted(queue[number + 1:],
                     key=lambda row: -row.get('generated_relation_count', total_relations))

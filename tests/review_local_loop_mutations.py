@@ -791,6 +791,11 @@ MUTANTS.update({'R2_bank_successes_discarded': ([('src/agent_ee/placement_job.py
                                        '    if True:\n')],
                                      ['test_local_decoupling.LocalCopperTests.test_adopted_generation_receipt_is_required_by_the_native_package_check'])})
 
+MUTANTS.update({'R2_acquisition_seed_not_retained': ([('src/agent_ee/placement_job.py',
+    "'original_router_budget_s': budget, 'local_routing_seed': local_seed}",
+    "'original_router_budget_s': budget, 'local_routing_seed': None}")],
+    ['test_placement_job_guards.ControllerBoundaryTests.test_deferred_candidate_reuses_the_verified_acquisition_seed'])})
+
 def run(name):
     edits, tests = MUTANTS[name]
     work = WORK / name

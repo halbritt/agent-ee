@@ -64,7 +64,9 @@ Generation uses at most one quarter of a candidate's remaining time share,
 reserving routing time within the unchanged overall budget. The finite portfolio
 is tried in descending generated-relation count, with existing placement order
 breaking ties. Reduced-generation candidates are prepared and deferred without
-throwing away successful banks. Mechanics repair candidates are considered
+throwing away successful banks. A deferred candidate reuses and re-verifies any
+existing acquisition local-routing receipt rather than producing that copper again.
+Mechanics repair candidates are considered
 before these deferred candidates. A single candidate needs no deferral.
 The original and current router shares are recorded; if deferral reduces the
 share, the trial and author feedback explicitly report the lost seconds.

@@ -214,10 +214,13 @@ class ControllerBoundaryTests(Fixture):
     def test_all_generation_refusals_still_route_the_first_fallback(self):
         self._portfolio_failure(local_failure=True, all_fail=True)
 
+    def test_deferred_candidate_reuses_the_verified_acquisition_seed(self):
+        self._portfolio_failure(local_failure=True, all_fail=True, acquisition=True)
+
     def test_later_verification_failure_clears_the_previous_local_copper_reason(self):
         self._portfolio_failure(local_failure=True, final_fail=True)
 
-    def _portfolio_failure(self, *, local_failure=False, all_fail=False, final_fail=False, partial=False):
+    def _portfolio_failure(self, *, local_failure=False, all_fail=False, final_fail=False, partial=False, acquisition=False):
         """Controller fault injection only; normal native entrypoint runs separately."""
         problem, _ = self.problem()
         out = self.dir / 'portfolio'
@@ -235,6 +238,7 @@ class ControllerBoundaryTests(Fixture):
             config['inputs']['local_decoupling'] = {}
             values.append((self.board, json.dumps(doc).encode()))
         selected = []
+        produced = []
         def materialized(_board, poses, directory, *_args, **_kwargs):
             return {'board': str(self.board), 'board_sha256': f'candidate-{poses[0]}',
                     'integrity': 'preserved', 'problems': []}
@@ -252,15 +256,41 @@ class ControllerBoundaryTests(Fixture):
                 result['generated_relation_count'] = 0
                 if not _kwargs.get('local_fallback_reason') and _kwargs.get('defer_local_fallback'):
                     result.update(status='local_copper_deferred', reason='local decoupling cell: no clear local path')
+            if acquisition:result['copper_policy']='preserve_existing'
             return result
         failed = {'integrity': 'preserved', 'edge_intent': {'status': 'pass'},
                   'eligibility': 'ineligible', 'physical_checks': 'FAILED'}
         passed = {**failed, 'eligibility': 'eligible', 'physical_checks': 'PASS'}
+        if acquisition:passed.update(board_sha256='final',local_routing=dict(board_sha256='final'))
         with ExitStack() as stack:
+            capture_record = {}
+            if acquisition:
+                from agent_ee import local_return_seed
+                normalize = job.normalize_intent
+                recipe = {'controller-control': True}
+                binding = dict(recipe=recipe, original_board_sha256=job.sha256_bytes(self.board.read_bytes()),
+                               binding_sha256='control-binding')
+                def normalized(*args, **kwargs):
+                    result = normalize(*args, **kwargs); result['mechanics'] = recipe; return result
+                stack.enter_context(patch.object(job,'normalize_intent',side_effect=normalized))
+                capture_record['mechanics'] = binding
+                stack.enter_context(patch.object(job,'_pose_solver',return_value={}))
+                stack.enter_context(patch.object(job,'_repair_shortlist',side_effect=
+                    lambda problem, candidates, *args, **kwargs: [] if kwargs.get('routing_exhausted') else candidates))
+                stack.enter_context(patch.object(job,'local_routing_applies',return_value=True))
+                def mechanics(path, *args, **kwargs):
+                    index = int(Path(path).parent.name[-1])
+                    return dict(status='pass',binding_sha256='control-binding',board_sha256='candidate-'+str(index))
+                stack.enter_context(patch.object(job,'check_mechanics',side_effect=mechanics))
+                def produce(directory, output, **kwargs):
+                    produced.append(str(directory));return dict(output=str(directory),record='controlled-receipt.json')
+                stack.enter_context(patch.object(local_return_seed,'produce',side_effect=produce))
+                stack.enter_context(patch.object(local_return_seed,'verify',return_value=dict(status='pass')))
+
             stack.enter_context(patch.object(job, 'verified_input', side_effect=lambda _entry, label:
                 dict(zip(('board', 'project', 'intent', 'groups', 'local_decoupling'), values))[label]))
-            stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
-            stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
+            stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe', 'engine':'unused'}))
+            stack.enter_context(patch.object(job, 'capture', return_value=(problem, capture_record)))
             stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))
             stack.enter_context(patch.object(job, 'materialize', side_effect=materialized))
             stack.enter_context(patch.object(job, 'check_edge_intent', side_effect=[
@@ -294,6 +324,7 @@ class ControllerBoundaryTests(Fixture):
                 self.assertEqual(report['route_selection']['seed'],2)
                 if local_failure:self.assertEqual([t['generated_relation_count'] for t in report['routing_trials']],[0,1])
         self.assertNotIn('reason',report)
+        if acquisition:self.assertEqual(len(produced),2,produced)
         if final_fail:self.assertFalse((out/'routed-incumbent.json').exists())
         else:self.assertTrue((out/'routed-incumbent.json').exists())
         state=json.loads((out/'checkpoint.json').read_text())
