@@ -524,7 +524,8 @@ suite therefore reports the 12 real-verifier tests as not executed and fails
 until the input is supplied. Adapter translation and dependency-refusal tests
 run without it. The checkout check requires tracked files to match the
 checkout's commit, which the tests compare with the recorded `verifier.commit`;
-untracked import bytecode does not make the checkout dirty.
+untracked files do not make the checkout dirty. Gate 1 imports the verifier from
+a private `git archive` copy of that commit, so a read-only mount is enough.
 
 [test_pod_j1_courtyard.py](../tests/test_pod_j1_courtyard.py) uses committed
 fixtures and needs only the public TE drawing of the AMPSEAL connector, which

@@ -8,14 +8,19 @@ zero-LLM topological and ERC verification.
 from __future__ import annotations
 
 import argparse
+import atexit
 from dataclasses import dataclass
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 from typing import Any, Optional, Sequence, Union
 
 DEFAULT_PCBSCHEMAGEN_ROOT = Path(
@@ -46,10 +51,10 @@ class VerifierCheckout:
         return {"repository": PCBSCHEMAGEN_REPOSITORY, "commit": self.commit}
 
 
-def git(root: Path, *args: str) -> subprocess.CompletedProcess:
+def git(root: Path, *args: str, text: bool = True) -> subprocess.CompletedProcess:
     """Read the checkout's Git metadata (native_run_guard approves this function by name)."""
     return subprocess.run(['git', '--no-optional-locks', '-C', str(root), *args],
-                          capture_output=True, text=True, timeout=10)
+                          capture_output=True, text=text, timeout=60)
 
 
 def check_pcbschemagen_checkout(root: Union[str, Path]) -> VerifierCheckout:
@@ -100,31 +105,58 @@ def check_pcbschemagen_checkout(root: Union[str, Path]) -> VerifierCheckout:
     return VerifierCheckout(root, commit)
 
 
-# The commit each checkout root was at when this process imported its framework.topo code.
-# Imported modules stay loaded while the knowledge graphs are read again on every use.
+# Gate 1 never reads the checkout itself: each accepted commit is exported once per process into a
+# private directory, which is where framework.topo is imported from and the knowledge graphs are
+# read. The recorded commit therefore identifies every verifier input of a run, even if the
+# checkout moves (and moves back) while the run reads (review of ec8976ca, finding 4).
+_COPIES: dict[tuple[Path, str], Path] = {}
+# The commit each checkout root was at when this process imported framework.topo from its copy.
 _IMPORTED_AT: dict[Path, str] = {}
 
 
-def _ensure_topo_imports(pcbschemagen_root: Union[str, Path] = DEFAULT_PCBSCHEMAGEN_ROOT) -> VerifierCheckout:
+def _source_copy(checkout: VerifierCheckout) -> Path:
+    """The private copy of the accepted commit's tree (git archive), made once per process."""
+    key = (checkout.root, checkout.commit)
+    if key in _COPIES:
+        return _COPIES[key]
+    archive = git(checkout.root, 'archive', '--format=tar', checkout.commit, text=False)
+    if archive.returncode:
+        raise PCBSchemaGenInputError(f"PCBSchemaGen commit {checkout.commit} cannot be exported from "
+                                     f"{checkout.root}: {archive.stderr.decode(errors='replace').strip()}")
+    copy = Path(tempfile.mkdtemp(prefix='agent-ee-pcbschemagen-'))
+    atexit.register(shutil.rmtree, copy, True)
+    with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tree:
+        tree.extractall(copy, filter='data')
+    for name in REQUIRED_FILES:
+        if not (copy / name).is_file():
+            raise PCBSchemaGenInputError(
+                f"PCBSchemaGen required input missing from the exported tree of commit {checkout.commit}: {name}")
+    _COPIES[key] = copy
+    return copy
+
+
+def _ensure_topo_imports(pcbschemagen_root: Union[str, Path] = DEFAULT_PCBSCHEMAGEN_ROOT) -> tuple[VerifierCheckout, Path]:
+    """Check the checkout; return it and the private copy that framework.topo is imported from."""
     checkout = check_pcbschemagen_checkout(pcbschemagen_root)
     root = checkout.root
-    loaded = False
-    for name, module in tuple(sys.modules.items()):
-        if name.startswith('framework.topo') and getattr(module, '__file__', None):
-            if not Path(module.__file__).resolve().is_relative_to(root):
-                raise PCBSchemaGenInputError(f"PCBSchemaGen module already loaded from another checkout: {name}")
-            loaded = True
-    if not loaded:
+    loaded = [(name, Path(module.__file__).resolve()) for name, module in tuple(sys.modules.items())
+              if name.startswith('framework.topo') and getattr(module, '__file__', None)]
+    if loaded:
+        imported = _IMPORTED_AT.get(root)
+        source = _COPIES.get((root, imported))
+        stray = [name for name, path in loaded if source is None or not path.is_relative_to(source)]
+        if stray:
+            raise PCBSchemaGenInputError(f"PCBSchemaGen module already loaded from another checkout: {stray[0]}")
+        if imported != checkout.commit:
+            raise PCBSchemaGenInputError(
+                f"PCBSchemaGen code in this process was imported at commit {imported}, but the checkout "
+                f"{root} is now at {checkout.commit}; start a new process to verify with it")
+    else:
+        source = _source_copy(checkout)
         _IMPORTED_AT[root] = checkout.commit
-    elif _IMPORTED_AT.get(root) != checkout.commit:
-        raise PCBSchemaGenInputError(
-            f"PCBSchemaGen code in this process was imported at commit "
-            f"{_IMPORTED_AT.get(root) or 'unknown (not through this adapter)'}, but the checkout "
-            f"{root} is now at {checkout.commit}; start a new process to verify with it")
-    root_str = str(root)
-    if root_str not in sys.path:
-        sys.path.insert(0, root_str)
-    return checkout
+    if str(source) not in sys.path:
+        sys.path.insert(0, str(source))
+    return checkout, source
 
 
 @dataclass
@@ -152,10 +184,11 @@ class Gate1KGStore:
         base_dir: Union[str, Path] = DEFAULT_PCBSCHEMAGEN_ROOT,
         unified_kg_path: Optional[Union[str, Path]] = None,
     ) -> None:
-        _ensure_topo_imports(base_dir)
+        # base_dir is the checkout; the store reads the private copy of its accepted commit.
+        self.checkout, source = _ensure_topo_imports(base_dir)
         from framework.topo.kg_loader import KGStore
 
-        self.base_dir = str(Path(base_dir).resolve())
+        self.base_dir = str(source)
         self._upstream_store = KGStore(self.base_dir)
         self.component_map: dict[str, dict[str, Any]] = dict(self._upstream_store.component_map)
         self.kg_component_map: dict[str, dict[str, Any]] = dict(
@@ -548,17 +581,16 @@ def verify_gate1(
 ) -> Gate1Result:
     """Run deterministic Gate 1 schematic and topology verification.
 
-    The report's ``verifier`` records the checkout's commit, measured before the run and
-    confirmed unchanged after it."""
-    checkout = _ensure_topo_imports(pcbschemagen_root)
+    The report's ``verifier`` records the checkout's commit. The verifier code and knowledge
+    graphs are read from a private copy of that commit, so the record holds for the whole run."""
+    kg_store = Gate1KGStore(pcbschemagen_root)
+    checkout = kg_store.checkout
     from framework.topo.build_topology import augment_snapshot
     from framework.topo.complex_task_validator import is_complex_task, validate_complex_task
     from framework.topo.error_types import compute_reward_from_errors
     from framework.topo.match_skeleton import check_graph_similarity
     from framework.topo.phase2_checks import run_phase2_checks
     from framework.topo.rule_checker import check_rules
-
-    kg_store = Gate1KGStore(pcbschemagen_root)
 
     # 1. Translate input to snapshot
     if netlist_xml is not None:
@@ -679,12 +711,6 @@ def verify_gate1(
         llm_lines.append("\n### Warnings:")
         for w in warning_errors:
             llm_lines.append(f"- [WARNING] {w}")
-
-    after = check_pcbschemagen_checkout(checkout.root)
-    if after.commit != checkout.commit:
-        raise PCBSchemaGenInputError(
-            f"PCBSchemaGen checkout {checkout.root} moved from {checkout.commit} to "
-            f"{after.commit} during verification; rerun Gate 1")
 
     report = {
         "schema": SCHEMA,

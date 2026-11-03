@@ -30,8 +30,10 @@ from toolchain import require_pcbschemagen
 
 # An owned stand-in for the external verifier: the files the adapter requires and
 # framework.topo functions that report no errors. It tests the adapter's checkout handling
-# and records, never PCBSchemaGen's verdicts. OWNED_VERIFIER_MOVE makes Phase 2 commit to the
-# checkout while Gate 1 runs.
+# and records, never PCBSchemaGen's verdicts. With OWNED_VERIFIER_MOVE set to the checkout,
+# Phase 2 commits version B there while Gate 1 runs, records which component.json version its
+# own code directory and the knowledge-graph store see, and with OWNED_VERIFIER_RETURN set
+# moves the checkout back (A to B to A).
 OWNED_VERIFIER = {
     'framework/topo/kg_loader.py': (
         'class KGStore:\n'
@@ -45,17 +47,26 @@ OWNED_VERIFIER = {
     'framework/topo/error_types.py': 'def compute_reward_from_errors(**kwargs):\n    return 1.0\n',
     'framework/topo/match_skeleton.py': 'def check_graph_similarity(std, gen, task_id=None):\n    return []\n',
     'framework/topo/phase2_checks.py': (
-        'import os\nimport subprocess\nfrom pathlib import Path\n\n'
+        'import json\nimport os\nimport subprocess\nfrom pathlib import Path\n\n'
         'def run_phase2_checks(snapshot, kg_store, task_id=None):\n'
-        '    if os.environ.get("OWNED_VERIFIER_MOVE"):\n'
-        '        subprocess.run(["git", "-C", str(Path(__file__).resolve().parents[2]),\n'
-        '                        "-c", "user.name=fixture", "-c", "user.email=fixture@invalid",\n'
-        '                        "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty",\n'
-        '                        "-m", "Owned commit during verification"], check=True)\n'
+        '    origin = os.environ.get("OWNED_VERIFIER_MOVE")\n'
+        '    if origin:\n'
+        '        def git(*args):\n'
+        '            return subprocess.run(["git", "-C", origin, "-c", "user.name=fixture",\n'
+        '                                   "-c", "user.email=fixture@invalid", "-c", "commit.gpgsign=false",\n'
+        '                                   *args], check=True, capture_output=True, text=True).stdout.strip()\n'
+        '        start = git("rev-parse", "HEAD")\n'
+        '        Path(origin, "component.json").write_text(\'{"components": [], "version": "B"}\')\n'
+        '        git("commit", "-q", "-am", "Owned commit B during verification")\n'
+        '        version = lambda root: json.loads((Path(root) / "component.json").read_text())["version"]\n'
+        '        snapshot["observed"] = {"code": version(Path(__file__).resolve().parents[2]),\n'
+        '                                "store": version(kg_store.base_dir)}\n'
+        '        if os.environ.get("OWNED_VERIFIER_RETURN"):\n'
+        '            git("reset", "-q", "--hard", start)\n'
         '    return []\n'),
     'framework/topo/rule_checker.py': 'def check_rules(snapshot, rules, task_id=None):\n    return []\n',
     'framework/task_config.yaml': '{}',
-    'component.json': '{"components": []}',
+    'component.json': '{"components": [], "version": "A"}',
     'kg_component.json': '{"components": []}',
     'kg/kg_open_schematics.json': '{"components": []}',
     'yaml.py': '# Owned availability fixture, not a YAML parser.\n',
@@ -510,14 +521,28 @@ class TestVerifierBoundary(unittest.TestCase):
         self.assertIn('refused: PCBSchemaGen code in this process was imported at commit ' + first, outcome)
         self.assertIn('start a new process', outcome)
 
-    def test_checkout_moved_during_verification_is_refused(self):
-        root = self.temp / 'verifier'
-        owned_verifier(root)
-        env = dict(os.environ, OWNED_VERIFIER_MOVE='1')
-        result = run_isolated(RECORD_SCRIPT, root, json.dumps(_make_valid_tps54302_design()), env=env)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('during verification; rerun Gate 1', result.stderr)
-        self.assertEqual(result.stdout, '')
+    def test_checkout_moving_during_verification_does_not_change_its_inputs(self):
+        # Review of ec8976ca: Phase 2 moved the checkout to B, read B's data and moved back to A,
+        # and Gate 1 recorded A. Gate 1 now reads a private copy of A, whatever the checkout does.
+        script = """
+            import json
+            import sys
+            sys.path.insert(0, sys.argv[1])   # the owned availability modules (yaml, networkx)
+            from agent_ee import pcbschemagen_gate1 as gate1
+            result = gate1.verify_gate1(json.loads(sys.argv[2]), task_id=6, pcbschemagen_root=sys.argv[1])
+            print(json.dumps({'verifier': result.report['verifier'], 'observed': result.snapshot['observed']}))
+        """
+        for case, returns in (('moves and returns', True), ('moves and stays', False)):
+            with self.subTest(case):
+                root = self.temp / case.replace(' ', '-')
+                first = owned_verifier(root)
+                env = dict(os.environ, OWNED_VERIFIER_MOVE=str(root), **({'OWNED_VERIFIER_RETURN': '1'} if returns else {}))
+                result = run_isolated(script, root, json.dumps(_make_valid_tps54302_design()), env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {
+                    'verifier': {'repository': PCBSCHEMAGEN_REPOSITORY, 'commit': first},
+                    'observed': {'code': 'A', 'store': 'A'}})
+                self.assertEqual(fixture_git(root, 'rev-parse', 'HEAD') == first, returns)
 
     def test_bytecode_imports_allow_repeat_loads_but_tracked_edits_are_refused(self):
         root = self.temp / 'verifier'
@@ -531,9 +556,11 @@ class TestVerifierBoundary(unittest.TestCase):
             assert not sys.dont_write_bytecode, 'bytecode must be enabled'
             sys.path.insert(0, str(root))
             for _ in range(2):
-                assert adapter._ensure_topo_imports(root).commit == sys.argv[2]
+                checkout, source = adapter._ensure_topo_imports(root)
+                assert checkout.commit == sys.argv[2]
                 adapter.Gate1KGStore(root)
-            assert list(root.glob('framework/topo/__pycache__/*.pyc')), 'no bytecode written'
+            assert list(source.glob('framework/topo/__pycache__/*.pyc')), 'no bytecode written'
+            assert not list(root.rglob('__pycache__')), 'imports wrote into the checkout'
             (root / 'component.json').write_text('{"components": [], "modified": true}')
             with unittest.TestCase().assertRaisesRegex(adapter.PCBSchemaGenInputError, 'must be clean'):
                 adapter.check_pcbschemagen_checkout(root)

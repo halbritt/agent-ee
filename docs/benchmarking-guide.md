@@ -199,15 +199,18 @@ Before each Gate 1 run the adapter reads the checkout's commit and requires:
   `component.json`, `kg_component.json` and `kg/kg_open_schematics.json`, and the
   Python packages `yaml` and `networkx`.
 
-Gate 1 reports record `verifier: {repository, commit}`: `repository` names the
-upstream project and `commit` is the checkout's commit. The dual-gate benchmark
-keeps that record in each task's `gate1` result. It is `null` for a missing
-candidate or a Gate 1 execution error, which produce no verifier result. The adapter
-checks the commit again after the run and refuses the result if the checkout
-moved during it. Imported verifier code stays loaded in a process, so a
-process that imported the code at one commit refuses a checkout at another and
-asks for a new process. The adapter never fetches a checkout or falls back to
-another one. A missing or invalid verifier produces a CLI input error (exit 2),
+Gate 1 does not run the checkout itself. Once per process it exports the
+accepted commit with `git archive` into a private temporary directory, imports
+`framework.topo` from there and reads the knowledge graphs from there. Gate 1
+reports record `verifier: {repository, commit}`: `repository` names the
+upstream project and `commit` is that accepted commit, so the record identifies
+every verifier input of the run even if the checkout changes while it runs.
+The dual-gate benchmark keeps that record in each task's `gate1` result. It is
+`null` for a missing candidate or a Gate 1 execution error, which produce no
+verifier result. Imported verifier code stays loaded in a process, so a process
+that imported the code at one commit refuses a checkout at another and asks for
+a new process. The adapter never fetches a checkout or falls back to another
+one. A missing or invalid verifier produces a CLI input error (exit 2),
 without classifying the circuit as a topology failure or a semantic bypass.
 Results from different verifier commits are not directly comparable, because
 an upstream knowledge-graph change can change a verdict; compare the recorded
