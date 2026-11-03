@@ -94,11 +94,13 @@ def derive_state(checkout, state, layout, *, copy_venv=False):
 
 
 def copy_tool(checkout, root):
-    """A clean checkout of the checkout's HEAD commit at root, without its installed state."""
+    """A clean checkout of the checkout's HEAD commit at root, without its installed state.
+
+    The image's checkout is a depth-1 clone; --update-shallow accepts its shallow root."""
     root.mkdir(parents=True)
     git = ['git', '-c', 'safe.directory=*', '-c', 'advice.detachedHead=false', '-C', str(root)]
     env = {'PATH': '/usr/bin:/bin', 'HOME': str(root), 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
-    for argv in (['init', '-q'], ['fetch', '-q', str(Path(checkout).resolve()), 'HEAD'],
+    for argv in (['init', '-q'], ['fetch', '-q', '--update-shallow', str(Path(checkout).resolve()), 'HEAD'],
                  ['checkout', '-q', '--detach', 'FETCH_HEAD']):
         subprocess.run(git + argv, check=True, capture_output=True, env=env)
     return root
