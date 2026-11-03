@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import io
 import json
 import os
 from unittest.mock import patch
@@ -12,8 +13,8 @@ from agent_ee.baseline import freeze_evidence
 from agent_ee.candidate import capture, verify_snapshot
 from agent_ee.kicad_install import RECORD_ENV
 from agent_ee.preflight import capture_expectation
-from agent_ee.run_record import (KICAD_INSTALL_COPY, capture_kicad_install, save_result, verify,
-                                 verify_kicad_install_unchanged)
+from agent_ee.run_record import (KICAD_INSTALL_COPY, apply_decisions, capture_kicad_install, host_difference,
+                                 policy_files, run_review, save_result, verify, verify_kicad_install_unchanged)
 from agent_ee.storage import digest, read_json, write_json
 try:
     from test_kicad_install import record as install_record
@@ -219,6 +220,64 @@ class RetainedKiCadInstallRecordTests(unittest.TestCase):
         with patch.dict(os.environ, {RECORD_ENV: str(self.root / 'absent.json')}):
             with self.assertRaisesRegex(ValueError, 'changed during the run'):
                 verify_kicad_install_unchanged(stored)
+
+    def test_continuing_work_requires_this_hosts_record_to_be_the_retained_one(self):
+        path, _, stored = self.retain()
+        decisions = self.root / 'decisions.json'
+        write_json(decisions, {'schema': 'agent-ee.decisions/1', 'candidate_id': stored['candidate_id'],
+                               'run_id': stored['run_id'], 'decisions': []})
+        with patch.dict(os.environ, {RECORD_ENV: str(path)}):
+            self.assertEqual(verify(self.run, current_source=False, host=self.host, current_host=True)['outcome'],
+                             'incomplete')
+            # A valid record with other package revisions; the retained copy and the binaries are unchanged.
+            path.write_text(path.read_text().replace('10.0.8~ubuntu24.04.1', '10.0.8~ubuntu24.04.2'))
+            with self.assertRaisesRegex(ValueError, 'differs from the one the run retained'):
+                verify(self.run, current_source=False, host=self.host, current_host=True)
+            with self.assertRaisesRegex(ValueError, 'differs from the one the run retained'):
+                apply_decisions(self.run, decisions, host=self.host)
+            self.assertEqual(list((self.run / 'events').glob('*-adjudication.json')), [])
+            # Verifying the finished run still reads only its retained copy.
+            self.assertEqual(verify(self.run, current_source=False, host=self.host)['outcome'], 'incomplete')
+
+
+class DeclaredToolContinuationTests(unittest.TestCase):
+    """DC tools a run declared at launch are compared with this host before work continues on it."""
+
+    def test_a_changed_declared_dc_tool_is_reported_and_refuses_continuing_work(self):
+        from agent_ee import dc_path
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        # An extra tracked tool file, as pcbnew.py is: declared at launch, absent from runtime_files.
+        tool = root / 'tracked-pcbnew.py'
+        tool.write_bytes(b'wrapper at launch')
+        fixture = Path(__file__).resolve().parents[1] / 'fixtures/dc-path'
+        scope = read_json(fixture / 'straight.scope.json')
+        for entry in scope['inputs']:
+            entry['path'] = str(fixture / entry['path'])
+        self.enterContext(patch.object(dc_path, 'TOOL_PATHS', (*dc_path.TOOL_PATHS, str(tool))))
+        self.enterContext(patch.dict(os.environ, {RECORD_ENV: str(root / 'absent.json'), 'AGENT_EE_SKIP_VISUALS': '1'}))
+        write_json(root / 'qualification.json', dc_path.qualification())
+        next(e for e in scope['inputs'] if e['at'] == 'qualification.json')['path'] = str(root / 'qualification.json')
+        write_json(root / 'scope.json', scope)
+        host = {'policy_files': policy_files(), 'runtime_files': {}}
+        # A zero budget stops the check before any native execution; the launch expectation
+        # still records the DC tools measured at launch.
+        run_review(root / 'scope.json', root / 'run', 0, checks_only=True, host=host, output_stream=io.StringIO())
+        stored = read_json(root / 'run/result.json')
+        recorded = stored['launch_expectation']['declared_tools'][str(tool)]
+        self.assertEqual(verify(root / 'run', host=host, current_host=True)['outcome'], 'incomplete')
+        tool.write_bytes(b'wrapper replaced after the run')
+        observations = []
+        self.assertEqual(verify(root / 'run', host=host, observations=observations)['outcome'], 'incomplete')
+        self.assertEqual(observations, [host_difference(str(tool), {'path': str(tool), 'sha256': recorded},
+                                                        {'path': str(tool), 'sha256': digest(tool)})])
+        with self.assertRaisesRegex(ValueError, 'declared tool changed since the run'):
+            verify(root / 'run', host=host, current_host=True)
+        decisions = root / 'decisions.json'
+        write_json(decisions, {'schema': 'agent-ee.decisions/1', 'candidate_id': stored['candidate_id'],
+                               'run_id': stored['run_id'], 'decisions': []})
+        with self.assertRaisesRegex(ValueError, 'declared tool changed since the run'):
+            apply_decisions(root / 'run', decisions, host=host)
+        self.assertEqual(list((root / 'run/events').glob('*-adjudication.json')), [])
 
 
 if __name__ == '__main__':

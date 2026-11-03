@@ -70,14 +70,15 @@ def capture_kicad_install(run, runtime):
     return {"path": installed["path"], "sha256": installed["sha256"], "version": installed["record"]["version"]}
 
 
-def verify_kicad_install_unchanged(result):
-    """Within one run: the image's install record is still the one the run retained."""
+def verify_kicad_install_unchanged(result, *, refusal="KiCad install record changed during the run"):
+    """The image's install record on this host is still the one the run retained: at the end of
+    a run, and before work continues on a finished run (verify with current_host)."""
     if "kicad_install" not in result:
         return
     from .kicad_install import read_install_record
     current, retained = read_install_record(), result["kicad_install"]
     if (current or {}).get("sha256") != (retained or {}).get("sha256"):
-        raise ValueError("KiCad install record changed during the run")
+        raise ValueError(refusal)
 
 
 def verify_retained_kicad_install(run, result):
@@ -273,8 +274,12 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
             observations.extend(host_difference(name, recorded.get(name), current.get(name))
                                 for name in drift["gated"])
 
+    compared_tools = set()
+
     def declared_tool(path, sha256, refusal):
-        """A scope-declared tool: its recorded digest, compared with this host only as information."""
+        """A declared tool: its recorded digest, compared with this host's bytes. A difference is
+        information for a finished run and refuses work that continues on it (current_host)."""
+        compared_tools.add(path)
         try:
             live = digest(path)
         except OSError:
@@ -291,6 +296,10 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
     from .kicad_happy import verify_recorded
     verify_recorded(run, result["checks"])
     verify_retained_kicad_install(run, result)
+    if current_host:
+        # Work continuing on the run uses this host: its install record must be the retained one.
+        verify_kicad_install_unchanged(result, refusal="KiCad install record on this host differs from the one "
+                                                        "the run retained; rerun under the current installation")
     if artifacts(run) != result.get("artifact_hashes"):
         raise ValueError("execution/review evidence changed; prior acceptance is stale")
     if digest(run / "candidate.json") != result.get("manifest_sha256"):
@@ -316,6 +325,12 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
             if not isinstance(tool, dict) or not tool.get("argv") or not tool.get("sha256"):
                 raise ValueError("measurement check lacks a pinned tool declaration")
             declared_tool(tool["argv"][0], tool["sha256"], "declared measurement tool changed since review")
+    # Every other declared tool the launch expectation recorded (the DC tools measured at
+    # launch, pcbnew.py among them) is compared with this host the same way.
+    if expectation is not None:
+        for path, sha256 in sorted(expectation["declared_tools"].items()):
+            if path not in compared_tools:
+                declared_tool(path, sha256, f"declared tool changed since the run; rerun under the current tools: {path}")
     if result.get("candidate_id"):
         from .rf_review import decide_run
         # A record without the decision is accepted only when no RF review is required.
