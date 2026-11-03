@@ -694,14 +694,24 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertEqual(local.verify_geometry(self.board,receipt)['status'],'pass')
 
     def test_saved_separation_report_uses_floor_and_records_exemptions(self):
-        from agent_ee.storage import write_json
+        import subprocess,sys
+        from agent_ee.storage import write_json,read_json
         def saved_report(receipt):
             self.save()
             # Native design-rule floors belong to the authored project, not the PCB alone.
             write_json(self.path.with_suffix('.kicad_pro'),dict(
                 board=dict(design_settings=dict(rules=dict(min_clearance=.1))),
-                meta=dict(filename='board.kicad_pro',version=1)))
-            return local.separation_report(self.path,receipt)
+                meta=dict(filename='board.kicad_pro',version=1),
+                net_settings=dict(classes=[dict(name='Default',clearance=.2,track_width=.4,
+                    via_diameter=.6,via_drill=.3)],meta=dict(version=3))))
+            record=self.root/'receipt.json';result=self.root/'separation.json';write_json(record,receipt)
+            # A new native process reads the authored project, avoiding KiCad's cached project.
+            done=subprocess.run([sys.executable,'-B','-c',
+                'import json,sys;from agent_ee.local_decoupling import separation_report;'
+                'json.dump(separation_report(sys.argv[1],json.load(open(sys.argv[2]))),open(sys.argv[3],"w"))',
+                str(self.path),str(record),str(result)],capture_output=True,text=True,timeout=60)
+            self.assertEqual(done.returncode,0,done.stderr)
+            return read_json(result)
         receipt,items=self.close_pair(gap=150_000)
         result=saved_report(receipt)
         self.assertEqual(result['floor_mm'],.1)
