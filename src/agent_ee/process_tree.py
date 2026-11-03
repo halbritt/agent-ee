@@ -94,13 +94,12 @@ def stop_tree(rounds=300):
     left; True when none is left. Raises OSError when /proc cannot be read."""
     for _ in range(rounds):
         reap()
-        live = [(pid, start) for pid, start in children() if owned(pid, start)]
+        live = [pid for pid, start in children() if owned(pid, start)]
         if not live:
             return True
-        for pid, start in live:
-            # Nothing collects children between owned() and here, so the PID is still this child.
-            if owned(pid, start):
-                os.kill(pid, signal.SIGKILL)
+        for pid in live:
+            # Nothing collects children between owned() and here, so each PID is still this child.
+            os.kill(pid, signal.SIGKILL)
         time.sleep(0.01)
     reap()
     return not any(owned(pid, start) for pid, start in children())

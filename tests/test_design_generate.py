@@ -1002,6 +1002,22 @@ class BenchmarkTests(ScriptedLoop):
         self.assertEqual(report['status'], 'stopped_runtime_refused')
         self.assertEqual([(r['name'], r['status']) for r in report['designs']], [('a', 'runtime_refused'), ('b', 'not_run')])
 
+    def test_a_stop_just_after_a_design_finished_keeps_its_final_state(self):
+        directory = self.make_dir([('a', REQUIREMENTS), ('b', REQUIREMENTS)])
+        self.responses = [self.response()]
+        original, calls = loop.design_row, []
+        def design_row(path, run, *args):
+            calls.append(path.stem)
+            if len(calls) == 1:
+                raise KeyboardInterrupt  # after design a's report is final, before its row
+            return original(path, run, *args)
+        with patch.object(loop, 'design_row', side_effect=design_row):
+            with self.assertRaises(KeyboardInterrupt):
+                loop.benchmark(directory, self.root / 'benchmark', max_attempts=1)
+        report = self.saved('benchmark/benchmark-report.json')
+        self.assertEqual(report['status'], 'interrupted')
+        self.assertEqual([(r['name'], r['status']) for r in report['designs']], [('a', 'accepted'), ('b', 'not_run')])
+
     def test_a_review_seat_failure_stops_the_benchmark(self):
         directory = self.make_dir([('a', REQUIREMENTS), ('b', REQUIREMENTS)])
         self.responses = [self.response(), self.response()]
