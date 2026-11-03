@@ -151,6 +151,8 @@ def context(run, bound):
 
 def compose(proposal, bound, files):
     """The intent the compiler grades: proposed assertions under coordinator source hashes."""
+    from .harnesses import unstrict_value
+    proposal = unstrict_value(proposal, PROPOSAL_SCHEMA)
     if not isinstance(proposal, dict) or not set(proposal) <= {*ASSERTIONS, 'records'}:
         raise ValueError(f'architect proposal may contain only {[*ASSERTIONS, "records"]}')
     records = proposal.get('records', [])
