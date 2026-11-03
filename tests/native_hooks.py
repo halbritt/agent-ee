@@ -1,10 +1,11 @@
-"""Test seam over agent_ee.native_run: real adapter execution with a hook around it.
+"""Test seam over agent_ee.native_run: real sandbox execution with a hook around it.
 
 Replaces patches of executor.execute (AGENTEE-540). wrap(call, run) receives the
 native_run.Call and run(intent=..., **overrides), which performs the intent's real adapter run (a
 replacement intent, or overrides such as timeout= for the adapter arguments); it may act
 before or after run(), wrap it in try/finally, or not call it at all (to simulate a coordinator
 interrupted before the executor wrote its record). Install it with native_run.using(Hooked(...)).
+Host metadata probes pass through without invoking the sandbox hook.
 """
 
 from pathlib import Path
@@ -18,13 +19,15 @@ class Hooked(native_run.Sandbox):
         self.calls = []
 
     def run(self, intent, *, inputs, work, timeout, mounts, cancel, **callbacks):
-        call = native_run.Call(intent, None if inputs is None else Path(inputs), None if work is None else Path(work),
-                               timeout, tuple(mounts))
-        self.calls.append(call)
         def run(intent=intent, **overrides):
             options = dict(inputs=inputs, work=work, timeout=timeout, mounts=mounts, cancel=cancel, **callbacks)
             return native_run.DEFAULT_ADAPTERS[intent.isolation].run(intent, **{**options, **overrides})
 
+        if intent.isolation != 'sandbox':
+            return run()
+        call = native_run.Call(intent, None if inputs is None else Path(inputs), None if work is None else Path(work),
+                               timeout, tuple(mounts))
+        self.calls.append(call)
         return self.wrap(call, run)
 
 
