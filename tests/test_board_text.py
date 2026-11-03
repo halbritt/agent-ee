@@ -96,6 +96,20 @@ class StatementTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaisesRegex(DesignError, 'literal'):
                 validate(self.design)
 
+    def test_kicad_brace_escape_tokens_are_refused_before_capture(self):
+        for token in ('dblquote', 'quote', 'lt', 'gt', 'backslash', 'slash', 'bar', 'comma',
+                      'colon', 'space', 'dollar', 'tab', 'return', 'brace'):
+            self.design['markings'] = [label(text='A{' + token + '}B')]
+            with self.subTest(token=token), self.assertRaisesRegex(DesignError, 'literal'):
+                validate(self.design)
+        for text in ('{{slash}}', '{dollar}{brace}REFERENCE}'):
+            self.design['markings'] = [label(text=text)]
+            with self.subTest(text=text), self.assertRaisesRegex(DesignError, 'literal'):
+                validate(self.design)
+        for text in ('V{unknown}', '{Slash}'):
+            self.design['markings'] = [label(text=text)]
+            validate(self.design)
+
     def test_compiler_uses_all_four_generator_rules_without_a_fab_grade_gate(self):
         self.design['markings'] = [label()]
         compile_design(self.design, self.root / 'capture', self.root / 'bundle')
@@ -170,11 +184,65 @@ class NativeTests(unittest.TestCase):
         mounts = ()
         if engine:
             from agent_ee.placement_job import rust_executable
-            mounts = ((str(rust_executable()), '/engine'),)
+            mounts = ((str(rust_executable()), '/engine'),
+                      (str(Path(__file__).resolve().parents[1] / 'fixtures'), '/fixtures'))
         result = execute(self.inputs, work, ['/usr/bin/python3', '-B', '-c', setup + script], extra_ro=mounts)
         self.assertEqual((result['execution'], result['exit_code']), ('ok', 0),
                          (work / 'console.log').read_text())
         return work
+
+    def mechanics_statement_places(self, include_free):
+        import shutil
+        design = design_fixture(self.root / 'capture')
+        design['board'].update(width_mm=40, height_mm=30)
+        design['mechanics'] = dict(access_owners=[])
+        design['markings'] = [label(anchor=dict(reference='R1', pin='1', offset_mm=[0, 3]))]
+        if include_free:
+            design['markings'].append(dict(id='name', text='TEXT', layer='F.SilkS',
+                anchor=dict(at_mm=[20, 15]), height_mm=1.000001, stroke_mm=.150001, rotation_deg=90))
+        compile_design(design, self.root / 'capture', self.root / 'bundle')
+        shutil.copytree(self.root / 'bundle/inputs', self.inputs, dirs_exist_ok=True)
+        self.native('''
+import copy
+from pathlib import Path
+from agent_ee import placement_job as job, placement_problem, source_mechanics
+from agent_ee.placement_probe import extract
+from agent_ee.board_text import load_document, design_rules
+from agent_ee.requirement_map import input_inventory
+b.Remove(fp)
+for edge in b.GetDrawings(): edge.Move(k.VECTOR2I(100000000,100000000))
+for ref,x,y in [('R1',108,110),('R2',130,120)]:
+    part=k.FootprintLoad('/candidate/Owned.pretty','R2');assert part is not None
+    part.SetReference(ref);part.SetValue('10k');part.SetPosition(k.VECTOR2I(k.FromMM(x),k.FromMM(y)));b.Add(part)
+doc=load_document('/candidate/board-text.json')
+rules=design_rules(Path('/candidate'),doc,input_inventory('/candidate'));limits=rules['limits']
+emit(b,doc,limits)
+path=Path('/work/source.kicad_pcb');assert k.SaveBoard(str(path),b)
+facts=extract(path,board=b,before=path.read_bytes());description=job._describe_board(b,facts)
+recipe=source_mechanics.load('/candidate/placement-mechanics.json')
+binding=source_mechanics.bind(recipe,facts);source_mechanics.attach(description,binding,facts)
+original=copy.deepcopy(description)
+normal=job.normalize_intent({'fixed_poses':[]},{'groups':[]})
+problem,_=placement_problem.capture(description,normal)
+assert description==original, 'builder mutated captured mechanics or text'
+assert Path('/candidate/analysis/geometry-model.json').read_text()==recipe['model_raw']
+search={'seeds':[{'seed':0,'start':'scattered'}],'steps_per_seed':20000,'shortlist':1}
+out,_=job.solve(problem,search,Path('/work'),deadline_s=10,executable='/engine')
+assert out['shortlist'] and out['shortlist'][0]['terms']['hard_count']==0,out
+for row in problem['footprints']:
+    if row['native_ref'].startswith('board-text:'):
+        assert row['source_body_local_nm']==row['occupancy']['local_rect_nm'],row
+placed=job.materialize(path,out['shortlist'][0]['poses'],Path('/work/placed'),b'{}\\n',normalized=normal)
+assert placed['integrity']=='preserved',placed
+saved=k.LoadBoard(placed['board']);assert len(list(saved.GetFootprints()))==2
+assert evaluate(saved,doc,limits)['outcome']=='pass',evaluate(saved,doc,limits)
+''', setup=GEOMETRY, engine=True)
+
+    def test_statement_with_mechanics_free_and_pin_labels_places(self):
+        self.mechanics_statement_places(include_free=True)
+
+    def test_statement_with_mechanics_and_only_a_pin_label_places(self):
+        self.mechanics_statement_places(include_free=False)
 
     def test_build_problem_search_reserves_free_and_attached_text_and_materializes_only_parts(self):
         self.native('''

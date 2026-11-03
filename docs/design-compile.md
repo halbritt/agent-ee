@@ -69,6 +69,8 @@ matches `[A-Za-z][A-Za-z0-9_-]{0,63}` (1–64 ASCII characters). Text is one
 nonblank line of at most 256 printable characters. KiCad variables `${...}`,
 arithmetic `@{...}`, overbar `~{...}`, subscript `_{...}`, superscript `^{...}`
 and backslash escapes are refused, including escaped forms of those constructs.
+KiCad brace escape tokens such as `{slash}`, `{dollar}`, `{brace}` and `{return}`
+are also refused at statement validation.
 Final verification compares KiCad's shown text with the declared literal.
 Layers are `F.SilkS` and `B.SilkS`. The anchor is the centre of the text.
 Free `at_mm` coordinates are measured from the board's top-left corner, with x
@@ -99,6 +101,11 @@ projected regions reserve space on both sides. Connector seat geometry keeps
 its original native body bounds. Attached text retains its declared offset;
 the artwork mover does not relocate it. Final checks also refuse a label covered
 by another part's same-side courtyard (or native bounds when no courtyard exists).
+When mechanics are declared, free text also gets its own source body in the
+solver's derived mechanics model. The captured model and real part bodies remain
+unchanged; the problem records the original source hashes and the derived text
+boxes. Odd box dimensions grow outwards by at most one nanometre to fit the
+engine's even-width body representation. This projection adds no physical parts.
 
 The final `board_text` file check verifies content, visibility, attachment, side,
 position, angle, font and size on the saved board. It requires the full native

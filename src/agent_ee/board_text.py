@@ -17,7 +17,9 @@ SCHEMA = 'agent-ee.board-text/1'
 DATA = Path(__file__).parent / 'data'
 KEYS = ('min_silk_text_height_mm', 'min_silk_line_width_mm', 'min_pad_to_silk_mm', 'min_silk_to_mask_mm')
 PLACEMENT_FIELD = 'agent_ee_board_text_placement'
-LITERAL_CONSTRUCTS = ('${', '@{', '~{', '_{', '^{')
+LITERAL_CONSTRUCTS = ('${', '@{', '~{', '_{', '^{',
+    '{dblquote}', '{quote}', '{lt}', '{gt}', '{backslash}', '{slash}', '{bar}',
+    '{comma}', '{colon}', '{space}', '{dollar}', '{tab}', '{return}', '{brace}')
 
 
 def nanometres(value):

@@ -33,7 +33,9 @@ to nanometres can hide a reversed, negative or open-ended interval; the engine
 then validates the converted values at its own input boundary.
 """
 from collections import defaultdict
+from decimal import Decimal
 import hashlib
+import json
 
 from .storage import canonical
 
@@ -223,6 +225,41 @@ def _rails(rails):
             'scoped': dict(rails.get('scoped', {})), 'bindings': rails.get('bindings')}
 
 
+def _text_mechanics(mechanics, obstacles):
+    """Project native text keep-outs into the solver's authenticated body model.
+
+    The captured model and binding stay intact. The solver view adds only text
+    bodies and records its original source hashes. Its rectangle format needs
+    even widths, so odd text extents grow outwards by one nanometre.
+    """
+    if not obstacles:
+        return mechanics, obstacles
+    source = 'analysis/geometry-model.json'
+    raw, sources = mechanics['model_raw'], mechanics['sources']
+    if hashlib.sha256(raw.encode()).hexdigest() != sources[source]:
+        raise JobRefusal('mechanics source model bytes changed before text projection')
+    model = json.loads(raw)
+    projected, bodies = [], {}
+    for obstacle in obstacles:
+        ref = obstacle['native_ref']
+        if ref in model['packages']:
+            raise JobRefusal('text obstacle collides with mechanics package: ' + ref)
+        rect = list(obstacle['occupancy']['local_rect_nm'])
+        for axis in (0, 1):
+            rect[axis + 2] += (rect[axis + 2] - rect[axis]) % 2
+        bodies[ref] = rect
+        model['packages'][ref] = dict(
+            size_mm=[str(Decimal(rect[2]-rect[0])/NM), str(Decimal(rect[3]-rect[1])/NM), '0'],
+            offset_mm=[str(Decimal((rect[0]+rect[2])//2)/NM), str(Decimal((rect[1]+rect[3])//2)/NM)],
+            basis='native-text-keepout')
+        projected.append({**obstacle, 'source_body_local_nm': rect,
+                          'occupancy': {**obstacle['occupancy'], 'local_rect_nm': rect}})
+    derived = canonical(model).decode()
+    return ({**mechanics, 'model_raw': derived,
+             'sources': {**sources, source: hashlib.sha256(derived.encode()).hexdigest()},
+             'text_keepout_projection': {'original_sources': dict(sources), 'bodies_local_nm': bodies}}, projected)
+
+
 def _document(board, *, fixed_poses, edges, groups, rails):
     """The parts capture and evaluation share: geometry, roles, edges, groups, rails and weights."""
     owners = fixed_pose_owners(fixed_poses, board['footprints'])
@@ -273,7 +310,8 @@ def _document(board, *, fixed_poses, edges, groups, rails):
                 'rails': _rails(rails),
                 'weights': dict(WEIGHTS)}
     if 'mechanics' in board:
-        document['mechanics'] = board['mechanics']
+        document['mechanics'], obstacles = _text_mechanics(board['mechanics'], board.get('text_obstacles', []))
+        document['footprints'] = sorted([*rows, *obstacles], key=lambda r: r['uuid'])
     return document, records
 
 
