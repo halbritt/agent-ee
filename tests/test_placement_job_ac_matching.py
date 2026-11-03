@@ -67,8 +67,11 @@ class AcMatchingJobTests(unittest.TestCase):
         self.assertTrue(all(digest(e['path']) == e['sha256'] for e in self.config['inputs'].values()))
 
     def test_connected_unmatched_chain_rejects(self):
+        # Router 995891ae routes this chain within 0.0194 mm of skew without meanders, so a 0.1 mm
+        # tolerance passes at any amplitude. The bends leave a skew that a 0.001 mm meander cannot
+        # remove; a 0.001 mm tolerance (above the 0.0002 mm rounding bound) therefore cannot be met.
         config = copy.deepcopy(self.config)
-        config['router']['ac_match']['amplitude_mm'] = .001
+        config['router']['ac_match'].update(amplitude_mm=.001, tolerance_mm=.001)
         path, out = self.root / 'insufficient.json', self.root / 'insufficient'
         write_json(path, config)
         done = public_job(path, out)
@@ -77,6 +80,8 @@ class AcMatchingJobTests(unittest.TestCase):
         self.assertEqual(report['status'], 'verification_failed', report)
         self.assertEqual(report['final']['opens'], 0)
         self.assertEqual(report['final']['ac_matching']['status'], 'FAIL')
+        chain, = report['final']['ac_matching']['chains']
+        self.assertGreater(chain['skew_mm'], .001, 'the router matched the chain; this case needs a larger skew')
         self.assertFalse((out / 'routed-incumbent.json').exists())
 
     def test_changed_chain_requirement_cannot_resume(self):
