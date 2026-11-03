@@ -176,6 +176,11 @@ The report also warns about footprints with no model reference, whose height
 cannot be established at package. CAD assignment checks do not prove full land
 pattern suitability.
 
+The manufacturing clause binds the generated `fab_package` and a following
+`fab_roundtrip` check of that sealed package, as required for typed file
+qualification. The roundtrip is an additional check; the package gate remains
+the generation done check.
+
 ## Declared mechanics
 
 Add `"mechanics": {"access_owners": ["J1"]}` to request the existing

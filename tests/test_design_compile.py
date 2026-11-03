@@ -380,7 +380,11 @@ class DesignCompileTests(unittest.TestCase):
         rows = m["requirements"]
         functional = next(r for r in rows if r["id"] == "TEST-FUNC-1")
         self.assertEqual({c["kind"] for c in functional["checks"]}, {"topology_rules"})
-        self.assertEqual(rows[-1]["checks"][-1]["kind"], "fab_roundtrip")
+        delivery = rows[-1]["checks"]
+        self.assertEqual([c["kind"] for c in delivery[-2:]], ["fab_package", "fab_roundtrip"])
+        self.assertEqual(delivery[-1]["params"], {"package_check": delivery[-2]["id"]})
+        from agent_ee.qualification import TYPED_MANDATORY
+        self.assertFalse(TYPED_MANDATORY - {c["kind"] for row in rows for c in row.get("checks", [])})
         parity = [
             r
             for r in rows
