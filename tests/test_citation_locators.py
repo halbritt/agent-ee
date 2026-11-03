@@ -58,6 +58,7 @@ class CitationLocatorTests(unittest.TestCase):
                       dict(path='inputs/' + 'x' * 50 + '.xml', locator_kinds=['lines', 'xpath']),
                       dict(path='inputs/odd.kicad_pcb', locator_kinds=['lines', 'pointer']),
                       dict(path='inputs/other/report.json', locator_kinds=['lines']),
+                      dict(path='inputs/xreport.json', locator_kinds=['lines']),
                       dict(path='inputs/.json', locator_kinds=['lines'])]
         for role, collection, template in [('circuit', 'findings', REVIEW_SCHEMA),
                                             ('adjudicator', 'decisions', DECISIONS_SCHEMA)]:
@@ -75,6 +76,34 @@ class CitationLocatorTests(unittest.TestCase):
                             matched = any(accepts_path(row['path'], branch['properties']['path'], wire['$defs'])
                                 for branch in branches if set(branch['required']) - {'path', 'locator'} == fields)
                             self.assertEqual(matched, fields <= set(row['locator_kinds']), (row, fields))
+
+    def test_provider_own_json_and_xml_experiments_require_lines(self):
+        from agent_ee.reviewers import (REVIEW_SCHEMA, DECISIONS_SCHEMA, bind_evidence_schema,
+                                      review_transport_schema, validate_evidence_paths)
+        for role, collection, template in [('circuit', 'findings', REVIEW_SCHEMA),
+                                          ('adjudicator', 'decisions', DECISIONS_SCHEMA)]:
+            inventory = [dict(path=f'inputs/source-{i}.txt', locator_kinds=['lines']) for i in range(1100)]
+            inventory += [dict(path='inputs/document.json', locator_kinds=['lines', 'pointer']),
+                          dict(path='inputs/document.xml', locator_kinds=['lines', 'xpath']),
+                          dict(path=f'review-work/{role}/experiments/captured.json', locator_kinds=['lines', 'pointer'])]
+            packet = dict(citation_files=inventory)
+            before = copy.deepcopy(packet)
+            local = copy.deepcopy(template)
+            bind_evidence_schema(local, collection, self.run_dir, packet, role)
+            wire = review_transport_schema(local)
+            self.assertEqual(packet, before)
+            items = wire['properties'][collection]['items']
+            for variant in items.get('anyOf', [items]):
+                branches = variant['properties']['evidence']['items']['anyOf']
+                for name in ('new.json', 'new.xml', 'captured.json'):
+                    path = f'review-work/{role}/experiments/{name}'
+                    admitted = {frozenset(branch['required']) - {'path', 'locator'} for branch in branches
+                                if accepts_path(path, branch['properties']['path'], wire['$defs'])}
+                    self.assertEqual(admitted, {frozenset({'lines'})}, (role, path))
+                    validate_evidence_paths({collection: [dict(evidence=[dict(path=path, locator='experiment', lines=[1, 1])])]}, local)
+                    for key in ('pointer', 'xpath'):
+                        with self.assertRaises(ValueError):
+                            validate_evidence_paths({collection: [dict(evidence=[dict(path=path, locator='experiment', **{key: ''})])]}, local)
 
     def adjudicator_repair(self, correct):
         from agent_ee.reviewers import adjudicator_call

@@ -98,7 +98,10 @@ The provider copy replaces oversized finite path patterns with short constraints
 that keep captured locator-format groups disjoint. A suffix unique to one format
 group uses a suffix constraint. Shared or misleading suffixes use exact filenames;
 filenames shared across formats use exact full paths. Name/path alternatives are
-split into small patterns. This prevents a captured lines-only file from matching
+split into small patterns and start in captured evidence roots. A seat's own
+experiment tree is lines-only, even for retained JSON/XML files; pointer/XPath
+constraints can include captured peer experiment roots but never that seat's own
+root. This prevents a captured lines-only file from matching
 a pointer or XPath branch, even if generation has already chosen its first field.
 The exact finite path language stays in the local schema; no nullable unused
 locator fields are added. Large finite patterns failed the subscription transport

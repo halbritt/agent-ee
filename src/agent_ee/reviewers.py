@@ -62,7 +62,9 @@ def _citation_inventory(run_dir, packet, role):
                 rel = path.relative_to(run).as_posix()
                 validate_citation_path(rel, run)
                 inventory.append(dict(path=rel, **citation_format(read_captured(run, rel))))
-    return inventory
+    own = f'review-work/{role}/experiments/'
+    return [dict(row, locator_kinds=['lines'] if 'lines' in row['locator_kinds'] else [])
+            if row['path'].startswith(own) else row for row in inventory]
 
 
 def evidence_schema(run_dir, packet, role):
@@ -287,6 +289,8 @@ def provider_path_sets(groups):
 
     A suffix shared by formats needs exact names. A name shared by formats needs
     full paths. Repeated captures can share a name without enumerating directories.
+    Start in captured evidence roots: own experiments are lines-only and cannot
+    enter a pointer/XPath group through a shared suffix or filename.
     Exact local inventory membership still rejects uncaptured paths.
     """
     suffix_groups, name_groups = {}, {}
@@ -295,12 +299,12 @@ def provider_path_sets(groups):
             suffix_groups.setdefault(Path(path).suffix, set()).add(group)
             name_groups.setdefault(Path(path).name, set()).add(group)
 
-    def patterns(values, prefix):
+    def patterns(values, prefix, *, limit=384):
         chunk = []
         for value in sorted(set(values)):
             trial = chunk + [value]
             expression = literal_path_set(trial)['anyOf'][0]['pattern'][1:-1]
-            if chunk and len(prefix + expression + '$') > 384:
+            if chunk and len(prefix + expression + '$') > limit:
                 yield prefix + literal_path_set(chunk)['anyOf'][0]['pattern'][1:-1] + '$'
                 chunk = [value]
             else:
@@ -310,8 +314,14 @@ def provider_path_sets(groups):
 
     definitions = {}
     for group, paths in groups.items():
-        suffixes, names, exact = set(), set(), set()
+        suffixes, names, exact, roots = set(), set(), set(), set()
         for path in paths:
+            parts = path.split('/')
+            if len(parts) == 1:
+                exact.add(path)
+                continue
+            root = '/'.join(parts[:3]) + '/' if parts[0] == 'review-work' else parts[0] + '/'
+            roots.add(root)
             suffix, name = Path(path).suffix, Path(path).name
             if suffix and len(suffix_groups[suffix]) == 1:
                 suffixes.add(suffix)
@@ -319,8 +329,11 @@ def provider_path_sets(groups):
                 names.add(name)
             else:
                 exact.add(path)
-        expressions = [*patterns(suffixes, r'^(?:[\s\S]*/)?[^/]+'),
-                       *patterns(names, r'^(?:[\s\S]*/)?'), *patterns(exact, '^')]
+        expressions = list(patterns(exact, '^'))
+        for root in patterns(roots, '^', limit=128):
+            prefix = root[:-1] + r'(?:[\s\S]*/)?'
+            expressions.extend(patterns(suffixes, prefix + '[^/]+'))
+            expressions.extend(patterns(names, prefix))
         definitions[group] = {'anyOf': [dict(type='string', pattern=expression) for expression in expressions]}
     return definitions
 

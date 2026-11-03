@@ -100,6 +100,28 @@ class IntentRetryTests(unittest.TestCase):
 
     campaign = campaign_tests.MutableIntentSchematicCampaignTests.campaign
 
+    def test_intent_retry_followed_by_writer_output_repair_replays(self):
+        original = self.agent
+        def response(run, label, *args, **kwargs):
+            record, value = original(run, label, *args, **kwargs)
+            if label == 'implementation' and self.calls == 2:
+                value = {'summary': []}
+            return record, value
+        with patch('agent_ee.reviewers.dispatch', side_effect=response):
+            status, state = self.campaign(self.stage['implementation_steps'])
+        self.assertEqual((status, state['state'], self.calls), (0, 'criteria_satisfied', 3), state.get('error'))
+        root = self.root / 'campaign'
+        following = root / 'implementations/1'
+        record = read_json(following / 'implementation-execution.json')
+        self.assertEqual(record['resubmissions_used'], 1)
+        self.assertEqual([row['execution'] for row in record['attempts']], ['malformed', 'ok'])
+        first, repair = [following / row['path'] for row in record['attempts']]
+        prompt = (repair / 'prompt.txt').read_text()
+        self.assertTrue(prompt.startswith('OUTPUT REPAIR TURN 1 OF 1:'))
+        self.assertTrue(prompt.endswith('\nORIGINAL REVIEW CONTEXT:\n' + (first / 'prompt.txt').read_text()))
+        self.assertIn('resolution_unknown_pin', prompt)
+        self.assertEqual(verify_campaign(root, host=self.host)['state'], 'criteria_satisfied')
+
     def test_pin_resolution_repair_retains_failure_and_replays(self):
         # A preceding producer owns a seed output. Each retry must reset that
         # output before the writer, then rerun the entire declared sequence.

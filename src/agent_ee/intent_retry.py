@@ -294,7 +294,11 @@ def verify(root, state, config):
                                            limit=state['max_schema_resubmissions'])
                     if call_ids & ids:
                         raise ValueError('intent retry reused a writer invocation')
-                for call in execution['attempts']:
+                bound_prompt = with_resubmission_notice(prompt, state['max_schema_resubmissions'])
+                for number, call in enumerate(execution['attempts']):
                     supplied = (following / call['path'] / 'prompt.txt').read_text()
-                    if not supplied.startswith(with_resubmission_notice(prompt, state['max_schema_resubmissions'])):
+                    repair = (number > 0 and supplied.startswith(
+                        f"OUTPUT REPAIR TURN {number} OF {state['max_schema_resubmissions']}:")
+                        and supplied.endswith('\nORIGINAL REVIEW CONTEXT:\n' + bound_prompt))
+                    if not (supplied.startswith(bound_prompt) or repair):
                         raise ValueError('intent retry writer did not receive bound feedback')

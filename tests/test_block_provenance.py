@@ -18,6 +18,7 @@ from agent_ee import block_arrangement as arrangement, block_library as bl, bloc
 from agent_ee.candidate import capture
 from agent_ee.run_record import validate_scope
 from agent_ee.reviewers import REVIEW_VERSION, build_packet, initial_reviews
+from agent_ee.review_run import RESUBMISSION_NOTICE
 from test_block_arrangement import plan_policy
 from test_block_library import LibraryFixture
 from test_blocks import PARTS, SHEETS, board, native_xml
@@ -273,7 +274,8 @@ class ReviewInputTests(ProvenanceFixture, unittest.TestCase):
         expected = self.expected()
         for role, prompt in prompts.items():
             with self.subTest(role):
-                received = json.loads(prompt.split('PACKET:\n', 1)[1])
+                self.assertTrue(prompt.endswith(RESUBMISSION_NOTICE))
+                received = json.loads(prompt.removesuffix(RESUBMISSION_NOTICE).split('PACKET:\n', 1)[1])
                 rows = {r['block']: r for r in received['block_provenance']['record']['blocks']}
                 self.assertEqual(set(rows), set(expected))
                 for bid, values in expected.items():

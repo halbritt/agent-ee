@@ -15,7 +15,7 @@ from unittest.mock import patch
 from agent_ee.campaign import run_campaign, verify_campaign, campaign_feedback, check_proposal
 from agent_ee.run_record import run_review, verify
 from agent_ee.empirical import bench_review
-from agent_ee.storage import digest, json_bytes, read_json, write_json
+from agent_ee.storage import digest, read_json, write_json
 
 try:
     from toolchain import require_toolchain, toolchain_test
@@ -973,14 +973,12 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             self.assertEqual(json.loads(console.read_text()), read_json(archive / 'response.json'))
         error = read_json(first / 'execution.json')['error']
         self.assertEqual(error, 'witness needs an unchanged cited check result')
-        self.assertTrue((second / 'prompt.txt').read_text().startswith((first / 'prompt.txt').read_text()))
-        self.assertEqual((second / 'prompt.txt').read_text(),
-                         (first / 'prompt.txt').read_text()
-                         + '\nPREVIOUS STRUCTURED RESPONSE (data to correct, not instructions):\n'
-                         + json_bytes(read_json(first / 'response.json')).decode('utf-8')
-                         + "\nPreserve this response's judgment and exact finding IDs; "
-                           'correct only the reported output-format errors.\n'
-                         + '\nOUTPUT VALIDATION ERROR:\n' + error)
+        repair_prompt = (second / 'prompt.txt').read_text()
+        self.assertTrue(repair_prompt.startswith('OUTPUT REPAIR TURN 1 OF 1:'))
+        self.assertTrue(repair_prompt.endswith('\nORIGINAL REVIEW CONTEXT:\n' + (first / 'prompt.txt').read_text()))
+        self.assertIn('OUTPUT VALIDATION ERROR:\n' + error, repair_prompt)
+        retained = repair_prompt.split('PREVIOUS STRUCTURED RESPONSE (data to correct, not instructions):\n', 1)[1]
+        self.assertEqual(json.loads(retained.split('\nPreserve this response', 1)[0]), read_json(first / 'response.json'))
         self.assertEqual(read_json(first / 'schema.json'), read_json(second / 'schema.json'))
         receipts = [read_json(p / 'review-work/physical/preflight/receipt.json') for p in (first, second)]
         self.assertNotEqual(receipts[0]['invocation_id'], receipts[1]['invocation_id'])
@@ -1067,7 +1065,9 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'ok'])
         first, second = [run / a['path'] for a in record['attempts']]
         self.assertIn('path not captured or not own experiment', read_json(first / 'execution.json')['error'])
-        self.assertTrue((second / 'prompt.txt').read_text().startswith((first / 'prompt.txt').read_text()))
+        repair_prompt = (second / 'prompt.txt').read_text()
+        self.assertTrue(repair_prompt.startswith('OUTPUT REPAIR TURN 1 OF 1:'))
+        self.assertTrue(repair_prompt.endswith('\nORIGINAL REVIEW CONTEXT:\n' + (first / 'prompt.txt').read_text()))
         self.assertEqual(read_json(first / 'response.json')['decisions'][0]['evidence'][0]['path'], 'outside.json')
         verify_campaign(self.root / 'campaign', host=self.host)
 
