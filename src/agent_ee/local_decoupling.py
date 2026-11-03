@@ -124,7 +124,7 @@ def _obstacles(board, net, layer, margin, endpoints=()):
     allowed = {p.m_Uuid.AsString() for p in endpoints}
     return [_box(item, margin) for item in items if item.IsOnLayer(layer)
             and item.m_Uuid.AsString() not in allowed
-            and (item.GetClass() == 'PAD' or not hasattr(item, 'GetNetCode') or item.GetNetCode() != net)]
+            and (item.GetClass() in ('PAD', 'PCB_VIA') or not hasattr(item, 'GetNetCode') or item.GetNetCode() != net)]
 
 
 def _layers(board, terminal):
