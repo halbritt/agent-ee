@@ -209,11 +209,13 @@ clearance from every pad, including same-net pads.
 The floor covers escape tracks/vias against device legs or other relations,
 different banks, and every distinct leg allowed to meet only inside a declared
 shared pad. Same-bank device legs already allowed to share copper remain exempt,
-as do items of the same generated leg. When the copper overlap of two convex
-track/via items belongs entirely to their declared shared pad, they are arms of
-one junction. Their continuous near region at the pad boundary does not require
-a gap. Actual copper overlap outside the pad remains forbidden. Independent
-copper uses conservative outside polygons and the full floor. The junction
+as do items of the same generated leg. When copper overlap belongs entirely to
+the declared shared pad, the junction opening extends at most one native
+fabrication floor beyond that pad. Copper beyond this bounded region must keep
+the floor, including two shallow arms of the same junction. Actual copper
+overlap outside the pad remains forbidden. The audit measures the distance
+between these remainders; an empty remainder is explicitly not applicable.
+Independent copper uses conservative outside polygons and the full floor. The junction
 localization uses inscribed native copper polygons at 1 nm resolution, avoiding
 outward arc-rounding slivers at land edges. Both generation verification and the
 typed connectivity graph use this same polygon-overlap decision.

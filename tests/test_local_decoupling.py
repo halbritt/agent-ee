@@ -641,6 +641,87 @@ class ReviewRegressionTests(unittest.TestCase):
             i, j = divmod(n, 73)
             self.add_pad(fp, n+1, 21+i*.25, 21+j*.25, net, 100_000)
 
+    def test_junction_opening_keeps_the_floor_beyond_one_floor_of_the_pad(self):
+        # Reviewer C1Narrow: a shallow in-pad junction cannot exempt its whole pair.
+        import math
+        from copy import deepcopy
+        for role in ('escape', 'other-bank'):
+            for land, angle, accepted in ((1_200_000,20,False),(200_000,90,True),
+                                         (250_000,120,True),(300_000,150,True)):
+                with self.subTest(role=role,land=land,angle=angle):
+                    self.setUp();k=self.k;doc=contract();net=self.board.FindNet('/return').GetNetCode()
+                    cap=local.pad(self.board,doc['relations'][0]['return'][1])
+                    cap.SetPosition(k.VECTOR2I(36_000_000,25_000_000));cap.SetSize(k.VECTOR2I(land,land))
+                    device=local.pad(self.board,doc['relations'][0]['return'][0]);device.SetPosition(k.VECTOR2I(39_000_000,25_000_000))
+                    c=local.position(cap);a=local._track(self.board,[local.position(device),c],net,k.F_Cu,200_000)[0]
+                    length=1_500_000 if role=='escape' else 3_000_000
+                    end=(c[0]+round(length*math.cos(math.radians(angle))),c[1]+round(length*math.sin(math.radians(angle))))
+                    b=local._track(self.board,[c,end],net,k.F_Cu,200_000)[0]
+                    ids=lambda items:[t.m_Uuid.AsString() for t in items]
+                    first=dict(id='cell',copper=ids([a]),legs=[dict(kind='return',tracks=ids([a]),pads=ids([device,cap]))])
+                    rows=[first]
+                    if role=='escape':
+                        first['copper']+=ids([b]);first['legs'].append(dict(kind='plane_tie',tracks=ids([b]),pads=ids([cap])))
+                    else:
+                        fp=self.add_fp('DEV2',[]);other=self.add_pad(fp,'2',end[0]/1e6,end[1]/1e6,'/return',500_000)
+                        self.add_pad(fp,'1',26,35,'/rail',500_000)
+                        relation=deepcopy(doc['relations'][0]);relation['id']='other-bank'
+                        for kind in ('supply','return'):relation[kind][0]['reference']='DEV2'
+                        doc['relations'].append(relation)
+                        rows.append(dict(id='other-bank',copper=ids([b]),legs=[dict(kind='return',tracks=ids([b]),pads=ids([other,cap]))]))
+                        self.assertEqual(len(local.banks(doc)),2)
+                    receipt=dict(contract=doc,relations=rows,protected=[local.copper_identity(t) for t in (a,b)],other_pads=[])
+                    self.assertTrue(local.junction_in_pad(a,b,k.F_Cu,[cap]))
+                    if accepted:self.assertEqual(local.verify_geometry(self.board,receipt)['status'],'pass')
+                    else:self.assertRaisesRegex(JobRefusal,'outside a declared shared pad',local.verify_geometry,self.board,receipt)
+                    self.board.Remove(b)
+                    clear=local._clear_tie_path(self.board,[c,end],cap,k.F_Cu,200_000)
+                    self.board.Add(b)
+                    self.assertEqual(clear,accepted)
+                    self.save();report=local.separation_report(self.path,receipt)
+                    row=next(r for r in report['pairs'] if set(r['items'])==set(ids([a,b])))
+                    self.assertIsNotNone(row['minimum_gap_mm_lower_bound'])
+                    self.assertEqual(row['status'],'pass' if accepted else 'defect')
+                    self.assertEqual(report['outcome'],'pass' if accepted else 'defect')
+                    if accepted:self.assertGreaterEqual(row['minimum_gap_mm_lower_bound'],.1)
+                    else:self.assertLess(row['minimum_gap_mm_lower_bound'],.1)
+                    self.doCleanups()
+
+    def test_geometry_rejection_retries_before_saving_the_nearest_board(self):
+        from unittest.mock import patch
+        real=local._seed_copper;invalid=[]
+        def attempt(board,doc,**kwargs):
+            rows,protected,other=real(board,doc,**kwargs)
+            if kwargs['order']=='nearest-first':
+                # Native copper through undeclared OTHER.1 is a real guard defect.
+                extra=local._track(board,[(37_000_000,29_000_000),(39_000_000,29_000_000)],
+                                   board.FindNet('/rail').GetNetCode(),self.k.F_Cu,200_000)
+                invalid.extend(t.m_Uuid.AsString() for t in extra)
+                rows[0]['copper']+=invalid;rows[0]['legs'][0]['tracks']+=invalid
+                protected.extend(local.copper_identity(t) for t in extra)
+            return rows,protected,other
+        with patch.object(local,'_seed_copper',side_effect=attempt):receipt=self.seed()
+        self.assertEqual(receipt['generation_order']['selected'],'document')
+        self.assertIn('pad clearance OTHER.1',receipt['generation_order']['attempts'][0]['reason'])
+        board=self.k.LoadBoard(str(self.path));actual={t.m_Uuid.AsString() for t in board.GetTracks()}
+        self.assertFalse(actual.intersection(invalid))
+        self.assertEqual(local.verify(self.path,receipt)['status'],'pass')
+
+    def test_cross_bank_device_legs_search_around_each_other(self):
+        from copy import deepcopy
+        self.add_fp('DEV2',[('1',26,35,'/rail'),('2',31.5,29.5,'/return')])
+        self.add_fp('CAP2',[('1',27,35,'/rail'),('2',31.5,32.5,'/return')])
+        doc=contract();doc['planes']=[]
+        relation=deepcopy(doc['relations'][0]);relation['id']='other-bank'
+        for kind in ('supply','return'):
+            relation[kind][0]['reference']='DEV2';relation[kind][1]['reference']='CAP2'
+        doc['relations'].append(relation);self.save();receipt=self.seed(doc)
+        self.assertEqual(len(local.banks(doc)),2)
+        self.assertEqual(local.verify(self.path,receipt)['status'],'pass')
+        self.filled();result=measure(self.path,doc)
+        self.assertEqual(result['outcome'],'info',result)
+        self.assertTrue(all(row['return']['surface_path'] for row in result['records']))
+
     def test_tiny_lands_allow_the_two_arms_of_an_in_pad_junction(self):
         import math
         k=self.k;net=self.board.FindNet('/return').GetNetCode()

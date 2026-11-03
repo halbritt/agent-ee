@@ -448,9 +448,9 @@ MUTANTS.update({'R4_V1_verify_floor_contact_only': ([('src/agent_ee/local_decoup
                                                      ['test_local_decoupling']),
  'R4_V3_shared_pad_interior_inflated_50um': ([('src/agent_ee/local_decoupling.py',
                                                '            terminal.TransformShapeToPolygon(inside, layer, '
-                                               '0, 1, k.ERROR_INSIDE)\n',
+                                               'pad_margin, 1, k.ERROR_INSIDE)\n',
                                                '            terminal.TransformShapeToPolygon(inside, layer, '
-                                               '50_000, 1, k.ERROR_INSIDE)\n')],
+                                               'pad_margin + 50_000, 1, k.ERROR_INSIDE)\n')],
                                              ['test_local_decoupling']),
  'R4_V4_tie_path_contact_only': ([('src/agent_ee/local_decoupling.py',
                                    '            if other.IsOnLayer(layer) and _too_close(segment, other, '
@@ -497,6 +497,89 @@ MUTANTS.update({'R4_V1_verify_floor_contact_only': ([('src/agent_ee/local_decoup
                                     '    pad_rows = []\n    for uid, item in tracks.items():',
                                     '    pad_rows = []\n    for uid, item in ():')],
                                   ['test_local_decoupling.ReviewRegressionTests.test_undeclared_same_net_pad_keeps_the_native_floor_in_guard_and_report'])})
+
+# Reviewer round-5 models, re-anchored after bounding the junction region.
+MUTANTS.update({'R3_M3c_same_net_margin_zero': ([('src/agent_ee/local_decoupling.py',
+                                   "            track_margin = max(0, margin - _rules(board, item)['clearance'] + "
+                                   '_separation_floor(board))\n',
+                                   '            track_margin = 0\n')],
+                                 ['test_local_decoupling']),
+ 'R3_M3f_verify_skips_pairs_with_a_via': ([('src/agent_ee/local_decoupling.py',
+                                            '            if (other_uid == uid or groups.get(uid, set()) & '
+                                            'groups.get(other_uid, set())\n',
+                                            '            if (other_uid == uid or via or other.GetClass() == '
+                                            "'PCB_VIA' or groups.get(uid, set()) & groups.get(other_uid, "
+                                            'set())\n')],
+                                          ['test_local_decoupling']),
+ 'R4_O1_document_order_only': ([('src/agent_ee/local_decoupling.py',
+                                 "    for order in ('nearest-first', 'document'):\n",
+                                 "    for order in ('document',):\n")],
+                               ['test_local_decoupling']),
+ 'R5_J1_exempt_any_touching_pair_sharing_a_pad': ([('src/agent_ee/local_decoupling.py',
+                                                    '    overlap.BooleanSubtract(inside)\n'
+                                                    '    return overlap.IsEmpty()\n',
+                                                    '    return True\n')],
+                                                  ['test_local_decoupling']),
+ 'R5_J2_junction_pad_interior_inflated_25um': ([('src/agent_ee/local_decoupling.py',
+                                                 '            terminal.TransformShapeToPolygon(inside, layer, '
+                                                 'pad_margin, 1, k.ERROR_INSIDE)\n',
+                                                 '            terminal.TransformShapeToPolygon(inside, layer, '
+                                                 'pad_margin + 25_000, 1, k.ERROR_INSIDE)\n')],
+                                               ['test_local_decoupling']),
+ 'R5_J3_tie_segment_without_net': ([('src/agent_ee/local_decoupling.py',
+                                     '        segment.SetNetCode(terminal.GetNetCode())\n',
+                                     '')],
+                                   ['test_local_decoupling']),
+ 'R5_J4_typed_graph_keeps_in_pad_junctions': ([('src/agent_ee/decoupling_loops.py',
+                                                "                    if item.GetClass() != 'PAD' and "
+                                                "other.GetClass() != 'PAD' and junction_in_pad(\n",
+                                                '                    if False and junction_in_pad(\n')],
+                                              ['test_local_decoupling']),
+ 'R5_F1_zero_floor_means_contact': ([('src/agent_ee/local_decoupling.py',
+                                      '    if value <= 0:\n        raise JobRefusal(',
+                                      '    if value <= 0:\n        return 1\n        raise JobRefusal(')],
+                                    ['test_local_decoupling']),
+ 'R5_F2_no_job_preflight_floor': ([('src/agent_ee/placement_job.py',
+                                    '            _separation_floor(pcbnew.LoadBoard(str(board_path)))\n',
+                                    '')],
+                                  ['test_local_decoupling', 'test_placement_job_guards']),
+ 'R5_P1_pad_floor_contact_only': ([('src/agent_ee/local_decoupling.py',
+                                    "                gap = max(clearance, _rules(board, terminal)['clearance']) "
+                                    'if via else required_gap\n',
+                                    "                gap = max(clearance, _rules(board, terminal)['clearance']) "
+                                    'if via else 1\n')],
+                                  ['test_local_decoupling']),
+ 'R5_P2_report_omits_pad_rows': ([('src/agent_ee/local_decoupling.py',
+                                   '                    pad_rows.append(dict(',
+                                   '                    (lambda **_: None)(**dict(')],
+                                 ['test_local_decoupling']),
+ 'R5_O3_retry_skips_attempt_verify': ([('src/agent_ee/local_decoupling.py',
+                                        '            verify_geometry(board, trial)\n',
+                                        '')],
+                                      ['test_local_decoupling']),
+ 'R5_O4_retry_reuses_first_board': ([('src/agent_ee/local_decoupling.py',
+                                      '        board = k.LoadBoard(str(board_path))\n'
+                                      '        _separation_floor(board)\n',
+                                      '        _separation_floor(board)\n')],
+                                    ['test_local_decoupling']),
+ 'R5_S1_escapes_joinable': ([('src/agent_ee/local_decoupling.py',
+                              '                                 joinable=shared - escapes)\n',
+                              '                                 joinable=shared | escapes)\n')],
+                            ['test_local_decoupling']),
+ 'R5_S2_joinable_across_banks': ([('src/agent_ee/local_decoupling.py',
+                                   "                shared = device_legs.setdefault((bank_ids[relation['id']], "
+                                   'leg, first.GetNetCode()), set())\n',
+                                   '                shared = device_legs.setdefault((leg, first.GetNetCode()), '
+                                   'set())\n')],
+                                 ['test_local_decoupling']),
+ 'R9_N1_junction_pair_loses_remainder_floor': ([('src/agent_ee/local_decoupling.py',
+                                                 '    # Junction arms need room to separate at the land edge. '
+                                                 'Bound that opening\n',
+                                                 '    if junction_in_pad(first, second, layer, shared_pads):\n'
+                                                 '        return None\n'
+                                                 '    # Junction arms need room to separate at the land edge. '
+                                                 'Bound that opening\n')],
+                                               ['test_local_decoupling.ReviewRegressionTests.test_junction_opening_keeps_the_floor_beyond_one_floor_of_the_pad'])})
 
 def run(name):
     edits, tests = MUTANTS[name]

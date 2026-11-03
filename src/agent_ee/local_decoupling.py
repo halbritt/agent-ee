@@ -147,12 +147,12 @@ def _same_net_search_gap(board):
     return _separation_floor(board) + 25_000
 
 
-def _junction_polygons(first, second, layer, shared_pads, *, copper_inside=False):
+def _junction_polygons(first, second, layer, shared_pads, *, copper_inside=False, pad_margin=0):
     import pcbnew as k
     inside = k.SHAPE_POLY_SET()
     for terminal in shared_pads:
         if terminal.IsOnLayer(layer) and terminal.GetNetCode() == first.GetNetCode() == second.GetNetCode():
-            terminal.TransformShapeToPolygon(inside, layer, 0, 1, k.ERROR_INSIDE)
+            terminal.TransformShapeToPolygon(inside, layer, pad_margin, 1, k.ERROR_INSIDE)
     inside.Simplify()
     copper = []
     for item in (first, second):
@@ -180,12 +180,10 @@ def junction_in_pad(first, second, layer, shared_pads):
 def _separation_shapes(first, second, layer, shared_pads):
     if not shared_pads:
         return first.GetEffectiveShape(layer), second.GetEffectiveShape(layer)
-    # Straight tracks and vias are convex. Their close region is connected to
-    # the in-pad overlap, so these are two arms of that junction, not isolated
-    # copper requiring a gap at the pad boundary.
-    if junction_in_pad(first, second, layer, shared_pads):
-        return None
-    inside, copper = _junction_polygons(first, second, layer, shared_pads)
+    # Junction arms need room to separate at the land edge. Bound that opening
+    # to one fabrication floor; distant portions must still keep the floor.
+    margin = _separation_floor(first.GetBoard()) if junction_in_pad(first, second, layer, shared_pads) else 0
+    inside, copper = _junction_polygons(first, second, layer, shared_pads, pad_margin=margin)
     shapes = []
     for outside in copper:
         outside.BooleanSubtract(inside)
@@ -727,7 +725,7 @@ def separation_report(board_path, receipt):
                 rows.append(dict(items=[uid, other_uid], layer=board.GetLayerName(layer), shared_pads=sorted(shared),
                                  minimum_gap_mm_lower_bound=low,
                                  status='defect' if failed else 'pass',
-                                 scope='declared junction arms' if shapes is None else 'outside shared pads'))
+                                 scope='no copper beyond junction region' if shapes is None else 'outside junction region'))
     pad_rows = []
     for uid, item in tracks.items():
         via = item.GetClass() == 'PCB_VIA'
