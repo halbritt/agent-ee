@@ -600,6 +600,15 @@ def seed(board_path, document, *, clock, cancel_dir=None):
 GENERATION_FILE = 'local-decoupling-generation.json'
 
 
+def bank_fallbacks(bank, members, refusal):
+    """Attribute the actual refusal and distinguish its bank-mates' rollback."""
+    failed = next((r['id'] for r in members if 'local decoupling ' + r['id'] + ':' in refusal), members[0]['id'])
+    return [dict(relation=r['id'], bank=bank['id'],
+                 reason=refusal if r['id'] == failed else
+                    'rolled back with bank ' + bank['id'] + ' after relation ' + failed + ' refused')
+            for r in members]
+
+
 def fallback_receipt(board_path, document, reason):
     """An atomic fallback owns no copper; every relation keeps its refusal."""
     relation_banks = {rid: bank['id'] for bank in banks(document) for rid in bank['relations']}

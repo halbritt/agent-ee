@@ -208,13 +208,16 @@ class ControllerBoundaryTests(Fixture):
     def test_full_generation_is_tried_before_deferred_fallback(self):
         self._portfolio_failure(local_failure=True)
 
+    def test_more_generated_relations_win_between_partial_candidates(self):
+        self._portfolio_failure(local_failure=True, partial=True)
+
     def test_all_generation_refusals_still_route_the_first_fallback(self):
         self._portfolio_failure(local_failure=True, all_fail=True)
 
     def test_later_verification_failure_clears_the_previous_local_copper_reason(self):
         self._portfolio_failure(local_failure=True, final_fail=True)
 
-    def _portfolio_failure(self, *, local_failure=False, all_fail=False, final_fail=False):
+    def _portfolio_failure(self, *, local_failure=False, all_fail=False, final_fail=False, partial=False):
         """Controller fault injection only; normal native entrypoint runs separately."""
         problem, _ = self.problem()
         out = self.dir / 'portfolio'
@@ -224,6 +227,13 @@ class ControllerBoundaryTests(Fixture):
                   (self.board, json.dumps(intent()).encode()), (self.board, json.dumps(groups()).encode())]
         output = {'timing': {'prepare_s': 0}, 'status': 'completed', 'counters': {}, 'seeds': [], 'prng': 'probe',
                   'shortlist': [{'seed': n, 'cost': str(n + 1), 'poses': [n]} for n in range(3)]}
+        if partial:
+            from test_local_decoupling import contract
+            doc = contract()
+            doc['planes'] = []  # Routing is the mocked boundary in this controller test.
+            doc['relations'] = [dict(doc['relations'][0], id='relation-'+str(i)) for i in range(3)]
+            config['inputs']['local_decoupling'] = {}
+            values.append((self.board, json.dumps(doc).encode()))
         selected = []
         def materialized(_board, poses, directory, *_args, **_kwargs):
             return {'board': str(self.board), 'board_sha256': f'candidate-{poses[0]}',
@@ -232,6 +242,12 @@ class ControllerBoundaryTests(Fixture):
             selected.append(str(directory))
             result = {'status': 'routed', 'board': str(self.board), 'generated_relation_count':1, 'preflight': {
                 k: None for k in ('commit', 'pin', 'executable_sha256', 'adapter_sha256', 'problems')}}
+            if partial:
+                count = 1 if str(directory).endswith('seed0') else 2
+                result['generated_relation_count'] = count
+                if _kwargs.get('local_fallback_reason') is None:
+                    result.update(status='local_copper_deferred',reason='one bank refused')
+                return result
             if local_failure and (all_fail or len(selected) == 1):
                 result['generated_relation_count'] = 0
                 if not _kwargs.get('local_fallback_reason') and _kwargs.get('defer_local_fallback'):
@@ -242,7 +258,7 @@ class ControllerBoundaryTests(Fixture):
         passed = {**failed, 'eligibility': 'eligible', 'physical_checks': 'PASS'}
         with ExitStack() as stack:
             stack.enter_context(patch.object(job, 'verified_input', side_effect=lambda _entry, label:
-                dict(zip(('board', 'project', 'intent', 'groups'), values))[label]))
+                dict(zip(('board', 'project', 'intent', 'groups', 'local_decoupling'), values))[label]))
             stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
             stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
             stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))
@@ -253,11 +269,19 @@ class ControllerBoundaryTests(Fixture):
             stack.enter_context(patch.object(job, 'route', side_effect=routed))
             stack.enter_context(patch.object(job, 'final_checks', side_effect=([failed,failed] if final_fail else [passed]) if local_failure else [failed, passed]))
             report = job.run_job(config, out)
-        self.assertEqual(report['status'], 'verification_failed' if final_fail else 'completed')
-        if local_failure and all_fail:
+        self.assertEqual(report['status'], 'verification_failed' if final_fail else 'completed', report)
+        if partial:
+            self.assertEqual([t['generated_relation_count'] for t in report['routing_trials']],[1,2,2])
+            self.assertEqual([t['status'] for t in report['routing_trials']],['local_copper_deferred','local_copper_deferred','completed'])
+            self.assertEqual(report['route_selection']['seed'],2)
+        elif local_failure and all_fail:
             self.assertEqual([t['status'] for t in report['routing_trials']],
                              ['local_copper_deferred','local_copper_deferred','completed'])
             self.assertEqual(report['route_selection']['seed'],0)
+            self.assertEqual(report['routed_candidate'],'deferred_incumbent')
+            last=report['routing_trials'][-1]
+            self.assertEqual(last['deferral_budget_reduced'],last['router_budget_s'] < last['original_router_budget_s'])
+            self.assertIn('deferral_budget_loss_s',last)
             self.assertIn('local_fallback_reason',json.loads((out/'routed-incumbent.json').read_text())['placement'])
         elif local_failure and final_fail:
             self.assertEqual([t['status'] for t in report['routing_trials']],

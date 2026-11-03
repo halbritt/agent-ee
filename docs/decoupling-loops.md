@@ -4,7 +4,7 @@
 from the design's exact decoupling endpoint pairs and plane declaration. The
 build plan passes this immutable document into placement as `local_decoupling`.
 The requirement map adds a typed `decoupling_loops` check with
-`params: {"contract": "local-decoupling.json"}` to the decoupling requirement.
+`params: {"contract": "local-decoupling.json", "generation": "project/local-decoupling-generation.json"}` to the decoupling requirement.
 This check is also usable in an ordinary captured scope/3 requirement map.
 
 The document contains `relations`, `planes` and boolean `tie_other_pads`.
@@ -16,8 +16,8 @@ Each relation has a unique `id`, `supply` and `return` pairs in device/capacitor
 order. Each endpoint is `{reference, pad, net}`. A plane is `{net, layer}`.
 References and net names are data; no component or board recipe is selected.
 
-After an eligible placement and pre-routing plane production, each relation
-gets supply and return legs on a copper layer shared by its endpoints. A capacitor pad on
+After an eligible placement and pre-routing plane production, each successfully
+generated relation gets supply and return legs on a copper layer shared by its endpoints. A capacitor pad on
 a declared plane net gets a nearby through via when its surface differs from
 the plane layer. The device return leg therefore leads to the capacitor's
 plane entry. The via search uses the side of the capacitor away from the device
@@ -35,8 +35,9 @@ Optional other-pad ties give remaining
 surface pads on plane nets their own short track and via where one fits.
 The compiler leaves `tie_other_pads` false: the example controls completed with
 and without them, and the additional ties increased routing time. Required
-capacitor plane entries remain enabled whenever generation succeeds. Explicit local contracts can select
-the optional policy for a separately measured workload.
+capacitor plane entries remain enabled whenever generation succeeds. The strict standalone producer supports that optional policy. Best-effort
+placement jobs leave non-relation plane pads to the router and record that choice
+per pad, keeping generation ownership inside relation banks.
 
 The local search uses effective native net-class routing sizes and clearance,
 bounded visibility paths around copper and every undeclared pad, including
@@ -52,28 +53,37 @@ shape check rejects violations even when native DRC permits same-net contact. A 
 board minimum. Paths are bounded to 12 mm; via escapes to 2 mm. These are finite
 search budgets, not electrical acceptance limits. Native DRC grades generated
 copper before routing. If search refuses, exhausts its bounded time share, or
-native DRC rejects the generated copper, the entire candidate falls back to its
-pre-generation board, including the produced planes. Rejected copper and its
-reports are retained; every relation records its bank and refusal reason.
-The router then makes the connections normally. A fallback alone never rejects
-a candidate. This atomic policy avoids leaving shared device-leg segments or
-bank plane entries after rolling back only one relation; successful relations
-are not kept in a partially generated candidate.
+native DRC rejects a bank's generated copper, only that bank returns to its
+pre-generation snapshot. Other banks keep their verified copper. The combined
+retained set passes the same geometry, floor and bank-group checks. Rejected
+copper and reports are retained. The refusing relation records its refusal;
+its bank-mates record "rolled back with bank B after relation R refused".
+The router makes the remaining connections. A fallback alone never rejects a candidate.
 
 Generation uses at most one quarter of a candidate's remaining time share,
-reserving routing time within the unchanged overall budget. Candidates with
-all relations generated are tried before candidates with none, preserving the
-existing placement order within each group. A fallback candidate is deferred,
-then routed if no earlier full-generation candidate completes. No path, width,
-clearance, placement, routing or declared length limit is relaxed.
+reserving routing time within the unchanged overall budget. The finite portfolio
+is tried in descending generated-relation count, with existing placement order
+breaking ties. Reduced-generation candidates are prepared and deferred without
+throwing away successful banks. Mechanics repair candidates are considered
+before these deferred candidates. A single candidate needs no deferral.
+The original and current router shares are recorded; if deferral reduces the
+share, the trial and author feedback explicitly report the lost seconds.
+The outer job deadline still applies. No physical rule or declared length limit is relaxed.
 
 The adopted candidate carries local-decoupling-generation.json beside its board.
-The typed check binds this receipt to the contract and verifies every protected
-item. Missing generation, independent capacitor plane access and bank bypasses
-are explicit per-relation warnings, including the bank and search refusal when
-one exists. These warnings appear in the build report and author feedback.
-Open declared legs, unknown measurements, changed generated copper and exceeded
-declared loop limits remain blocking. Fallback is never silent.
+The typed check binds this receipt to the contract and verifies protected items.
+Missing generation and bank bypasses are explicit per-relation warnings with the
+bank and refusal reason. Independent capacitor plane access is a blocking defect
+for generated relations, and a warning for fallen-back relations. Open declared
+legs, unknown measurements, changed generated copper and exceeded declared loop
+limits remain blocking. Reports and author feedback carry the warnings.
+
+Router copper is not yet included in the fabrication-floor connectivity model.
+Every fallen-back relation therefore warns "fabrication floor not verified for
+router copper". The typed graph still measures geometric contact; it does not
+prove that a noncontacting sub-floor gap cannot bridge during fabrication.
+The existing native floor check remains mandatory for generated copper.
+
 Custom rules, board edges and rule areas remain subject to native DRC.
 
 Generated tracks and vias are locked. The router receives `--protect locked`
@@ -98,7 +108,8 @@ The check loads the final saved board and uses native KiCad
 `GetConnectedTracks` and `GetConnectedPads`, plus collisions with saved filled
 zone shapes. A common pad is the junction between tracks meeting inside it.
 Neither a matching net name nor pad separation creates a graph edge. A broken
-leg or missing required capacitor plane connection is a defect.
+leg is a defect. A missing independent capacitor plane connection is a defect
+when the generation receipt lists that relation, and a warning after fallback.
 
 Lengths follow track centrelines, with native-connected contact projections to
 pad centres. Each through via or plated land pays the full board thickness.
@@ -119,9 +130,10 @@ The report retains each bypass path and entry UUID. Travel through another
 capacitor of the same bank is allowed. Per-relation supply, return, capacitor
 plane-access and loop lengths remain separate and carry their bank ID.
 Single-relation banks also retain the round-2 `pin_bypasses_capacitor` and
-`bypass_paths` fields. Bypass remains information, not an implicit acceptance
-threshold; broken continuity, unknown measurements and supplied limits still
-decide eligibility.
+`bypass_paths` fields. Geometric-contact bypasses remain explicit warnings; broken continuity, missing
+generated-capacitor plane access, unknown measurements and supplied limits decide
+eligibility. The router-floor limitation above remains unverified rather than
+being represented as a successful separation check.
 
 The optional design `max_loop_mm` becomes a hard relation limit with the basis
 **Agent-selected measurement requirement; not an owner or datasheet ruling**.

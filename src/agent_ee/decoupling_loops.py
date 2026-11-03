@@ -269,6 +269,8 @@ def measure(board_path, document, *, generation=None):
         if relation['id'] not in generated:
             reason = refusals.get(relation['id'], 'no generation receipt was supplied')
             warn(relation['id'], bank['id'], 'generation_fallback', reason)
+            warn(relation['id'], bank['id'], 'router_copper_floor_unverified',
+                 'fabrication floor not verified for router copper; geometric contact alone does not exclude sub-floor bridges')
         try:
             for leg in ('supply', 'return'):
                 first, second = [pad(board, endpoint) for endpoint in relation[leg]]
@@ -289,8 +291,11 @@ def measure(board_path, document, *, generation=None):
                         access = graph.plane_access(second, board.GetLayerID(plane['layer']), devices)
                         row[leg]['capacitor_to_plane_mm'] = access
                         if access is None:
-                            warn(relation['id'], bank['id'], 'capacitor_plane_access',
-                                 leg + ': capacitor has no independent plane connection')
+                            if relation['id'] in generated:
+                                row['reasons'].append(leg + ': generated capacitor has no independent plane connection')
+                            else:
+                                warn(relation['id'], bank['id'], 'capacitor_plane_access',
+                                     leg + ': capacitor has no independent plane connection')
                 if row[leg]['path'] is None:
                     row['reasons'].append(leg + ': no native-connected copper path')
             row['loop_length_mm'] = (sum(row[leg]['path']['length_mm'] for leg in ('supply', 'return'))
@@ -375,8 +380,9 @@ def check(ctx):
     ctx.result.update(outcome='pass' if result['outcome'] == 'info' else result['outcome'], execution='ok',
                       summary='Native decoupling loops: ' + result['outcome'] + '; ' +
                       '; '.join(r['id'] + ': ' + ', '.join(r['reasons']) for r in result['records'] if r['reasons']))
-    ctx.result['summary'] += '; warnings: ' + '; '.join(
-        w['relation'] + '/' + w['bank'] + ': ' + w['reason'] for w in result.get('warnings', []))
+    if result.get('warnings'):
+        ctx.result['summary'] += '; warnings: ' + '; '.join(
+            w['relation'] + '/' + w['bank'] + ': ' + w['reason'] for w in result['warnings'])
     ctx.result['limitations'] += result['limitations']
 
 

@@ -1478,53 +1478,93 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         local_dir.mkdir()
         (local_dir / 'before').mkdir()
         (local_dir / 'after').mkdir()
-        # Keep the complete pre-generation project, including produced planes.
-        originals = {path.name: path.read_bytes() for path in staged.iterdir() if path.is_file()}
-        refusal = local_fallback_reason
-        try:
-            if refusal is not None:
-                raise JobRefusal(refusal)
-            baseline, _ = drc(staged / 'board.kicad_pcb', local_dir / 'before',
-                              clock=seed_clock, cancel_dir=cancel_dir)
-            local_record = local.seed(staged / 'board.kicad_pcb', local_decoupling,
+        if isinstance(local_fallback_reason, dict):
+            # A deferred candidate owns this already verified generated subset.
+            local_record = local_fallback_reason
+            native_ids = {t.m_Uuid.AsString() for t in pcbnew.LoadBoard(str(staged / 'board.kicad_pcb')).GetTracks()}
+            owned_copper = bool(planes is not None and local_record.get('input_track_free')
+                                and native_ids == {r['uuid'] for r in local_record['protected']})
+            if local_record['protected']:
+                local.verify(staged / 'board.kicad_pcb', local_record)
+        else:
+            local_record = local.fallback_receipt(staged / 'board.kicad_pcb', local_decoupling, '')
+            local_record['fallbacks'] = []
+            local_record['input_track_free'] = owned_copper
+            local_record['generation_order'] = dict(selected='per-bank', attempts=[])
+            for bank in local.banks(local_decoupling):
+                bank_dir = local_dir / bank['id']
+                bank_dir.mkdir()
+                (bank_dir / 'before').mkdir()
+                (bank_dir / 'after').mkdir()
+                originals = {path.name: path.read_bytes() for path in staged.iterdir() if path.is_file()}
+                members = [r for r in local_decoupling['relations'] if r['id'] in bank['relations']]
+                document = dict(local_decoupling, relations=members, tie_other_pads=False)
+                refusal = local_fallback_reason
+                bank_record = None
+                try:
+                    if refusal is not None:
+                        raise JobRefusal(refusal)
+                    baseline, _ = drc(staged / 'board.kicad_pcb', bank_dir / 'before',
                                       clock=seed_clock, cancel_dir=cancel_dir)
-            write_json(local_dir / 'seed.json', local_record)
-            seeded, _ = drc(staged / 'board.kicad_pcb', local_dir / 'after', refill=True,
-                            clock=seed_clock, cancel_dir=cancel_dir)
-            existing = {_key(v) for v in baseline['violations'] if v.get('severity') == 'error'}
-            errors = [v for v in seeded['violations'] if v.get('severity') == 'error' and _key(v) not in existing]
-            if errors:
-                error_items = {item['uuid'] for error in errors for item in error.get('items', []) if 'uuid' in item}
-                names = ', '.join(row['id'] for row in local_record['relations'] if error_items.intersection(row['copper'])) or 'unattributed generated copper'
-                raise JobRefusal('local decoupling ' + names + ': native DRC rejects generated copper: ' +
-                                 ', '.join(v['type'] for v in errors))
-        except JobRefusal as exc:
-            refusal = str(exc)
-        except JobStopped as exc:
-            if exc.status != 'deadline' or clock.remaining() <= 0:
-                raise
-            refusal = 'bounded generation time share exhausted'
-        if refusal is not None:
-            write_json(local_dir / 'failure.json', {'reason': refusal})
-            rejected = local_dir / 'rejected'
-            rejected.mkdir()
-            for path in staged.iterdir():
-                if path.is_file():
-                    shutil.copyfile(path, rejected / path.name)
-            if (local_dir / 'seed.json').exists():
-                shutil.copyfile(local_dir / 'seed.json', rejected / 'seed.json')
-            # Roll back even if generation saved copper before its DRC failed.
-            for path in staged.iterdir():
-                if path.is_file() and path.name not in originals:
-                    path.unlink()
-            for name, raw in originals.items():
-                (staged / name).write_bytes(raw)
-            local_record = local.fallback_receipt(staged / 'board.kicad_pcb', local_decoupling, refusal)
-            write_json(local_dir / 'seed.json', local_record)
-            if defer_local_fallback and local_fallback_reason is None:
-                return dict(status='local_copper_deferred', preflight=check, reason=refusal,
-                            local_decoupling=local_record, generated_relation_count=0,
-                            elapsed_s=time.monotonic() - started)
+                    bank_record = local.seed(staged / 'board.kicad_pcb', document,
+                                             clock=seed_clock, cancel_dir=cancel_dir)
+                    write_json(bank_dir / 'seed.json', bank_record)
+                    seeded, _ = drc(staged / 'board.kicad_pcb', bank_dir / 'after', refill=True,
+                                    clock=seed_clock, cancel_dir=cancel_dir)
+                    existing = {_key(v) for v in baseline['violations'] if v.get('severity') == 'error'}
+                    errors = [v for v in seeded['violations'] if v.get('severity') == 'error' and _key(v) not in existing]
+                    if errors:
+                        error_items = {item['uuid'] for error in errors for item in error.get('items', []) if 'uuid' in item}
+                        names = ', '.join(row['id'] for row in bank_record['relations'] if error_items.intersection(row['copper'])) or members[0]['id']
+                        raise JobRefusal('local decoupling ' + names + ': native DRC rejects generated copper: ' +
+                                         ', '.join(v['type'] for v in errors))
+                    combined = dict(local_record, relations=local_record['relations'] + bank_record['relations'],
+                                    protected=local_record['protected'] + bank_record['protected'])
+                    local.verify(staged / 'board.kicad_pcb', combined)
+                except JobRefusal as exc:
+                    refusal = str(exc)
+                except JobStopped as exc:
+                    if exc.status != 'deadline' or clock.remaining() <= 0:
+                        raise
+                    refusal = 'bounded generation time share exhausted'
+                if refusal is not None:
+                    write_json(bank_dir / 'failure.json', {'reason': refusal})
+                    rejected = bank_dir / 'rejected'
+                    rejected.mkdir()
+                    for path in staged.iterdir():
+                        if path.is_file():
+                            shutil.copyfile(path, rejected / path.name)
+                    # Restore the failed bank only, retaining earlier banks' copper.
+                    for path in staged.iterdir():
+                        if path.is_file() and path.name not in originals:
+                            path.unlink()
+                    for name, raw in originals.items():
+                        (staged / name).write_bytes(raw)
+                    local_record['fallbacks'] += local.bank_fallbacks(bank, members, refusal)
+                else:
+                    local_record = combined
+                local_record['generation_order']['attempts'].append(dict(bank=bank['id'],
+                    status='fell_back' if refusal is not None else 'generated',
+                    order=bank_record.get('generation_order') if bank_record else None))
+            local_record['board_sha256'] = digest(staged / 'board.kicad_pcb')
+            if local_record['protected']:
+                local.verify(staged / 'board.kicad_pcb', local_record)
+            if local_decoupling['tie_other_pads']:
+                mentioned = {local.endpoint_key(p) for r in local_decoupling['relations']
+                             for leg in ('supply', 'return') for p in r[leg]}
+                native = pcbnew.LoadBoard(str(staged / 'board.kicad_pcb'))
+                local_record['other_pads'] = [dict(pad=p.m_Uuid.AsString(), status='left_to_router',
+                    reason='optional plane pads left to router by bank-local generation')
+                    for fp in native.GetFootprints() for p in fp.Pads()
+                    if any(p.GetNetname() == plane['net'] for plane in local_decoupling['planes'])
+                    and (fp.GetReference(), p.GetNumber(), p.GetNetname()) not in mentioned]
+        write_json(local_dir / 'seed.json', local_record)
+        if local_record.get('fallbacks') and defer_local_fallback and local_fallback_reason is None:
+            return dict(status='local_copper_deferred', preflight=check,
+                        reason='; '.join(r['reason'] for r in local_record['fallbacks']),
+                        prepared_directory=str(staged), local_decoupling=local_record,
+                        generated_relation_count=len(local_record['relations']),
+                        elapsed_s=time.monotonic() - started)
     _check_stop(clock, cancel_dir)
     # The CLI accepts integral seconds. Refuse sub-second remainder rather than
     # inventing a minimum extension; the outer clock also bounds all descendants.
@@ -1944,24 +1984,33 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 seen.add(entry['board_sha256'])
     report['routing_trials'] = []
     def routing_candidates():
-        yield from enumerate(queue)
-        if incumbent is None or 'mechanics' not in normalized:
-            return
-        with clock.phase('placement_repair'):
-            alternatives = _repair_shortlist(problem, shortlist, diagnostics,
-                checkout=config['router']['checkout'], runtime=report['preflight']['pose_solver'],
-                clock=clock, job_dir=job_dir, attempt=attempt, report=report,
-                executable=report['preflight']['engine'], engine_sha256=report['preflight']['engine_sha256'],
-                routing_exhausted=True)
-        for cand in alternatives:
-            with clock.phase('judge'):
-                entry=judge_candidate(cand, len(trials))
-                trials.append(entry)
-            if _placement_eligible(entry) and entry['board_sha256'] not in seen:
-                entry['routing_repair']=True
-                queue.append(entry)
-                seen.add(entry['board_sha256'])
-                yield len(queue)-1, entry
+        index, repairs_tried = 0, False
+        while True:
+            # Discover mechanics alternatives before trying a reduced-generation
+            # candidate, so the same generation-count preference includes repairs.
+            if not repairs_tried and (index >= len(queue) or queue[index].get('local_fallback_reason') is not None):
+                repairs_tried = True
+                if incumbent is not None and 'mechanics' in normalized:
+                    with clock.phase('placement_repair'):
+                        alternatives = _repair_shortlist(problem, shortlist, diagnostics,
+                            checkout=config['router']['checkout'], runtime=report['preflight']['pose_solver'],
+                            clock=clock, job_dir=job_dir, attempt=attempt, report=report,
+                            executable=report['preflight']['engine'], engine_sha256=report['preflight']['engine_sha256'],
+                            routing_exhausted=True)
+                    for cand in alternatives:
+                        with clock.phase('judge'):
+                            entry = judge_candidate(cand, len(trials))
+                            trials.append(entry)
+                        if _placement_eligible(entry) and entry['board_sha256'] not in seen:
+                            entry['routing_repair'] = True
+                            queue.append(entry)
+                            seen.add(entry['board_sha256'])
+                    maximum = len(local_contract['relations']) if local_contract else 0
+                    queue[index:] = sorted(queue[index:], key=lambda row: -row.get('generated_relation_count', maximum))
+            if index >= len(queue):
+                return
+            yield index, queue[index]
+            index += 1
 
     def retain_routing_trial(trial, suffix):
         receipt = job_dir / f'routing-trial-{suffix}.json'
@@ -1975,9 +2024,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         return receipt
 
     for number, selected in routing_candidates():
-        if number:
-            report['routed_candidate'] = ('placement_repair' if selected.get('routing_repair')
-                                           else 'shortlist_alternative')
+        report['routed_candidate'] = ('deferred_incumbent' if selected.get('local_fallback_reason') is not None
+            and incumbent is not None and selected['board_sha256'] == incumbent['board_sha256'] else
+            'incumbent' if incumbent is not None and selected['board_sha256'] == incumbent['board_sha256'] else
+            'placement_repair' if selected.get('routing_repair') else
+            'best_diagnostic_exploratory' if incumbent is None else 'shortlist_alternative')
         suffix = f'a{attempt}' + (f'-r{number + 1}' if number else '')
         # Equal shares of the remaining job time prevent one failed routing
         # search from taking the entire portfolio budget. This is scheduling
@@ -1989,10 +2040,14 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                  'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
                  'budget_basis': 'agent-default/equal-remaining-share',
                  'grid_step_mm': grid_step, 'grid_basis': grid_basis}
+        if 'original_router_budget_s' in selected:
+            trial['original_router_budget_s'] = selected['original_router_budget_s']
+            trial['deferral_budget_reduced'] = budget < selected['original_router_budget_s']
+            trial['deferral_budget_loss_s'] = max(0., selected['original_router_budget_s'] - budget)
         report['routing_trials'].append(trial)
         with clock.phase('export'):
             _check_stop(clock, job_dir)
-            route_input = selected['directory']
+            route_input = selected.get('local_prepared_directory', selected['directory'])
             local_seed = None
             if 'mechanics' in normalized and local_routing_applies(normalized['mechanics']):
                 # Seed only the mechanics recipe's named local loops, and never an
@@ -2039,8 +2094,14 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}
             if routed['status'] == 'local_copper_deferred':
-                # All full-generation candidates run before zero-generation fallbacks.
-                queue.append({**selected, 'local_fallback_reason': routed['reason']})
+                # Unknown candidates get generation first; retained subsets rank by count.
+                queue.append({**selected, 'local_fallback_reason': routed.get('local_decoupling', routed['reason']),
+                              'local_prepared_directory': routed.get('prepared_directory', selected['directory']),
+                              'generated_relation_count': routed.get('generated_relation_count', 0),
+                              'original_router_budget_s': budget})
+                total_relations = len(local_contract['relations']) if local_contract else 0
+                queue[number + 1:] = sorted(queue[number + 1:],
+                    key=lambda row: -row.get('generated_relation_count', total_relations))
                 status = 'local_copper_deferred'
                 trial.update(status=status, reason=routed['reason'], route=report['route'])
                 report['reason'] = routed['reason']

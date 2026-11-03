@@ -519,8 +519,9 @@ def placement_findings(root):
             shortlist=[{k: row[k] for k in ('seed', 'error', 'engine_violations', 'errors',
                 'locality', 'edge_intent', 'integrity_problems') if k in row}
                 for row in job.get('shortlist', [])[:8]],
-            routing_trials=[{k: row[k] for k in ('seed', 'status', 'error', 'final') if k in row}
-                for row in job.get('routing_trials', [])[:8]]))
+            routing_trials=[{k: row[k] for k in ('seed', 'status', 'error', 'final', 'router_budget_s', 'original_router_budget_s',
+                    'deferral_budget_reduced', 'deferral_budget_loss_s') if k in row}
+                for row in job.get('routing_trials', [])]))
     return result
 
 
@@ -568,7 +569,9 @@ def placement_summary(findings):
         locality = final.get('locality') or {}
         edge = final.get('edge_intent') or {}
         summary.append(dict(status=job.get('status'), engine_feasible=job.get('engine_feasible'),
-            validity=job.get('validity'), engine_violations=list(merged.values()),
+            validity=job.get('validity'), routed_candidate=job.get('routed_candidate'),
+            deferral_budget_warnings=[r for r in job.get('routing_trials', []) if r.get('deferral_budget_reduced')],
+            engine_violations=list(merged.values()),
             native_errors={k: v for k, v in errors.items() if v}, opens=final.get('opens'),
             integrity=final.get('integrity'),
             local_copper_warnings=(final.get('decoupling_loops') or {}).get('warnings', []),

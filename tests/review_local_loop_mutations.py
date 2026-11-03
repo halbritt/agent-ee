@@ -644,6 +644,153 @@ MUTANTS.update({'FALLBACK_search_restores_hard_failure': ([('src/agent_ee/placem
                                             '        if False:\n')],
                                           ['test_local_decoupling.LocalCopperTests.test_generation_receipt_is_bound_to_the_captured_contract'])})
 
+# Round 2: same reviewed faults, re-anchored to bank-local generation.
+MUTANTS.update({'C11_cap_plane_access_ignored': ([('src/agent_ee/decoupling_loops.py',
+                                    '                        if access is None:\n',
+                                    '                        if False:\n')],
+                                  ['test_local_decoupling.ReviewRegressionTests.test_capacitor_plane_access_blocks_every_bank_device_pin']),
+ 'F2_seed_drc_errors_ignored': ([('src/agent_ee/placement_job.py',
+                                  '                    if errors:\n',
+                                  '                    if False:\n')],
+                                ['test_local_decoupling.LocalCopperTests.test_seed_drc_rejection_names_only_the_implicated_relation']),
+ 'F5_seed_refusal_escapes_candidate': ([('src/agent_ee/placement_job.py',
+                                         '                except JobRefusal as exc:\n'
+                                         '                    refusal = str(exc)\n',
+                                         '                except JobRefusal as exc:\n'
+                                         '                    raise\n')],
+                                       ['test_local_decoupling.LocalCopperTests.test_local_search_refusal_routes_native_connections_and_warns']),
+ 'FALLBACK_search_restores_hard_failure': ([('src/agent_ee/placement_job.py',
+                                             '                except JobRefusal as exc:\n'
+                                             '                    refusal = str(exc)\n',
+                                             '                except JobRefusal as exc:\n'
+                                             "                    return dict(status='local_copper_failed', "
+                                             'reason=str(exc), preflight=check)\n')],
+                                           ['test_local_decoupling.LocalCopperTests.test_local_search_refusal_routes_native_connections_and_warns'])})
+MUTANTS.update({'FB1_open_leg_is_only_a_warning': ([('src/agent_ee/decoupling_loops.py',
+                                      "                    row['reasons'].append(leg + ': no "
+                                      "native-connected copper path')\n",
+                                      "                    warn(relation['id'], bank['id'], 'open_leg', leg "
+                                      "+ ': no native-connected copper path')\n")],
+                                    ['test_local_decoupling']),
+ 'FB2_fallback_warning_dropped': ([('src/agent_ee/decoupling_loops.py',
+                                    "            warn(relation['id'], bank['id'], 'generation_fallback', "
+                                    'reason)\n',
+                                    '            pass\n')],
+                                  ['test_local_decoupling']),
+ 'FB3_refused_generation_not_rolled_back': ([('src/agent_ee/placement_job.py',
+                                              '                    for name, raw in originals.items():\n'
+                                              '                        (staged / name).write_bytes(raw)\n',
+                                              '')],
+                                            ['test_local_decoupling.LocalCopperTests.test_seed_drc_rejection_names_only_the_implicated_relation']),
+ 'FB4_defer_disabled': ([('src/agent_ee/placement_job.py',
+                          '                           defer_local_fallback=len(queue) > 1,\n',
+                          '                           defer_local_fallback=False,\n')],
+                        ['test_local_decoupling', 'test_placement_job_guards']),
+ 'FB5_build_report_warnings_dropped': ([('src/agent_ee/build_workflow.py',
+                                         "                    report['warnings'] = job.get('final', "
+                                         "{}).get('decoupling_loops', {}).get('warnings', [])\n",
+                                         "                    report['warnings'] = []\n")],
+                                       ['test_qualification', 'test_local_decoupling']),
+ 'FB6_author_feedback_drops_copper_warnings': ([('src/agent_ee/design_generate.py',
+                                                 '    if copper_warnings:\n',
+                                                 '    if False:\n')],
+                                               ['test_design_generate']),
+ 'FB7_placement_summary_drops_copper_warnings': ([('src/agent_ee/design_generate.py',
+                                                   '            '
+                                                   "local_copper_warnings=(final.get('decoupling_loops') or "
+                                                   "{}).get('warnings', []),\n",
+                                                   '            local_copper_warnings=[],\n')],
+                                                 ['test_design_generate']),
+ 'FB8_typed_check_ignores_generation_receipt': ([('src/agent_ee/decoupling_loops.py',
+                                                  "    extra = (['--generation', "
+                                                  'ctx.candidate_path(generation)]\n'
+                                                  "             if 'generation' in ctx.params or generation "
+                                                  "in ctx.manifest['files'] else [])\n",
+                                                  '    extra = []\n')],
+                                                ['test_qualification', 'test_local_decoupling']),
+ 'FB9_measure_skips_protected_verify': ([('src/agent_ee/decoupling_loops.py',
+                                          '            verify(board_path, generation)\n',
+                                          '            pass\n')],
+                                        ['test_local_decoupling']),
+ 'FB10_fallback_reason_blank': ([('src/agent_ee/local_decoupling.py',
+                                  "                 reason=refusal if r['id'] == failed else\n",
+                                  "                 reason='' if r['id'] == failed else\n")],
+                                ['test_local_decoupling.LocalCopperTests.test_bank_refusal_reason_distinguishes_the_failed_relation_from_bank_mates']),
+ 'FB11_generation_file_not_written': ([('src/agent_ee/build_stages.py',
+                                        "            write_json((candidate / scope['board']).parent / "
+                                        "GENERATION_FILE, report['route']['local_decoupling'])\n",
+                                        '            pass\n')],
+                                      ['test_local_decoupling.LocalCopperTests.test_adopted_generation_receipt_is_required_by_the_native_package_check']),
+ 'FB12_receipt_failure_becomes_info': ([('src/agent_ee/placement_job.py',
+                                         "            general_loops = dict(outcome='unknown', "
+                                         'reasons=[str(exc)], warnings=[])\n'
+                                         '            problems.append(str(exc))\n',
+                                         "            general_loops = dict(outcome='info', "
+                                         'reasons=[str(exc)], warnings=[])\n')],
+                                       ['test_local_decoupling.LocalCopperTests.test_failed_final_loop_measurement_stays_unknown_and_ineligible']),
+ 'FB13_generated_count_counts_declared': ([('src/agent_ee/placement_job.py',
+                                            "        record['generated_relation_count'] = "
+                                            "len(local_record['relations'])\n",
+                                            "        record['generated_relation_count'] = "
+                                            "len(local_decoupling['relations'])\n")],
+                                          ['test_local_decoupling', 'test_placement_job_guards']),
+ 'FB14_plane_access_back_to_defect': ([('src/agent_ee/decoupling_loops.py',
+                                        "                            if relation['id'] in generated:\n"
+                                        "                                row['reasons'].append(leg + ': "
+                                        "generated capacitor has no independent plane connection')\n"
+                                        '                            else:\n'
+                                        "                                warn(relation['id'], bank['id'], "
+                                        "'capacitor_plane_access',\n"
+                                        "                                     leg + ': capacitor has no "
+                                        "independent plane connection')",
+                                        "                            row['reasons'].append(leg + ': "
+                                        "capacitor has no native plane connection without the device pin')")],
+                                      ['test_local_decoupling.LocalCopperTests.test_generated_capacitor_without_independent_filled_plane_access_is_a_defect'])})
+MUTANTS.update({'R2_bank_successes_discarded': ([('src/agent_ee/placement_job.py',
+                                   '                    local_record = combined\n',
+                                   '                    local_record = dict(combined, relations=[], '
+                                   'protected=[])\n')],
+                                 ['test_local_decoupling.LocalCopperTests.test_seed_drc_rejection_names_only_the_implicated_relation']),
+ 'R2_partial_ranking_reversed': ([('src/agent_ee/placement_job.py',
+                                   "key=lambda row: -row.get('generated_relation_count', total_relations))",
+                                   "key=lambda row: row.get('generated_relation_count', total_relations))")],
+                                 ['test_placement_job_guards.ControllerBoundaryTests.test_more_generated_relations_win_between_partial_candidates']),
+ 'R2_generated_plane_loss_warns': ([('src/agent_ee/decoupling_loops.py',
+                                     "                            if relation['id'] in generated:\n",
+                                     '                            if False:\n')],
+                                   ['test_local_decoupling.LocalCopperTests.test_generated_capacitor_without_independent_filled_plane_access_is_a_defect']),
+ 'R2_unverified_router_floor_warning_dropped': ([('src/agent_ee/decoupling_loops.py',
+                                                  "            warn(relation['id'], bank['id'], "
+                                                  "'router_copper_floor_unverified',\n"
+                                                  "                 'fabrication floor not verified for "
+                                                  'router copper; geometric contact alone does not exclude '
+                                                  "sub-floor bridges')\n",
+                                                  '')],
+                                                ['test_local_decoupling.LocalCopperTests.test_local_search_refusal_routes_native_connections_and_warns']),
+ 'R2_failed_measurement_labelled_info': ([('src/agent_ee/placement_job.py',
+                                           "general_loops = dict(outcome='unknown', reasons=[str(exc)], "
+                                           'warnings=[])',
+                                           "general_loops = dict(outcome='info', reasons=[str(exc)], "
+                                           'warnings=[])')],
+                                         ['test_local_decoupling.LocalCopperTests.test_failed_final_loop_measurement_stays_unknown_and_ineligible']),
+ 'R2_deferred_incumbent_mislabelled': ([('src/agent_ee/placement_job.py',
+                                         "report['routed_candidate'] = ('deferred_incumbent' if",
+                                         "report['routed_candidate'] = ('shortlist_alternative' if")],
+                                       ['test_placement_job_guards.ControllerBoundaryTests.test_all_generation_refusals_still_route_the_first_fallback']),
+ 'R2_deferral_budget_hidden': ([('src/agent_ee/design_generate.py',
+                                 "            deferral_budget_warnings=[r for r in job.get('routing_trials', "
+                                 "[]) if r.get('deferral_budget_reduced')],",
+                                 '            deferral_budget_warnings=[],')],
+                               ['test_design_generate.DeferredCopperFeedbackTests.test_deferred_incumbent_and_reduced_share_reach_author_feedback']),
+ 'R2_bank_mate_gets_refusers_reason': ([('src/agent_ee/local_decoupling.py',
+                                         "                 reason=refusal if r['id'] == failed else\n",
+                                         '                 reason=refusal if True else\n')],
+                                       ['test_local_decoupling.LocalCopperTests.test_bank_refusal_reason_distinguishes_the_failed_relation_from_bank_mates']),
+ 'R2_empty_warning_suffix_returns': ([('src/agent_ee/decoupling_loops.py',
+                                       "    if result.get('warnings'):\n",
+                                       '    if True:\n')],
+                                     ['test_local_decoupling.LocalCopperTests.test_adopted_generation_receipt_is_required_by_the_native_package_check'])})
+
 def run(name):
     edits, tests = MUTANTS[name]
     work = WORK / name
@@ -677,7 +824,7 @@ class Mutations(unittest.TestCase):
         OUT.mkdir(parents=True, exist_ok=True)
         if WORK.exists():
             shutil.rmtree(WORK)
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(run, MUTANTS))
         (OUT / 'results.json').write_text(json.dumps(results, indent=1))
         self.assertEqual(next(r for r in results if r['name'] == 'baseline')['status'], 'GREEN')

@@ -283,6 +283,8 @@ class LocalCopperTests(unittest.TestCase):
         self.assertEqual(measured['outcome'],'info',measured)
         warnings={w['kind']:w for w in measured['warnings']}
         self.assertIn('generation_fallback',warnings);self.assertIn('bank_bypass',warnings)
+        self.assertIn('router_copper_floor_unverified',warnings)
+        self.assertIn('floor not verified for router copper',warnings['router_copper_floor_unverified']['reason'])
         self.assertEqual(warnings['bank_bypass']['search_refusal'],'forced bounded search refusal')
         self.assertTrue(all(measured['records'][0][side]['path'] for side in ('supply','return')))
         self.path=Path(result['board'])
@@ -298,6 +300,77 @@ class LocalCopperTests(unittest.TestCase):
         self.assertEqual(opened['outcome'],'defect',opened)
         self.assertIn('no native-connected copper path',str(opened['details']))
 
+
+    def test_generated_capacitor_without_independent_filled_plane_access_is_a_defect(self):
+        receipt = self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        for zone in list(board.Zones()): board.Remove(zone)
+        zone = self.k.ZONE(board); zone.SetLayer(self.k.B_Cu)
+        zone.SetNet(board.FindNet('/return')); zone.SetPadConnection(self.k.ZONE_CONNECTION_FULL)
+        polygon = zone.Outline(); polygon.NewOutline()
+        for point in [(29,30),(31,30),(31,32),(29,32)]: polygon.Append(*(v*1_000_000 for v in point))
+        board.Add(zone)
+        via=self.k.PCB_VIA(board);via.SetPosition(self.k.VECTOR2I(30_000_000,31_000_000))
+        via.SetWidth(600_000);via.SetDrill(300_000);via.SetLayerPair(self.k.F_Cu,self.k.B_Cu)
+        via.SetNetCode(board.FindNet('/return').GetNetCode());board.Add(via)
+        self.k.ZONE_FILLER(board).Fill(board.Zones());self.k.SaveBoard(str(self.path),board)
+        generated = measure(self.path, contract(), generation=receipt)
+        self.assertEqual(generated['outcome'], 'defect', generated)
+        self.assertTrue(all(generated['records'][0][leg]['path'] for leg in ('supply','return')))
+        self.assertIn('generated capacitor has no independent plane', str(generated['records']))
+        fallen = measure(self.path, contract(), generation=local.fallback_receipt(self.path,contract(),'test refusal'))
+        self.assertEqual(fallen['outcome'], 'info', fallen)
+        self.assertIn('capacitor_plane_access', {w['kind'] for w in fallen['warnings']})
+        self.assertIn('router_copper_floor_unverified', {w['kind'] for w in fallen['warnings']})
+
+    def test_failed_final_loop_measurement_stays_unknown_and_ineligible(self):
+        from unittest.mock import patch
+        from agent_ee import placement_job as job
+        from agent_ee.storage import digest,write_json
+        receipt=self.seed();self.filled();native=self.k.LoadBoard(str(self.path))
+        incumbent=dict(board=str(self.path),directory=str(self.root),board_sha256=digest(self.path))
+        write_json(self.root/'native-drc.json',dict(violations=[],unconnected_items=[]))
+        normalized=job.normalize_intent(dict(fixed_poses=[],edge_connectors=[]),dict(groups=[]))
+        with patch.object(job,'drc',return_value=(dict(violations=[],unconnected_items=[]),{})), \
+                patch.object(job,'_group_views',return_value={'status':'rendered'}), \
+                patch('agent_ee.decoupling_loops.measure',side_effect=ValueError('receipt measurement refused')):
+            result=job.final_checks(dict(status='routed',board=str(self.path),local_decoupling=receipt),
+                incumbent,job._owners(native),set(),self.root/'measurement-final',normalized)
+        self.assertEqual(result['eligibility'],'INELIGIBLE',result)
+        self.assertEqual(result['decoupling_loops']['outcome'],'unknown')
+        self.assertIn('receipt measurement refused',result['identity_problems'])
+
+    def test_adopted_generation_receipt_is_required_by_the_native_package_check(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import shutil
+        from agent_ee import build_stages,retained_run
+        from agent_ee.storage import read_json,digest
+        receipt=self.seed();self.filled()
+        previous=self.root/'previous';previous.mkdir()
+        for path in [self.path,self.path.with_suffix('.kicad_pro')]:shutil.copyfile(path,previous/path.name)
+        directory=self.root/'adoption';directory.mkdir()
+        attempt=retained_run.StageAttempt(self.root,'placement-routing',directory)
+        report=dict(status='completed',final=dict(eligibility='eligible',board=str(self.path),board_sha256=digest(self.path)),
+                    route=dict(local_decoupling=receipt))
+        with patch.object(retained_run,'scope',return_value=SimpleNamespace(document=dict(board='board.kicad_pcb'))), \
+                patch.object(retained_run,'accounting',return_value=dict(requirements=[])), \
+                patch.object(build_stages.qualification,'manufacturing_coverage'), \
+                patch.object(build_stages,'placement_configuration',return_value={}), \
+                patch('agent_ee.placement_job.run_job',return_value=report):
+            candidate=build_stages.execute(attempt,dict(placement={}),previous)
+        saved=read_json(candidate/local.GENERATION_FILE)
+        self.assertEqual({r['uuid'] for r in saved['protected']},{r['uuid'] for r in receipt['protected']})
+        self.path=candidate/'board.kicad_pcb'
+        checked=self.checked(contract(),generation=saved)
+        self.assertEqual(checked['outcome'],'pass',checked)
+        self.assertNotIn('; warnings: ',checked['summary'])
+
+    def test_bank_refusal_reason_distinguishes_the_failed_relation_from_bank_mates(self):
+        doc=self.two_capacitors();bank=local.banks(doc)[0]
+        reasons=local.bank_fallbacks(bank,doc['relations'],'local decoupling bulk: blocked escape')
+        self.assertEqual(reasons[1]['reason'],'local decoupling bulk: blocked escape')
+        self.assertEqual(reasons[0]['reason'],'rolled back with bank bank-1 after relation bulk refused')
 
     def test_other_plane_pads_get_their_own_optional_ties(self):
         doc = contract()
@@ -628,7 +701,8 @@ class LocalCopperTests(unittest.TestCase):
             if Path(directory).name == 'before':
                 return fake, {}
             native = self.k.LoadBoard(str(path))
-            uid = next(t.m_Uuid.AsString() for t in native.GetTracks() if t.GetClass() == 'PCB_VIA' and t.GetPosition().x < 36_000_000)
+            uid = next((t.m_Uuid.AsString() for t in native.GetTracks() if t.GetClass() == 'PCB_VIA' and t.GetPosition().x < 36_000_000), None)
+            if uid is None:return fake, {}
             return dict(violations=[dict(type='clearance', severity='error', items=[dict(uuid=uid)])], unconnected_items=[]), {}
         with patch('agent_ee.routing_adapter.preflight', return_value={'problems': []}), \
                 patch.object(job, 'drc', side_effect=seeded_drc), patch.object(job, '_route_attempt',return_value=dict(status='routed')) as router:
@@ -638,7 +712,18 @@ class LocalCopperTests(unittest.TestCase):
         self.assertIn('cell: native DRC rejects', result['local_decoupling']['fallbacks'][0]['reason'])
         self.assertNotIn('innocent', result['local_decoupling']['fallbacks'][0]['reason'])
         router.assert_called_once()
-        self.assertEqual(result['local_decoupling']['protected'],[])
+        receipt = result['local_decoupling']
+        self.assertEqual([r['id'] for r in receipt['relations']], ['innocent'])
+        staged = Path(router.call_args.kwargs['argv'][router.call_args.kwargs['argv'].index('--dir')+1])/'board.kicad_pcb'
+        native = self.k.LoadBoard(str(staged))
+        self.assertEqual({t.m_Uuid.AsString() for t in native.GetTracks()}, {r['uuid'] for r in receipt['protected']})
+        self.assertEqual(local.verify(staged, receipt)['status'], 'pass')
+        self.assertEqual(result['generated_relation_count'], 1)
+        self.path = staged
+        self.filled()
+        measured = measure(staged, doc, generation=receipt)
+        retained_bank = next(b for b in measured['banks'] if 'innocent' in b['relations'])
+        self.assertTrue(retained_bank['device_return_reaches_plane_only_through_bank_capacitors'], retained_bank)
 
 
 class ReviewRegressionTests(unittest.TestCase):

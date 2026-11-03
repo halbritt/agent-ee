@@ -1615,3 +1615,22 @@ class LocalCopperFeedbackTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DeferredCopperFeedbackTests(unittest.TestCase):
+    def test_deferred_incumbent_and_reduced_share_reach_author_feedback(self):
+        from agent_ee import design_generate
+        from agent_ee.storage import write_json
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            trials=[dict(seed=i,status='local_copper_deferred') for i in range(8)]
+            trials.append(dict(seed=0,status='completed',router_budget_s=5.,original_router_budget_s=20.,
+                deferral_budget_reduced=True,deferral_budget_loss_s=15.))
+            write_json(root/'stages/05-placement/placement/job-report.json',dict(status='completed',
+                routed_candidate='deferred_incumbent',routing_trials=trials))
+            findings=design_generate.placement_findings(root)
+            summary=design_generate.placement_summary(findings)[0]
+            self.assertEqual(summary['routed_candidate'],'deferred_incumbent')
+            self.assertEqual(summary['deferral_budget_warnings'][0]['deferral_budget_loss_s'],15.)
+            feedback=design_generate.phase_feedback('placement-routing','test',dict(placement_findings=findings))
+            self.assertIn('deferred_incumbent',feedback);self.assertIn('deferral_budget_loss_s',feedback)
