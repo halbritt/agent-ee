@@ -18,6 +18,44 @@ DOCTOR_PROBES = {"kicad-cli": ["kicad-cli", "version"], "ngspice": ["ngspice", "
 HARNESS_PROBES = ("claude",)
 
 
+def check_kicad_install(checks):
+    """Report the image's KiCad install record with the kicad-cli probe; a host install has none.
+
+    The record must describe the kicad-cli and pcbnew that run here, wherever they were found:
+    the kicad-cli version and SHA-256, and pcbnew's build version and the SHA-256 of its
+    extension and pcbnew.py. A mismatch, or a record that is not valid, fails the probe."""
+    from .kicad_install import read_install_record
+    cli, pcb = checks.get("kicad-cli"), checks.get("pcbnew")
+    try:
+        installed = read_install_record()
+    except (OSError, ValueError) as exc:
+        if cli is not None:
+            cli["error"] = f"KiCad install record: {exc}"
+        return
+    if cli is not None:
+        cli["install_record"] = installed
+    if installed is None:
+        return
+    record, files = installed["record"], installed["record"]["files"]
+    expected_cli = (record["version"], files["/usr/bin/kicad-cli"])
+    if cli is not None and not cli.get("error") and (cli.get("version_output"), cli.get("sha256")) != expected_cli:
+        cli["error"] = (f"kicad-cli {cli.get('binary')} ({cli.get('version_output')}, sha256 {cli.get('sha256')}) "
+                        f"is not the kicad-cli of the KiCad install record {installed['path']} "
+                        f"({expected_cli[0]}, sha256 {expected_cli[1]})")
+    if pcb is not None and not pcb.get("error"):
+        binary = Path(pcb["binary"]) if pcb.get("binary") else None
+        module = binary.with_name("pcbnew.py") if binary else None
+        observed = (pcb.get("version_output"), pcb.get("sha256"),
+                    digest(module) if module is not None and module.is_file() else None)
+        expected = (record["build_version"], files["/usr/lib/python3/dist-packages/_pcbnew.so"],
+                    files["/usr/lib/python3/dist-packages/pcbnew.py"])
+        pcb["install_record_build"] = record["build_version"]
+        if observed != expected:
+            pcb["error"] = (f"pcbnew {binary} (build {observed[0]}) is not the pcbnew of the KiCad install record "
+                            f"{installed['path']} (build {expected[0]}; extension and pcbnew.py SHA-256 "
+                            f"{'match' if observed[1:] == expected[1:] else 'differ'})")
+
+
 def doctor(checks_only=False, router_checkout=None):
     """Probe versions and hash the probed binaries; real runs establish integration."""
     checks, skipped = {}, {}
@@ -70,20 +108,8 @@ def doctor(checks_only=False, router_checkout=None):
             from .kicad_quirks import erc_coordinate_regime
             record["erc_json_coordinates"] = erc_coordinate_regime(
                 record["version_output"] if p.returncode == 0 else None)
-            # The release, packages and library commits the image build installed; a host
-            # install has no record. The record must describe the kicad-cli that runs.
-            from .kicad_install import read_install_record
-            try:
-                installed = read_install_record()
-            except (OSError, ValueError) as exc:
-                record["error"] = f"KiCad install record: {exc}"
-            else:
-                record["install_record"] = installed
-                if installed is not None and (installed["record"]["version"] != record["version_output"]
-                        or installed["record"]["files"].get(record["path"] or "") not in (None, record["sha256"])):
-                    record["error"] = ("kicad-cli differs from the KiCad install record "
-                                       f"{installed['path']} ({installed['record']['version']})")
         checks[name] = record
+    check_kicad_install(checks)
     # Optional installed analyzers are tools, not core package dependencies. The report
     # names the installed version, its tag and commit when an install record exists, and
     # the installed-file identity that runs record.
@@ -169,6 +195,10 @@ def print_runtime_observations(observations):
         if change.get("kind") == "host_difference":
             print(f"observation: {change['name']} differs on this host: recorded {identity(change['recorded'])}, "
                   f"current {identity(change['current'])}; the run is verified against its own records")
+        elif change.get("kind") == "policy_difference":
+            print(f"observation: the run recorded another agent-ee implementation ({len(change['files'])} files "
+                  f"differ: {', '.join(change['files'][:5])}{', ...' if len(change['files']) > 5 else ''}); "
+                  "the run is verified against its own records")
         else:
             print(f"observation: unused harness runtime {change['name']} changed since capture; "
                   "this run never invoked it, so integrity still holds")

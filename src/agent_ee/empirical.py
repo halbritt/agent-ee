@@ -122,7 +122,7 @@ def ingest(run, report_path, out, *, host=None):
     from .measurements import finite
 
     run, report_path, out = Path(run).resolve(), Path(report_path).resolve(), Path(out).resolve()
-    result = verify(run, current_source=False, host=host)
+    result = verify(run, current_source=False, host=host, current_host=True)
     if result.get("empirical_feedback"):
         raise ValueError("bench source is superseded; explicit recovery of the retained epoch is required")
     baseline = load_baseline(run)
@@ -304,7 +304,7 @@ def bench_review(run, report, out, max_seconds, *, review_out=None, host=None):
         ingest(run, report, out / "empirical", host=host)
         # A newly captured physical discrepancy invalidates current acceptance
         # even if re-verification is interrupted or the provider is unavailable.
-        original = verify(run, current_source=False, host=host)
+        original = verify(run, current_source=False, host=host, current_host=True)
         event = {"schema": "agent-ee.empirical-feedback/1", "bundle": str(out / "empirical"),
                  "bundle_sha256": digest(out / "empirical/calibration.json"), "review": str(review_out)}
         write_json(run / "events" / ("bench-" + event["bundle_sha256"] + ".json"), event)

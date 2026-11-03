@@ -5,6 +5,8 @@ files) are observed here; callers that already hold an observation pass it as ``
 
 import copy
 import datetime
+import hashlib
+import json
 import math
 import re
 import shutil
@@ -30,6 +32,80 @@ def policy_files():
 
 
 LOADED_POLICY_FILES = policy_files()
+
+# The image's KiCad install record, retained byte for byte in every run directory.
+KICAD_INSTALL_COPY = "kicad-install.json"
+# The install record's files that a run observes in runtime_files, by entry name.
+KICAD_BINDINGS = {"kicad-cli": "/usr/bin/kicad-cli", "pcbnew": "/usr/lib/python3/dist-packages/_pcbnew.so"}
+
+
+def bind_kicad_install(record, runtime):
+    """The install record must describe the installed native tools the run observed.
+
+    When the run's kicad-cli or pcbnew extension is the installed file the record names
+    (same path), its digest must be the recorded one. A tool the run found elsewhere is
+    recorded in runtime_files and is not described by the record (doctor reports that)."""
+    for name, path in KICAD_BINDINGS.items():
+        entry = runtime.get(name)
+        if (isinstance(entry, dict) and entry.get("path") == path and entry.get("sha256")
+                and entry["sha256"] != record["files"][path]):
+            raise ValueError(f"KiCad install record {record['version']} does not describe the installed "
+                             f"{name} this run uses ({path})")
+
+
+def capture_kicad_install(run, runtime):
+    """Retain the image's validated install record with the run: its bytes as kicad-install.json
+    (sealed with the run's artifacts) and {path, sha256, version} for result.json. None on a
+    host without a record. A corrupt record, or one that does not describe the observed
+    kicad-cli and pcbnew, refuses the run."""
+    from .kicad_install import read_install_record
+    installed = read_install_record()
+    if installed is None:
+        return None
+    raw = Path(installed["path"]).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != installed["sha256"]:
+        raise ValueError("KiCad install record changed while it was captured")
+    bind_kicad_install(installed["record"], runtime)
+    (Path(run) / KICAD_INSTALL_COPY).write_bytes(raw)
+    return {"path": installed["path"], "sha256": installed["sha256"], "version": installed["record"]["version"]}
+
+
+def verify_kicad_install_unchanged(result):
+    """Within one run: the image's install record is still the one the run retained."""
+    if "kicad_install" not in result:
+        return
+    from .kicad_install import read_install_record
+    current, retained = read_install_record(), result["kicad_install"]
+    if (current or {}).get("sha256") != (retained or {}).get("sha256"):
+        raise ValueError("KiCad install record changed during the run")
+
+
+def verify_retained_kicad_install(run, result):
+    """Offline: the retained copy is the recorded one, a valid install record, and describes
+    the run's recorded kicad-cli and pcbnew. The verifying host's record is not consulted."""
+    if "kicad_install" not in result:
+        return  # recorded before install records were retained (2026-11-03)
+    retained, copy_path = result["kicad_install"], Path(run) / KICAD_INSTALL_COPY
+    if retained is None:
+        if copy_path.exists():
+            raise ValueError("retained KiCad install record has no result entry")
+        return
+    if not isinstance(retained, dict) or set(retained) != {"path", "sha256", "version"}:
+        raise ValueError("malformed KiCad install record entry")
+    try:
+        raw = copy_path.read_bytes()
+    except OSError as exc:
+        raise ValueError("retained KiCad install record is missing") from exc
+    if hashlib.sha256(raw).hexdigest() != retained["sha256"]:
+        raise ValueError("retained KiCad install record changed")
+    from .kicad_install import check_install_record
+    try:
+        record = check_install_record(json.loads(raw.decode("utf-8")))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError(f"retained KiCad install record is not one agent-ee writes: {exc}") from exc
+    if record["version"] != retained["version"]:
+        raise ValueError("retained KiCad install record names another version")
+    bind_kicad_install(record, result.get("runtime_files") or {})
 
 
 def runtime_files(*, checkpoint=None):
@@ -101,8 +177,9 @@ def artifacts(run):
             for p in sorted((run / parent).rglob("*")) if p.is_file()}
     for p in (run / "events").glob("*.json"):
         found[p.relative_to(run).as_posix()] = digest(p)
-    if (run / "adjudicator-execution.json").is_file():
-        found["adjudicator-execution.json"] = digest(run / "adjudicator-execution.json")
+    for name in ("adjudicator-execution.json", KICAD_INSTALL_COPY):
+        if (run / name).is_file():
+            found[name] = digest(run / name)
     return found
 
 
@@ -165,8 +242,17 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
     if (not isinstance(retained_limits, list) or
             retained_limits[:len(declared_limits)] != declared_limits):
         raise ValueError("result omits or changes captured scope limitations")
-    if result.get("policy_files") != observed(host, "policy_files", policy_files):
-        raise ValueError("review implementation changed; rerun under the current rules")
+    # The run's recorded implementation (policy files) is part of its record. Another
+    # implementation on this checkout is information for a finished run, and refuses work
+    # that continues on the run (current_host).
+    recorded_policy, current_policy = result.get("policy_files"), observed(host, "policy_files", policy_files)
+    if recorded_policy != current_policy:
+        if current_host or not isinstance(recorded_policy, dict):
+            raise ValueError("review implementation changed; rerun under the current rules")
+        if observations is not None:
+            observations.append({"name": "agent-ee implementation", "kind": "policy_difference",
+                                 "files": sorted(name for name in recorded_policy.keys() | current_policy.keys()
+                                                 if recorded_policy.get(name) != current_policy.get(name))})
     from .preflight import profile_definitions, runtime_drift
     recorded = result.get("runtime_files")
     if not isinstance(recorded, dict):
@@ -200,9 +286,11 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
         if observations is not None:
             observations.append(host_difference(path, {"path": path, "sha256": sha256},
                                                 {"path": path, "sha256": live}))
-    # The analyzer installation a run used is checked against the run's own evidence, not this host.
+    # The analyzer installation and KiCad install record a run used are checked against the
+    # run's own evidence, not this host.
     from .kicad_happy import verify_recorded
     verify_recorded(run, result["checks"])
+    verify_retained_kicad_install(run, result)
     if artifacts(run) != result.get("artifact_hashes"):
         raise ValueError("execution/review evidence changed; prior acceptance is stale")
     if digest(run / "candidate.json") != result.get("manifest_sha256"):
@@ -584,6 +672,7 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
     try:
         if result["policy_files"] != LOADED_POLICY_FILES:
             raise ValueError("implementation files changed after this process loaded; start a fresh process")
+        result["kicad_install"] = capture_kicad_install(run, result["runtime_files"])
         m = capture(scope_path, run, profile)
         from .board_envelope import final_qualification
         # Final acceptance is held by the captured baseline's open envelope qualification (AGENTEE-197).
@@ -697,6 +786,7 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         judgments.read(run, result=result, deadline=deadline)
         from .kicad_happy import verify_unchanged
         verify_unchanged(result["checks"])
+        verify_kicad_install_unchanged(result)
         from .preflight import runtime_drift
         drift = runtime_drift(result["runtime_files"], pinned(host, "runtime_files", runtime_files), definitions)
         # A harness this profile never invokes is recorded, not a reason to discard the review.
@@ -734,7 +824,8 @@ def apply_decisions(run, decisions_path, *, host=None):
 def _apply_decisions(run, decisions_path, *, host=None):
     from .findings import adjudicate
     run = Path(run).resolve()
-    result = verify(run, host=host)
+    # Adjudication continues the run on this host, under the current rules and tools.
+    result = verify(run, host=host, current_host=True)
     decisions = read_json(decisions_path)
     updated = adjudicate(result["findings"], decisions, run)
     from .rf_review import gate as rf_gate
@@ -763,7 +854,9 @@ def link_correction(previous, current, finding_id, check_ids, reason, *, host=No
 
 def _link_correction(previous, current, finding_id, check_ids, reason, *, host=None):
     previous, current = Path(previous).resolve(), Path(current).resolve()
-    old, new = verify(previous, current_source=False, host=host), verify(current, host=host)
+    # A correction link is written into the previous run: both runs must hold here and now.
+    old = verify(previous, current_source=False, host=host, current_host=True)
+    new = verify(current, host=host, current_host=True)
     if old["candidate_id"] == new["candidate_id"]:
         raise ValueError("closure requires a changed saved candidate")
     source = next((f for f in old["findings"] if f["id"] == finding_id), None)

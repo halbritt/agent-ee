@@ -4,11 +4,21 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import json
+import os
+from unittest.mock import patch
+
 from agent_ee.baseline import freeze_evidence
 from agent_ee.candidate import capture, verify_snapshot
+from agent_ee.kicad_install import RECORD_ENV
 from agent_ee.preflight import capture_expectation
-from agent_ee.run_record import save_result, verify
+from agent_ee.run_record import (KICAD_INSTALL_COPY, capture_kicad_install, save_result, verify,
+                                 verify_kicad_install_unchanged)
 from agent_ee.storage import digest, read_json, write_json
+try:
+    from test_kicad_install import record as install_record
+except ImportError:  # module-qualified invocation from the repository root
+    from tests.test_kicad_install import record as install_record
 
 
 class HistoricalReviewBoundaryTests(unittest.TestCase):
@@ -58,8 +68,10 @@ class HistoricalReviewBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'source inputs changed'):
             verify(self.run, host=self.host)
 
-    def test_snapshot_flag_still_refuses_both_unrelated_and_required_policy_changes(self):
-        # Characterizes the AGENTEE-526 defect, not the proposed integrity-only API.
+    def test_changed_implementation_is_reported_for_a_finished_run_and_refuses_continuing_work(self):
+        # The AGENTEE-526 defect, resolved by the integrator decision of 2026-11-03: a finished run is
+        # verified against its own records, including the implementation it recorded. Work that
+        # continues on the run (current_host) still requires this checkout's implementation.
         for name in ('viewer.py', 'routing_rules.py'):
             with self.subTest(policy=name):
                 path = self.policy / name
@@ -67,8 +79,13 @@ class HistoricalReviewBoundaryTests(unittest.TestCase):
                 try:
                     path.write_bytes(original + b'# changed observation\n')
                     verify_snapshot(self.run)
+                    observations = []
+                    result = verify(self.run, current_source=False, observations=observations, host=self.observation())
+                    self.assertEqual(result['outcome'], 'incomplete')
+                    self.assertEqual(observations, [{'name': 'agent-ee implementation', 'kind': 'policy_difference',
+                                                     'files': [name]}])
                     with self.assertRaisesRegex(ValueError, 'review implementation changed'):
-                        verify(self.run, current_source=False, host=self.observation())
+                        verify(self.run, current_source=False, host=self.observation(), current_host=True)
                 finally:
                     path.write_bytes(original)
 
@@ -117,6 +134,91 @@ class HistoricalReviewBoundaryTests(unittest.TestCase):
                 finally:
                     path.write_bytes(original)
         self.assertEqual(verify(self.run, current_source=False, host=self.host)['outcome'], 'incomplete')
+
+
+class RetainedKiCadInstallRecordTests(unittest.TestCase):
+    """Every run retains the image's KiCad install record; verify checks that copy offline."""
+    setUp = HistoricalReviewBoundaryTests.setUp
+    observation = HistoricalReviewBoundaryTests.observation
+
+    def write_record(self, name, version='10.0.8', **files):
+        record = install_record(version)
+        record['files'].update(files)
+        path = self.root / name
+        path.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
+        return path, record
+
+    def retain(self):
+        path, record = self.write_record('image.install.json')
+        stored = read_json(self.run / 'result.json')
+        with patch.dict(os.environ, {RECORD_ENV: str(path)}):
+            stored['kicad_install'] = capture_kicad_install(self.run, stored['runtime_files'])
+        save_result(self.run, stored)
+        return path, record, stored
+
+    def test_capture_binds_the_record_to_the_installed_tools_observed(self):
+        path, record = self.write_record('image.install.json')
+        installed = {'kicad-cli': {'path': '/usr/bin/kicad-cli', 'sha256': record['files']['/usr/bin/kicad-cli']},
+                     'pcbnew': {'path': '/usr/lib/python3/dist-packages/_pcbnew.so',
+                                'sha256': record['files']['/usr/lib/python3/dist-packages/_pcbnew.so']}}
+        with patch.dict(os.environ, {RECORD_ENV: str(path)}):
+            entry = capture_kicad_install(self.run, installed)
+            self.assertEqual(entry, {'path': str(path), 'sha256': digest(path), 'version': '10.0.8'})
+            self.assertEqual((self.run / KICAD_INSTALL_COPY).read_bytes(), path.read_bytes())
+            # A tool found elsewhere is not described by the record and is not bound.
+            capture_kicad_install(self.run, {'kicad-cli': {'path': '/opt/other/kicad-cli', 'sha256': 'e' * 64}})
+            for name in installed:
+                other = {**installed, name: {**installed[name], 'sha256': 'e' * 64}}
+                with self.subTest(differs=name), self.assertRaisesRegex(ValueError, 'does not describe the installed ' + name):
+                    capture_kicad_install(self.run, other)
+        path.write_text('{')
+        with patch.dict(os.environ, {RECORD_ENV: str(path)}), self.assertRaisesRegex(ValueError, 'not JSON'):
+            capture_kicad_install(self.run, installed)
+        with patch.dict(os.environ, {RECORD_ENV: str(self.root / 'absent.json')}):
+            self.assertIsNone(capture_kicad_install(self.run, installed))
+
+    def test_retained_record_verifies_offline_on_a_host_with_another_record_or_none(self):
+        _, _, stored = self.retain()
+        self.assertIn(KICAD_INSTALL_COPY, stored['artifact_hashes'])
+        other, _ = self.write_record('other.install.json', version='10.0.7')
+        for host_record in (other, self.root / 'absent.json'):
+            with self.subTest(host_record=host_record.name), patch.dict(os.environ, {RECORD_ENV: str(host_record)}):
+                self.assertEqual(verify(self.run, current_source=False, host=self.host)['outcome'], 'incomplete')
+
+    def test_tampered_missing_or_unbound_retained_record_refuses(self):
+        _, record, stored = self.retain()
+        copy_path = self.run / KICAD_INSTALL_COPY
+        original = copy_path.read_bytes()
+        cases = {
+            'changed bytes': (lambda: copy_path.write_bytes(original + b' '), 'retained KiCad install record changed'),
+            'missing copy': (copy_path.unlink, 'retained KiCad install record is missing'),
+            'other version': (lambda: save_result(self.run, {**stored, 'kicad_install': {**stored['kicad_install'],
+                                                                                           'version': '10.0.7'}}),
+                              'names another version'),
+            'unbound tool': (lambda: save_result(self.run, {**stored, 'runtime_files': {
+                                 **stored['runtime_files'], 'kicad-cli': {'path': '/usr/bin/kicad-cli', 'sha256': 'e' * 64}}}),
+                             'does not describe the installed kicad-cli'),
+        }
+        with patch.dict(os.environ, {RECORD_ENV: str(self.root / 'absent.json')}):
+            for name, (tamper, refusal) in cases.items():
+                with self.subTest(tamper=name):
+                    tamper()
+                    with self.assertRaisesRegex(ValueError, refusal):
+                        verify(self.run, current_source=False, host=self.host)
+                    copy_path.write_bytes(original)
+                    save_result(self.run, stored)
+            self.assertEqual(verify(self.run, current_source=False, host=self.host)['outcome'], 'incomplete')
+
+    def test_a_record_changed_while_the_run_is_in_progress_refuses(self):
+        path, _, stored = self.retain()
+        with patch.dict(os.environ, {RECORD_ENV: str(path)}):
+            verify_kicad_install_unchanged(stored)
+            path.write_text(path.read_text().replace('10.0.8~ubuntu24.04.1', '10.0.8~ubuntu24.04.2'))
+            with self.assertRaisesRegex(ValueError, 'KiCad install record changed during the run'):
+                verify_kicad_install_unchanged(stored)
+        with patch.dict(os.environ, {RECORD_ENV: str(self.root / 'absent.json')}):
+            with self.assertRaisesRegex(ValueError, 'changed during the run'):
+                verify_kicad_install_unchanged(stored)
 
 
 if __name__ == '__main__':

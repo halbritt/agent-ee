@@ -1530,7 +1530,7 @@ def finding_count(record):
 
 def review_case(scope, run):
     exit_code = run_review(scope,run,1800,checks_only=True)
-    verified = verify(run)
+    verified = verify(run, current_host=True)
     if exit_code != (0 if verified['outcome']=='criteria_satisfied' else 1):
         raise ValueError('review exit code contradicts verified outcome')
     expected = {c['id'] for c in read_json(scope)['checks']}

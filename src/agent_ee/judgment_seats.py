@@ -194,7 +194,7 @@ def verify_native_checks(root, selection, files, scope, *, host=None, current_so
             or 'review_profile' in summary or summary.get('source') != selection
             or read_json(root/'source.json') != selection):
         raise ValueError('judgment native checks are not bound to selected artwork')
-    result = verify(root/'review', current_source=current_source, host=host)
+    result = verify(root/'review', current_source=current_source, host=host, current_host=True)
     manifest = read_json(root/'review/candidate.json')
     if (manifest['files'] != {**files, retained_run.REVIEW_SOURCE: digest(root/'source.json')}
             or {k:v for k,v in manifest['scope'].items() if k != 'inputs'} !=

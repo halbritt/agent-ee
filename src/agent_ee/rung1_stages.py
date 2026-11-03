@@ -215,7 +215,7 @@ def review(rundir, setup, label):
 def sealed(run):
     """Verify the review run as `agent-ee verify` does; the error text, or None."""
     try:
-        verify(run)
+        verify(run, current_host=True)
     except Exception as exc:  # noqa: BLE001 - an unverifiable run is missing coverage, never a pass
         return f'{type(exc).__name__}: {exc}'
     return None

@@ -102,20 +102,54 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(probes["kicad-cli"]["erc_json_coordinates"],
                          {"version": "10.0.7", "regime": "native", "scale": 1})
 
-    def test_kicad_install_record_must_name_the_kicad_cli_that_runs(self):
-        path = self.root / "kicad.install.json"
-        for version, expected_code in (("10.0.7", 0), ("10.0.8", 1)):
-            with self.subTest(version=version):
-                path.write_text(json.dumps(install_record(version)))
+    def kicad_record(self, **changes):
+        """An install record describing this test's kicad-cli and pcbnew files exactly."""
+        module = self.binaries["_pcbnew.so"].with_name("pcbnew.py")
+        module.write_bytes(b"pcbnew wrapper bytes")
+        record = install_record("10.0.7")
+        record["files"].update({"/usr/bin/kicad-cli": self.sha("kicad-cli"),
+                                "/usr/lib/python3/dist-packages/_pcbnew.so": self.sha("_pcbnew.so"),
+                                "/usr/lib/python3/dist-packages/pcbnew.py": hashlib.sha256(module.read_bytes()).hexdigest()})
+        for key, value in changes.items():
+            if key in ("version", "build_version"):
+                record[key] = value
+            else:
+                record["files"][key] = value
+        (self.root / "kicad.install.json").write_text(json.dumps(record))
+        return record
+
+    def test_kicad_install_record_must_describe_the_kicad_cli_and_pcbnew_that_run(self):
+        self.kicad_record()
+        code, report = self.doctor()
+        self.assertEqual(code, 0, report)
+        probes = report["prerequisites"]
+        self.assertEqual(probes["kicad-cli"]["install_record"]["record"]["version"], "10.0.7")
+        self.assertNotIn("error", probes["kicad-cli"])
+        self.assertNotIn("error", probes["pcbnew"])
+        # Each case is one identity that differs; the kicad-cli is found outside /usr/bin, so its
+        # digest is compared regardless of where it was found.
+        cases = {"kicad-cli version": ("kicad-cli", {"version": "10.0.8", "build_version": "10.0.8-10.0.8~ubuntu24.04.1"}),
+                 "kicad-cli digest": ("kicad-cli", {"/usr/bin/kicad-cli": "b" * 64}),
+                 "pcbnew extension digest": ("pcbnew", {"/usr/lib/python3/dist-packages/_pcbnew.so": "c" * 64}),
+                 "pcbnew.py digest": ("pcbnew", {"/usr/lib/python3/dist-packages/pcbnew.py": "d" * 64})}
+        for label, (probe, changes) in cases.items():
+            with self.subTest(differs=label):
+                self.kicad_record(**changes)
                 code, report = self.doctor()
-                probe = report["prerequisites"]["kicad-cli"]
-                self.assertEqual(probe["install_record"]["record"]["version"], version)
-                self.assertEqual(code, expected_code)
-                if expected_code:
-                    self.assertIn("differs from the KiCad install record", probe["error"])
-                else:
-                    self.assertNotIn("error", probe)
-        path.write_text("{")
+                self.assertEqual(code, 1)
+                self.assertIn("KiCad install record", report["prerequisites"][probe]["error"])
+        self.kicad_record()
+        original = self.run_probe
+        def other_pcbnew_build(command, **kwargs):
+            if command[0] == "/usr/bin/python3" and "GetBuildVersion" in command[-1]:
+                return subprocess.CompletedProcess(command, 0, "10.0.6-10.0.6~ubuntu24.04.1\n", "")
+            return original(command, **kwargs)
+        self.run_probe = other_pcbnew_build
+        code, report = self.doctor()
+        self.assertEqual(code, 1)
+        self.assertIn("build 10.0.6-10.0.6~ubuntu24.04.1", report["prerequisites"]["pcbnew"]["error"])
+        self.run_probe = original
+        (self.root / "kicad.install.json").write_text("{")
         code, report = self.doctor()
         self.assertEqual(code, 1)
         self.assertIn("KiCad install record", report["prerequisites"]["kicad-cli"]["error"])

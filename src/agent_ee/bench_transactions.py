@@ -177,7 +177,7 @@ def publish(out, request, records, *, host=None):
     # any new artifact. The sole permitted inventory delta is the exact event.
     checked = copy.deepcopy(original)
     checked['artifact_hashes'] = artifacts(run)
-    verify_records(run, checked, current_source=False, host=host)
+    verify_records(run, checked, current_source=False, host=host, current_host=True)
     projection = copy.deepcopy(original)
     projection.setdefault('empirical_feedback', []).append(event)
     projection['outcome'] = outcome(projection)
@@ -199,13 +199,13 @@ def publish(out, request, records, *, host=None):
     fsync_directory(run)
     receipt(out, 'supersession_committed', {'publication_sha256': digest(publication_path(run, request['operation_id'])),
                                           'report_sha256': digest(run / 'REPORT.md')})
-    verify(run, current_source=False, host=host)
+    verify(run, current_source=False, host=host, current_host=True)
 
 
 def prepare(run, report, out, request, *, host=None):
     from .empirical import ingest, calibration_for
 
-    original = verify(run, current_source=False, host=host)
+    original = verify(run, current_source=False, host=host, current_host=True)
     out.mkdir(parents=True, exist_ok=True)
     write_json(out / 'request.json', request)
     prepared = out / 'prepared'
@@ -278,7 +278,7 @@ def settle(out, request, records, *, host=None):
     """Reconcile known local writes and adopt only fully verified terminal evidence."""
     validate_prepared(out, request, records)
     if 'completed' in records:
-        verify(request['run'], current_source=False, host=host)
+        verify(request['run'], current_source=False, host=host, current_host=True)
         current = verify_terminal(out, records['completed']['review'], host=host)
         if request.get('campaign'):
             from .campaign import verify_campaign
@@ -295,7 +295,7 @@ def settle(out, request, records, *, host=None):
     if not (target / 'result.json').is_file():
         return status_value(out, request, records, 'uncertain_execution')
     try:
-        result = verify(target, current_source=False, host=host)
+        result = verify(target, current_source=False, host=host, current_host=True)
         manifest = read_json(target / 'candidate.json')
         expected = read_json(out / 'prepared/scope.json')
         if (manifest['scope'] != expected or
@@ -371,7 +371,7 @@ def transact(run, report, out, max_seconds, *, operation_id, review_out=None, ho
             if equivalent:
                 return {'schema': 'agent-ee.bench-recovery/1', 'disposition': 'existing_operation',
                         'operation_id': existing['operation_id'], 'transaction': existing['out']}
-        original = verify(run, current_source=False, host=host)
+        original = verify(run, current_source=False, host=host, current_host=True)
         if original.get('empirical_feedback'):
             raise TransactionError('conflict', 'source is superseded; recover its existing transaction', out=out)
         lease_file = review_out.parent / ('.' + review_out.name + '.writer.lock')
@@ -544,7 +544,7 @@ def status(out, *, host=None):
             value = status_value(out, request, records)
             value['coherence'] = 'coherent'
             try:
-                verify(request['run'], current_source=False, host=host)
+                verify(request['run'], current_source=False, host=host, current_host=True)
             except (ValueError, OSError, KeyError, TypeError) as exc:
                 value['disposition'] = 'pending_or_invalid_publication'
                 value['failed_checks'] = [str(exc)]
@@ -603,7 +603,7 @@ def verify_terminal(out, terminal, *, host=None):
     if (terminal['attempt_id'] != attempt['id'] or terminal['out'] != attempt['out'] or
             any(terminal[key] != snapshot.get(key) for key in ('run_id', 'candidate_id', 'state', 'outcome'))):
         raise TransactionError('conflict', 'terminal receipt contradicts retained review', out=out)
-    current = verify(terminal['out'], current_source=False, host=host)
+    current = verify(terminal['out'], current_source=False, host=host, current_host=True)
     if current != snapshot:
         allowed = {'empirical_feedback', 'artifact_hashes', 'outcome'}
         if (not current.get('empirical_feedback') or

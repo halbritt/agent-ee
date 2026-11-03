@@ -205,7 +205,7 @@ def pending_recalibration(run, *, host=None):
     """Admit only intact coordinator requests, never arbitrary incomplete work."""
     from .baseline import load_baseline
     from .empirical import calibration_for
-    result = verify(run, current_source=False, host=host)
+    result = verify(run, current_source=False, host=host, current_host=True)
     manifest = read_json(run / 'candidate.json')
     requests = [c for c in result['checks'] if c['execution'] != 'ok']
     if not requests or any(not source_prediction(c) for c in requests):
