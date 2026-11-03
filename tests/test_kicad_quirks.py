@@ -78,14 +78,18 @@ class CoordinateRegimeTest(unittest.TestCase):
 
 
 class TextHeightDefaultTest(unittest.TestCase):
-    """The omitted rules.min_text_height default is keyed on the recorded release (routed_artwork)."""
+    """The omitted rules.min_text_height default is keyed on releases with native evidence (routed_artwork).
 
-    def test_classified_series_releases_get_the_default(self):
-        for version in ('10.0.0', '10.0.7', '10.0.8', '10.0.12'):
+    The native observation for the installed release is NativeDefaultTableTest in
+    test_design_rule_provenance."""
+
+    def test_observed_releases_get_their_recorded_default(self):
+        for version in ('10.0.7', '10.0.8'):
             self.assertEqual(omitted_min_text_height(version), MIN_TEXT_HEIGHT_DEFAULT_MM, version)
 
-    def test_other_series_and_unknown_versions_get_none(self):
-        for version in ('10.1.0', '9.0.7', '11.0.0', '10.0.8-rc1', '10.0.7-45-g0123abcd', '', None, 10.07):
+    def test_unobserved_and_unknown_versions_get_none(self):
+        for version in ('10.0.0', '10.0.6', '10.0.9', '10.0.999', '10.1.0', '9.0.7', '11.0.0', '10.0.8-rc1',
+                        '10.0.7-45-g0123abcd', '', None, 10.07):
             self.assertIsNone(omitted_min_text_height(version), version)
 
 

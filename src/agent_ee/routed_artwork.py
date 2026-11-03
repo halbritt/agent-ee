@@ -471,7 +471,7 @@ def _text_minimum(project):
             raise ValueError('text-size project rules malformed')
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError('text-size project rules malformed') from exc
-    # KiCad's omitted-setting default for the classified 10.0 series (kicad_quirks).
+    # KiCad's omitted-setting default where native evidence is recorded (kicad_quirks).
     # Production checks the release its native DRC recorded before applying it.
     value = settings.get('rules', {}).get('min_text_height', MIN_TEXT_HEIGHT_DEFAULT_MM)
     result = nanometres(str(value))
@@ -1122,7 +1122,8 @@ def produce(source, root, targets=None, field_poses=None, artwork_policy=None, p
     board = k.LoadBoard(str(output))
     if text_sizes is not None:
         if omitted_min_text_height(before.get('kicad_version')) != MIN_TEXT_HEIGHT_DEFAULT_MM:
-            raise ValueError(f"text-size native default is unclassified for KiCad {before.get('kicad_version')!r}")
+            raise ValueError(f"text-size native default has no recorded native observation for KiCad "
+                             f"{before.get('kicad_version')!r} (kicad_quirks.OBSERVED_MIN_TEXT_HEIGHT)")
         _apply_text_sizes(k, board, text_sizes)
         artwork = dict(text_sizes=text_sizes, moved_fields=[])
     elif field_poses is not None:

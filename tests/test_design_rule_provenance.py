@@ -641,6 +641,14 @@ class NativeDefaultTableTest(unittest.TestCase):
             # release, whichever it is, must save the same defaults.
             self.assertRegex(VERSION, r'^10\.\d+\.\d+$')
             self.assertRegex(result.stdout, '(?m)^build: ' + re.escape(recorded_kicad_version()) + r'(?:\D|$)')
+            # Native evidence for kicad_quirks.omitted_min_text_height: the installed release's
+            # default for an omitted rules.min_text_height, which routed artwork applies.
+            from agent_ee.kicad_quirks import omitted_min_text_height
+            saved_height = read_json(board.with_suffix('.kicad_pro'))['board']['design_settings']['rules']['min_text_height']
+            classified = omitted_min_text_height(recorded_kicad_version())
+            self.assertIsNotNone(classified, f'record KiCad {recorded_kicad_version()} saved min_text_height '
+                                             f'{saved_height} in kicad_quirks.OBSERVED_MIN_TEXT_HEIGHT')
+            self.assertEqual(float(classified), saved_height)
             saved = read_json(board.with_suffix('.kicad_pro'))
             rows = geometry_defaults(saved, {})
             self.assertEqual({r['setting']: r['value'] for r in rows},
