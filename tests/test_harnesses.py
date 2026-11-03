@@ -1,5 +1,8 @@
-"""Tests for strict schema generation and schema-directed unstrict normalization."""
+"""Tests for strict schema generation, schema-directed unstrict normalization and native_call options."""
+import json
+import os
 import unittest
+from unittest.mock import patch
 
 from agent_ee.harnesses import strict_schema, unstrict_value
 from agent_ee.reviewers import DECISIONS_SCHEMA
@@ -308,6 +311,82 @@ class UnstrictValueTests(unittest.TestCase):
         self.assertIsNone(unstrict['pads'][0]['hole'])
         self.assertIn('circuit', unstrict)
         self.assertIsNone(unstrict['circuit'])
+
+
+class NativeCallTests(unittest.TestCase):
+    """A scripted transport and a fake login: no model, network or real credential."""
+
+    session = '01234567-89ab-4cde-8fab-0123456789ab'
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        auth = self.root / 'subscription'
+        auth.mkdir()
+        self.login = json.dumps({'tokens': {'access_token': 'fake-access-' + 'a1' * 24,
+                                            'refresh_token': 'fake-refresh-' + 'b2' * 24}}).encode()
+        (auth / 'auth.json').write_bytes(self.login)
+        self.enterContext(patch.dict(os.environ, {'AGENT_EE_CODEX_AUTH_HOME': str(auth)}))
+
+    def call(self, files=None, **options):
+        from agent_ee import native_run
+        from agent_ee.harnesses import native_call
+        stream = [{'type': 'thread.started', 'thread_id': self.session},
+                  {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': '{"answer": 1}'}},
+                  {'type': 'turn.completed', 'usage': {}}]
+        transport = native_run.Recorded(lambda call: native_run.Outcome(
+            stdout='\n'.join(map(json.dumps, stream)).encode(), files=files or {}))
+        with native_run.using(transport):
+            record, value = native_call(self.root, 'probe', {'harness': 'codex', 'model': 'gpt-6.1-sol',
+                'effort': 'high', 'tool_mode': 'read-only'}, 'scripted prompt', {}, 10,
+                executable='/usr/bin/true', **options)
+        return transport.calls[0], record, value
+
+    def test_default_call_keeps_an_unbounded_console_and_no_extra_mounts(self):
+        call, record, value = self.call()
+        self.assertEqual((record['execution'], value), ('ok', {'answer': 1}))
+        self.assertIsNone(call.intent.log_bytes)
+        self.assertEqual([dest for _, dest in call.mounts],
+                         ['/work/home/.codex/auth.json', '/reviewer'])
+
+    def test_a_caller_can_bound_the_console_and_add_read_only_mounts(self):
+        libraries = self.root / 'libraries'
+        libraries.mkdir()
+        call, record, _ = self.call(log_bytes=4096, extra_mounts=[(libraries, '/kicad')])
+        self.assertEqual(call.intent.log_bytes, 4096)
+        self.assertIn((libraries, '/kicad'), call.mounts)
+        self.assertNotIn('credential_copies_refused', record)
+
+    def test_experiment_copies_of_the_mounted_login_are_refused(self):
+        token = json.loads(self.login)['tokens']['refresh_token']
+        call, record, value = self.call(files={
+            'experiments/login-copy.json': self.login,
+            'experiments/nested/token.txt': b'export TOKEN=' + token.encode() + b'\n',
+            'experiments/parts.json': b'{"lcsc": "C1"}'})
+        experiments = self.root / 'review-work/probe/experiments'
+        self.assertEqual(record['credential_copies_refused'], ['login-copy.json', 'nested/token.txt'])
+        self.assertEqual(sorted(p.relative_to(experiments).as_posix() for p in experiments.rglob('*') if p.is_file()),
+                         ['parts.json'])
+        self.assertEqual(value, {'answer': 1})
+        retained = b''.join(p.read_bytes() for p in (self.root / 'review-work').rglob('*') if p.is_file())
+        self.assertNotIn(token.encode(), retained)
+
+    def test_unreadable_files_and_read_only_folders_keep_no_copy(self):
+        from agent_ee.harnesses import refuse_credential_copies
+        experiments = self.root / 'experiments'
+        locked = experiments / 'locked'
+        locked.mkdir(parents=True)
+        (locked / 'copy.json').write_bytes(self.login)
+        locked.chmod(0o500)
+        self.addCleanup(locked.chmod, 0o700)
+        hidden = experiments / 'hidden.bin'
+        hidden.write_bytes(b'cannot be checked')
+        hidden.chmod(0)
+        # A file that cannot be read cannot be checked, so it is not kept (root can read it).
+        expected = ['locked/copy.json'] + ([] if os.access(hidden, os.R_OK) else ['hidden.bin'])
+        self.assertEqual(refuse_credential_copies(experiments, self.root / 'subscription/auth.json'), sorted(expected))
+        self.assertFalse((locked / 'copy.json').exists())
 
 
 if __name__ == '__main__':
