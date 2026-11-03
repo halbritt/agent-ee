@@ -119,6 +119,39 @@ board or a timed-out export produces a command error; inspect the diagnostic and
 any retained export logs before trying again. Browser or graphics failures can
 prevent display even after a successful native export.
 
+## Three.js version
+
+The browser assets include three.js files and the upstream `LICENSE` under
+`src/agent_ee/viewer_assets/vendor/`. Its `manifest.json` records the release
+(`version`, `upstream`) and, per file, the source URL, `upstream_sha256`,
+vendored `sha256` and transforms. To move the files to the newest upstream
+release:
+
+```sh
+python3 scripts/refresh_viewer_vendor.py --check   # fetch and verify; write nothing
+python3 scripts/refresh_viewer_vendor.py           # write the files and the manifest
+```
+
+The script takes the highest `rNNN` tag (or `--release rNNN`), fetches every
+file from the manifest's source URLs at that tag and applies the recorded
+transforms. It refuses (exit 1) and writes nothing in these cases:
+
+- a source path does not exist at the release;
+- the files are not those the manifest records;
+- a vendored module would import a file that is not vendored, or a name that
+  `three.module.js` does not export;
+- a `THREE` name, loader or controls member, controls event or constructor
+  parameter list that `viewer.js` uses differs from the current files.
+
+After a refresh, run the viewer tests and commit the files and manifest
+together.
+
+On 2026-11-03 the refresh refused the newest release, r187. From r186 the
+release tags do not contain `build/three.module.min.js` or
+`build/three.core.min.js`, and in r185 and r187 `GLTFLoader.js` imports
+`../utils/SkeletonUtils.js`. The files stay at r180 until the manifest names
+the new sources and the added module.
+
 ## Development checks
 
 The viewer tests exercise source preservation, captured candidate selection,
