@@ -1049,7 +1049,8 @@ def requirements(design, root, record, suppliers):
                     drc_check="drc",
                     locality="electrical-locality.json",
                 ),
-                check('decoupling-loops', 'decoupling_loops', contract='local-decoupling.json'),
+                check('decoupling-loops', 'decoupling_loops', contract='local-decoupling.json',
+                      generation='project/local-decoupling-generation.json'),
             ]
             if design["decoupling"]
             else [check("plane-drc", "drc", plane_plans=[blob(root, "planes.json")])],

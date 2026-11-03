@@ -234,7 +234,7 @@ def measure_bank(board, bank, relations, graphs):
     return row
 
 
-def measure(board_path, document):
+def measure(board_path, document, *, generation=None):
     import pcbnew as k
     validate(document)
     before = digest(board_path)
@@ -243,7 +243,22 @@ def measure(board_path, document):
         raise ValueError('loop measurement requires a loaded two-layer board')
     # Grade saved fill; the producer is responsible for native refill/save.
     board.BuildConnectivity()
-    graphs, records = {}, []
+    graphs, records, warnings = {}, [], []
+    generated = {row['id'] for row in generation['relations'] if row['copper']} if generation else set()
+    refusals = {row['relation']: row['reason'] for row in generation.get('fallbacks', [])} if generation else {}
+    if generation is not None:
+        if digest_document(generation['contract']) != digest_document(document):
+            raise ValueError('generation receipt differs from captured local contract')
+        protected_ids = {row['uuid'] for row in generation['protected']}
+        if any(row['id'] not in {r['id'] for r in document['relations']}
+               or not set(row['copper']).issubset(protected_ids) for row in generation['relations']):
+            raise ValueError('generation relation inventory differs from protected copper')
+        if generation['protected']:
+            from .local_decoupling import verify
+            verify(board_path, generation)
+    def warn(relation, bank, kind, reason):
+        warnings.append(dict(severity='warning', relation=relation, bank=bank, kind=kind,
+                             reason=reason, search_refusal=refusals.get(relation)))
     derived_banks = banks(document)
     by_id = {r['id']: r for r in document['relations']}
     relation_banks = {rid: bank for bank in derived_banks for rid in bank['relations']}
@@ -251,6 +266,9 @@ def measure(board_path, document):
         bank = relation_banks[relation['id']]
         members = [by_id[rid] for rid in bank['relations']]
         row = dict(id=relation['id'], bank=bank['id'], outcome='info', reasons=[])
+        if relation['id'] not in generated:
+            reason = refusals.get(relation['id'], 'no generation receipt was supplied')
+            warn(relation['id'], bank['id'], 'generation_fallback', reason)
         try:
             for leg in ('supply', 'return'):
                 first, second = [pad(board, endpoint) for endpoint in relation[leg]]
@@ -271,7 +289,8 @@ def measure(board_path, document):
                         access = graph.plane_access(second, board.GetLayerID(plane['layer']), devices)
                         row[leg]['capacitor_to_plane_mm'] = access
                         if access is None:
-                            row['reasons'].append(leg + ': capacitor has no native plane connection without the device pin')
+                            warn(relation['id'], bank['id'], 'capacitor_plane_access',
+                                 leg + ': capacitor has no independent plane connection')
                 if row[leg]['path'] is None:
                     row['reasons'].append(leg + ': no native-connected copper path')
             row['loop_length_mm'] = (sum(row[leg]['path']['length_mm'] for leg in ('supply', 'return'))
@@ -287,11 +306,20 @@ def measure(board_path, document):
         records.append(row)
     bank_records = [measure_bank(board, bank, [by_id[rid] for rid in bank['relations']], graphs)
                     for bank in derived_banks]
+    for bank in bank_records:
+        for leg in ('supply', 'return'):
+            if bank.get(leg, {}).get('pin_bypasses_bank'):
+                for rid in bank['relations']:
+                    reason = leg + ': device pin reaches plane without bank capacitors'
+                    if rid in refusals:
+                        reason += '; generation search refused: ' + refusals[rid]
+                    warn(rid, bank['id'], 'bank_bypass', reason)
     if digest(board_path) != before:
         raise ValueError('board changed during loop measurement')
     tracks = list(board.GetTracks())
     return dict(schema='agent-ee.decoupling-loops-result/1', board_sha256=before,
                 contract_sha256=digest_document(document), pcbnew_version=k.Version(), records=records, banks=bank_records,
+                warnings=warnings, generated_relation_count=len(generated),
                 outcome=('defect' if any(r['outcome'] == 'defect' for r in records) else
                          'unknown' if any(r['outcome'] == 'unknown' for r in records + bank_records) else
                          'pass' if records and all(r['outcome'] == 'pass' for r in records) else 'info'),
@@ -310,7 +338,7 @@ def digest_document(document):
 
 
 def parameters(params):
-    if not isinstance(params, dict) or set(params) != {'contract'}:
+    if not isinstance(params, dict) or 'contract' not in params or set(params) - {'contract', 'generation'}:
         raise ValueError('decoupling_loops requires contract')
 
 
@@ -318,6 +346,10 @@ def describe(ctx):
     parameters(ctx.params)
     ctx.captured(ctx.scope.get('board'))
     ctx.captured(ctx.params['contract'], immutable=True)
+    # Placement produces this file after source-only capability preflight.
+    if ('generation' in ctx.params and ctx.inputs is not None
+            and (Path(ctx.inputs) / ctx.params['generation']).is_file()):
+        ctx.captured(ctx.params['generation'])
     if ctx.inputs is not None:
         doc = validate(read_json(Path(ctx.inputs) / ctx.params['contract']))
         ctx.result['predicates'] = ['decoupling-loop:continuity:' + r['id'] for r in doc['relations']]
@@ -327,9 +359,13 @@ def describe(ctx):
 def check(ctx):
     from .checks import CheckError
     parameters(ctx.params)
+    from .local_decoupling import GENERATION_FILE
+    generation = ctx.params.get('generation', str(Path(ctx.scope['board']).parent / GENERATION_FILE))
+    extra = (['--generation', ctx.candidate_path(generation)]
+             if 'generation' in ctx.params or generation in ctx.manifest['files'] else [])
     ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.decoupling_loops',
                  ctx.candidate_path(ctx.scope['board']), '--contract', ctx.candidate_path(ctx.params['contract']),
-                 '--out', '/work/decoupling-loops.json'], timeout=180)
+                 '--out', '/work/decoupling-loops.json', *extra], timeout=180)
     ctx.evidence('decoupling-loops.json')
     result = ctx.load_json('decoupling-loops.json', 'native decoupling loops')
     if (result.get('board_sha256') != ctx.manifest['files'][ctx.scope['board']]
@@ -339,6 +375,8 @@ def check(ctx):
     ctx.result.update(outcome='pass' if result['outcome'] == 'info' else result['outcome'], execution='ok',
                       summary='Native decoupling loops: ' + result['outcome'] + '; ' +
                       '; '.join(r['id'] + ': ' + ', '.join(r['reasons']) for r in result['records'] if r['reasons']))
+    ctx.result['summary'] += '; warnings: ' + '; '.join(
+        w['relation'] + '/' + w['bank'] + ': ' + w['reason'] for w in result.get('warnings', []))
     ctx.result['limitations'] += result['limitations']
 
 
@@ -347,8 +385,9 @@ if __name__ == '__main__':
     parser.add_argument('board')
     parser.add_argument('--contract', required=True)
     parser.add_argument('--out', required=True)
+    parser.add_argument('--generation')
     args = parser.parse_args()
-    write_json(args.out, measure(args.board, read_json(args.contract)))
+    write_json(args.out, measure(args.board, read_json(args.contract), generation=read_json(args.generation) if args.generation else None))
 else:
     from .check_registry import register
     register('decoupling_loops', describe, check)

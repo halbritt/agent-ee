@@ -212,6 +212,9 @@ def run(plan_path, out, *, resume=False, through='package'):
                 if stage == 'package' and plan['schema'] == TYPED_SCHEMA:
                     qualification.verify_judgment_source(source, plan, directory)
                 retained_run.record_completion(out, report, attempt, candidate)
+                if stage == 'placement-routing' and 'local_decoupling' in plan.get('placement', {}):
+                    job = read_json(directory / 'placement/job-report.json')
+                    report['warnings'] = job.get('final', {}).get('decoupling_loops', {}).get('warnings', [])
                 report['attempts'][-1]['status'] = 'completed'
                 previous = candidate
                 retained_run.write_report(out, report)

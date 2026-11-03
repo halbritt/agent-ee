@@ -1600,5 +1600,18 @@ class DocsTests(unittest.TestCase):
         self.assertIn('internal `ValueError`, `OSError`, `KeyError` or `TypeError`', text)
 
 
+class LocalCopperFeedbackTests(unittest.TestCase):
+    def test_fallback_and_bank_warnings_precede_verbose_author_feedback(self):
+        warnings=[dict(relation='decoupling-1',bank='bank-1',kind='generation_fallback',
+                       reason='bounded local search refused',search_refusal='bounded local search refused')]
+        findings=[dict(status='completed',final=dict(decoupling_loops=dict(warnings=warnings))) ]
+        text=loop.phase_feedback('package','another check refused',dict(placement_findings=findings))
+        self.assertIn('Local copper warnings:',text)
+        self.assertIn('decoupling-1',text);self.assertIn('bank-1',text)
+        self.assertIn('bounded local search refused',text)
+        self.assertLess(text.index('Local copper warnings:'),text.index('Placement summary'))
+        self.assertEqual(loop.placement_summary(findings)[0]['local_copper_warnings'],warnings)
+
+
 if __name__ == '__main__':
     unittest.main()

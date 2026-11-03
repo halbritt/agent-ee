@@ -312,6 +312,9 @@ def execute(attempt, plan, previous, *, diagnostic=False):
         if digest(native) != report['final']['board_sha256']:
             raise ValueError('routed native board changed before adoption')
         shutil.copyfile(native, candidate / scope['board'])
+        if report.get('route', {}).get('local_decoupling') is not None:
+            from .local_decoupling import GENERATION_FILE
+            write_json((candidate / scope['board']).parent / GENERATION_FILE, report['route']['local_decoupling'])
     elif stage == 'artwork':
         _artwork(candidate, directory, scope['board'])
         from . import block_package

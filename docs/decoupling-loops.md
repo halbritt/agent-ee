@@ -35,7 +35,7 @@ Optional other-pad ties give remaining
 surface pads on plane nets their own short track and via where one fits.
 The compiler leaves `tie_other_pads` false: the example controls completed with
 and without them, and the additional ties increased routing time. Required
-capacitor plane entries remain enabled. Explicit local contracts can select
+capacitor plane entries remain enabled whenever generation succeeds. Explicit local contracts can select
 the optional policy for a separately measured workload.
 
 The local search uses effective native net-class routing sizes and clearance,
@@ -51,15 +51,35 @@ inside a declared shared pad. Vias may never touch another generated leg. A sepa
 shape check rejects violations even when native DRC permits same-net contact. A wide class may neck into a small land down to the unchanged
 board minimum. Paths are bounded to 12 mm; via escapes to 2 mm. These are finite
 search budgets, not electrical acceptance limits. Native DRC grades generated
-copper before routing. New errors reject that candidate, retaining the reason
-and seed evidence; the placement portfolio continues. Exhaustion fails the job
-with a relation-named reason. Required local copper is never silently omitted.
+copper before routing. If search refuses, exhausts its bounded time share, or
+native DRC rejects the generated copper, the entire candidate falls back to its
+pre-generation board, including the produced planes. Rejected copper and its
+reports are retained; every relation records its bank and refusal reason.
+The router then makes the connections normally. A fallback alone never rejects
+a candidate. This atomic policy avoids leaving shared device-leg segments or
+bank plane entries after rolling back only one relation; successful relations
+are not kept in a partially generated candidate.
+
+Generation uses at most one quarter of a candidate's remaining time share,
+reserving routing time within the unchanged overall budget. Candidates with
+all relations generated are tried before candidates with none, preserving the
+existing placement order within each group. A fallback candidate is deferred,
+then routed if no earlier full-generation candidate completes. No path, width,
+clearance, placement, routing or declared length limit is relaxed.
+
+The adopted candidate carries local-decoupling-generation.json beside its board.
+The typed check binds this receipt to the contract and verifies every protected
+item. Missing generation, independent capacitor plane access and bank bypasses
+are explicit per-relation warnings, including the bank and search refusal when
+one exists. These warnings appear in the build report and author feedback.
+Open declared legs, unknown measurements, changed generated copper and exceeded
+declared loop limits remain blocking. Fallback is never silent.
 Custom rules, board edges and rule areas remain subject to native DRC.
 
 Generated tracks and vias are locked. The router receives `--protect locked`
 for a track-free source seeded by this operation. Final validation checks each
 generated item's UUID, geometry, net and lock state after native refill/save,
-and repeats the via/pad and declared-track contact checks. Identical locked
+and repeats the via/pad and declared-track contact checks whenever copper was generated. Identical locked
 segments shared by relations in one bank are reused, with one UUID in the
 protected inventory. Reuse is explicitly restricted to that bank; identical
 segments from different banks remain distinct and reach the cross-group guard.

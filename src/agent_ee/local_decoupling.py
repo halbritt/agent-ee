@@ -597,6 +597,19 @@ def seed(board_path, document, *, clock, cancel_dir=None):
     return receipt
 
 
+GENERATION_FILE = 'local-decoupling-generation.json'
+
+
+def fallback_receipt(board_path, document, reason):
+    """An atomic fallback owns no copper; every relation keeps its refusal."""
+    relation_banks = {rid: bank['id'] for bank in banks(document) for rid in bank['relations']}
+    return dict(schema='agent-ee.local-decoupling-seed/1', source_sha256=digest(board_path),
+                board_sha256=digest(board_path), contract=document, relations=[], protected=[], other_pads=[],
+                banks=banks(document), generation_order=dict(selected='router-fallback', attempts=[]),
+                fallbacks=[dict(relation=r['id'], bank=relation_banks[r['id']], reason=reason)
+                           for r in document['relations']])
+
+
 def verify(board_path, receipt):
     import pcbnew as k
     from .placement_job import JobRefusal

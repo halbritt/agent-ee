@@ -79,7 +79,7 @@ class FinalInventoryTests(Fixture):
              patch.object(local,'verify',return_value=dict(status='pass')), \
              patch('agent_ee.decoupling_loops.measure',return_value=dict(outcome='info')), \
              patch.object(job,'_group_views',return_value=dict(status='rendered')):
-            result=job.final_checks(dict(status='routed',board=str(path),local_decoupling=dict(contract={})),placed,
+            result=job.final_checks(dict(status='routed',board=str(path),local_decoupling=dict(contract={},protected=[dict(uuid=uid)])),placed,
                 job._owners(native),set(),self.dir/'final-pruned',job.normalize_intent(intent(),groups()))
         self.assertEqual(result['opens'],0,result)
         self.assertEqual(result['drc']['label'],'native-drc-after-stub-prune')
@@ -205,10 +205,10 @@ class ControllerBoundaryTests(Fixture):
     def test_native_rejection_tries_next_legal_placement_and_retains_both_results(self):
         self._portfolio_failure()
 
-    def test_local_copper_failure_tries_the_next_eligible_candidate(self):
+    def test_full_generation_is_tried_before_deferred_fallback(self):
         self._portfolio_failure(local_failure=True)
 
-    def test_every_local_copper_failure_retains_the_relation_named_reason(self):
+    def test_all_generation_refusals_still_route_the_first_fallback(self):
         self._portfolio_failure(local_failure=True, all_fail=True)
 
     def test_later_verification_failure_clears_the_previous_local_copper_reason(self):
@@ -230,10 +230,12 @@ class ControllerBoundaryTests(Fixture):
                     'integrity': 'preserved', 'problems': []}
         def routed(directory, *_args, **_kwargs):
             selected.append(str(directory))
-            result = {'status': 'routed', 'board': str(self.board), 'preflight': {
+            result = {'status': 'routed', 'board': str(self.board), 'generated_relation_count':1, 'preflight': {
                 k: None for k in ('commit', 'pin', 'executable_sha256', 'adapter_sha256', 'problems')}}
             if local_failure and (all_fail or len(selected) == 1):
-                result.update(status='local_copper_failed', reason='local decoupling cell: no clear local path')
+                result['generated_relation_count'] = 0
+                if not _kwargs.get('local_fallback_reason') and _kwargs.get('defer_local_fallback'):
+                    result.update(status='local_copper_deferred', reason='local decoupling cell: no clear local path')
             return result
         failed = {'integrity': 'preserved', 'edge_intent': {'status': 'pass'},
                   'eligibility': 'ineligible', 'physical_checks': 'FAILED'}
@@ -249,29 +251,30 @@ class ControllerBoundaryTests(Fixture):
                 {'status': 'pass'}, {'status': 'failed'}, {'status': 'pass'}]))
             stack.enter_context(patch.object(job, 'drc', return_value=({'violations': [], 'unconnected_items': []}, {})))
             stack.enter_context(patch.object(job, 'route', side_effect=routed))
-            stack.enter_context(patch.object(job, 'final_checks', side_effect=[failed if final_fail else passed] if local_failure else [failed, passed]))
+            stack.enter_context(patch.object(job, 'final_checks', side_effect=([failed,failed] if final_fail else [passed]) if local_failure else [failed, passed]))
             report = job.run_job(config, out)
-        self.assertEqual(report['status'], 'local_copper_failed' if all_fail else 'verification_failed' if final_fail else 'completed')
-        self.assertEqual([Path(p).name for p in selected], ['a1-00-seed0', 'a1-02-seed2'])
-        self.assertEqual([t['status'] for t in report['routing_trials']],
-                         ['local_copper_failed' if local_failure else 'verification_failed',
-                          'local_copper_failed' if all_fail else 'verification_failed' if final_fail else 'completed'])
-        if all_fail:
-            self.assertIn('local decoupling cell:', report['reason'])
-            self.assertFalse((out / 'routed-incumbent.json').exists())
-        elif final_fail:
-            self.assertNotIn('reason', report)
-            self.assertFalse((out / 'routed-incumbent.json').exists())
+        self.assertEqual(report['status'], 'verification_failed' if final_fail else 'completed')
+        if local_failure and all_fail:
+            self.assertEqual([t['status'] for t in report['routing_trials']],
+                             ['local_copper_deferred','local_copper_deferred','completed'])
+            self.assertEqual(report['route_selection']['seed'],0)
+            self.assertIn('local_fallback_reason',json.loads((out/'routed-incumbent.json').read_text())['placement'])
+        elif local_failure and final_fail:
+            self.assertEqual([t['status'] for t in report['routing_trials']],
+                             ['local_copper_deferred','verification_failed','verification_failed'])
         else:
-            self.assertNotIn('reason', report)
-            self.assertEqual(report['route_selection']['seed'], 2)
-            self.assertEqual(json.loads((out / 'routed-incumbent.json').read_text())['placement']['seed'], 2)
-        self.assertEqual(report['routed_candidate'], 'shortlist_alternative')
-        self.assertEqual(json.loads((out / 'incumbent.json').read_text())['seed'], 0)
-        state = json.loads((out / 'checkpoint.json').read_text())
-        self.assertEqual(len(state['routing_trials']), 2)
+            self.assertEqual([t['status'] for t in report['routing_trials']],
+                             ['local_copper_deferred' if local_failure else 'verification_failed',
+                              'verification_failed' if final_fail else 'completed'])
+            if not final_fail:
+                self.assertEqual(report['route_selection']['seed'],2)
+                if local_failure:self.assertEqual([t['generated_relation_count'] for t in report['routing_trials']],[0,1])
+        self.assertNotIn('reason',report)
+        if final_fail:self.assertFalse((out/'routed-incumbent.json').exists())
+        else:self.assertTrue((out/'routed-incumbent.json').exists())
+        state=json.loads((out/'checkpoint.json').read_text())
         for trial in state['routing_trials']:
-            self.assertEqual(job.digest(trial['path']), trial['sha256'])
+            self.assertEqual(job.digest(trial['path']),trial['sha256'])
 
     def test_cancel_and_deadline_between_judge_route_and_final_preserve_incumbent(self):
         problem, _ = self.problem()

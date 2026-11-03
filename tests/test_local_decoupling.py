@@ -235,6 +235,7 @@ class LocalCopperTests(unittest.TestCase):
                 incumbent, job._owners(native), set(), self.root / 'changed-final', normalized)
         self.assertEqual(final['eligibility'], 'INELIGIBLE', final)
         self.assertTrue(any('protected copper missing/changed' in p for p in final['identity_problems']), final)
+        self.assertNotEqual(final.get('local_decoupling',{}).get('status'),'pass',final)
 
     def test_removed_locked_item_is_rejected(self):
         receipt = self.seed()
@@ -244,33 +245,59 @@ class LocalCopperTests(unittest.TestCase):
         self.assertRaisesRegex(JobRefusal, 'protected copper missing', local.verify, self.path, receipt)
 
     def test_missing_capacitor_plane_tie_fails_even_when_both_surface_legs_remain(self):
-        self.seed()
+        receipt = self.seed()
         board = self.k.LoadBoard(str(self.path))
         for item in list(board.GetTracks()):
             if item.GetClass() == 'PCB_VIA':
                 board.Remove(item)
         self.k.SaveBoard(str(self.path), board)
         self.filled()
-        result = measure(self.path, contract())
-        self.assertEqual(result['outcome'], 'defect', result)
-        self.assertIn('return: capacitor has no native plane connection without the device pin',
-                      result['records'][0]['reasons'])
+        self.assertRaisesRegex(JobRefusal,'protected copper missing',measure,self.path,contract(),generation=receipt)
 
-    def test_failed_local_copper_returns_an_ineligible_candidate_reason_before_routing(self):
+    def test_generation_receipt_is_bound_to_the_captured_contract(self):
+        receipt=self.seed();self.filled()
+        receipt['contract']=contract(123)
+        self.assertRaisesRegex(ValueError,'generation receipt differs',measure,self.path,contract(),generation=receipt)
+
+    def test_local_search_refusal_routes_native_connections_and_warns(self):
         from unittest.mock import patch
         from agent_ee import placement_job as job
-        self.save()
-        doc = contract()
-        doc['relations'][0]['supply'][0]['reference'] = 'missing'
-        fake = dict(violations=[], unconnected_items=[])
-        with patch('agent_ee.routing_adapter.preflight', return_value={'problems': []}), \
-                patch.object(job, 'drc', return_value=(fake, {})), \
-                patch.object(job, '_route_attempt') as router:
-            result = job.route(self.root, self.root / 'routing', self.root / 'unused-router',
-                               budget_s=30, timeout_s=60, home=self.root / 'router-home', local_decoupling=doc)
-        self.assertEqual(result['status'], 'local_copper_failed')
-        self.assertIn('local decoupling cell: missing/ambiguous pad missing.1', result['reason'])
-        router.assert_not_called()
+        from agent_ee.storage import digest
+        def routed(directory,*,argv,**kwargs):
+            staged=Path(argv[argv.index('--dir')+1])/'board.kicad_pcb'
+            board=self.k.LoadBoard(str(staged))
+            for net,y in [('/rail',29_000_000),('/return',31_000_000)]:
+                items=local._track(board,[(30_000_000,y),(33_000_000,y)],board.FindNet(net).GetNetCode(),self.k.F_Cu,400_000)
+                for item in items:item.SetLocked(False)
+            via=self.k.PCB_VIA(board);via.SetPosition(self.k.VECTOR2I(30_000_000,31_000_000));via.SetWidth(600_000);via.SetDrill(300_000)
+            via.SetLayerPair(self.k.F_Cu,self.k.B_Cu);via.SetNetCode(board.FindNet('/return').GetNetCode());board.Add(via)
+            self.k.ZONE_FILLER(board).Fill(board.Zones());self.k.SaveBoard(str(staged),board)
+            return dict(status='routed',board=str(staged),board_sha256=digest(staged),router_accepted=True)
+        with patch('agent_ee.routing_adapter.preflight',return_value={'problems':[]}),              patch.object(job,'drc',return_value=({'violations':[],'unconnected_items':[]},{})),              patch.object(local,'seed',side_effect=JobRefusal('forced bounded search refusal')),              patch.object(job,'_route_attempt',side_effect=routed):
+            result=job.route(self.root,self.root/'routing','unused',budget_s=30,timeout_s=60,
+                             home=self.root/'router-home',local_decoupling=contract())
+        self.assertEqual(result['status'],'routed');self.assertEqual(result['generated_relation_count'],0)
+        receipt=result['local_decoupling'];self.assertEqual(receipt['protected'],[])
+        self.assertEqual(receipt['fallbacks'][0],dict(relation='cell',bank='bank-1',reason='forced bounded search refusal'))
+        measured=measure(result['board'],contract(),generation=receipt)
+        self.assertEqual(measured['outcome'],'info',measured)
+        warnings={w['kind']:w for w in measured['warnings']}
+        self.assertIn('generation_fallback',warnings);self.assertIn('bank_bypass',warnings)
+        self.assertEqual(warnings['bank_bypass']['search_refusal'],'forced bounded search refusal')
+        self.assertTrue(all(measured['records'][0][side]['path'] for side in ('supply','return')))
+        self.path=Path(result['board'])
+        checked=self.checked(contract(),generation=receipt)
+        self.assertEqual(checked['outcome'],'pass',checked)
+        self.assertIn('cell/bank-1',checked['summary'])
+        self.assertIn('forced bounded search refusal',checked['summary'])
+        # A fallback is not permission for an open declared leg.
+        board=self.k.LoadBoard(str(self.path))
+        board.Remove(next(t for t in board.GetTracks() if t.GetNetname()=='/rail'))
+        self.k.SaveBoard(str(self.path),board)
+        opened=self.checked(contract(),generation=receipt)
+        self.assertEqual(opened['outcome'],'defect',opened)
+        self.assertIn('no native-connected copper path',str(opened['details']))
+
 
     def test_other_plane_pads_get_their_own_optional_ties(self):
         doc = contract()
@@ -503,7 +530,7 @@ class LocalCopperTests(unittest.TestCase):
         native = self.k.LoadBoard(str(self.path))
         self.assertTrue(all(t.GetLayer() == self.k.B_Cu for t in native.GetTracks()))
 
-    def checked(self, doc, *, wrong_hash=False):
+    def checked(self, doc, *, wrong_hash=False, generation=None):
         """Run the registered handler and its native CLI, with only mount paths adapted for the image test."""
         import json
         import shutil
@@ -518,9 +545,17 @@ class LocalCopperTests(unittest.TestCase):
         inputs.mkdir(parents=True)
         shutil.copyfile(self.path, inputs / 'board.kicad_pcb')
         write_json(inputs / 'local.json', doc)
+        if self.path.with_suffix('.kicad_pro').exists():
+            shutil.copyfile(self.path.with_suffix('.kicad_pro'), inputs / 'board.kicad_pro')
+        if generation is not None:
+            write_json(inputs / local.GENERATION_FILE, generation)
         manifest = dict(candidate_id='native-fixture', scope=dict(board='board.kicad_pcb'),
                         files={'board.kicad_pcb': '0' * 64 if wrong_hash else digest(inputs / 'board.kicad_pcb')})
-        ctx = Ctx(run, manifest, dict(id='loops', kind='decoupling_loops', params=dict(contract='local.json')),
+        if generation is not None:
+            manifest['files'][local.GENERATION_FILE] = digest(inputs / local.GENERATION_FILE)
+        params = dict(contract='local.json')
+        if generation is not None:params['generation'] = local.GENERATION_FILE
+        ctx = Ctx(run, manifest, dict(id='loops', kind='decoupling_loops', params=params),
                   time.monotonic() + 120)
         def execute(context, argv, timeout, **kwargs):
             argv = [arg.replace('/candidate/', str(inputs) + '/').replace('/work/', str(context.work) + '/') for arg in argv]
@@ -596,13 +631,14 @@ class LocalCopperTests(unittest.TestCase):
             uid = next(t.m_Uuid.AsString() for t in native.GetTracks() if t.GetClass() == 'PCB_VIA' and t.GetPosition().x < 36_000_000)
             return dict(violations=[dict(type='clearance', severity='error', items=[dict(uuid=uid)])], unconnected_items=[]), {}
         with patch('agent_ee.routing_adapter.preflight', return_value={'problems': []}), \
-                patch.object(job, 'drc', side_effect=seeded_drc), patch.object(job, '_route_attempt') as router:
+                patch.object(job, 'drc', side_effect=seeded_drc), patch.object(job, '_route_attempt',return_value=dict(status='routed')) as router:
             result = job.route(self.root, self.root / 'routing', self.root / 'unused-router',
                                budget_s=30, timeout_s=60, home=self.root / 'router-home', local_decoupling=doc)
-        self.assertEqual(result['status'], 'local_copper_failed', result)
-        self.assertIn('cell: native DRC rejects', result['reason'])
-        self.assertNotIn('innocent', result['reason'])
-        router.assert_not_called()
+        self.assertEqual(result['status'], 'routed', result)
+        self.assertIn('cell: native DRC rejects', result['local_decoupling']['fallbacks'][0]['reason'])
+        self.assertNotIn('innocent', result['local_decoupling']['fallbacks'][0]['reason'])
+        router.assert_called_once()
+        self.assertEqual(result['local_decoupling']['protected'],[])
 
 
 class ReviewRegressionTests(unittest.TestCase):
@@ -847,25 +883,6 @@ class ReviewRegressionTests(unittest.TestCase):
         self.board.GetDesignSettings().m_MinClearance=100_000
         self.assertEqual(local._separation_floor(self.board),100_000)
 
-    def test_job_refuses_an_unknown_floor_before_placement_search(self):
-        import json
-        from unittest.mock import patch
-        from agent_ee import placement_job as job
-        self.board.GetDesignSettings().m_MinClearance=0;self.save()
-        self.path.with_suffix('.kicad_pro').write_text('{}')
-        doc=contract();doc['planes']=[]
-        intent=dict(fixed_poses=[],edge_connectors=[])
-        groups=dict(groups=[dict(name='cell',anchor='IC',refs=['IC','BYP','OTHER'])])
-        inputs=dict(board=(self.path,self.path.read_bytes()),project=(self.path.with_suffix('.kicad_pro'),b'{}'),
-                    intent=(self.path,json.dumps(intent).encode()),groups=(self.path,json.dumps(groups).encode()),
-                    local_decoupling=(self.path,json.dumps(doc).encode()))
-        config=dict(budget_s=60,inputs={key:{} for key in inputs},search=dict(shortlist=1),router=dict(checkout='unused'))
-        with patch.object(job,'verified_input',side_effect=lambda entry,label:inputs[label]), \
-             patch.object(job,'capture') as capture,patch.object(job,'solve') as solve:
-            report=job.run_job(config,self.root/'unknown-floor-job')
-        self.assertEqual(report['status'],'refused',report)
-        self.assertIn('nonzero authored minimum',report['reason'])
-        capture.assert_not_called();solve.assert_not_called()
 
     def test_tie_path_rejects_a_subfloor_near_miss_to_another_leg(self):
         net=self.board.FindNet('/return').GetNetCode()
@@ -1380,9 +1397,11 @@ class ReviewRegressionTests(unittest.TestCase):
         local._track(board, [local.position(firstcap), local.position(otherdev)], firstcap.GetNetCode(), self.k.F_Cu, 400_000)
         self.device_via(board, doc['relations'][1]['return'][0])
         self.k.SaveBoard(str(self.path), board);self.filled()
-        row = measure(self.path, doc)['records'][0]
+        result = measure(self.path, doc)
+        row = result['records'][0]
         self.assertIsNone(row['return']['capacitor_to_plane_mm'])
-        self.assertIn('return: capacitor has no native plane connection without the device pin', row['reasons'])
+        self.assertTrue(any(w['kind']=='capacitor_plane_access' and w['relation']==row['id']
+                            for w in result['warnings']))
 
     def test_redundant_router_stub_cleanup_keeps_native_connectivity_and_generated_items(self):
         from agent_ee import placement_job as job

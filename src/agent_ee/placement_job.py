@@ -1431,7 +1431,8 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
-          bus=None, length_match=None, ac_match=None, layout=None, local_decoupling=None):
+          bus=None, length_match=None, ac_match=None, layout=None, local_decoupling=None,
+          defer_local_fallback=False, local_fallback_reason=None):
     """Pinned kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1472,12 +1473,17 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     local_record = None
     if local_decoupling is not None:
         from . import local_decoupling as local
-        seed_clock = Clock(min(route_clock.remaining(), clock.remaining()))
+        seed_clock = Clock(min(route_clock.remaining() / 4, clock.remaining()))
         local_dir = route_dir / 'local-decoupling'
         local_dir.mkdir()
         (local_dir / 'before').mkdir()
         (local_dir / 'after').mkdir()
+        # Keep the complete pre-generation project, including produced planes.
+        originals = {path.name: path.read_bytes() for path in staged.iterdir() if path.is_file()}
+        refusal = local_fallback_reason
         try:
+            if refusal is not None:
+                raise JobRefusal(refusal)
             baseline, _ = drc(staged / 'board.kicad_pcb', local_dir / 'before',
                               clock=seed_clock, cancel_dir=cancel_dir)
             local_record = local.seed(staged / 'board.kicad_pcb', local_decoupling,
@@ -1493,17 +1499,32 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
                 raise JobRefusal('local decoupling ' + names + ': native DRC rejects generated copper: ' +
                                  ', '.join(v['type'] for v in errors))
         except JobRefusal as exc:
-            write_json(local_dir / 'failure.json', {'reason': str(exc)})
-            return {'status': 'local_copper_failed', 'preflight': check, 'reason': str(exc),
-                    'elapsed_s': time.monotonic() - started}
+            refusal = str(exc)
         except JobStopped as exc:
             if exc.status != 'deadline' or clock.remaining() <= 0:
                 raise
-            names = ', '.join(row['id'] for row in local_decoupling['relations']) or 'plane ties'
-            reason = 'local decoupling ' + names + ': candidate time share exhausted'
-            write_json(local_dir / 'failure.json', {'reason': reason})
-            return {'status': 'local_copper_failed', 'preflight': check, 'reason': reason,
-                    'elapsed_s': time.monotonic() - started}
+            refusal = 'bounded generation time share exhausted'
+        if refusal is not None:
+            write_json(local_dir / 'failure.json', {'reason': refusal})
+            rejected = local_dir / 'rejected'
+            rejected.mkdir()
+            for path in staged.iterdir():
+                if path.is_file():
+                    shutil.copyfile(path, rejected / path.name)
+            if (local_dir / 'seed.json').exists():
+                shutil.copyfile(local_dir / 'seed.json', rejected / 'seed.json')
+            # Roll back even if generation saved copper before its DRC failed.
+            for path in staged.iterdir():
+                if path.is_file() and path.name not in originals:
+                    path.unlink()
+            for name, raw in originals.items():
+                (staged / name).write_bytes(raw)
+            local_record = local.fallback_receipt(staged / 'board.kicad_pcb', local_decoupling, refusal)
+            write_json(local_dir / 'seed.json', local_record)
+            if defer_local_fallback and local_fallback_reason is None:
+                return dict(status='local_copper_deferred', preflight=check, reason=refusal,
+                            local_decoupling=local_record, generated_relation_count=0,
+                            elapsed_s=time.monotonic() - started)
     _check_stop(clock, cancel_dir)
     # The CLI accepts integral seconds. Refuse sub-second remainder rather than
     # inventing a minimum extension; the outer clock also bounds all descendants.
@@ -1554,12 +1575,13 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
                 attempts[-1]['status'] = 'deadline'
             break
     record.update(attempts=attempts, elapsed_s=time.monotonic() - started, preflight=check,
-                  copper_policy=('locked_local_copper_from_track_free_input' if owned_copper and local_record is not None
+                  copper_policy=('locked_local_copper_from_track_free_input' if owned_copper and local_record is not None and local_record['protected']
                                  else 'generated_from_track_free_input' if owned_copper else 'preserve_existing'))
     if plane_record is not None:
         record['planes'] = plane_record
     if local_record is not None:
         record['local_decoupling'] = local_record
+        record['generated_relation_count'] = len(local_record['relations'])
     return record
 
 
@@ -1725,8 +1747,6 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             except ValueError as exc:
                 raise JobRefusal('invalid local decoupling contract: ' + str(exc)) from exc
             import pcbnew
-            from .local_decoupling import _separation_floor
-            _separation_floor(pcbnew.LoadBoard(str(board_path)))
             if local_contract['planes'] and (plane_bytes is None or any(
                     not any(z['net'] == p['net'] and z['layer'] == p['layer'] for z in plane_plan['zones'])
                     for p in local_contract['planes'])):
@@ -2011,12 +2031,17 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
                            grid_step_mm=grid_step,
                            intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers, pair_impedance=impedance,
-                           bus=bus, length_match=length_match, ac_match=ac_match, local_decoupling=local_contract)
+                           bus=bus, length_match=length_match, ac_match=ac_match, local_decoupling=local_contract,
+                           defer_local_fallback=len(queue) > 1,
+                           local_fallback_reason=selected.get('local_fallback_reason'))
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
+            trial['generated_relation_count'] = routed.get('generated_relation_count', 0)
             report['router_identity'] = {k: routed['preflight'][k] for k in ('commit', 'pin', 'executable_sha256',
                                                                            'adapter_sha256', 'problems')}
-            if routed['status'] == 'local_copper_failed':
-                status = 'local_copper_failed'
+            if routed['status'] == 'local_copper_deferred':
+                # All full-generation candidates run before zero-generation fallbacks.
+                queue.append({**selected, 'local_fallback_reason': routed['reason']})
+                status = 'local_copper_deferred'
                 trial.update(status=status, reason=routed['reason'], route=report['route'])
                 report['reason'] = routed['reason']
                 retain_routing_trial(trial, suffix)
@@ -2339,7 +2364,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     report_, exec_ = drc(board, final_dir, refill=True, label='native-drc', clock=clock, cancel_dir=cancel_dir)
     drc_report_path = final_dir / 'native-drc.json'
     local_stub_cleanup = None
-    if routed.get('local_decoupling') is not None:
+    if (routed.get('local_decoupling') or {}).get('protected'):
         local_stub_cleanup = _cleanup_local_router_stubs(board, report_, routed['local_decoupling'],
             final_dir / 'local-stub-cleanup', owned_zone_uuids=owned_zone_uuids, clock=clock, cancel_dir=cancel_dir)
         if local_stub_cleanup.get('status') == 'accepted':
@@ -2430,10 +2455,17 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
         from .local_decoupling import verify as verify_local
         from .decoupling_loops import measure as measure_loops
         try:
-            general_local_check = verify_local(board, routed['local_decoupling'])
+            general_local_check = (verify_local(board, routed['local_decoupling'])
+                                   if routed['local_decoupling']['protected'] else dict(status='not_generated'))
         except JobRefusal as exc:
+            general_local_check = dict(status='fail', reason=str(exc))
             problems.append(str(exc))
-        general_loops = measure_loops(board, routed['local_decoupling']['contract'])
+        try:
+            general_loops = measure_loops(board, routed['local_decoupling']['contract'],
+                                          generation=routed['local_decoupling'])
+        except (JobRefusal, ValueError) as exc:
+            general_loops = dict(outcome='unknown', reasons=[str(exc)], warnings=[])
+            problems.append(str(exc))
         write_json(final_dir / 'decoupling-loops.json', general_loops)
     if block_result['status'] != 'not_declared' and block_result['board_sha256'] != final_board_sha256:
         problems.append('final board changed after block contract check')

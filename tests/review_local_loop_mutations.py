@@ -138,11 +138,11 @@ MUTANTS = {'baseline': ([],
                                       '')],
                                     ['test_local_decoupling']),
  'C11_cap_plane_access_ignored': ([('src/agent_ee/decoupling_loops.py',
-                                    '                        if access is None:\n'
-                                    "                            row['reasons'].append(leg + ': capacitor "
-                                    "has no native plane connection without the device pin')\n",
-                                    '')],
-                                  ['test_local_decoupling']),
+   '                        if access is None:\n'
+   "                            warn(relation['id'], bank['id'], 'capacitor_plane_access',\n"
+   "                                 leg + ': capacitor has no independent plane connection')\n",
+   '')],
+ ['test_local_decoupling.ReviewRegressionTests.test_capacitor_plane_access_blocks_every_bank_device_pin']),
  'C12_unfilled_zone_skipped': ([('src/agent_ee/decoupling_loops.py',
                                  "                    raise ValueError('declared net has an unfilled "
                                  "zone')\n",
@@ -180,20 +180,15 @@ MUTANTS = {'baseline': ([],
                                    ['test_local_decoupling',
                                     'test_placement_job_guards.ControllerBoundaryTests']),
  'F4_final_protected_copper_unverified': ([('src/agent_ee/placement_job.py',
-                                            '            general_local_check = verify_local(board, '
-                                            "routed['local_decoupling'])\n",
-                                            "            general_local_check = {'status': 'pass'}\n")],
-                                          ['test_local_decoupling',
-                                           'test_placement_job_guards.ControllerBoundaryTests']),
+   "            general_local_check = (verify_local(board, routed['local_decoupling'])\n"
+   "                                   if routed['local_decoupling']['protected'] else "
+   "dict(status='not_generated'))\n",
+   "            general_local_check = {'status': 'pass'}\n")],
+ ['test_local_decoupling.LocalCopperTests.test_final_candidate_validation_rejects_a_preserved_loop_over_its_limit']),
  'F5_seed_refusal_escapes_candidate': ([('src/agent_ee/placement_job.py',
-                                         '        except JobRefusal as exc:\n'
-                                         "            write_json(local_dir / 'failure.json', {'reason': "
-                                         'str(exc)})\n',
-                                         '        except ZeroDivisionError as exc:\n'
-                                         "            write_json(local_dir / 'failure.json', {'reason': "
-                                         'str(exc)})\n')],
-                                       ['test_local_decoupling',
-                                        'test_placement_job_guards.ControllerBoundaryTests']),
+   '        except JobRefusal as exc:\n            refusal = str(exc)\n',
+   '        except ZeroDivisionError as exc:\n            refusal = str(exc)\n')],
+ ['test_local_decoupling.LocalCopperTests.test_local_search_refusal_routes_native_connections_and_warns']),
  'F6_route_unlocked_policy': ([('src/agent_ee/placement_job.py',
                                 '    owned_copper = planes is not None and not '
                                 "list(pcbnew.LoadBoard(str(staged / 'board.kicad_pcb')).GetTracks())\n",
@@ -539,10 +534,6 @@ MUTANTS.update({'R3_M3c_same_net_margin_zero': ([('src/agent_ee/local_decoupling
                                       '    if value <= 0:\n        raise JobRefusal(',
                                       '    if value <= 0:\n        return 1\n        raise JobRefusal(')],
                                     ['test_local_decoupling']),
- 'R5_F2_no_job_preflight_floor': ([('src/agent_ee/placement_job.py',
-                                    '            _separation_floor(pcbnew.LoadBoard(str(board_path)))\n',
-                                    '')],
-                                  ['test_local_decoupling', 'test_placement_job_guards']),
  'R5_P1_pad_floor_contact_only': ([('src/agent_ee/local_decoupling.py',
                                     "                gap = max(clearance, _rules(board, terminal)['clearance']) "
                                     'if via else required_gap\n',
@@ -624,6 +615,34 @@ MUTANTS.update({'R6_M1_margin_two_floors': ([('src/agent_ee/local_decoupling.py'
                                     '    if margin:\n'
                                     '        return None\n')],
                                   ['test_local_decoupling.ReviewRegressionTests.test_junction_opening_keeps_the_floor_beyond_one_floor_of_the_pad'])})
+
+# The old early-floor hard-refusal model is retired: generation is now optional.
+RETIRED_MODELS = {'R5_F2_no_job_preflight_floor': 'superseded by best-effort generation; strict producer floor guards remain tested'}
+MUTANTS.update({'FALLBACK_search_restores_hard_failure': ([('src/agent_ee/placement_job.py',
+                                             '        except JobRefusal as exc:\n'
+                                             '            refusal = str(exc)\n',
+                                             '        except JobRefusal as exc:\n'
+                                             "            return dict(status='local_copper_failed', "
+                                             'reason=str(exc), preflight=check)\n')],
+                                           ['test_local_decoupling.LocalCopperTests.test_local_search_refusal_routes_native_connections_and_warns']),
+ 'FALLBACK_generation_preference_disabled': ([('src/agent_ee/placement_job.py',
+                                               'defer_local_fallback=len(queue) > 1,',
+                                               'defer_local_fallback=False,')],
+                                             ['test_placement_job_guards.ControllerBoundaryTests.test_full_generation_is_tried_before_deferred_fallback']),
+ 'FALLBACK_generation_warning_omitted': ([('src/agent_ee/decoupling_loops.py',
+                                           "            warn(relation['id'], bank['id'], "
+                                           "'generation_fallback', reason)\n",
+                                           '')],
+                                         ['test_local_decoupling.LocalCopperTests.test_local_search_refusal_routes_native_connections_and_warns']),
+ 'FALLBACK_bank_bypass_warning_omitted': ([('src/agent_ee/decoupling_loops.py',
+                                            "            if bank.get(leg, {}).get('pin_bypasses_bank'):\n",
+                                            '            if False:\n')],
+                                          ['test_local_decoupling.LocalCopperTests.test_local_search_refusal_routes_native_connections_and_warns']),
+ 'FALLBACK_generation_contract_unbound': ([('src/agent_ee/decoupling_loops.py',
+                                            "        if digest_document(generation['contract']) != "
+                                            'digest_document(document):\n',
+                                            '        if False:\n')],
+                                          ['test_local_decoupling.LocalCopperTests.test_generation_receipt_is_bound_to_the_captured_contract'])})
 
 def run(name):
     edits, tests = MUTANTS[name]

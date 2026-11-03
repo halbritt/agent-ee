@@ -515,7 +515,7 @@ def placement_findings(root):
             engine_feasible=job.get('engine_feasible'), validity=job.get('validity'),
             routed_candidate=job.get('routed_candidate'), best_diagnostic=job.get('best_diagnostic'),
             final={k: job.get('final', {}).get(k) for k in
-                   ('opens', 'errors', 'warnings', 'integrity', 'edge_intent', 'locality')},
+                   ('opens', 'errors', 'warnings', 'integrity', 'edge_intent', 'locality', 'decoupling_loops')},
             shortlist=[{k: row[k] for k in ('seed', 'error', 'engine_violations', 'errors',
                 'locality', 'edge_intent', 'integrity_problems') if k in row}
                 for row in job.get('shortlist', [])[:8]],
@@ -571,6 +571,7 @@ def placement_summary(findings):
             validity=job.get('validity'), engine_violations=list(merged.values()),
             native_errors={k: v for k, v in errors.items() if v}, opens=final.get('opens'),
             integrity=final.get('integrity'),
+            local_copper_warnings=(final.get('decoupling_loops') or {}).get('warnings', []),
             edge_intent=dict(status=edge.get('status'), violations=edge.get('violations') or []),
             locality=dict(status=locality.get('status'),
                           defects=[_locality_leg(d) for d in locality.get('defects') or [] if isinstance(d, dict)],
@@ -589,6 +590,9 @@ def phase_feedback(stage, reason, row):
     if 'search_retry_skipped' in row:
         feedback += 'No automatic search retry: ' + row['search_retry_skipped'] + '\n'
     findings = row.get('placement_findings', [])
+    copper_warnings = [w for job in findings for w in (job.get('final', {}).get('decoupling_loops') or {}).get('warnings', [])]
+    if copper_warnings:
+        feedback += 'Local copper warnings: ' + json.dumps(copper_warnings) + '\n'
     if findings:
         feedback += ('Placement summary (engine feasibility, validity and hard violations): '
                      + json.dumps(placement_summary(findings)) + '\n')
@@ -931,7 +935,8 @@ def _generate(requirements_path, out, options, identity=None):
                     remaining(deadline))
                 build = read_optional(run / 'build-report.json')
                 row.update(bundle=str(bundle), run=str(run), failed_checks=failed_checks(run),
-                    placement_findings=placement_findings(run), outline_utilisation=outline_utilisation(run, current))
+                    placement_findings=placement_findings(run), outline_utilisation=outline_utilisation(run, current),
+                    warnings=(build or {}).get('warnings', []))
                 qualification = read_optional(run / 'qualification.json')
                 file_pass = bool(build and build.get('accepted') is True and qualification
                     and qualification.get('mode') == 'typed'
