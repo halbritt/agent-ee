@@ -694,15 +694,23 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertEqual(local.verify_geometry(self.board,receipt)['status'],'pass')
 
     def test_saved_separation_report_uses_floor_and_records_exemptions(self):
+        from agent_ee.storage import write_json
+        def saved_report(receipt):
+            self.save()
+            # Native design-rule floors belong to the authored project, not the PCB alone.
+            write_json(self.path.with_suffix('.kicad_pro'),dict(
+                board=dict(design_settings=dict(rules=dict(min_clearance=.1))),
+                meta=dict(filename='board.kicad_pro',version=1)))
+            return local.separation_report(self.path,receipt)
         receipt,items=self.close_pair(gap=150_000)
-        self.save();result=local.separation_report(self.path,receipt)
+        result=saved_report(receipt)
         self.assertEqual(result['floor_mm'],.1)
         self.assertEqual(result['outcome'],'pass')
         self.assertEqual(len(result['pairs']),1)
         self.assertAlmostEqual(result['pairs'][0]['minimum_gap_mm_lower_bound'],.15,places=5)
         for item in items:self.board.Remove(item)
         receipt,items=self.close_pair(same_bank=True)
-        self.save();result=local.separation_report(self.path,receipt)
+        result=saved_report(receipt)
         self.assertFalse(result['pairs'])
         self.assertEqual(len(result['exempt_pairs']),1)
 
