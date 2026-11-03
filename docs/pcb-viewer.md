@@ -140,8 +140,16 @@ transforms. It refuses (exit 1) and writes nothing in these cases:
 - the files are not those the manifest records;
 - a vendored module would import a file that is not vendored, or a name that
   `three.module.js` does not export;
-- a `THREE` name, loader or controls member, controls event or constructor
-  parameter list that `viewer.js` uses differs from the current files.
+- a definition `viewer.js` relies on differs from the current files: a `THREE`
+  export; where a loader or controls member it uses is defined (assigned with
+  `this.NAME =` or a method in the module, or, if inherited, a method in three's
+  core with the same base class); a controls event it listens to; or a
+  constructor's parameters.
+
+These checks read code only: comments, string literals and regular-expression
+literals are removed first. They are lexical checks, not a JavaScript parser, and
+they show that the definitions are still there, not that they behave the same;
+the viewer tests and a browser check cover behaviour.
 
 After a refresh, run the viewer tests and commit the files and manifest
 together.

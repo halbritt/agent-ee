@@ -9,9 +9,14 @@ verifies the result against the files it would replace:
 - every relative import of a vendored module names a vendored file;
 - every name a vendored module imports from 'three' is exported by three.module.js;
 - every THREE.<name>, GLTFLoader and OrbitControls the viewer uses is still exported;
-- every loader and controls member the viewer uses, and each controls event it listens to,
-  still appears where it appeared in the current files, and the loader and controls
-  constructors take the same parameters.
+- every loader and controls member the viewer uses is still defined where the current files
+  define it: assigned (this.NAME =) or a method in the module, or, for an inherited member, a
+  method in three's core with the class extending the same base; each controls event it
+  listens to is still dispatched (type: 'NAME'); the constructors take the same parameters.
+
+These checks read code only: comments, string and template literals and regular-expression
+literals are removed first (a lexical pass, not a JavaScript parser). They show that the
+definitions the viewer relies on are still there, not that they behave the same.
 
 Only when every check passes are the files written and the manifest rewritten with the
 release, each file's source URL, upstream SHA-256 and vendored SHA-256. The LICENSE stays
@@ -93,6 +98,54 @@ def transform(name, payload, transforms):
     return text.encode('utf-8')
 
 
+REGEX_BEFORE = set('(,=:[!&|?{};+-*%<>~^')
+
+
+def code(text, strings=True):
+    """JavaScript source without comments and regular-expression literals; without string and
+    template literal contents too when strings is False (each literal becomes an empty one).
+
+    A slash starts a regular expression after an operator, an opening bracket or the start of
+    the text, as in JavaScript's own grammar for the common cases; template substitutions are
+    treated as part of the literal."""
+    out, i, n, previous = [], 0, len(text), ''
+    while i < n:
+        c = text[i]
+        if text.startswith('//', i):
+            i = text.find('\n', i)
+            i = n if i < 0 else i
+            continue
+        if text.startswith('/*', i):
+            end = text.find('*/', i + 2)
+            i = n if end < 0 else end + 2
+            out.append(' ')
+            continue
+        if c in '\'"`' or (c == '/' and (previous in REGEX_BEFORE or not previous)):
+            j, in_class = i + 1, False
+            while j < n and (text[j] != c or in_class):
+                if text[j] == '\\':
+                    j += 1
+                elif c == '/' and text[j] in '[]':
+                    in_class = text[j] == '['
+                elif c == '/' and text[j] == '\n':
+                    break
+                j += 1
+            literal = text[i:j + 1]
+            if c != '/':
+                out.append(literal if strings else c + c)
+                previous = c
+            else:
+                out.append(' ')
+                previous = 'x'
+            i = j + 1
+            continue
+        out.append(c)
+        if not c.isspace():
+            previous = c
+        i += 1
+    return ''.join(out)
+
+
 def imports(text):
     """[(names, specifier)] for module-level imports (not examples inside comments)."""
     found = []
@@ -127,32 +180,49 @@ def constructor(text, cls):
     return re.sub(r'\s+', ' ', match.group(1)).strip() if match else None
 
 
+def base(text, cls):
+    match = re.search(r'class ' + cls + r'\s+extends\s+([\w$]+)', text)
+    return match.group(1) if match else None
+
+
+def defined(name, module, core):
+    """Where code defines a member: 'module' (this.NAME = or a method), 'core' (a method), or None."""
+    method = r'(?<![\w$.])' + re.escape(name) + r'\s*\([^()]*\)\s*\{'
+    if re.search(r'\bthis\.' + re.escape(name) + r'\s*=(?!=)', module) or re.search(method, module):
+        return 'module'
+    return 'core' if re.search(method, core) else None
+
+
 def api(files, viewer):
-    """The parts of the vendored API the viewer depends on, from the given file set."""
-    text = {name: payload.decode('utf-8', 'replace') for name, payload in files.items()}
+    """The parts of the vendored API the viewer depends on, from the code of the given file set."""
+    with_strings = {name: code(payload.decode('utf-8', 'replace')) for name, payload in files.items()}
+    bare = {name: code(payload.decode('utf-8', 'replace'), strings=False) for name, payload in files.items()}
     uses = viewer_uses(viewer)
-    core = text.get('three.module.js', '') + text.get('three.core.min.js', '')
-    member = lambda name, source: bool(re.search(r'(?<![\w$])' + re.escape(name) + r'(?![\w$])', source))
+    core = bare.get('three.module.js', '') + bare.get('three.core.min.js', '')
+    controls, loader = bare.get('OrbitControls.js', ''), bare.get('GLTFLoader.js', '')
     return {
-        'three_exports': {n: n in exports(text.get('three.module.js', '')) for n in sorted(uses['three'])},
-        'module_exports': {'GLTFLoader': 'GLTFLoader' in exports(text.get('GLTFLoader.js', '')),
-                           'OrbitControls': 'OrbitControls' in exports(text.get('OrbitControls.js', ''))},
-        'controls_members': {n: member(n, text.get('OrbitControls.js', '') + core) for n in sorted(uses['controls'])},
-        'loader_members': {n: member(n, text.get('GLTFLoader.js', '') + core) for n in sorted(uses['loader'])},
-        'controls_events': {e: f"type: '{e}'" in text.get('OrbitControls.js', '') for e in sorted(uses['events'])},
-        'constructors': {'GLTFLoader': constructor(text.get('GLTFLoader.js', ''), 'GLTFLoader'),
-                         'OrbitControls': constructor(text.get('OrbitControls.js', ''), 'OrbitControls')},
+        'three_exports': {n: n in exports(bare.get('three.module.js', '')) for n in sorted(uses['three'])},
+        'module_exports': {'GLTFLoader': 'GLTFLoader' in exports(loader),
+                           'OrbitControls': 'OrbitControls' in exports(controls)},
+        'controls_members': {n: defined(n, controls, core) for n in sorted(uses['controls'])},
+        'loader_members': {n: defined(n, loader, core) for n in sorted(uses['loader'])},
+        'controls_events': {e: bool(re.search(r"type\s*:\s*'" + re.escape(e) + "'",
+                                              with_strings.get('OrbitControls.js', '')))
+                            for e in sorted(uses['events'])},
+        'constructors': {'GLTFLoader': constructor(with_strings.get('GLTFLoader.js', ''), 'GLTFLoader'),
+                         'OrbitControls': constructor(with_strings.get('OrbitControls.js', ''), 'OrbitControls')},
+        'bases': {'GLTFLoader': base(loader, 'GLTFLoader'), 'OrbitControls': base(controls, 'OrbitControls')},
     }
 
 
 def closure_problems(files):
     """Relative imports outside the vendored set; names imported from 'three' it does not export."""
     problems = []
-    three = exports(files['three.module.js'].decode('utf-8'))
+    three = exports(code(files['three.module.js'].decode('utf-8'), strings=False))
     for name, payload in sorted(files.items()):
         if not name.endswith('.js'):
             continue
-        for names, specifier in imports(payload.decode('utf-8')):
+        for names, specifier in imports(code(payload.decode('utf-8'))):
             if specifier == 'three':
                 problems += [f'{name} imports {n} from three, which three.module.js does not export'
                              for n in sorted(names - three)]

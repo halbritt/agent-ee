@@ -79,6 +79,14 @@ class RefreshTests(unittest.TestCase):
         for case, (name, old, new, problem) in {
             'controls member renamed': ('OrbitControls.js', 'enableDamping', 'enableSmoothing',
                                         'controls_members enableDamping'),
+            # Review of ec8976ca: renamed in code, still named in two comments.
+            'controls member renamed in code, named in comments': (
+                'OrbitControls.js', 'this.enableDamping', 'this.enableSmoothing', 'controls_members enableDamping'),
+            'controls member named only in a string': (
+                'OrbitControls.js', 'this.enableDamping =', "console.warn( 'this.enableDamping = gone' ); this.enableSmoothing =",
+                'controls_members enableDamping'),
+            'controls base class changed': ('OrbitControls.js', 'class OrbitControls extends Controls',
+                                            'class OrbitControls extends EventDispatcher', 'bases OrbitControls'),
             'controls constructor changed': ('OrbitControls.js', 'constructor( object, domElement = null )',
                                              'constructor( object, domElement, options )',
                                              'constructors OrbitControls'),
