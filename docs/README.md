@@ -9,6 +9,13 @@ product's hardware qualification.
 
 | Task | Read |
 | --- | --- |
+| Get started with a 5-minute build and 3D preview | [Quickstart guide](quickstart.md) |
+| Operate the 7-stage build in production (staging, checkpoints, resumption, custody) | [Operator runbook](operator-runbook.md) |
+| Understand the 7-stage generative synthesis pipeline and candidate immutability | [Architecture & pipeline guide](architecture-pipeline.md) |
+| Benchmark generator, emitter, and dual-gate benchmark performance | [Benchmarking guide](benchmarking-guide.md) |
+| Resolve stage-by-stage errors (ERC, placement timeouts, unrouted nets, DRC) | [Generator troubleshooting & FAQ](troubleshooting-faq.md) |
+| Understand 18 core domain concepts and candidate lifecycle contracts | [Domain glossary](../GLOSSARY.md) |
+| Understand the 5-tier test suite architecture and runner commands | [E2E test suite infrastructure](../TEST_INFRA.md) |
 | Understand the five closed-loop invariants and migration | [Closed-loop overview](closed-loop.md) |
 | Declare stage gates and interpret absent design content | [Staged campaigns](staged-campaign.md) |
 | Configure single-writer repair and interpret convergence stops | [Campaign guide](campaign-guide.md) |
@@ -83,6 +90,13 @@ product's hardware qualification.
 | Measure reviewer false positives on proven-equivalent design variants | [False-positive calibration](fp-calibration.md) |
 | Restore or reproduce the evaluation | [Evidence reproduction](reproducing-evidence.md) |
 | Check the proposed license and each file's origin and publication status | [Third-party origins](third-party-origins.md) |
+| Track compiler feature requests, schema cleanups, and roadmap backlog | [Compiler backlog](compiler-backlog.md) |
+| Explore research briefs on GPU-accelerated PCB design, routability, and AI autonomy | [Research index](research/README.md) |
+| Inspect isolated schematic stage execution and container confinement | [Schematic stage execution](schematic-stage-execution.md) |
+| Decompile native schematics back into circuit declarations and connectivity | [Schematic decompile](schematic-decompile.md) |
+| Apply typed overlay specifications to candidate schemas | [Typed overlay](typed-overlay.md) |
+| Interface the acquisition circuit generator adapter with the build pipeline | [Acquisition generation adapter](acquisition-generation-adapter.md) |
+| Evaluate local return path geometry and ground plane stitching | [Acquisition local return](acquisition-local-return.md) |
 
 The [acceptance index](../evidence/README.md) links all ten demonstrations,
 including actual native tools and agent reviews. The [donor baseline](../evidence/BASELINE.md)
@@ -103,6 +117,15 @@ The following are builder records, not the current operator reference:
 - [Fable assessment](fable-assessment.md) and [Argon assessment](argon-assessment.md).
 - [Argon module agreement](contracts-argon.md) and [integration review](integration-review-argon.md).
 - [Via-query correction](via-probe-correction.md), including actual measured evidence.
+- [AGENTEE-526 historical integrity audit](AGENTEE-526-historical-integrity.md).
+- [AGENTEE-479 schematic emitter development progress](agentee-479-progress.md).
+- [AGENTEE-492 schematic emitter development notes](agentee-492/README.md).
+- [Four-way benchmark scoring method](benchmarks/scorer-four-way-method-2026-10-22.md).
+- [AGENTEE-524 package contract](planning/2026-10-25-recovery/contracts/AGENTEE-524-package.md) and [AGENTEE-524 Part B verification](planning/2026-10-25-recovery/contracts/AGENTEE-524-partB-verification.md).
+- [AGENTEE-519 runtime environment record](planning/2026-10-25-recovery/runtime-519-agent-567.md).
+- [Zero ASIC autonomy execution plan](planning/2026-10-28-zeroasic/execution.md).
+- [AGENTEE-521 qualification evidence](qualification/AGENTEE-521-evidence-agent-674.md).
+- [Placement intent qualification record](qualification/placement-intent-2026-10-25.md).
 
 The current command parser and validators are the final authority if a historical
 agreement differs. The manual references their actual behavior and names limits

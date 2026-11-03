@@ -1,6 +1,10 @@
 # Rung-1 board build (experimental stand-in)
 
-`agent_ee.board_build` builds an unplaced KiCad 10 board from a schematic
+> **DEPRECATED (Superseded Rung-1 Stand-In)**
+>
+> This document describes the historical experimental Rung-1 board build driver (`agent_ee.board_build`), which has been superseded by the production placement and build pipeline.
+>
+> **Modern Equivalent**: Please refer to [Placement job execution](placement-job.md) (`agent-ee place run` / `agent_ee.placement_job`) and [Captured engineering build](build-workflow.md) (`agent-ee build run`).
 project and its native XML netlist, places it with the landed
 [deterministic placer](placer.md), and checks the result with native
 `kicad-cli pcb drc --schematic-parity`.

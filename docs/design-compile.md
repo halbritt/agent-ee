@@ -2,8 +2,9 @@
 
 `agent-ee design` is the general path from explicit circuit and board decisions to
 a captured engineering build. For requirements text, use the bounded
-[`agent-ee design generate` loop](design-generate.md). The root `agent-ee generate`
-command remains the narrow RC driver; `generate.py` is unchanged.
+[`agent-ee design generate` loop](design-generate.md). Design text generation is
+performed via `agent-ee design generate`; `agent_ee.generate` is an internal
+module (not a root CLI command), and `generate.py` remains an internal driver.
 
 ```sh
 agent-ee design capture fixtures/design-examples/i2c-sensor.json --out captures/i2c

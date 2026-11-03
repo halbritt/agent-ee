@@ -12,6 +12,16 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
+| `build run` | `PLAN --out RUN [--resume] [--through STAGE]` | Execute 7-stage generative build pipeline (`requirements` through `package`) |
+| `build review` | `RUN --out NEW [--max-seconds N] [--profile FILE]` | Run fresh native checks and optional isolated reviewers on last completed candidate |
+| `place run` | `CONFIG --out NEW [--resume]` | Run placement search and routing optimization using the Rust placement engine |
+| `place metrics` | `BOARD [--groups FILE] [--intent FILE]` | Extract read-only placement quality metrics, wirelengths, and locality |
+| `parts compile` | `--bundle DIR --manifest FILE --circuit FILE --layout FILE --out DIR [--deviations FILE] [--ratings FILE] [--adopt-as PATH]` | Bind selected parts and land patterns into circuit intent |
+| `design capture` | `DESIGN --out DIR [--kicad-root DIR]` | Capture CAD symbols, footprints, 3D models, datasheets, and stock quotes |
+| `design compile` | `DESIGN --captures DIR --out DIR` | Deterministically compile design statement and captured assets into relocatable build bundle |
+| `design generate` | `REQUIREMENTS --out DIR [--author SPEC] [--max-attempts N] [--max-seconds N] ...` | Bounded LLM synthesis loop from requirements text to validated design statement |
+| `design benchmark` | `REQUIREMENTS --out DIR [...]` | Benchmark requirements-to-board generation loop across design examples |
+| `scaffold` | `ENVELOPE PARTS (--scope FILE \| --plan FILE) [--intent FILE] [--layout FILE] --out DIR` | Create initial empty native project, outline, stackup, rules, and fixed parts |
 | `capture-catalog` | `MANIFEST --source-root LOCAL --out NEW` | Prepare a pinned local catalog and print its manifest hash; no source authentication |
 | `evidence-request` | `RUN --finding ID --spec FILE [--script FILE] --out NEW` | Export a standalone nonauthoritative concern request |
 | `evidence-replay` | `REQUEST --out NEW` | Replay the supported bounded networkless Python contract; no acceptance authority |
@@ -19,8 +29,12 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 | `verify-evidence-operation` | `OPERATION` | Verify standalone operation file identities; no acceptance or source freshness claim |
 | `campaign` | `CONFIG --out NEW` | Review and repair disposable candidates with one writer and bounded convergence |
 | `verify-campaign` | `CAMPAIGN` | Recompute historical convergence and verify result/calibration links |
-| `bench-review` | `RUN REPORT --out NEW [--max-seconds N]` | Capture physical samples and run calibrated checks plus fresh review |
-| `campaign-feedback` | `CAMPAIGN REPORT --out NEW [--max-seconds N]` | Start a calibrated epoch and continue within the remaining repair budget |
+| `bench-review` | `RUN REPORT --out NEW [--max-seconds N] [--operation-id ID]` | Capture physical samples and run calibrated checks plus fresh review |
+| `campaign-feedback` | `CAMPAIGN REPORT --out NEW [--max-seconds N] [--operation-id ID]` | Start a calibrated epoch and continue within the remaining repair budget |
+| `bench-status` | `PATH` | Read-only structured phase, identity, and ambiguity diagnosis under existing leases |
+| `bench-recover` | `PATH` | Reconcile deterministic publication and adopt verified terminal review evidence |
+| `bench-launch` | `PATH` | Explicitly launch the first review only if no start intent exists |
+| `bench-new-attempt` | `PATH --attempt-id ID --out DIR` | Explicitly launch a fresh review after an uncertain attempt, retaining old evidence |
 | `doctor` | `[--checks-only] [--router-checkout DIR]` | Probe prerequisite versions/imports and hash the probed binaries; no design or inference run |
 | `review` | `SCOPE --out RUN [--profile FILE] [--max-seconds N] [--checks-only] [--roles R,...] [--routing-receipt RECEIPT]` | Capture inputs and run checks, initial reviews and adjudication |
 | `view3d` | `SOURCE --out NEW [--port N] [--no-browser] [--export-only]` | Export a saved board or captured candidate into a local 3D browser viewer |
@@ -31,6 +45,8 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 | `resume` | `RUN --out NEW_RUN [--max-seconds N]` | Read the old manifest's scope path, recapture and rerun all work |
 | `adjudicate` | `RUN DECISIONS_JSON` | Validate and append operator-supplied dispositions |
 | `close-correction` | `OLD_RUN NEW_RUN --finding ID --checks IDS --reason TEXT` | Append a verified correction link to the old run |
+| `pcbschemagen_gate1`* | `--design FILE [--netlist FILE] --task-id ID [--out FILE] ...` | Deterministic Gate 1 topological & ERC verifier against PCBSchemaGen Knowledge Graph |
+| `pcbschemagen_benchmark`* | `[--manifest FILE] [--task-id ID] [--candidate FILE] [--candidates-dir DIR] [--out FILE] [--run-build] ...` | PCBSchemaGen Dual-Gate benchmark runner evaluating Gate 1 topology and Gate 2 physical build |
 
 Paths are shell arguments, so quote paths containing spaces. `SCOPE` is a JSON
 file. All output directories for `review` and `resume` must be new; parents are
@@ -42,6 +58,12 @@ operation, with configuration and limits described in the closed-loop reference.
 
 | Command | 0 | 1 | 2 |
 | --- | --- | --- | --- |
+| `place run` | Status `completed` (all placements and routing resolved) | Status `incomplete` or defect outcome | Input, solver, or invocation refusal |
+| `place metrics` | Metrics calculated and output printed | Handled measurement failure | Argument, path, or parser error |
+| `parts compile` | Part bindings and connectivity intent emitted | Parts compilation refused | Argument, path, or parser error |
+| `design compile` | Validated relocatable build bundle emitted | `DesignError` or validation failure | Argument, path, or parser error |
+| `design generate`, `design benchmark` | Validated design statement emitted | Max attempts exhausted without valid design | Invocation or parameter refusal |
+| `scaffold` | Initial native candidate project created | Scaffold creation refused | Argument, path, or parser error |
 | `doctor` | Every recorded probe exited 0 and its binary was hashed | A prerequisite probe failed or timed out, or a probed binary could not be hashed | Parser/handled invocation error |
 | `review`, `resume` | `criteria_satisfied` | Any other recorded review outcome, including execution/capture failure and interruption | Refusal before the run is handled, such as an existing output directory or invalid budget; parser error |
 | `build run` | Recorded `accepted` or diagnostic `checkpoint`; inspect `accepted` and `qualification.dimensions` | Recorded pending/failed/interrupted build or failed qualification | Input, identity or invocation refusal; inspect a retained run's separate `resume-refusals` receipt |
@@ -55,6 +77,8 @@ operation, with configuration and limits described in the closed-loop reference.
 | `inspect` | Inspection printed, even when its `freshness` field reports a refusal | Not a normal handled result | Cannot load the required inspection record or another handled invocation/parser error |
 | `adjudicate` | Decisions applied; does not imply the resulting review passes | Not a normal handled result | Decisions refused or evidence unavailable/stale |
 | `close-correction` | Correction invariants verified and event appended | Not a normal handled result | Closure refused or evidence unavailable/stale |
+| `pcbschemagen_gate1` | Gate 1 passed (`passed == True`) | Gate 1 failed | Invocation or runtime error |
+| `pcbschemagen_benchmark` | All evaluated tasks passed dual-gate evaluation | Any task failed either gate | Invocation error |
 
 Unexpected unhandled Python failures can have interpreter exit behavior outside
 this table. Do not infer acceptance from an arbitrary successful shell command.
@@ -92,6 +116,118 @@ but it does not prove the process is still alive or finalize acceptance.
 An interrupt caught inside the subprocess executor records the interrupted
 invocation and propagates to the outer boundary, which finalizes an interrupted
 run. Check process status and saved records after a force kill.
+
+## `build run` and `build review`
+
+`build run PLAN --out OUT [--resume] [--through STAGE]` executes the full 7-stage generative build pipeline:
+1. `requirements` -> validates authored spec, requirements record, and derives mechanical obligations.
+2. `parts` -> binds authored parts, datasheets, symbols, and footprints to circuit intent.
+3. `scaffold` -> creates empty native KiCad project, board outline, stackup, rules, and fixed parts.
+4. `schematic` -> emits native `.kicad_sch`, runs ERC, and forward-annotates footprints onto the PCB.
+5. `placement-routing` -> executes Rust placement search and invokes `kicad-route` routing engine.
+6. `artwork` -> relocates silkscreen reference fields off conflicting pads and edges.
+7. `package` -> runs checks-only review and exports Gerber, drill, BOM, and CPL fabrication artifacts.
+
+- `PLAN`: Path to `build-plan.json` (`agent-ee.build-plan/1` or `agent-ee.build-plan/2`).
+- `--out OUT`: Run directory. Must be new unless `--resume` is specified.
+- `--resume`: Resumes a previously interrupted or checkpointed build in `--out`.
+- `--through STAGE`: Stops execution after completing `STAGE` (`requirements`, `parts`, `scaffold`, `schematic`, `placement-routing`, `artwork`, or `package`). Checkpoint runs exit 0 with status `checkpoint` but grant no acceptance claim.
+
+`build review RUN --out OUT [--max-seconds N] [--profile FILE]` executes fresh native checks and optional isolated reviewers on the last completed candidate of an existing build without modifying the candidate:
+- `RUN`: Path to an existing build directory.
+- `--out OUT`: Output directory for review report and diagnostics.
+- `--max-seconds N`: Maximum execution time in seconds (default: 900).
+- `--profile FILE`: Explicit `agent-ee.profile/1` JSON profile specifying reviewer harnesses and adjudicator.
+
+```sh
+agent-ee build run bundles/i2c/build-plan.json --out runs/i2c-run
+agent-ee build run bundles/i2c/build-plan.json --out runs/i2c-run --through schematic
+agent-ee build run bundles/i2c/build-plan.json --out runs/i2c-run --resume
+agent-ee build review runs/i2c-run --out runs/i2c-review --profile profiles/standard.json
+```
+
+## `place run` and `place metrics`
+
+`place run CONFIG --out OUT [--resume]` executes standalone placement optimization and routing for a board using the external Rust placement engine (`agent-ee-placement`) and `kicad-route`:
+- `CONFIG`: Path to placement job configuration JSON (`agent-ee.placement-job-config/1`).
+- `--out OUT`: Output directory for placed board, manifests, and placement plans.
+- `--resume`: Resumes an in-progress placement search.
+
+`place metrics BOARD [--groups GROUPS] [--intent INTENT]` inspects a placed `.kicad_pcb` board file read-only, measuring bounding box extents, connector edge alignments, electrical locality scores, wirelengths, and group positions:
+- `BOARD`: Path to a native `.kicad_pcb` board file.
+- `--groups GROUPS`: Optional groups JSON file defining functional groups.
+- `--intent INTENT`: Optional placement intent JSON file defining component locality rules.
+
+```sh
+agent-ee place run configs/placement-pod.json --out runs/placement-out
+agent-ee place metrics runs/placement-out/board.kicad_pcb --groups groups.json --intent intent.json
+```
+
+## `parts compile`
+
+`parts compile --bundle DIR --manifest FILE --circuit FILE --layout FILE --out DIR [--deviations FILE] [--ratings FILE] [--adopt-as PATH]` compiles selected components into bound circuit intent, validating footprints, land patterns, and passive component ratings:
+- `--bundle`: Path to bundle directory containing captured assets.
+- `--manifest`: Path to parts manifest JSON.
+- `--circuit`: Path to circuit declaration JSON.
+- `--layout`: Path to layout declaration JSON.
+- `--out`: Target output directory.
+- `--deviations`: Optional explicit assembly deviations JSON.
+- `--ratings`: Optional passive rating sources JSON for power and voltage validation.
+- `--adopt-as`: Receipted output path; refuses if it overwrites an immutable dependency.
+
+```sh
+agent-ee parts compile --bundle bundles/i2c/inputs \
+  --manifest parts.json --circuit circuit.json --layout layout.json --out runs/parts-out
+```
+
+## `design capture`, `design compile`, `design generate`, and `design benchmark`
+
+The `agent-ee design` family manages the transformation from high-level circuit declarations or requirements text into typed build bundles:
+
+`design capture DESIGN --out OUT [--kicad-root DIR]` downloads, extracts, and caches local CAD symbols, footprints, 3D models, component datasheets, and catalog stock quotes into a pinned capture directory:
+- `DESIGN`: Path to `agent-ee.design/1` JSON statement.
+- `--out OUT`: Output directory for captured assets.
+- `--kicad-root DIR`: Path to local KiCad symbol and footprint libraries (default: `/usr/share/kicad`).
+
+`design compile DESIGN --captures DIR --out OUT` deterministically compiles an `agent-ee.design/1` statement and its captured assets into a relocatable build bundle (`inputs/` and `build-plan.json` under `agent-ee.build-plan/2`):
+- `DESIGN`: Path to `agent-ee.design/1` JSON statement.
+- `--captures DIR`: Path to directory generated by `design capture`.
+- `--out OUT`: Target bundle directory (must be new).
+
+`design generate REQUIREMENTS --out OUT [OPTIONS]` runs a bounded multi-attempt synthesis loop using an LLM author (`codex` or `agy`) to translate natural-language requirements into a validated `agent-ee.design/1` statement:
+- `REQUIREMENTS`: Path to requirements Markdown file.
+- `--out OUT`: Target output directory.
+- `--author SPEC`: Author format `codex:MODEL:EFFORT` or `agy:MODEL:EFFORT` (default: `codex:gpt-6.1-sol:high`).
+- `--max-attempts N`: Maximum generation attempts (default: 4).
+- `--max-seconds N`: Maximum wall-clock budget for all phases and retries (default: 2400).
+- `--author-seconds N`: Timeout per author turn (default: 600).
+- `--search-retries N`: Extra placement seed attempts per turn (default: 1).
+- `--review-profile FILE`: Optional engineering review profile.
+- `--context-root DIR`: Path to repository checkout with reference examples.
+- `--kicad-root DIR`: Local KiCad library root (default: `/usr/share/kicad`).
+
+`design benchmark REQUIREMENTS --out OUT [OPTIONS]` executes the automated requirements-to-board loop across benchmark cases, taking identical arguments to `design generate`.
+
+```sh
+agent-ee design capture fixtures/design-examples/i2c-sensor.json --out captures/i2c
+agent-ee design compile fixtures/design-examples/i2c-sensor.json --captures captures/i2c --out bundles/i2c
+agent-ee design generate fixtures/design-requirements/555-oscillator.md --out runs/555-gen --max-attempts 2
+```
+
+## `scaffold`
+
+`scaffold ENVELOPE PARTS (--scope SCOPE | --plan PLAN) [--intent INTENT] [--layout LAYOUT] --out OUT` creates an initial empty native `.kicad_pcb` board and project from captured planning inputs:
+- `ENVELOPE`: Path to board envelope JSON (`agent-ee.envelope/1`).
+- `PARTS`: Path to parts JSON.
+- `--scope SCOPE`: Path to stage-one scope/2 or scope/3 with captured project rules.
+- `--plan PLAN`: Path to `agent-ee.scaffold-plan/1` deriving checks and project rules (mutually exclusive with `--scope`).
+- `--intent INTENT`: Optional captured bound connectivity intent.
+- `--layout LAYOUT`: Captured emitter layout (required if `--intent` is given).
+- `--out OUT`: Target output directory.
+
+```sh
+agent-ee scaffold envelope.json parts.json --plan scaffold-plan.json --out candidates/c1
+```
 
 ## `view3d`
 
@@ -325,3 +461,62 @@ explicit review, 1 for unresolved execution, and 2 on refusal. The initial
 transaction returns 0 only when the reviewed outcome satisfies criteria.
 A completed transaction with an incomplete review remains an incomplete design
 outcome. No command acquires measurements or authorizes a new design writer.
+
+```sh
+agent-ee bench-status runs/bench-tx-01
+agent-ee bench-recover runs/bench-tx-01
+agent-ee bench-launch runs/bench-tx-01
+agent-ee bench-new-attempt runs/bench-tx-01 --attempt-id attempt-2 --out runs/bench-tx-01-attempt-2
+```
+
+## PCBSchemaGen benchmark CLI modules
+
+In addition to `agent-ee` subcommands, the repository provides standalone benchmark execution and verification CLI modules for PCBSchemaGen dual-gate evaluation:
+
+### `python3 -m agent_ee.pcbschemagen_gate1`
+
+Deterministic Gate 1 topological and ERC verifier adapter. It translates candidates from `agent-ee.design/1` or native KiCad XML netlists into PCBSchemaGen topological snapshots, filters testing wrappers, and checks pin roles and net topologies against the Knowledge Graph (`Gate1KGStore`):
+
+- `--design, -d DESIGN`: Path to `agent-ee.design/1` JSON statement.
+- `--netlist, -n NETLIST`: Path to native KiCad XML netlist.
+- `--task-id, -t TASK_ID`: Task identifier (e.g. `104` or `BUCK_AUX_LOGIC`).
+- `--task-name TASK_NAME`: Optional human-readable task name.
+- `--pcbschemagen-root DIR`: Root path to PCBSchemaGen repository (default: `$PCBSCHEMAGEN_ROOT` or `/home/halbritt/git/PCBSchemaGen_v2`).
+- `--captures CAPTURES`: Path to captured KiCad symbols directory.
+- `--std-snapshot FILE`: Reference design snapshot JSON.
+- `--rules RULES`: Topological rules JSON file.
+- `--out, -o OUT`: Output path for Gate 1 report JSON (`agent-ee.pcbschemagen-gate1/1`).
+- `--quiet, -q`: Suppress informational output.
+
+Exit codes: 0 if Gate 1 passes (`passed == True`); 1 if Gate 1 fails; 2 on invocation error.
+
+```sh
+PYTHONPATH=src python3 -m agent_ee.pcbschemagen_gate1 \
+  --design candidate_design.json --task-id 104 --out reports/gate1_report.json
+```
+
+### `python3 -m agent_ee.pcbschemagen_benchmark`
+
+Dual-Gate Benchmark Suite Runner for PCBSchemaGen Tier-1 tasks. Evaluates candidates through two non-overlapping validation gates:
+- **Gate 1**: Zero-LLM pin/topology correctness against the PCBSchemaGen Knowledge Graph.
+- **Gate 2**: Physical board compilation and routing in the `agent-ee` native pipeline (ERC, stackup, connector edge placement, DRC).
+
+Emits a structured score `(Gate 1: PASS/FAIL, Gate 2: PASS/FAIL)` adhering to `agent-ee.dual-gate-benchmark/1`:
+
+- `--manifest, -m MANIFEST`: Path to Tier-1 manifest JSON (`agent-ee.pcbschemagen-tier1-manifest/1`, default: `fixtures/pcbschemagen-tier1/manifest.json`).
+- `--task-id, -t TASK_ID`: Single task ID or comma-separated list of IDs (e.g. `104,105,106`).
+- `--candidate, -c CANDIDATE`: Path to candidate design JSON or build run directory (requires `--task-id`).
+- `--candidates-dir DIR`: Directory of candidates named `<id>.json` or `<id>/design.json`.
+- `--pcbschemagen-root DIR`: Root path to PCBSchemaGen repository.
+- `--captures-dir DIR`: Directory of captured stock/symbol libraries.
+- `--out, -o OUT`: Output path for structured benchmark report JSON.
+- `--run-build`: Execute physical board compilation and routing in Gate 2.
+- `--summary, -s`: Print text summary table.
+- `--quiet, -q`: Suppress progress logging.
+
+Exit codes: 0 if all evaluated tasks pass dual-gate evaluation; 1 if any task fails either gate; 2 on invocation error.
+
+```sh
+PYTHONPATH=src python3 -m agent_ee.pcbschemagen_benchmark \
+  --task-id 104 --candidate fixtures/pcbschemagen-tier1/tasks/104/design.json --summary
+```

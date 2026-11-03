@@ -1,6 +1,10 @@
 # Rung-1 schematic emitter (experimental)
 
-`agent_ee.schematic_emit` writes a KiCad 10 schematic project from a resolved
+> **DEPRECATED (Superseded Rung-1 Stand-In)**
+>
+> This document describes the historical experimental Rung-1 schematic emitter (`agent_ee.schematic_emit`), which has been superseded by the production native schematic emitter.
+>
+> **Modern Equivalent**: Please refer to [Native schematic emitter](schematic-emitter.md) (`agent_ee.schematic_emitter`) and [Schematic stage execution](schematic-stage-execution.md).
 connectivity record without drawing any wires. It is a private experimental
 stand-in for the rung-1 generator driver. Its parts-manifest and receipt schemas
 carry `0-experimental` names and its receipt says

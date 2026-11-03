@@ -7,7 +7,7 @@ references and all other connections. This is a development reference, with
 no production build plan or accepted package. The unchanged-reference preparer
 and frozen campaign cases do not select it.
 
-The [derivation module](../src/agent_ee/acquisition_reverse_blocking.py) generates
+The [derivation module](../src/agent_ee/acquisition/reverse_blocking.py) generates
 the symbol, footprints and circuit intent. U1 connects OUT and SENSE to V3V3,
 VIN and EN to VIN_PROTECTED, and both ground pins and the exposed pad to GND.
 NC and unused PG remain unconnected. The pin mapping follows
@@ -87,7 +87,7 @@ native board, Gerbers, drill output and measurements for one test run.
 
 ## Production part bindings
 
-The [parts source producer](../src/agent_ee/acquisition_power_parts.py)
+The [parts source producer](../src/agent_ee/acquisition/power_parts.py)
 exposes `inputs(base, selected, context_bytes)`. It returns files and a provenance
 report for the existing `parts_stage.compile_parts` consumer. `base` supplies the
 exact retained public-control purchasing inputs, identified by `BASE` hashes.
@@ -139,7 +139,7 @@ judgments and review. The module returns these as pending and always reports
 
 ## Power-model application
 
-The [power analysis producer](../src/agent_ee/acquisition_power_analysis.py)
+The [power analysis producer](../src/agent_ee/acquisition/power_analysis.py)
 accepts the exact generated production circuit, its parts manifest, and the
 captured ADI ADP7104-3.3 model and symbol as bytes. `inputs()` returns a finite
 LTspice deck and a declaration binding their hashes, model pin order and selected

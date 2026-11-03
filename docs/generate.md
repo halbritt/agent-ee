@@ -1,6 +1,10 @@
 # Rung-1 generation driver (experimental)
 
-`agent_ee.generate` is a **private experimental entry point** that takes the
+> **DEPRECATED (Superseded Rung-1 Stand-In)**
+>
+> This document describes the historical experimental Rung-1 generation driver (`agent_ee.generate`), which has been superseded by the production 7-stage generative build pipeline.
+>
+> **Modern Equivalent**: Please refer to [Captured engineering build](build-workflow.md) and [`agent-ee build run`](build-workflow.md).
 one-paragraph rung-1 spec ([fixtures/rung1/spec.md](../fixtures/rung1/spec.md))
 to a JLCPCB fabrication package. It is not a second pipeline. It runs the
 existing pieces in order and hands verification to the existing

@@ -18,8 +18,8 @@ PYTHONPATH=src:tests python3 -m pytest tests/e2e/test_tier4_scenarios.py -v
 PYTHONPATH=src:tests python3 -m pytest tests/e2e/test_tier3_combinations.py -v
 ```
 
-## 4-Tier Test Architecture
-The test suite follows the 4-tier opaque-box methodology:
+## 5-Tier Test Architecture
+The test suite follows the 5-tier testing methodology:
 
 1. **Tier 1: Feature Coverage** (>=5 tests per feature, 23 features across 6 domain suites)
    - `test_tier1_m1_harnesses.py`: Features 1-4 (Harness & schema contracts)
@@ -39,7 +39,10 @@ The test suite follows the 4-tier opaque-box methodology:
 4. **Tier 4: Real-World Application Scenarios** (End-to-end multi-board workflows, 10 tests)
    - `test_tier4_scenarios.py`: Full lifecycle scenarios covering minimal 555-oscillator, I2C sensor boards, mixed SMT/THT boards, stage recovery, typed completion pipeline, and review draft cycles.
 
-**Total Test Count**: 250 tests.
+5. **Tier 5: White-Box Adversarial Coverage Hardening** (Adversarial stress-testing and failure mode hardening, 33 tests)
+   - `test_tier5_adversarial.py`: Deep adversarial test scenarios covering boundary corruptions, resource exhaustion edge cases, corrupted mountinfo/confinement views, candidate directory integrity, invalid hash receipts, and failure modes across all 6 campaign components.
+
+**Total Test Count**: 283 tests.
 
 ## Progressive Testability & Isolation
 - Tests are self-contained using isolated temporary directories and synthetic mock fixtures (`e2e_common.py`).

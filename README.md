@@ -9,7 +9,7 @@ Gerbers, drills, BOM and CPL. The same checks and independent-review machinery
 also review and repair existing KiCad projects, which is where the project
 started.
 
-For explicit board and circuit decisions, use [design capture and compile](docs/design-compile.md), then [build run](docs/build-workflow.md).
+For explicit board and circuit decisions, use [design capture and compile](docs/design-compile.md), then [build run](docs/build-workflow.md). For end-user and operator guides, see the [Quickstart Guide](docs/quickstart.md), [Operator Runbook](docs/operator-runbook.md), [Architecture & Pipeline Guide](docs/architecture-pipeline.md), [Benchmarking Guide](docs/benchmarking-guide.md), and [Troubleshooting & FAQ](docs/troubleshooting-faq.md). Core terminology is documented in [GLOSSARY.md](GLOSSARY.md).
 
 The owner's direction since 2026-10-17 is the generator
 ([decisions](docs/decisions.md)); the review workflow is one of its stages,
@@ -17,7 +17,7 @@ not the product. This README describes what the generator can do today and
 what it cannot. The ticket-by-ticket history of implemented capabilities is in
 the [capability log](docs/capability-log.md).
 
-## Status at a glance (2026-10-25)
+## Status at a glance (2026-11-03)
 
 What works through the normal entrypoint, `agent-ee build run`:
 
@@ -55,9 +55,7 @@ What the normal entrypoint does not do today:
 - **Engineering verification is as good as the authored map.** Only checks the
   map names are run; the mandatory set is ERC, DRC, netlist, geometry, parts
   membership, placement, envelope, fab profile, assembly readiness and package.
-- **The build is not covered by an automated end-to-end test.** Tests exercise
-  stages and diagnostics; the only run that reached an accepted package is the
-  retained acquisition run.
+- **Automated end-to-end testing.** The repository includes a comprehensive 283-test, 5-tier automated end-to-end test suite in `tests/e2e/run_tests.sh` (documented in [TEST_INFRA.md](TEST_INFRA.md)), covering stage harnesses, boundary conditions, cross-feature combinations, real-world application scenarios, and white-box adversarial stress testing. Complete 7-stage manufacturing package generation was demonstrated on the retained 17-part acquisition board run.
 - **Independent AI review is not part of the build.** The package stage runs
   checks only. The review and campaign commands provide reviewers and
   adjudication for a captured candidate separately.
@@ -86,6 +84,20 @@ re-checks source and runtime identity. A `CANCEL` file stops before the next
 stage. `--through STAGE` stops at a checkpoint for diagnosis. See the
 [build workflow](docs/build-workflow.md) for the plan format and
 [placement job](docs/placement-job.md) for search, router and budget settings.
+
+### Core generator commands
+
+| Command | Purpose | Reference |
+| --- | --- | --- |
+| `agent-ee build run PLAN` | Run the complete 7-stage generative build pipeline | [build-workflow](docs/build-workflow.md) |
+| `agent-ee build review RUN` | Independently re-check completed build candidate | [build-workflow](docs/build-workflow.md) |
+| `agent-ee place run CONFIG` | Execute standalone placement search and routing | [placement-job](docs/placement-job.md) |
+| `agent-ee place metrics PCB` | Evaluate native placement quality metrics and wirelengths | [placement-job](docs/placement-job.md) |
+| `agent-ee parts compile ARGS` | Compile part selections and bind footprint/symbol sources | [parts-stage](docs/parts-stage.md) |
+| `agent-ee design compile DESIGN` | Validate and compile typed design statement to build bundle | [design-compile](docs/design-compile.md) |
+| `agent-ee design capture DESIGN` | Capture circuit and envelope into design schema | [design-compile](docs/design-compile.md) |
+| `agent-ee design generate PROMPT` | Synthesize design schema statement from natural language prompt | [design-compile](docs/design-compile.md) |
+| `agent-ee design benchmark RUNS` | Run automated benchmark suite across design examples | [benchmarking-guide](docs/benchmarking-guide.md) |
 
 ## Try it
 
@@ -187,15 +199,21 @@ fresh review. See the [operator guide](docs/operator-guide.md),
 | `evidence/` | Retained demonstration evidence; most run files live in the owner's private store ([relocation](docs/reproducing-evidence.md)) |
 | `docker/`, `Dockerfile`, `action.yml` | Pinned toolchain image and a checks-only GitHub Action |
 | `skills/agent-ee/` | Agent discovery skill for the CLI |
+| `TEST_INFRA.md` | [5-Tier E2E test suite infrastructure specification](TEST_INFRA.md) |
+| `GLOSSARY.md` | [Domain glossary defining 18 core circuit and placement concepts](GLOSSARY.md) |
 
 Development:
 
 ```sh
-PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
+# Run the 283-test 5-tier end-to-end test suite:
+./tests/e2e/run_tests.sh
+
+# Run unit tests and documentation checks:
+PYTHONPATH=src:tests pytest tests/
 python3 scripts/check_docs.py
 ```
 
-See the [maintainer guide](docs/maintainer-guide.md), [security](docs/security.md)
+See [TEST_INFRA.md](TEST_INFRA.md) for test tier breakdowns, runner options, and coverage mappings. See the [maintainer guide](docs/maintainer-guide.md), [security](docs/security.md)
 and the [enhancement roadmap](docs/enhancement-roadmap.md).
 
 ## License
