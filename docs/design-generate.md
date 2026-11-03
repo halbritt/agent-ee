@@ -192,7 +192,9 @@ and `outline_utilisation`. A row's status is the design's final state, or
 The benchmark ends `complete` (every design has a row from its own run, which
 can be a failure), `stopped_seat_failed`, `stopped_runtime_refused`,
 `interrupted` or `error`. The CLI exits 0 only when the benchmark is complete and
-every design is accepted, 130 when interrupted, and 1 otherwise.
+every design is accepted (for `generate`: when the design is accepted), 130 when
+interrupted, 2 when an option is refused (for `generate`, also its requirements
+file), and 1 otherwise.
 
 Each row reports a final-coordinate outline utilisation proxy: the projected
 union of linear courtyard bounding boxes, divided by the stated rectangular
