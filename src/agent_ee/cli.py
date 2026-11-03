@@ -70,6 +70,19 @@ def doctor(checks_only=False, router_checkout=None):
             from .kicad_quirks import erc_coordinate_regime
             record["erc_json_coordinates"] = erc_coordinate_regime(
                 record["version_output"] if p.returncode == 0 else None)
+            # The release, packages and library commits the image build installed; a host
+            # install has no record. The record must describe the kicad-cli that runs.
+            from .kicad_install import read_install_record
+            try:
+                installed = read_install_record()
+            except (OSError, ValueError) as exc:
+                record["error"] = f"KiCad install record: {exc}"
+            else:
+                record["install_record"] = installed
+                if installed is not None and (installed["record"]["version"] != record["version_output"]
+                        or installed["record"]["files"].get(record["path"] or "") not in (None, record["sha256"])):
+                    record["error"] = ("kicad-cli differs from the KiCad install record "
+                                       f"{installed['path']} ({installed['record']['version']})")
         checks[name] = record
     # Optional installed analyzers are tools, not core package dependencies. The report
     # names the installed version, its tag and commit when an install record exists, and

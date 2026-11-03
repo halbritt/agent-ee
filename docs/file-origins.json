@@ -720,6 +720,7 @@
         "bin/",
         "docker/apt-retry.sh",
         "docker/image-context.json",
+        "docker/kicad/",
         "docker/kicad-happy/",
         "docker/kicad-route/",
         "docker/ngspice/",

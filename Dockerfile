@@ -1,22 +1,23 @@
-# agent-ee native-check image: the demonstrated KiCad 10.0.7 / corrected ngspice 47 /
-# Bubblewrap 0.9.0 / Python 3.12 toolchain, the pinned kicad-route/KRT router
-# and this checkout's source launcher.
-# Pin enforcement and required runtime privileges: docs/container.md.
+# agent-ee native-check image: the newest KiCad 10.0 release and its libraries when
+# the image is built, corrected ngspice 47 / Bubblewrap 0.9.0 / Python 3.12, the
+# kicad-route/KRT router and this checkout's source launcher.
+# Versions, the KiCad update path and required runtime privileges: docs/container.md.
 #
-# Every pin fails closed: an unavailable exact version stops `apt-get install`,
-# and the verification step below refuses an image whose installed tools do not
-# report the expected versions.
+# KiCad is not held at one version: docker/kicad/install.py records the release
+# the build installed in /opt/kicad.install.json, and every run with the image uses
+# and records that release. The other tools below are exact versions from one
+# Ubuntu snapshot; an unavailable version stops `apt-get install`, and the
+# verification steps refuse an image whose tools do not report them.
 
 # Ubuntu 24.04 (noble) multi-architecture index digest, pulled 2026-10-17.
 ARG UBUNTU_DIGEST=sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
 FROM ubuntu:24.04@${UBUNTU_DIGEST} AS native-base
 
-# One snapshot timestamp freezes both the Ubuntu archive and the KiCad PPA, so
-# the exact package versions below stay installable after newer uploads.
+# One snapshot timestamp fixes the Ubuntu archive, so the exact base-tool versions
+# below stay installable after newer uploads. KiCad comes from the live PPA.
 ARG APT_SNAPSHOT=20261015T000000Z
 # Bootstrap TLS trust only from the immutable noble release pocket.
 ARG CA_CERTIFICATES_VERSION=20240203
-ARG KICAD_VERSION=10.0.7~ubuntu24.04.1
 ARG BUBBLEWRAP_VERSION=0.9.0-1ubuntu0.3
 ARG PYTHON3_VERSION=3.12.3-0ubuntu2.1
 ARG POPPLER_VERSION=24.02.0-1ubuntu9.10
@@ -29,6 +30,17 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # (matches the PPA's published signing_key_fingerprint).
 COPY --chmod=755 docker/apt-retry.sh /usr/local/bin/apt-retry
 COPY docker/kicad-10.0-releases.asc /usr/share/keyrings/kicad-10.0-releases.asc
+# KiCad and its symbol, footprint, 3D-model and template libraries are the newest
+# 10.0 release in the live KiCad PPA. The PPA's release file is this stage's cache
+# key: a rebuild after a KiCad release installs it, and an unchanged PPA leaves the
+# later layers cached. Updating KiCad means rebuilding the image.
+# docker/kicad/install.py records the release, package versions, PPA release file,
+# library tag commits and binary digests in /opt/kicad.install.json, and fails the
+# build unless kicad-cli and pcbnew name one 10.x release, pcbnew loads an owned board
+# and kicad-cli DRC reports on it.
+ADD https://ppa.launchpadcontent.net/kicad/kicad-10.0-releases/ubuntu/dists/noble/InRelease /usr/local/share/agent-ee/kicad/ppa-InRelease
+COPY docker/kicad/install.py src/agent_ee/kicad_install.py /usr/local/share/agent-ee/kicad/
+COPY fixtures/dc-path/straight.kicad_pcb /usr/local/share/agent-ee/kicad/probe/board.kicad_pcb
 
 RUN set -eu; \
     rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*; \
@@ -43,32 +55,29 @@ RUN set -eu; \
         'Suites: noble noble-updates noble-security' 'Components: main universe' \
         'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' '' \
         'Types: deb' \
-        "URIs: https://snapshot.ppa.launchpadcontent.net/kicad/kicad-10.0-releases/ubuntu/${APT_SNAPSHOT}" \
+        'URIs: https://ppa.launchpadcontent.net/kicad/kicad-10.0-releases/ubuntu' \
         'Suites: noble' 'Components: main' \
         'Signed-By: /usr/share/keyrings/kicad-10.0-releases.asc' \
         > /etc/apt/sources.list.d/agent-ee-snapshot.sources; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends \
         "python3=${PYTHON3_VERSION}" \
-        "kicad=${KICAD_VERSION}" \
-        "kicad-symbols=${KICAD_VERSION}" \
-        "kicad-footprints=${KICAD_VERSION}" \
-        "kicad-packages3d=${KICAD_VERSION}" \
-        "kicad-templates=${KICAD_VERSION}" \
+        kicad kicad-symbols kicad-footprints kicad-packages3d kicad-templates \
         libfftw3-double3 libgomp1 \
         "bubblewrap=${BUBBLEWRAP_VERSION}" \
         "poppler-utils=${POPPLER_VERSION}" \
         git; \
-    apt-mark hold python3 kicad kicad-symbols kicad-footprints kicad-templates bubblewrap poppler-utils; \
+    apt-mark hold python3 kicad kicad-symbols kicad-footprints kicad-packages3d kicad-templates bubblewrap poppler-utils; \
+    /usr/bin/python3 /usr/local/share/agent-ee/kicad/install.py /opt/kicad.install.json; \
     rm -rf /var/lib/apt/lists/*
 
-# Refuse an image whose tools do not report the demonstrated versions, or whose
+# Refuse an image whose base tools do not report the demonstrated versions, or whose
 # stock libraries / pcbnew bindings are missing from the system interpreter.
 RUN set -eu; \
-    test "$(kicad-cli version)" = "10.0.7"; \
     test "$(bwrap --version)" = "bubblewrap 0.9.0"; \
     /usr/bin/python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'; \
-    /usr/bin/python3 -c 'import pcbnew; v = pcbnew.GetBuildVersion(); assert v.startswith("10.0.7"), v' 2>/dev/null; \
+    /usr/bin/python3 -c 'import pcbnew' 2>/dev/null; \
+    test -s /opt/kicad.install.json; \
     test ! -u /usr/bin/bwrap; \
     for f in symbols/Device.kicad_sym symbols/power.kicad_sym symbols/Connector_Generic.kicad_sym \
              footprints/Resistor_SMD.pretty footprints/Capacitor_SMD.pretty \
@@ -203,7 +212,7 @@ RUN set -eu; \
     useradd --create-home --uid 10001 --shell /bin/bash agentee
 
 LABEL org.opencontainers.image.title="agent-ee" \
-      org.opencontainers.image.description="agent-ee with KiCad 10.0.7, corrected ngspice 47, Bubblewrap 0.9.0, Python 3.12 and kicad-route owned engine 0.23.1"
+      org.opencontainers.image.description="agent-ee with the newest KiCad 10.0 release at build time (recorded in /opt/kicad.install.json), corrected ngspice 47, Bubblewrap 0.9.0, Python 3.12 and kicad-route owned engine 0.23.1"
 
 # Bubblewrap needs an unprivileged user namespace; run as a non-root user.
 USER agentee
