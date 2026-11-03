@@ -124,6 +124,17 @@ def _rules(board, terminal):
                 drill=max(int(rules.m_MinThroughDrill), int(cls.GetViaDrill())))
 
 
+def _copper_boxes(item, margin):
+    if item.GetClass() != 'PCB_TRACK':
+        return [_box(item, margin)]
+    a, b = position_point(item.GetStart()), position_point(item.GetEnd())
+    count = max(1, math.ceil(math.dist(a, b) / 1_000_000)) if a[0] != b[0] and a[1] != b[1] else 1
+    radius = int(item.GetWidth()) // 2 + margin + 1
+    points = [tuple(round(x + i*(y-x)/count) for x,y in zip(a,b)) for i in range(count+1)]
+    return [(min(a[0],b[0])-radius, min(a[1],b[1])-radius,
+             max(a[0],b[0])+radius, max(a[1],b[1])+radius) for a,b in zip(points,points[1:])]
+
+
 def _subtract_box(box, opening):
     x, y, u, v = box
     a, b, c, d = opening
@@ -142,7 +153,7 @@ def _obstacles(board, net, layer, margin, endpoints=()):
     for item in items:
         if not item.IsOnLayer(layer) or item.m_Uuid.AsString() in allowed:
             continue
-        pieces = [_box(item, margin)]
+        pieces = _copper_boxes(item, margin)
         if item.GetClass() == 'PCB_TRACK' and item.GetNetCode() == net:
             # Allow a new branch to leave its declared shared pad. The rest
             # of this track, including an escape's interior, remains blocked.
@@ -284,7 +295,7 @@ def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None, reusable=
     margin = rules['clearance'] + radius + 25_000
     obstacles = [_box(p, max(rules['clearance'], _rules(board, p)['clearance']) + radius + 25_000)
                  for fp in board.GetFootprints() for p in fp.Pads()]
-    obstacles += [_box(t, margin) for t in board.GetTracks()]
+    obstacles += [box for t in board.GetTracks() for box in _copper_boxes(t, margin)]
     obstacles += [b for l in board.GetEnabledLayers().CuStack()
                   for b in _obstacles(board, terminal.GetNetCode(), l, margin)]
     front = _obstacles(board, terminal.GetNetCode(), layer, rules['clearance'] + width // 2 + 25_000, (terminal,))
