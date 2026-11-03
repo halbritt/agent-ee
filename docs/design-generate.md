@@ -166,8 +166,10 @@ A placement search failure first uses an automatic search retry while
 twice the placement seeds up to the compiler's 64. When the seeds are already 64
 the retry is skipped (`search_retry_skipped`) and the next author turn is told
 why. A job status of `placement_infeasible` (no incumbent and no hard-feasible
-engine state) is not retried either: more seeds would repeat the same search,
-so the next author turn gets the violations. A retry attempt writes
+engine state) is not retried either; the next author turn gets the violations.
+More seeds cannot fix a statement that no placement satisfies, such as an
+unreachable decoupling limit, and the loop cannot tell such a statement from a
+search that more seeds would complete. A retry attempt writes
 `automatic-retry.json`, which names its source attempt and the changed seed
 count; it writes no prompt and no response. It uses the same attempt and time
 bounds.

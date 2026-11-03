@@ -671,8 +671,8 @@ def refusal_classes(text):
 
 
 def search_failure(build, run):
-    """A placement search that more seeds could change. ``placement_infeasible`` is not one:
-    the engine found no hard-feasible state, so the statement goes back to the author."""
+    """A placement search failure that gets a seed retry. ``placement_infeasible`` (no
+    hard-feasible engine state) is excluded: that statement goes back to the author."""
     if not build or not build.get('attempts') or build['attempts'][-1].get('stage') != 'placement-routing':
         return False
     jobs = list(run.glob('stages/*/placement/job-report.json'))
@@ -946,8 +946,8 @@ def _generate(requirements_path, out, options, identity=None):
                                 'compiler accepts; a rebuild would repeat the same search')
                     elif any(p.get('status') == 'placement_infeasible' for p in row['placement_findings']):
                         row['search_retry_skipped'] = ('the placement engine found no placement that meets every '
-                            'hard constraint (placement_infeasible); more seeds would repeat the same search, so '
-                            'change the statement: see the engine violations in the placement summary')
+                            'hard constraint (placement_infeasible), so the statement comes back to you; the '
+                            'engine violations in the placement summary name the parts and terms to change')
                     reason = (build or {}).get('reason') or execution_error(record, attempt, 'build')
                     raise PhaseFailure(row['failing_stage'], reason, record)
                 row['engineering_review'] = 'not_run'

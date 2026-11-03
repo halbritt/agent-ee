@@ -221,15 +221,17 @@ supply and return nets must differ, and the locality limit must be less than the
 
 Each decoupling limit must also be reachable by its two parts. With the front
 courtyard boxes apart (touching is allowed) and every quarter-turn rotation,
-compile finds the smallest value of the longer of the two legs. A
-`max_distance_mm` below it is refused; the message names both legs and gives
-that value. For example, when the two device pads are diagonal corner pins of a
-3.9 x 4.9 mm SOIC-8 (pins 4 and 8, or 1 and 5), an 0603 capacitor needs at
-least 5.335 mm, so a 5 mm limit is refused. The check uses only these two parts: other parts, the outline and
-copper clearance can raise the distance a real placement needs, so passing it
-does not prove a placement exists. A footprint with a missing or curved
-courtyard, or a land with a drill offset, chamfer or other shape, gets no
-check.
+the validator finds the smallest value of the longer of the two legs. A
+`max_distance_mm` below it is refused, at capture's CAD check before any
+download and again at compile; the message names both legs and gives that
+value. For example, when the two device pads are diagonal corner pins of
+`Package_SO:SOIC-8_3.9x4.9mm_P1.27mm` (pins 4 and 8, or 1 and 5), a
+`Capacitor_SMD:C_0603_1608Metric` capacitor needs at least 5.335 mm, so a 5 mm
+limit is refused. The check uses only these two parts: other parts, the outline
+and copper clearance can raise the distance a real placement needs, so passing
+it does not prove a placement exists. No check is made when a footprint's front
+courtyard is missing or curved, or when a land has a drill offset, a chamfer, a
+per-layer padstack or a shape other than rect, roundrect, circle or oval.
 
 A connector's rotated front courtyard must reach within 1 mm of its declared
 edge. Along the edge, the courtyard must stay between the edge's two corners.
