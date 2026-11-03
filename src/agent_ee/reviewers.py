@@ -547,13 +547,25 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
 
 
 def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None, launch_context=None):
-    from .preflight import guard
     _check_schema_limits(schema)
+    schema = review_transport_schema(schema)
+    if label.startswith(('shortlist-', 'extraction-')):
+        # Standalone calls select their seat at dispatch. Only the native seat
+        # needs local binaries, fingerprints and a sandbox probe.
+        return dispatch(run_dir, label, definition, prompt, schema, timeout,
+                        cancellation=cancellation, launch_context=launch_context)
+    return _preflighted_call(run_dir, label, definition, prompt, schema, timeout,
+                             cancellation=cancellation, launch_context=launch_context, call=dispatch)
+
+
+def _preflighted_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation,
+                     launch_context, call):
+    from .preflight import guard
     if label.startswith(('shortlist-', 'extraction-')):
         from . import native_run
         active = native_run._active.get()
         if isinstance(active, native_run.Recorded):
-            record, value = dispatch(run_dir, label, definition, prompt, review_transport_schema(schema), timeout,
+            record, value = call(run_dir, label, definition, prompt, schema, timeout,
                                      cancellation=cancellation)
             return record, value
     if (launch_context is None or 'expected' not in launch_context) and label.startswith(('shortlist-', 'extraction-')):
@@ -598,7 +610,7 @@ def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancel
         timeout = min(timeout, launch_context['deadline'] - time.monotonic())
         if timeout <= 0 or (cancellation and cancellation.cancelled.is_set()):
             return {'execution': 'not_run', 'preflight': link, 'error': 'launch cancelled or deadline exhausted'}, None
-        record, value = dispatch(run_dir, label, definition, prompt, review_transport_schema(schema), timeout,
+        record, value = call(run_dir, label, definition, prompt, schema, timeout,
                                  cancellation=cancellation, executable=executable)
         record['preflight'] = link
         return record, value
@@ -617,7 +629,16 @@ def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancel
         raise
 
 
-def dispatch(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
+def dispatch(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None,
+             launch_context=None):
+    if label.startswith(('shortlist-', 'extraction-')):
+        return _preflighted_call(run_dir, label, definition, prompt, schema, timeout,
+                                 cancellation=cancellation, launch_context=launch_context, call=_native_dispatch)
+    return _native_dispatch(run_dir, label, definition, prompt, schema, timeout,
+                            cancellation=cancellation, executable=executable)
+
+
+def _native_dispatch(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
     from .harnesses import native_call
     if definition['harness'] == 'claude':
         record, value = claude_call(run_dir, label, definition['model'], prompt, schema, timeout,
