@@ -76,13 +76,14 @@ def _entry(source, field, record, detail, acquisition):
             'failure': detail['failure'], 'transient': detail['transient'], 'reason': record['reason'],
             'http_status': detail['http_status'], 'content_length': detail['content_length'],
             'size_bytes': detail['size_bytes'], 'sha256': record['sha256'],
-            'acquisition': acquisition, 'id': record['id']}
+            'fetches': detail['fetches'], 'acquisition': acquisition, 'id': record['id']}
 
 
 def _unavailable(source, field, reason):
     return {'source': source, 'field': field, 'url': None, 'outcome': 'unavailable',
             'failure': 'no_url', 'transient': False, 'reason': reason, 'http_status': None,
-            'content_length': None, 'size_bytes': None, 'sha256': None, 'acquisition': None, 'id': None}
+            'content_length': None, 'size_bytes': None, 'sha256': None, 'fetches': None,
+            'acquisition': None, 'id': None}
 
 
 def _fetch_source(out, source, urls, attempts, chosen, declared):
@@ -217,5 +218,9 @@ def _refusal(lcsc, refs, declared, attempts):
         action = ('every failure repeats on each download, so a new capture fails in the same way; to keep this '
                   f'part, declare a complete copy of its datasheet in {field} as '
                   '{"url": "https://...", "sha256": "<64 lowercase hex digits>"}; otherwise choose another part')
+    if any(a['failure'] == 'tls_verification' for a in attempts):
+        action += ('; a server whose TLS certificate fails verification (for example expired, untrusted or '
+                   'issued for another host) needs another URL with a valid certificate, or a corrected trust '
+                   'store on the capture host; capture never turns verification off')
     return (f'{field}: no complete datasheet PDF for {lcsc} ({", ".join(refs)}); sources tried: {tried}. '
             f'Next: {action}. {REPORT} in the capture directory lists every source with its byte counts')

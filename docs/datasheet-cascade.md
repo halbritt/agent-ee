@@ -30,7 +30,9 @@ from the index. A tier is never skipped silently. A tampered or invalid capture
 is refused before any output.
 
 Each candidate URL is fetched once, in order, through `datasheet_capture`'s
-owned, deadline-bounded fetch child. A candidate advances the cascade when:
+owned, deadline-bounded fetch child. A truncated PDF without a declared length
+is downloaded a second time, as [datasheet acquisition](datasheet-capture.md)
+describes. A candidate advances the cascade when:
 
 - it **fails**: there is no complete `%PDF-…%%EOF` envelope, for example an HTML
   bot challenge, a 404, a redirect to an invalid URL or a timeout; or

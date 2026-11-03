@@ -21,7 +21,8 @@ PYTHONPATH=src python3 -m agent_ee.datasheet_capture bindings.json --out build/d
 
 The output parent must already exist. The destination must be new, with no
 symlink or traversal in its parent. IDs and remote filenames never become local
-paths. Each unique exact URL is fetched once, including failures. Each successful
+paths. Each unique exact URL is fetched once, including failures; only a
+truncated PDF without a declared length is downloaded a second time (below). Each successful
 file is named by the SHA-256 of its URL plus `.pdf`; its bytes have a separate
 SHA-256. Different URLs remain separate even when their content matches.
 The manifest records every part's ID, original URL, observed final redirect URL,
@@ -46,10 +47,15 @@ establish a well-formed or safe PDF.
 A failed record's reason names the check that failed: no PDF header, a PDF
 that stops before `%%EOF` (a truncated file), fewer bytes than the declared
 `Content-Length` (an incomplete transfer), the byte limit, an HTTP status, a
-refused URL, a network failure or the deadline. A Python caller can pass a
-dictionary as `details=` to `capture_datasheets`. For each URL it receives the
-failure class, whether the failure can be temporary, the HTTP status, and the
-declared and received byte counts. The manifest does not change.
+refused URL or redirect target, a TLS certificate that fails verification,
+another network failure or the deadline. A truncated PDF that came without a
+declared `Content-Length` is downloaded once more. The same bytes again keep
+it a truncated file, a complete second download is used, and any other result
+makes it an incomplete transfer. A Python caller can pass a dictionary as
+`details=` to `capture_datasheets`. For each URL it receives the failure class,
+whether the failure can be temporary, the HTTP status, the declared and
+received byte counts, the body hash and, after a second download, both
+downloads. The manifest does not change.
 [Design capture](design-compile.md#failures-and-refusal) lists the classes.
 
 Each URL runs in an owned capture subprocess, with a hard elapsed-time deadline

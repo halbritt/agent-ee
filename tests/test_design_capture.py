@@ -34,7 +34,8 @@ class CaptureHttpTests(unittest.TestCase):
             b'{"success":true,"result":' + component("C1", chip(4, 2, 2)) + b"}"
         )
         # Datasheet URL fields of a part's JLC row by LCSC id, and datasheet routes
-        # (path -> status, body) that take precedence over the fixed ones below.
+        # (path -> status, body[, False for no Content-Length]) that take precedence over the
+        # fixed ones below; a list of routes answers successive requests in turn.
         self.row_urls, self.pdf_routes = {}, {}
         owner = self
 
@@ -70,7 +71,11 @@ class CaptureHttpTests(unittest.TestCase):
             def do_GET(self):
                 owner.requests.append((self.command, self.path, None))
                 if self.path in owner.pdf_routes:
-                    self.reply(*owner.pdf_routes[self.path])
+                    route = owner.pdf_routes[self.path]
+                    if isinstance(route, list):
+                        hits = sum(r[1] == self.path for r in owner.requests)
+                        route = route[min(hits, len(route)) - 1]
+                    self.reply(*route)
                 elif self.path == "/supplier/C1":
                     self.reply(owner.supplier_status, owner.supplier_raw)
                 elif self.path.startswith("/supplier/"):
@@ -85,9 +90,10 @@ class CaptureHttpTests(unittest.TestCase):
                 else:
                     self.reply(500, b"unexpected URL")
 
-            def reply(self, status, raw):
+            def reply(self, status, raw, framed=True):
                 self.send_response(status)
-                self.send_header("Content-Length", str(len(raw)))
+                if framed:
+                    self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
 
@@ -221,6 +227,20 @@ class CaptureHttpTests(unittest.TestCase):
         self.design["parts"]["R1"]["datasheet"] = dict(url=self.url + "/other.pdf")
         with self.assertRaisesRegex(DesignError, r"parts\.R1\.datasheet: the captured datasheet .* is not this"):
             validate(self.design, captured)
+
+    def test_source_cut_without_a_declared_length_is_downloaded_again_and_both_downloads_recorded(self):
+        # Review of ffea1c80: the connection closed after 20 bytes with no Content-Length; capture
+        # called the file truncated for good, and the next capture of the same URL succeeded.
+        whole = b"%PDF-1.4\n% owned synthetic manufacturer datasheet\n%%EOF\n"
+        self.pdf_routes = {"/maker.pdf": [(200, whole[:20], False), (200, whole, False)]}
+        self.design["parts"]["R1"]["datasheet"] = dict(url=self.url + "/maker.pdf")
+        captured = self.capture()
+        attempts = json.loads((captured / "datasheet-sources.json").read_bytes())["parts"]["C1"]["attempts"]
+        self.assertEqual([(a["source"], a["outcome"]) for a in attempts], [("declared", "selected")])
+        self.assertEqual([(f["failure"], f["size_bytes"], f["content_length"]) for f in attempts[0]["fetches"]],
+                         [("truncated", 20, None), (None, len(whole), None)])
+        final = json.loads((captured / "datasheets/manifest.json").read_bytes())["parts"][0]
+        self.assertEqual((captured / "datasheets" / final["path"]).read_bytes(), whole)
 
     def test_invalid_or_conflicting_declared_sources_refuse_before_any_download(self):
         import copy

@@ -255,7 +255,8 @@ source or `null`, the outcome (`selected` or `unresolved`), the selected source
 and every attempt. An attempt records the source, the JLC field, the URL, the
 outcome (`selected`, `failed` or `unavailable`), the reason, the failure class,
 whether the failure can be temporary (`transient`), the HTTP status, the
-declared `Content-Length` and the received byte count, the PDF hash and the
+declared `Content-Length` and the received byte count, the PDF hash, both
+downloads (`fetches`) when capture downloaded the source twice, and the
 acquisition manifest that holds the record. Of these datasheet files, compile
 copies only `datasheets/` into the bundle. The attempts and
 `datasheet-sources.json` stay in the capture directory, and `capture.json`
@@ -265,16 +266,20 @@ records their hashes.
 
 | Failure | Meaning | Can be temporary |
 | --- | --- | --- |
-| `truncated` | A PDF that stops before its end-of-file marker. When the server declared a length, every declared byte arrived, so the hosted file itself is cut. Without a declared length, capture cannot tell a cut connection from a cut file and still records `truncated`. | no |
+| `truncated` | A PDF that stops before its end-of-file marker, with every declared byte received, so the hosted file itself is cut. Without a declared length, capture downloads the source once more, and `truncated` needs the same truncated bytes twice. | no |
 | `not_pdf` | No PDF header, for example an HTML page. | no |
 | `too_large` | More than the 20 MiB limit. | no |
-| `invalid_url` | The URL or a redirect target is not an allowed HTTP(S) URL. | no |
+| `invalid_url` | The URL or a redirect target is not an allowed HTTP(S) URL, for example a redirect to `file:`. | no |
+| `tls_verification` | The server's TLS certificate fails verification, for example because it has expired, is untrusted or names another host. | no |
 | `http_status` | An HTTP error status. | 408, 425, 429, 500, 502, 503 and 504 only |
 | `hash_mismatch` | The PDF's SHA-256 differs from the declared `sha256`. | no |
 | `no_url` | The source gives no URL for the part. | no |
-| `incomplete_transfer` | Fewer bytes arrived than the server declared. | yes |
-| `network` | A DNS, connection, socket timeout or HTTP protocol failure. | yes |
+| `incomplete_transfer` | Fewer bytes arrived than the server declared. Or a response without a declared length stopped before its end-of-file marker, and a second download did not return the same bytes. | yes |
+| `network` | A DNS, connection, socket timeout, HTTP protocol or other TLS failure. | yes |
 | `deadline` | The 30-second fetch deadline expired. | yes |
+
+When the second download of a truncated PDF without a declared length is
+complete, capture uses it. `fetches` records both downloads.
 
 A part without a complete PDF refuses the capture. The refusal has one line for
 each such part, under `parts.<ref>.datasheet` for the part's first reference.
@@ -293,6 +298,10 @@ its URL without the query string, why it failed, and `[can be temporary]` or
 - Every failure of a part without a declaration repeats: a new capture fails
   in the same way. To keep the part, declare a complete copy in
   `parts.<ref>.datasheet`; otherwise choose another part.
+
+When a TLS certificate fails verification, the line also says to use another
+URL with a valid certificate, or to correct the capture host's trust store.
+Capture never turns verification off.
 
 For example:
 

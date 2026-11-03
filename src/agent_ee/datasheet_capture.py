@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -50,9 +51,25 @@ class _Refusal(ValueError):
 
 
 def _detail(failure=None, transient=None):
-    """Fetch facts kept beside, not inside, the manifest record."""
+    """Fetch facts kept beside, not inside, the manifest record.
+
+    ``fetches`` lists both downloads when a URL was downloaded twice (see ``_download_again``).
+    """
     return {'failure': failure, 'transient': transient, 'http_status': None,
-            'content_length': None, 'size_bytes': None}
+            'content_length': None, 'size_bytes': None, 'body_sha256': None, 'fetches': None}
+
+
+def _failure_class(exc):
+    """``(failure, transient)`` for a request that raised before a usable response."""
+    cause = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    # Expired, untrusted or other-host certificates fail the same way on every request.
+    # (SSLCertVerificationError is also a ValueError, so it is tested first.)
+    if isinstance(cause, ssl.SSLCertVerificationError):
+        return 'tls_verification', False
+    if isinstance(exc, ValueError):
+        # validate_url or the redirect handler refused the URL or a redirect target.
+        return 'invalid_url', False
+    return 'network', True
 
 
 def _declared_length(value):
@@ -76,16 +93,29 @@ class _Redirects(urllib.request.HTTPRedirectHandler):
         validate_url(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
+    def http_error_302(self, req, fp, code, msg, headers):
+        # urllib refuses some targets (file:, data:) itself, as an HTTPError with the 3xx
+        # status. Refuse every non-HTTP(S) target first, so it fails as an invalid URL.
+        target = headers.get('location') or headers.get('uri')
+        if target and urllib.parse.urlsplit(target).scheme.lower() not in ('http', 'https', ''):
+            fp.close()
+            raise ValueError(f'datasheet URL requires HTTP(S): the redirect to {target!r} is refused')
+        return super().http_error_302(req, fp, code, msg, headers)
+
+    # The base class binds its own http_error_302 to these names.
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
 
 def _fetch(url, seconds, max_bytes):
     """One URL: the manifest record, the PDF bytes, and a ``detail`` that classifies a failure.
 
-    ``detail.failure`` is ``not_pdf``, ``truncated``, ``too_large``, ``invalid_url``
-    or ``http_status`` (a refusal that repeats; ``transient`` false), or
-    ``incomplete_transfer``, ``network`` or an ``http_status`` in ``TRANSIENT_STATUS``
+    ``detail.failure`` is ``not_pdf``, ``truncated``, ``too_large``, ``invalid_url``,
+    ``tls_verification`` or ``http_status`` (a refusal that repeats; ``transient`` false),
+    or ``incomplete_transfer``, ``network`` or an ``http_status`` in ``TRANSIENT_STATUS``
     (a failure that a later request can avoid; ``transient`` true). A body shorter than
-    its declared Content-Length is an incomplete transfer; a complete body without the
-    end marker is a truncated file.
+    its declared Content-Length is an incomplete transfer. A body that ends without the
+    end marker is a truncated file here; without a declared length, ``_capture_parts``
+    downloads it again before that class stands.
     """
     record = {'url': url, 'final_url': None, 'fetched_at': datetime.now(timezone.utc).isoformat(),
               'sha256': None, 'path': None, 'missing': True, 'reason': None}
@@ -105,13 +135,14 @@ def _fetch(url, seconds, max_bytes):
             if len(raw) > max_bytes:
                 raise _Refusal('too_large', False, f'PDF byte limit exceeded: the response is larger than '
                                                    f'{max_bytes} bytes')
+            detail['body_sha256'] = hashlib.sha256(raw).hexdigest()
             if declared is not None and len(raw) < declared:
                 raise _Refusal('incomplete_transfer', True, f'incomplete transfer: {len(raw)} of the {declared} '
                                                             'bytes the server declared arrived')
             problem = envelope_problem(raw)
             if problem is not None:
                 raise _Refusal(problem[0], False, problem[1])
-        record.update(missing=False, sha256=hashlib.sha256(raw).hexdigest())
+        record.update(missing=False, sha256=detail['body_sha256'])
         return {'record': record, 'pdf': base64.b64encode(raw).decode('ascii'), 'detail': detail}
     except _Refusal as exc:
         failure, transient = exc.kind, exc.transient
@@ -120,12 +151,8 @@ def _fetch(url, seconds, max_bytes):
         detail['http_status'] = exc.code
         failure, transient = 'http_status', exc.code in TRANSIENT_STATUS
         record['reason'] = str(exc)
-    except ValueError as exc:
-        # validate_url refused the URL or a redirect target.
-        failure, transient = 'invalid_url', False
-        record['reason'] = str(exc)
-    except (OSError, urllib.error.URLError, http.client.HTTPException) as exc:
-        failure, transient = 'network', True
+    except (OSError, ValueError, urllib.error.URLError, http.client.HTTPException) as exc:
+        failure, transient = _failure_class(exc)
         record['reason'] = str(exc)
     detail.update(failure=failure, transient=transient)
     return {'record': record, 'pdf': None, 'detail': detail}
@@ -247,10 +274,40 @@ def _limits(timeout, max_bytes):
         raise ValueError('invalid PDF byte limit')
 
 
+def _download_again(url, timeout, max_bytes, first):
+    """Class a truncated PDF that came without a declared length, by downloading it once more.
+
+    Without a length, a connection closed early and a file cut at its source look alike.
+    The same truncated bytes twice mean the file is cut (``truncated``, repeats). A
+    complete second download is used. Any other result means the first transfer may have
+    been cut (``incomplete_transfer``, temporary). ``detail['fetches']`` keeps both downloads.
+    """
+    second = _bounded_fetch(url, timeout, max_bytes)
+    fetches = [{**{k: v for k, v in r['detail'].items() if k != 'fetches'},
+                'fetched_at': r['record']['fetched_at'], 'reason': r['record']['reason']} for r in (first, second)]
+    if not second['record']['missing']:
+        second['detail']['fetches'] = fetches
+        return second
+    size = first['detail']['size_bytes']
+    if second['detail']['failure'] == 'truncated' and second['detail']['body_sha256'] == first['detail']['body_sha256']:
+        failure, transient = 'truncated', False
+        reason = (f'{first["record"]["reason"]}; the response declared no length, and a second download '
+                  f'returned the same {size} bytes')
+    else:
+        failure, transient = 'incomplete_transfer', True
+        second_result = ('returned different bytes' if second['detail']['failure'] == 'truncated'
+                         else f'failed: {second["record"]["reason"]}')
+        reason = (f'incomplete transfer: a response without a declared length stopped after {size} bytes '
+                  f'without its %%EOF end-of-file marker, and a second download {second_result}')
+    return {'record': {**second['record'], 'reason': reason}, 'pdf': None,
+            'detail': {**second['detail'], 'failure': failure, 'transient': transient, 'fetches': fetches}}
+
+
 def _capture_parts(parts, stage, timeout, max_bytes, fetched=None, details=None):
     # ``fetched`` lets a host-side cascade fetch candidates one at a time into one stage.
     # ``details``, when given, receives each URL's fetch detail (failure class, transient,
-    # HTTP status, declared and received byte counts); manifest records stay unchanged.
+    # HTTP status, declared and received byte counts, body hash, and both downloads when a
+    # truncated PDF without a declared length was downloaded again); manifest records stay unchanged.
     records, fetched = [], {} if fetched is None else fetched
     for part in parts:
         url = part['datasheet_url']
@@ -261,6 +318,8 @@ def _capture_parts(parts, stage, timeout, max_bytes, fetched=None, details=None)
                 detail = _detail('no_url', False)
             else:
                 response = _bounded_fetch(url, timeout, max_bytes)
+                if response['detail']['failure'] == 'truncated' and response['detail']['content_length'] is None:
+                    response = _download_again(url, timeout, max_bytes, response)
                 record, detail = response['record'], response['detail']
                 if not record['missing']:
                     filename = hashlib.sha256(url.encode()).hexdigest() + '.pdf'

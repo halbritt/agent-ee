@@ -17,7 +17,8 @@ class DatasheetCaptureTests(unittest.TestCase):
         text_pdf(self.root / 'original.pdf', ['CANL 6', 'CANH 7'])
         self.pdf = (self.root / 'original.pdf').read_bytes()
         self.requests = []
-        # path -> (status, declared Content-Length or None, body bytes)
+        # path -> (status, declared Content-Length or None, body bytes), or a list of those
+        # that successive requests receive in turn (the last one repeats).
         self.routes = {}
         owner = self
 
@@ -25,7 +26,10 @@ class DatasheetCaptureTests(unittest.TestCase):
             def do_GET(self):
                 owner.requests.append(self.path)
                 if self.path in owner.routes:
-                    status, length, body = owner.routes[self.path]
+                    route = owner.routes[self.path]
+                    if isinstance(route, list):
+                        route = route[min(owner.requests.count(self.path), len(route)) - 1]
+                    status, length, body = route
                     self.send_response(status)
                     if length is not None:
                         self.send_header('Content-Length', str(length))
@@ -359,6 +363,8 @@ class DatasheetCaptureTests(unittest.TestCase):
                 ('/html', 3, 'not_pdf', False, 200, (len(b'<html>error</html>'), None)),
                 ('/gone', 3, 'http_status', False, 404, (None, None)),
                 ('/busy', 3, 'http_status', True, 503, (None, None)),
+                # Review of ffea1c80: urllib refused this file: redirect itself, as HTTP 302.
+                ('/bad-redirect', 3, 'invalid_url', False, None, (None, None)),
                 ('/slow', 0.2, 'deadline', True, None, (None, None)),
                 (None, 3, 'no_url', False, None, (None, None)))):
             with self.subTest(path=path):
@@ -371,6 +377,70 @@ class DatasheetCaptureTests(unittest.TestCase):
                                  (failure, transient, status))
                 self.assertEqual((detail['size_bytes'], detail['content_length']), sizes)
                 self.assertEqual(result['parts'][0]['missing'], failure is not None)
+
+    def test_truncated_pdf_without_a_declared_length_is_downloaded_again_before_it_is_classed(self):
+        # Review of ffea1c80: a connection closed early, without a declared length, was called a
+        # truncated file that repeats, and the next capture of the same URL succeeded.
+        whole = b'%PDF-1.4\n% owned synthetic datasheet body\n%%EOF\n'
+        cut, longer = whole[:20], whole[:-6]
+        self.routes.update({
+            '/cut-once': [(200, None, cut), (200, None, whole)],
+            '/cut-twice': (200, None, cut),
+            '/cut-differently': [(200, None, cut), (200, None, longer)],
+            '/cut-then-busy': [(200, None, cut), (503, None, b'busy')],
+            '/cut-with-length': (200, len(cut), cut)})
+        for number, (path, missing, failure, transient, fetches, reason) in enumerate((
+                ('/cut-once', False, None, None, ['truncated', None], None),
+                ('/cut-twice', True, 'truncated', False, ['truncated', 'truncated'],
+                 'a second download returned the same 20 bytes'),
+                ('/cut-differently', True, 'incomplete_transfer', True, ['truncated', 'truncated'],
+                 'a second download returned different bytes'),
+                ('/cut-then-busy', True, 'incomplete_transfer', True, ['truncated', 'http_status'],
+                 'a second download failed: HTTP Error 503'),
+                # A declared length that arrived complete already shows the file is cut: one download.
+                ('/cut-with-length', True, 'truncated', False, None, 'the file is truncated'))):
+            with self.subTest(path=path):
+                details = {}
+                result = capture_datasheets([{'id': 'U1', 'datasheet_url': self.url + path}],
+                                            self.root / f'again-{number}', details=details)
+                record, detail = result['parts'][0], details[self.url + path]
+                self.assertEqual((record['missing'], detail['failure'], detail['transient']),
+                                 (missing, failure, transient))
+                self.assertEqual(None if detail['fetches'] is None else [f['failure'] for f in detail['fetches']],
+                                 fetches)
+                self.assertEqual(self.requests.count(path), 1 if fetches is None else 2)
+                if reason is not None:
+                    self.assertIn(reason, record['reason'])
+                if not missing:
+                    self.assertEqual((self.root / f'again-{number}' / record['path']).read_bytes(), whole)
+
+    def test_certificate_verification_failure_repeats_while_transport_failures_stay_temporary(self):
+        # Review of ffea1c80: an expired certificate was called temporary, with advice to retry.
+        # The errors are injected where urllib opens the connection; nothing leaves the host.
+        import ssl
+        import urllib.error
+        import urllib.request
+        from unittest.mock import patch
+        from agent_ee.datasheet_capture import MAX_BYTES, _fetch
+        from agent_ee.design_datasheets import _entry, _refusal
+
+        for error, failure, transient in (
+                (ssl.SSLCertVerificationError(1, 'certificate verify failed: certificate has expired'),
+                 'tls_verification', False),
+                (ssl.SSLCertVerificationError(1, 'certificate verify failed: self-signed certificate'),
+                 'tls_verification', False),
+                (ssl.SSLEOFError(8, 'EOF occurred in violation of protocol'), 'network', True),
+                (ConnectionResetError(104, 'Connection reset by peer'), 'network', True),
+                (TimeoutError('timed out'), 'network', True)):
+            with self.subTest(error=error):
+                with patch.object(urllib.request.OpenerDirector, 'open', side_effect=urllib.error.URLError(error)):
+                    result = _fetch('https://datasheets.example/owned.pdf', 3, MAX_BYTES)
+                self.assertEqual((result['detail']['failure'], result['detail']['transient']), (failure, transient))
+                attempt = _entry('jlc_file', 'dataManualFileAccessIdUrl', {**result['record'], 'id': 'C1'},
+                                 result['detail'], 'datasheet-attempts/signed/manifest.json')
+                message = _refusal('C1', ['U1'], None, [attempt])
+                self.assertEqual('retry' in message, transient)
+                self.assertEqual('valid certificate, or a corrected trust store' in message, not transient)
 
     def test_cli_exit_and_manifest_for_missing_url(self):
         import subprocess
