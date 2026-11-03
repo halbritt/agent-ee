@@ -4,7 +4,9 @@
 policy. It runs the installed kicad-happy schematic, full PCB, cross-analysis
 and EMC scripts in the existing networkless sandbox, and records the version
 used ([Versions](kicad-happy.md#versions)). All four output envelopes must be
-**1.4.0**. It invokes no thermal, SPICE-enhanced, lifecycle or network
+**1.4.0**, and every finding field and summary count the gate reads must have the
+shape it reads; otherwise the check is unsupported, never a pass. It invokes no
+thermal, SPICE-enhanced, lifecycle or network
 option. The separate [`kicad_happy`](kicad-happy.md) kind retains its declared-rule
 policy and its schematic/PCB/thermal/EMC stages.
 

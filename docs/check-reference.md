@@ -1036,7 +1036,8 @@ inventory and executed Python helper hashes remain under `work/<id>/`.
 `normalized.json` records native rule/severity, component/net/pin locators,
 raw JSON path/pointer and explicit satisfied/violation/not-evaluated status.
 An absent blocking evaluation is unsupported, never clean. Invalid JSON is
-malformed; unrecognized envelopes/findings are unsupported; crashes remain
+malformed; unrecognized envelopes/findings, including a field that acceptance
+reads in another shape under the same envelope number, are unsupported; crashes remain
 failed execution. A run refuses an installation whose helper or data bytes
 change before it completes. `verify` checks a finished run's installation record
 against that run's saved `installation.json` and `executed.json`, not the

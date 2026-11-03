@@ -34,39 +34,56 @@ The image installs the newest release of the 2.x line when it is built:
 highest `vX.Y.Z` tag (pre-releases and the moving `v2` and `v2.3` tags are
 ignored), applies the AGENTEE-219
 [correction](../fixtures/kicad-happy/ac4-false-positives/EXPECTATIONS.md), and
-runs every analyzer on an owned probe project. It writes
-`/opt/kicad-happy.install.json` with the source, tag, commit, version, output
-format, the release and installed-file identities, and the correction's
-SHA-256. On 2026-11-03 the build installed v2.3.2.
+runs every analyzer on the owned severity-gate project, plus the schematic
+analyzer on the AGENTEE-219 reproducer. It writes
+`/opt/kicad-happy.install.json` with exactly these fields: schema, source, tag,
+commit, version, output format, the release and installed-file identities, and
+each correction's origin and SHA-256. On 2026-11-03 the build installed v2.3.2.
 
 Each check records what it used in `details.installation` and in its evidence
 file `work/<id>/installation.json`. The record has the root, the version, the
 tag and commit from the install record (`null` for a plain checkout without one),
-the installed-file identity `sha256`, the file inventory, and the install record.
-The installed version is not compared with any fixed version. These cases are
-refused as `unsupported`:
+the installed-file identity `sha256`, the file inventory, and the install record
+with its measured path and SHA-256. The record's own content never supplies
+those two measurements. The install record's raw bytes are kept as
+`work/<id>/install-record.json`. The installed version is not compared with any
+fixed version. Versions are `X.Y.Z` releases or `X.Y.Z-pre` prereleases, and
+runs accept a prerelease of the line. These cases are refused as `unsupported`:
 
-- a release outside the 2.x line. A different major release can change keys
-  under the same envelope format;
+- a version outside the 2.x line or not in that form. A different major release
+  can change keys under the same envelope format;
 - any analyzer envelope whose `schema_version` is not listed in
   [kicad-happy-contract.json](../src/agent_ee/data/kicad-happy-contract.json)
   (today only `1.4.0`);
-- an install record that does not describe the installed files.
+- a field that acceptance reads in another shape, under any envelope number:
+  a finding's `rule_id` and `severity`; `finding_id`, `source_path`, `status` and
+  `type` as strings; `suppressed` as a boolean; `assumptions` as a list of strings;
+  `components`, `nets` and `pins` as lists; and severity-gate summary counts that
+  match the findings ([kicad_happy_format.py](../src/agent_ee/kicad_happy_format.py));
+- an install record with other fields, malformed values or an unlisted output
+  format, or one that does not describe the installed files.
 
 To update, rebuild the image. The upstream ref listing is the cache key of the
 image's `kicad-happy` build stage, so a rebuild after an upstream release
 installs that release, and an unchanged release keeps the later layers cached.
-The build fails if the correction no longer applies or an analyzer reports an
-unlisted output format. Then the update needs a re-derived correction, or adapter
-and gate checks before the new format is added to the contract file. A host
-checkout is updated with Git; runs record whatever it holds, with tag and commit
-unknown.
+The build runs the same report checks as a run. It fails if the correction no
+longer applies or a probe report fails those checks, for example a renamed
+findings list or a changed field shape under the same format number. Then the
+update needs a re-derived correction, or adapter and gate checks before the
+contract file or the shape checks are extended. A host checkout is updated with
+Git; runs record whatever it holds, with tag and commit unknown.
 
 `agent-ee verify` checks a finished run's analyzer record against that run's own
-evidence: the saved `installation.json` must equal the record, the file
-inventory must give the recorded identity, and every executed helper must be in
-it. The installation now on the host is not consulted, so old runs stay
-verifiable after an update.
+evidence. The record must be one the recording code could write: its fields,
+SHA-256 digests, and an identity that its file inventory gives. Its version, tag,
+commit and identity must equal the nested install record's, and a successful
+check must name a version of the 2.x line and its executed helpers. The saved
+`installation.json`, `executed.json` and raw `install-record.json` must equal the
+record and the recorded install-record digest, and every executed helper must be
+in the inventory. The installation now on the host is not consulted, so old runs
+stay verifiable after an update. These are consistency checks over unkeyed
+digests: a writer who rewrites every saved record and seal consistently is not
+detected, and resisting one needs independent custody of the evidence.
 
 ## Declarations and evidence
 
