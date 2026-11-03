@@ -41,7 +41,8 @@ The default author needs a subscription login, not an API key. Set
 `AGENT_EE_CODEX_BINARY` to the native binary. There is no fallback on login,
 quota or harness failure: the design ends `seat_failed` and the benchmark stops.
 The same holds for review seats: with `--review-profile`, a reviewer execution in
-the review result that is not ok also ends the design `seat_failed`. For either
+the review result, or the adjudicator's execution, that is not ok also ends the
+design `seat_failed`. For either
 seat, a timeout, a seat the stopped run never reached and a structured-output
 refusal are not seat failures. The retained consoles of the first benchmark
 rounds held no login or quota failure, and the harness reports any provider
@@ -70,7 +71,11 @@ in the run directory and unpublished; these commands never upload them.
 ## Requirement trace
 
 A requirement item is one sentence of the requirements, or one row of a
-Markdown table (without its outer pipes). A sentence ends at `.`, `!` or `?`
+Markdown table (without its outer pipes). A table is a line followed by a
+delimiter row, read by the same rule as the spec parser (`agent_ee.spec_record`):
+cells of dashes with optional colons and at least one pipe, outer pipes
+optional. Lines that start with a pipe form a table too. A table runs to a blank
+line, heading or list item. A sentence ends at `.`, `!` or `?`
 (with any closing quote or bracket) followed by a space and a character that is
 not a lowercase letter. A sentence never spans a blank line, heading, list item
 or table row. Headings, and table rows above a table's separator row, are
@@ -85,6 +90,8 @@ prompt lists the numbered items.
 - A quote covers an item only when it lies inside exactly one item, or when the
   entry's `item` names the item's number. A quote whose words occur in more than
   one item, with no `item`, is refused: a shared quote never covers two items.
+  `item` is null or absent otherwise; null is valid in the schema each harness
+  receives as well as in the validator.
 - Intent and every `functional[i].text` need a trace.
 - Every item needs a trace quote or an `untraced` entry. An `untraced` entry
   quotes the item and gives status `unsupported` or `not_applicable` and a
@@ -214,7 +221,7 @@ can be a failure), `stopped_seat_failed`, `stopped_runtime_refused`,
 |---|---|
 | `0` | `generate`: the design is accepted. `benchmark`: the benchmark is `complete` and every design is accepted. |
 | `1` | The command returned a final report that is not that: any other final state of `generate`, or any other benchmark outcome. Also an unexpected internal error of a type the CLI does not handle, which Python reports with a traceback; any report it reached is retained with status `error`. |
-| `2` | The CLI printed `agent-ee: MESSAGE`. This is a refused option, a host without process-tree support or, for `generate`, a refused requirements file, all before any output. It is also any internal `ValueError`, `OSError`, `KeyError` or `TypeError` that escaped the command, for example from a phase; any report it reached is retained with status `error`. In a benchmark, one design's error is a row, not an exit. |
+| `2` | The CLI printed `agent-ee: MESSAGE`. This is a refused option or, for `generate`, a refused requirements file, both before any output. It is also any internal `ValueError`, `OSError`, `KeyError` or `TypeError` that escaped the command, for example from a phase; any report it reached is retained with status `error`. In a benchmark, one design's error is a row, not an exit. |
 | `130` | SIGINT or SIGTERM interrupted the run; its reports are final. |
 
 Each row reports a final-coordinate outline utilisation proxy: the projected
@@ -227,34 +234,29 @@ the outline can shrink. Missing native candidates are explicitly unavailable.
 Every SIGTERM, as sent by `docker stop` or `native-admit`, interrupts the run as
 an operator's SIGINT does, whatever handler SIGINT has. A caller's own SIGINT
 handler is neither called nor replaced, and the previous SIGTERM handler is
-restored when the command returns. While a phase or seat is being launched and
-SIGINT has Python's default handler, the stop is held until the launch returns,
-so the launched process is stopped too. While a final record is written, SIGINT
-and SIGTERM are held and arrive right after it. Every report is finalized: the
+restored when the command returns. A SIGTERM that arrives while a phase or seat
+is being launched is held until the launch returns its process, whatever handler
+SIGINT has, so that process is stopped too. While a final record is written,
+SIGINT and SIGTERM are held and arrive right after it. Every report is finalized: the
 attempt in flight is `interrupted`, the generate report is `interrupted`, the
 benchmark lists the design in flight as `interrupted` (or with its own final
 state if it had just finished) and every design not started as `not_run`, and
 the CLI exits 130. This handling is installed only when the command runs on the
 main thread.
 
-Each capture, compile, build and review phase runs under `agent_ee.process_tree`,
-a child subreaper. A descendant of the phase whose parent exits, including one
-that started its own session, becomes its child. It signals only its own
-children: each one only after a fresh check, made just before the signal, that
-it is still its child with the start time it first observed. Until it collects a
-child, that child's PID cannot be reused. On a stop or a phase timeout the phase
-receives SIGINT and 5 seconds to unwind; then the phase and every remaining
-descendant are killed. The coordinator allows the phase 15 seconds for this
-before it kills the phase's own process. A finished phase's leftover descendants
-are killed too. The author sandbox is killed with the seat call, and it dies
-with the coordinator (`bwrap --die-with-parent`).
+Each capture, compile, build and review phase runs as a host process in its own
+session and process group, whose id is the phase's own PID. On a stop or a phase
+timeout that one group receives SIGTERM and, 5 seconds later, SIGKILL; when a
+phase finishes, whatever is left in its group is killed. Nothing is signalled by
+a process listing, and no other process is signalled. The author sandbox is
+killed with the seat call, and it dies with the coordinator (`bwrap
+--die-with-parent`).
 
-Process-tree ownership needs a readable `/proc` and `prctl`. Without them the
-coordinator refuses to run (exit 2) and `agent_ee.process_tree` refuses to
-launch a phase (exit 125). When it cannot show the tree empty after a phase, it
-reports that and exits 125, so the phase counts as failed.
+Limit: a descendant that leaves the phase's process group or session (a
+sandbox launcher or host run that starts its own session does) can outlive a
+stopped run outside a container. In the documented container deployment,
+container teardown ends it.
 
-A SIGKILL of the coordinator cannot be handled: its reports stay `running`. Its
-phases then receive SIGTERM through their parent-death signal and stop their
-trees. In the documented container deployment, container teardown ends every
-process.
+A SIGKILL of the coordinator cannot be handled: its reports stay `running`, and
+its phase groups are not stopped. In the documented container deployment,
+container teardown ends every process.

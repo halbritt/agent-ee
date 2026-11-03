@@ -29,21 +29,17 @@ REAL_RUN_STEP = loop.run_step
 REQUIREMENTS = 'Build a compact divider. Measure it on hardware.'
 QUOTE = 'Build a compact divider'
 AUTHORITY = 'Agent-authored choices and requirement quotations; not owner or datasheet rulings.'
-# A phase that starts a descendant in its own session (as sandbox launchers and host runs
-# do), records both pids, waits argv[2] seconds and exits with status argv[3]. Interrupted,
-# it records that it could unwind.
+# A phase that starts a child in its own process group (not holding the phase's output),
+# records both pids, waits argv[2] seconds and exits with status argv[3], leaving the child running.
 PHASE = textwrap.dedent('''
     import os, subprocess, sys, time
-    detached = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'], start_new_session=True)
+    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     with open(sys.argv[1] + '.tmp', 'w') as stream:
-        stream.write(f'{os.getpid()} {detached.pid}')
+        stream.write(f'{os.getpid()} {child.pid}')
     os.replace(sys.argv[1] + '.tmp', sys.argv[1])
-    try:
-        time.sleep(float(sys.argv[2]))
-    except KeyboardInterrupt:
-        open(sys.argv[1] + '.unwound', 'w').close()
-        raise
-    sys.exit(int(sys.argv[3]))
+    time.sleep(float(sys.argv[2]))
+    os._exit(int(sys.argv[3]))
 ''')
 # A benchmark of three designs whose second design's build is a real PHASE under run_step.
 DRIVER = textwrap.dedent('''
@@ -908,6 +904,49 @@ class TraceTests(ScriptedLoop):
         response['trace'] += [dict(field='board', quote='Input | 12 V'), dict(field='board', quote='Output | 3.3 V')]
         self.assertEqual(self.problems(response, text), [])
 
+    def test_tables_without_outer_pipes_are_tables_too(self):
+        # The review's case: the spec parser's delimiter rule (outer pipes optional) decides tables.
+        rows = [('Required electrical behavior | Value', False), ('Input | 12 V', True), ('Output | 3.3 V', True)]
+        for name, text in (('no outer pipes', 'Required electrical behavior | Value\n--- | ---\nInput | 12 V\nOutput | 3.3 V\n'),
+                           ('mixed', '| Required electrical behavior | Value |\n--- | ---\nInput | 12 V\nOutput | 3.3 V\n'),
+                           ('aligned', 'Required electrical behavior | Value\n:--- | ---:\nInput | 12 V\nOutput | 3.3 V\n')):
+            with self.subTest(table=name):
+                self.assertEqual(loop.requirement_items(text), rows)
+                header_only = self.response()
+                header_only['trace'] = [dict(field=field, quote='Required electrical behavior')
+                                        for field in ('intent', 'functional[0].text', 'bench')]
+                self.assertEqual(self.problems(header_only, text), [
+                    'requirements: item 1 ("Input | 12 V") has no trace quote and no untraced entry',
+                    'requirements: item 2 ("Output | 3.3 V") has no trace quote and no untraced entry'])
+                self.requirements.write_text(text)
+                self.responses = [header_only]
+                report = loop.generate(self.requirements, self.root / name.replace(' ', '-'), max_attempts=1)
+                self.assertEqual(report['status'], 'attempts_exhausted')
+        # A line that only looks like a delimiter (no pipe) stays prose, as in the spec parser.
+        self.assertEqual(loop.requirement_items('Use a 5 V input rail.\n---\n'), [('Use a 5 V input rail.', True)])
+
+    def test_a_null_item_is_valid_for_the_validator_and_both_seat_schemas(self):
+        try:
+            import jsonschema
+        except ImportError:
+            self.skipTest('jsonschema is not installed')
+        from agent_ee.harnesses import strict_schema
+        envelope = self.response()
+        envelope['trace'][0]['item'] = None
+        envelope['trace'][1]['item'] = 1
+        for row in envelope['trace'][2:]:
+            row['item'] = None
+        envelope['untraced'] = [dict(quote='Measure it on hardware', item=None, status='not_applicable', reason='Bench.')]
+        schemas = {'codex': strict_schema(loop.AUTHOR_SCHEMA), 'agy': loop.AUTHOR_SCHEMA}
+        self.assertEqual(loop.validate_response(copy.deepcopy(envelope)), envelope)
+        for name, schema in schemas.items():
+            with self.subTest(schema=name):
+                jsonschema.validate(envelope, schema)
+                wrong = copy.deepcopy(envelope)
+                wrong['trace'][0]['item'] = '1'
+                with self.assertRaises(jsonschema.ValidationError):
+                    jsonschema.validate(wrong, schema)
+
     def test_an_item_number_is_null_or_a_positive_integer(self):
         for item in (0, -1, 1.5, '1', True):
             response = self.response()
@@ -1058,6 +1097,31 @@ class BenchmarkTests(ScriptedLoop):
         self.assertEqual((len(self.prompts), reviews), (1, ['a']))
         self.assertIn('Engineering review seat failed (circuit: failed)', report['designs'][0]['reason'])
 
+    def test_an_adjudicator_seat_failure_stops_the_benchmark(self):
+        # The review's case: both reviewers finished, the adjudicator ran out of quota.
+        directory = self.make_dir([('a', REQUIREMENTS), ('b', REQUIREMENTS)])
+        self.responses = [self.response(), self.response()]
+        reviews = []
+        original = self.step
+        def step(attempt, label, argv, seconds):
+            if label != 'review':
+                return original(attempt, label, argv, seconds)
+            reviews.append(attempt.parent.name)
+            (attempt / 'review/review').mkdir(parents=True)
+            write_json(attempt / 'review/report.json', dict(outcome='incomplete', qualification=dict(
+                dimensions=dict(engineering_review='not_assessed'))))
+            write_json(attempt / 'review/review/result.json', dict(findings=[], adjudicated=False, reviews=[{}, {}],
+                review_executions=[dict(role='circuit', execution='ok'), dict(role='physical', execution='ok')]))
+            write_json(attempt / 'review/review/adjudicator-execution.json', dict(execution='failed',
+                error='subscription quota exhausted; no fallback attempted'))
+            return dict(execution='failed', exit_code=1)
+        with patch.object(loop, 'run_step', side_effect=step):
+            report = loop.benchmark(directory, self.root / 'benchmark', max_attempts=1, review_profile=self.profile())
+        self.assertEqual(report['status'], 'stopped_seat_failed')
+        self.assertEqual([(r['name'], r['status']) for r in report['designs']], [('a', 'seat_failed'), ('b', 'not_run')])
+        self.assertEqual((len(self.prompts), reviews), (1, ['a']))
+        self.assertIn('Engineering review seat failed (adjudicator: failed)', report['designs'][0]['reason'])
+
     def test_review_seat_failures_exclude_timeouts_unreached_seats_and_format_refusals(self):
         rows = [dict(role='ok', execution='ok'), dict(role='slow', execution='timeout'),
                 dict(role='unreached', execution='not_run'), dict(role='stopped', execution='interrupted'),
@@ -1067,6 +1131,10 @@ class BenchmarkTests(ScriptedLoop):
         self.assertEqual([r['role'] for r in loop.review_seat_failures(dict(review_executions=rows))],
                          ['quota', 'stream', 'login'])
         self.assertEqual(loop.review_seat_failures(None), [])
+        # The adjudicator's own execution is judged by the same rule.
+        for execution, failed in (('timeout', False), ('not_run', False), ('failed', True), ('unavailable', True)):
+            self.assertEqual(loop.review_seat_failures(None, dict(execution=execution)) != [], failed, execution)
+        self.assertEqual(loop.review_seat_failures(None, dict(execution='malformed', refusal_kind='structured_output')), [])
 
     def test_one_designs_error_is_a_row_and_the_rest_still_run(self):
         directory = self.make_dir([('a', REQUIREMENTS), ('b', '   \n'), ('c', ''), ('d', REQUIREMENTS), ('e', REQUIREMENTS)])
@@ -1157,8 +1225,15 @@ class StopTests(ScriptedLoop):
         self.assertEqual([r['status'] for r in report['attempts']], ['interrupted'])
         self.assertEqual(self.saved('run/attempt-001/attempt.json')['status'], 'interrupted')
 
-    def test_stopped_phase_leaves_no_process_of_its_tree(self):
-        marker, attempt = self.root / 'pids', self.root / 'attempt'
+    def outsider(self):
+        """An unrelated process, in a session of its own, that no stop may signal."""
+        outsider = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True)
+        self.addCleanup(outsider.wait)
+        self.addCleanup(outsider.kill)
+        return outsider
+
+    def test_a_stop_kills_the_phase_group_and_nothing_else(self):
+        marker, attempt, outsider = self.root / 'pids', self.root / 'attempt', self.outsider()
         attempt.mkdir()
         previous = signal.signal(signal.SIGINT, signal.default_int_handler)
         self.addCleanup(signal.signal, signal.SIGINT, previous)
@@ -1176,17 +1251,53 @@ class StopTests(ScriptedLoop):
         pids = recorded_pids(marker)
         self.assertTrue(wait_for(lambda: not any(alive(pid) for pid in pids), 10), pids)
         self.assertEqual(json.loads((attempt / 'build-execution/execution.json').read_text())['execution'], 'interrupted')
-        # The phase was asked to unwind (SIGINT) before its tree was killed.
-        self.assertTrue((self.root / 'pids.unwound').is_file())
+        self.assertIsNone(outsider.poll())
 
-    def test_finished_phase_keeps_its_exit_status_and_leaves_no_process(self):
-        marker, attempt = self.root / 'pids', self.root / 'attempt'
+    def test_a_finished_phase_keeps_its_exit_status_and_its_group_is_killed(self):
+        marker, attempt, outsider = self.root / 'pids', self.root / 'attempt', self.outsider()
         attempt.mkdir()
         record = REAL_RUN_STEP(attempt, 'build', [sys.executable, '-c', PHASE, str(marker), '0', '3'], 60)
         pids = recorded_pids(marker)
         self.addCleanup(kill_all, pids or [])
         self.assertEqual((record['execution'], record['exit_code']), ('failed', 3))
         self.assertTrue(wait_for(lambda: not any(alive(pid) for pid in pids), 10), pids)
+        self.assertIsNone(outsider.poll())
+
+    def test_sigterm_during_a_launch_leaves_no_phase_group_process(self):
+        # SIGTERM arrives after the phase has started but before Popen returns its handle,
+        # whatever SIGINT's handler is.
+        def untranslated(signum, frame):
+            raise AssertionError('SIGTERM reached the caller untranslated')
+        previous_term = signal.signal(signal.SIGTERM, untranslated)
+        self.addCleanup(signal.signal, signal.SIGTERM, previous_term)
+        real_popen = subprocess.Popen
+        for name, handler in (('custom', lambda signum, frame: None), ('ignored', signal.SIG_IGN),
+                              ('default', signal.default_int_handler)):
+            with self.subTest(sigint=name):
+                previous_int = signal.signal(signal.SIGINT, handler)
+                self.addCleanup(signal.signal, signal.SIGINT, previous_int)
+                marker, outsider = self.root / f'pids-{name}', self.outsider()
+                def launch(argv, **options):
+                    process = real_popen(argv, **options)
+                    if PHASE in argv:
+                        self.assertTrue(wait_for(lambda: recorded_pids(marker), 30))
+                        os.kill(os.getpid(), signal.SIGTERM)
+                    return process
+                original = self.step
+                def step(attempt, label, argv, seconds):
+                    if label != 'capture':
+                        return original(attempt, label, argv, seconds)
+                    return REAL_RUN_STEP(attempt, label, [sys.executable, '-c', PHASE, str(marker), '300', '0'], 30)
+                self.responses = [self.response()]
+                with patch.object(loop, 'run_step', side_effect=step), \
+                     patch.object(loop.native_run.subprocess, 'Popen', side_effect=launch):
+                    with self.assertRaises(KeyboardInterrupt):
+                        loop.generate(self.requirements, self.root / f'run-{name}', max_attempts=1)
+                pids = recorded_pids(marker)
+                self.addCleanup(kill_all, pids or [])
+                self.assertTrue(wait_for(lambda: not any(alive(pid) for pid in pids), 10), pids)
+                self.assertEqual(self.saved(f'run-{name}/generate-report.json')['status'], 'interrupted')
+                self.assertIsNone(outsider.poll())
 
     def test_sigterm_to_a_benchmark_finalizes_every_report_and_stops_the_phase_tree(self):
         marker, work, driver = self.root / 'pids', self.root / 'work', self.root / 'driver.py'
@@ -1280,74 +1391,6 @@ class SignalTests(ScriptedLoop):
                     written.append('report')
                 time.sleep(10)
         self.assertEqual(written, ['report'])
-
-
-class ProcessTreeTests(ScriptedLoop):
-    def detached(self):
-        """A process that is not this process's child: a session-detached grandchild."""
-        launch = subprocess.run([sys.executable, '-c', 'import subprocess, sys; print(subprocess.Popen('
-                                 '[sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True, '
-                                 'stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid)'],
-                                capture_output=True, text=True, timeout=30, check=True)
-        pid = int(launch.stdout)
-        self.addCleanup(kill_all, [pid])
-        return pid
-
-    def test_a_stale_snapshot_naming_an_unrelated_process_signals_nothing(self):
-        outsider = self.detached()
-        start = loop.process_tree.stat(outsider)[2]
-        with patch.object(loop.process_tree, 'children', return_value=[(outsider, start)]), \
-             patch.object(loop.process_tree, 'reap'):
-            self.assertTrue(loop.process_tree.stop_tree())
-        self.assertTrue(alive(outsider))
-
-    def test_a_child_whose_start_time_differs_from_the_snapshot_is_not_signalled(self):
-        own = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
-        self.addCleanup(own.wait)
-        self.addCleanup(own.kill)
-        start = loop.process_tree.stat(own.pid)[2]
-        with patch.object(loop.process_tree, 'children', return_value=[(own.pid, start + 1)]), \
-             patch.object(loop.process_tree, 'reap'):
-            self.assertTrue(loop.process_tree.stop_tree())
-        self.assertIsNone(own.poll())
-
-    def test_a_child_that_refuses_the_signal_leaves_the_tree_not_empty(self):
-        kept, stopped = (subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']) for _ in range(2))
-        for child in (kept, stopped):
-            self.addCleanup(child.wait)
-            self.addCleanup(child.kill)
-        listed = [(child.pid, loop.process_tree.stat(child.pid)[2]) for child in (kept, stopped)]
-        real_kill = os.kill
-        def kill(pid, number):
-            if pid == kept.pid:
-                raise PermissionError(1, 'simulated setuid child')
-            return real_kill(pid, number)
-        with patch.object(loop.process_tree, 'children', return_value=listed), \
-             patch.object(loop.process_tree, 'reap'), patch.object(loop.process_tree.os, 'kill', side_effect=kill):
-            self.assertFalse(loop.process_tree.stop_tree(rounds=3))
-        self.assertEqual(stopped.wait(timeout=10), -signal.SIGKILL)
-        self.assertIsNone(kept.poll())
-
-    def test_without_a_readable_proc_the_phase_is_not_launched(self):
-        for name in [*map(int, loop.process_tree.STOP_SIGNALS), int(signal.SIGCHLD)]:
-            self.addCleanup(signal.signal, name, signal.getsignal(name))
-        (self.root / 'empty-proc').mkdir()
-        for proc in (self.root / 'absent-proc', self.root / 'empty-proc'):
-            with patch.object(loop.process_tree, 'PROC', str(proc)), \
-                 patch.object(loop.process_tree, 'prctl') as prctl, \
-                 patch.object(loop.process_tree.subprocess, 'Popen') as launch:
-                self.assertIsNotNone(loop.process_tree.support_problem())
-                status = loop.process_tree.main([str(os.getppid()), '--', sys.executable, '-c', 'pass'])
-            self.assertEqual(status, 125, proc)
-            launch.assert_not_called()
-            prctl.assert_not_called()
-
-    def test_the_coordinator_refuses_to_run_without_process_tree_support(self):
-        with patch.object(loop.process_tree, 'support_problem', return_value='/proc cannot be read (simulated)'):
-            with self.assertRaisesRegex(ValueError, 'process_tree: /proc cannot be read'):
-                self.generate()
-        self.assertFalse((self.root / 'run').exists())
-        self.assertFalse(self.prompts)
 
 
 class DocsTests(unittest.TestCase):

@@ -17,7 +17,8 @@ import sys
 import threading
 import time
 
-from . import design, harnesses, native_run, process_tree, review_run
+from . import design, executor, harnesses, native_run, review_run
+from .spec_record import DELIMITER
 from .storage import digest, write_json
 
 SCHEMA = 'agent-ee.design-generate/1'
@@ -41,8 +42,8 @@ MIN_QUOTE_WORDS = 3
 # design.validate's limit and design_compile's default for placement.seeds.
 MAX_SEEDS = 64
 DEFAULT_SEEDS = 4
-# A stopped or timed-out phase may stop its own tree (process_tree.GRACE_S) before SIGKILL.
-PHASE_STOP_GRACE_S = 15
+# A stopped or timed-out phase's process group gets SIGTERM, then SIGKILL after this many seconds.
+PHASE_STOP_GRACE_S = 5
 # Where the author seat sees a KiCad root that is outside the host /usr it already shows.
 SEAT_KICAD_ROOT = '/kicad'
 ROUTER_PIN = Path(__file__).with_name('data') / 'kicad-route-pin.json'
@@ -55,6 +56,9 @@ QUOTE_RULE = (f'At least {MIN_QUOTE_WORDS} whole words copied exactly from insid
               'occur in more than one item covers none of them unless item names its item.')
 ITEM_NUMBER_RULE = ('The number of the requirement item the quote is taken from, as numbered in the prompt. '
                     'Needed when the quoted words occur in more than one item; otherwise null.')
+# Null is valid wherever the item number may be absent: in the schema each harness receives
+# (Codex gets strict_schema() of it, Agy gets it as written) and in validate_response.
+ITEM_SCHEMA = dict(type=['integer', 'null'], description=ITEM_NUMBER_RULE)
 AUTHOR_SCHEMA = dict(type='object', additionalProperties=False,
     required=['status', 'reason', 'statement_json', 'trace', 'untraced', 'agent_selected'], properties=dict(
         status=dict(type='string', enum=['ready', 'unsupported']),
@@ -66,12 +70,12 @@ AUTHOR_SCHEMA = dict(type='object', additionalProperties=False,
                 field=dict(type='string', description='A design field path such as intent, functional[0].text, '
                     'board.width_mm or bench[1]; never a character position inside a text value.'),
                 quote=dict(type='string', description=QUOTE_RULE),
-                item=dict(type='integer', description=ITEM_NUMBER_RULE)))),
+                item=ITEM_SCHEMA))),
         untraced=dict(type='array', description='Each requirement item that no trace quotes, with why the '
             'design does not carry it.', items=dict(type='object', additionalProperties=False,
             required=['quote', 'status', 'reason'], properties=dict(
                 quote=dict(type='string', description=QUOTE_RULE),
-                item=dict(type='integer', description=ITEM_NUMBER_RULE),
+                item=ITEM_SCHEMA,
                 status=dict(type='string', enum=['unsupported', 'not_applicable']),
                 reason=dict(type='string')))),
         agent_selected=dict(type='array', items=dict(type='string'))))
@@ -124,9 +128,6 @@ def resolve_options(options):
     options['kicad_root'] = Path(options['kicad_root'])
     if seat_kicad_root(options['kicad_root'])[1] and not options['kicad_root'].is_dir():
         raise ValueError('kicad_root: supply an existing KiCad library directory')
-    problem = process_tree.support_problem()
-    if problem is not None:
-        raise ValueError(f'process_tree: {problem}; phase process trees cannot be owned, so nothing runs')
     return options
 
 
@@ -170,7 +171,6 @@ def validate_response(value):
 _WORD = re.compile(r'\w+')
 _LIST_MARKER = re.compile(r'(?:[-*+]|\d{1,9}[.)])\s+')
 _SENTENCE_BREAK = re.compile(r'[.!?]["\')\]]*( )(?=[^a-z])')
-_TABLE_RULE = re.compile(r'\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?')
 
 
 def normalize(text):
@@ -188,19 +188,27 @@ def split_sentences(text):
     return [part for part in parts if _WORD.search(part)]
 
 
+def is_delimiter(line):
+    """A table delimiter row by the spec parser's rule (spec_record.DELIMITER): cells of dashes
+    with optional colons, at least one pipe, outer pipes optional."""
+    return bool(DELIMITER.fullmatch(line.encode()))
+
+
 def requirement_items(text):
     """[(text, required)] for the requirement text.
 
     Every sentence of every paragraph and list item is a required item; a sentence never
-    spans a blank line, heading, list item or table row. Each Markdown table row is one
-    required item, without its outer pipes. Headings, and the header rows above a table's
-    separator row, are titles: they may be quoted but need no trace and cover no row."""
+    spans a blank line, heading, list item or table row. A table is a line followed by a
+    delimiter row (outer pipes optional, as spec_record reads them), or lines that start with
+    a pipe; it runs to a blank line, heading or list item, and each row is one required item
+    without its outer pipes. Headings, and the header rows above a table's delimiter row, are
+    titles: they may be quoted but need no trace and cover no other item."""
     items, block, table = [], [], []
 
     def flush():
         items.extend((sentence, True) for sentence in split_sentences(normalize(' '.join(block))))
         block.clear()
-        rules = [n for n, row in enumerate(table) if _TABLE_RULE.fullmatch(row)]
+        rules = [n for n, row in enumerate(table) if is_delimiter(row)]
         for n, row in enumerate(table):
             if n not in rules and _WORD.search(row):
                 items.append((normalize(row.strip('|')), not rules or n > rules[0]))
@@ -209,7 +217,17 @@ def requirement_items(text):
     for line in text.splitlines():
         stripped = line.strip()
         marker = _LIST_MARKER.match(stripped)
-        if not stripped or stripped.startswith('#') or marker or stripped.startswith('|') != bool(table):
+        ends_block = not stripped or stripped.startswith('#') or bool(marker)
+        if table and not ends_block:
+            table.append(stripped)
+            continue
+        if block and not ends_block and is_delimiter(stripped):
+            # The line above a delimiter row is the table's header, even without outer pipes.
+            header = block.pop()
+            flush()
+            table.extend((header, stripped))
+            continue
+        if ends_block or stripped.startswith('|'):
             flush()
         if stripped.startswith('#'):
             items.extend((sentence, False) for sentence in split_sentences(normalize(stripped.lstrip('#'))))
@@ -391,10 +409,10 @@ def remaining(deadline):
 
 
 def run_step(attempt, label, argv, seconds):
-    """A phase as one owned process tree (agent_ee.process_tree), with a hard remaining-time
-    bound and retained logs. A stop or timeout lets the tree unwind, then kills all of it."""
-    command = [sys.executable, '-B', '-m', 'agent_ee.process_tree', str(os.getpid()), '--', *map(str, argv)]
-    return native_run.run(native_run.Intent('design-' + label, command, timeout=seconds, isolation='host',
+    """A host phase in its own session and process group (the group id is the phase's PID), with
+    a hard remaining-time bound and retained logs. A stop or timeout sends SIGTERM to that one
+    group and SIGKILL after PHASE_STOP_GRACE_S; nothing outside the group is signalled."""
+    return native_run.run(native_run.Intent('design-' + label, argv, timeout=seconds, isolation='host',
         stop_grace_s=PHASE_STOP_GRACE_S), work=attempt / (label + '-execution'))
 
 
@@ -404,20 +422,17 @@ def stop_signals():
 
     docker stop and native-admit end a job with SIGTERM, and python as PID 1 has no handler
     of its own for it. Here each SIGTERM raises KeyboardInterrupt, whatever handler SIGINT
-    has: the run unwinds and finalizes every report. While a launch holds interrupts
-    (executor.held_interrupt replaced SIGINT's handler for it), the SIGTERM goes to that
-    hold, so the launched process is still owned and stopped. SIGINT keeps the caller's
-    handler. The previous SIGTERM handler is restored on exit. Main thread only: a call
-    from another thread installs nothing."""
+    has: the run unwinds and finalizes every report. While a phase or seat is being
+    launched, the SIGTERM is handed to that launch (executor.hold_stop), which stops the
+    process once it holds its handle. SIGINT keeps the caller's handler. The previous
+    SIGTERM handler is restored on exit. Main thread only: a call from another thread
+    installs nothing."""
     if threading.current_thread() is not threading.main_thread():
         yield
         return
-    entry_int = signal.getsignal(signal.SIGINT)
 
     def terminate(signum, frame):
-        held = signal.getsignal(signal.SIGINT)
-        if held is not entry_int and callable(held):
-            held(signal.SIGINT, frame)
+        if executor.hold_stop(signum):
             return
         raise KeyboardInterrupt
 
@@ -501,12 +516,15 @@ def review_feedback(result):
              for key in fields if key in row} for row in rows]
 
 
-def review_seat_failures(result):
-    """Review seats that failed as a subscription seat fails: any execution that is not ok,
-    except a timeout, a seat the stopped run never reached, and a structured-output refusal
-    (as for the author, those are not login, quota or transport failures)."""
-    return [{key: row.get(key) for key in ('role', 'execution', 'error')}
-            for row in (result or {}).get('review_executions', [])
+def review_seat_failures(result, adjudicator=None):
+    """Review seats that failed as a subscription seat fails: the reviewers in the review result
+    and the adjudicator, whose execution the review keeps on its own. Any execution that is not
+    ok counts, except a timeout, a seat the stopped run never reached, and a structured-output
+    refusal (as for the author, those are not login, quota or transport failures)."""
+    rows = [*(result or {}).get('review_executions', [])]
+    if isinstance(adjudicator, dict):
+        rows.append(dict(adjudicator, role='adjudicator'))
+    return [{key: row.get(key) for key in ('role', 'execution', 'error')} for row in rows
             if isinstance(row, dict) and row.get('execution') != 'ok'
             and row.get('execution') not in ('timeout', 'not_run', 'interrupted')
             and not (row.get('execution') == 'malformed' and row.get('refusal_kind') == 'structured_output')]
@@ -846,7 +864,7 @@ def _generate(requirements_path, out, options, identity=None):
                     if record['execution'] != 'ok' or record.get('exit_code') != 0 or dimension != 'pass':
                         result = read_optional(attempt / 'review/review/result.json')
                         row['review_findings'] = review_feedback(result or {})
-                        failed = review_seat_failures(result)
+                        failed = review_seat_failures(result, read_optional(attempt / 'review/review/adjudicator-execution.json'))
                         if failed:
                             # As for the author: no fallback, no further seat, and the benchmark stops.
                             row.update(status='seat_failed', failing_stage='review', review_seat_failures=failed,
