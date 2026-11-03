@@ -68,8 +68,9 @@ class AcMatchingJobTests(unittest.TestCase):
 
     def test_connected_unmatched_chain_rejects(self):
         # Router 995891ae routes this chain within 0.0194 mm of skew without meanders, so a 0.1 mm
-        # tolerance passes at any amplitude. The bends leave a skew that a 0.001 mm meander cannot
-        # remove; a 0.001 mm tolerance (above the 0.0002 mm rounding bound) therefore cannot be met.
+        # tolerance passes at any amplitude. The skew comes from unequal terminal fanout lengths, and
+        # a 0.001 mm meander cannot remove it; a 0.001 mm tolerance (above the 0.0002 mm rounding
+        # bound) therefore cannot be met.
         config = copy.deepcopy(self.config)
         config['router']['ac_match'].update(amplitude_mm=.001, tolerance_mm=.001)
         path, out = self.root / 'insufficient.json', self.root / 'insufficient'
