@@ -278,14 +278,16 @@ class LocalCopperTests(unittest.TestCase):
                              home=self.root/'router-home',local_decoupling=contract())
         self.assertEqual(result['status'],'routed');self.assertEqual(result['generated_relation_count'],0)
         receipt=result['local_decoupling'];self.assertEqual(receipt['protected'],[])
-        self.assertEqual(receipt['fallbacks'][0],dict(relation='cell',bank='bank-1',reason='forced bounded search refusal'))
+        reason='bank bank-1 refused without a named relation: forced bounded search refusal'
+        self.assertEqual(receipt['fallbacks'][0],dict(relation='cell',bank='bank-1',
+                         refused_relation=None,reason=reason))
         measured=measure(result['board'],contract(),generation=receipt)
         self.assertEqual(measured['outcome'],'info',measured)
         warnings={w['kind']:w for w in measured['warnings']}
         self.assertIn('generation_fallback',warnings);self.assertIn('bank_bypass',warnings)
         self.assertIn('router_copper_floor_unverified',warnings)
         self.assertIn('floor not verified for router copper',warnings['router_copper_floor_unverified']['reason'])
-        self.assertEqual(warnings['bank_bypass']['search_refusal'],'forced bounded search refusal')
+        self.assertEqual(warnings['bank_bypass']['search_refusal'],reason)
         self.assertTrue(all(measured['records'][0][side]['path'] for side in ('supply','return')))
         self.path=Path(result['board'])
         checked=self.checked(contract(),generation=receipt)
