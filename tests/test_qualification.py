@@ -343,6 +343,32 @@ class BuildQualificationTests(unittest.TestCase):
         write_json(self.plan_path, self.plan)
         self.out = self.root / 'run'
 
+    def test_completed_placement_copies_local_copper_warnings_to_build_report(self):
+        from unittest import mock
+        warning = dict(severity='warning', relation='decoupling-1', bank='bank-1',
+            kind='generation_fallback', reason='bounded search refused', search_refusal='bounded search refused')
+        self.plan['placement']['local_decoupling'] = 'loops.json'
+        write_json(self.source / 'loops.json', {})
+        write_json(self.plan_path, self.plan)
+
+        def execute(attempt, plan, previous, **kwargs):
+            candidate = attempt.capture(previous)
+            if attempt.name == 'placement-routing':
+                write_json(attempt.directory / 'placement/job-report.json',
+                    dict(final=dict(decoupling_loops=dict(warnings=[warning]))))
+            return candidate
+
+        # Stage production is the boundary: exercise the real build controller,
+        # retained files and warning propagation without inventing an accepted board.
+        with mock.patch.object(build.build_stages, 'execute', side_effect=execute), \
+                mock.patch.object(build, '_runtime', return_value={'control': 'warning custody'}), \
+                mock.patch.object(build, '_assess_report', side_effect=lambda out, report, **kw: report):
+            result = build.run(self.plan_path, self.out, through='placement-routing')
+        self.assertEqual(result['status'], 'checkpoint', result)
+        self.assertFalse(result['accepted'])
+        self.assertEqual(result['warnings'], [warning])
+        self.assertEqual(read_json(self.out / 'build-report.json')['warnings'], [warning])
+
     def test_public_checkpoint_writes_independent_qualification_and_resumes_assessment(self):
         result = build.run(self.plan_path, self.out, through='requirements')
         self.assertEqual(result['status'], 'checkpoint', result)

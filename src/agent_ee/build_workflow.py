@@ -17,7 +17,7 @@ from . import build_plan, build_stages, placement_intent, qualification, require
 from .retained_run import retained_path as _retained_path
 from .catalog import strict_json
 from .stage_receipts import tree_identity
-from .storage import digest, identity, write_json
+from .storage import digest, identity, read_json, write_json
 from .run_record import policy_files
 from . import run_record
 
