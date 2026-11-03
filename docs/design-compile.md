@@ -253,12 +253,13 @@ Capture writes `datasheets/` only when every part has a PDF.
 `datasheet-sources.json` lists, for each LCSC id, its references, the declared
 source or `null`, the outcome (`selected` or `unresolved`), the selected source
 and every attempt. An attempt records the source, the JLC field, the URL, the
-outcome (`selected`, `failed` or `unavailable`), the failure class, whether the
-failure can be temporary (`transient`), the HTTP status, the declared
-`Content-Length` and the received byte count, the PDF hash and the acquisition
-manifest that holds the record. Compile copies only `datasheets/` into the
-bundle. The attempts and `datasheet-sources.json` stay in the capture
-directory, and `capture.json` records their hashes.
+outcome (`selected`, `failed` or `unavailable`), the reason, the failure class,
+whether the failure can be temporary (`transient`), the HTTP status, the
+declared `Content-Length` and the received byte count, the PDF hash and the
+acquisition manifest that holds the record. Of these datasheet files, compile
+copies only `datasheets/` into the bundle. The attempts and
+`datasheet-sources.json` stay in the capture directory, and `capture.json`
+records their hashes.
 
 ### Failures and refusal
 
