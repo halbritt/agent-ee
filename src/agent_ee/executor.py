@@ -225,6 +225,10 @@ def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra
         forget_scope()
 
 
+# The held lists of the launches in progress on the main thread, innermost last.
+_LAUNCHES = []
+
+
 @contextlib.contextmanager
 def held_interrupt():
     """Hold an operator SIGINT while a sandbox is launched.
@@ -232,16 +236,33 @@ def held_interrupt():
     bwrap is running (and visible in /proc) before Popen returns its handle; a
     KeyboardInterrupt raised in between loses the only handle that can kill and
     reap it. The yielded list is non-empty when an interrupt was held; the caller
-    acts on it once the process handle exists."""
+    acts on it once the process handle exists. Other stop signals reach the same
+    list through hold_stop(), whatever handler SIGINT has."""
     held = []
-    if current_thread() is not main_thread() or signal.getsignal(signal.SIGINT) is not signal.default_int_handler:
+    if current_thread() is not main_thread():
         yield held
         return
-    previous = signal.signal(signal.SIGINT, lambda signum, frame: held.append(signum))
+    _LAUNCHES.append(held)
     try:
-        yield held
+        if signal.getsignal(signal.SIGINT) is not signal.default_int_handler:
+            yield held
+            return
+        previous = signal.signal(signal.SIGINT, lambda signum, frame: held.append(signum))
+        try:
+            yield held
+        finally:
+            signal.signal(signal.SIGINT, previous)
     finally:
-        signal.signal(signal.SIGINT, previous)
+        _LAUNCHES.pop()
+
+
+def hold_stop(signum):
+    """For a stop signal's handler: hand the stop to the launch in progress, which acts on it
+    once it holds the process handle. False, and nothing recorded, when no launch is in progress."""
+    if not _LAUNCHES:
+        return False
+    _LAUNCHES[-1].append(signum)
+    return True
 
 
 def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro, cancellation, skip_visuals, deadline=None):
