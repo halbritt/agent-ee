@@ -1018,12 +1018,22 @@ class DesignCompileTests(unittest.TestCase):
                 self.assertIn("The bottom edge starts at the bottom-right corner and runs west", message)
                 self.assertIn("use position_mm from 11.85 to 23.35", message)
 
-    def test_doc_states_where_each_connector_edge_starts_and_which_way_it_runs(self):
+    def test_edge_start_corners_in_messages_and_doc_match_the_generated_outline(self):
+        # The author reads design-compile.md; the outline edges are what the placer uses.
         from agent_ee.design_geometry import EDGE_RUNS
-        doc = (Path(__file__).resolve().parents[1] / "docs/design-compile.md").read_text()
-        doc = " ".join(doc.split())
-        for edge, (start, _, direction, _) in EDGE_RUNS.items():
-            self.assertIn(f"`{edge}` starts at the {start} corner and runs {direction}", doc)
+        self.compile()
+        edges = json.loads((self.root / "bundle/inputs/envelope.json").read_text())["outline"]["edges"]
+        xs = [e["start"][0] for e in edges]
+        ys = [e["start"][1] for e in edges]
+        compass = {(1, 0): "east", (0, 1): "south", (-1, 0): "west", (0, -1): "north"}
+        doc = " ".join((Path(__file__).resolve().parents[1] / "docs/design-compile.md").read_text().split())
+        for edge in edges:
+            start, unit = edge["start"], tuple((b > a) - (b < a) for a, b in zip(edge["start"], edge["end"]))
+            corner = ("top" if start[1] == min(ys) else "bottom") + "-" + ("left" if start[0] == min(xs) else "right")
+            with self.subTest(edge=edge["name"]):
+                self.assertEqual(EDGE_RUNS[edge["name"]][0], corner)
+                self.assertEqual(EDGE_RUNS[edge["name"]][2:], (compass[unit], unit))
+                self.assertIn(f"`{edge['name']}` starts at the {corner} corner and runs {compass[unit]}", doc)
 
     def test_through_edge_requires_local_axis_and_refuses_reversed_pose(self):
         d = copy.deepcopy(self.design)
