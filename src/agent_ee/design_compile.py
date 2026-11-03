@@ -1019,6 +1019,7 @@ def requirements(design, root, record, suppliers):
                     assembly_profile="cpl/assembly-profile.json",
                     **model_params,
                 ),
+                check('fab-roundtrip', 'fab_roundtrip', package_check='fab'),
             ],
         )
     )

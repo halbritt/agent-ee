@@ -297,7 +297,7 @@ class DesignCompileTests(unittest.TestCase):
             for p, h in input_inventory(inputs).items()
             if not p.startswith("requirements-map/")
         }
-        compile_map(
+        scope, _ = compile_map(
             (inputs / "requirement-map.json").read_bytes(),
             (inputs / "spec-record.json").read_bytes(),
             (inputs / "spec.md").read_bytes(),
@@ -305,11 +305,14 @@ class DesignCompileTests(unittest.TestCase):
             inputs=inputs,
             obligations_raw=(inputs / "obligations.json").read_bytes(),
         )
+        from agent_ee.qualification import manufacturing_coverage
+        plan = json.loads((self.root / 'bundle/build-plan.json').read_text())
+        manufacturing_coverage(plan, scope, [])
         m = json.loads((inputs / "requirement-map.json").read_text())
         rows = m["requirements"]
         functional = next(r for r in rows if r["id"] == "TEST-FUNC-1")
         self.assertEqual({c["kind"] for c in functional["checks"]}, {"topology_rules"})
-        self.assertEqual(rows[-1]["checks"][-1]["kind"], "fab_package")
+        self.assertEqual(rows[-1]["checks"][-1]["kind"], "fab_roundtrip")
         parity = [
             r
             for r in rows
@@ -629,6 +632,17 @@ class DesignCompileTests(unittest.TestCase):
                 classify(pair, locality["source_records"])["enforcement"], "hard"
             )
             self.assertIn("6 mm", pair["provenance"]["citation"]["quote"])
+
+    def test_compiled_delivery_includes_the_required_sealed_fabrication_roundtrip(self):
+        self.compile()
+        root = self.root / 'bundle/inputs'
+        document = json.loads((root / 'requirement-map.json').read_text())
+        delivery = next(r for r in document['requirements'] if r['id'] == 'TEST-DELIV-1')
+        checks = delivery['checks']
+        package = next(c for c in checks if c['kind'] == 'fab_package')
+        roundtrip = next(c for c in checks if c['kind'] == 'fab_roundtrip')
+        self.assertEqual(roundtrip['params'], dict(package_check=package['id']))
+        self.assertLess(checks.index(package), checks.index(roundtrip))
 
     def test_clearance_uses_fab_floor_track_width_uses_native_routing_default(
         self,
