@@ -216,6 +216,18 @@ the design; it does not promote that number to an owner or datasheet limit.
 Capacitor and device must differ, supply and return terminals must be distinct,
 supply and return nets must differ, and the locality limit must be less than the board diagonal.
 
+Each decoupling limit must also be reachable by its two parts. With the front
+courtyard boxes apart (touching is allowed) and every quarter-turn rotation,
+compile finds the smallest value of the longer of the two legs. A
+`max_distance_mm` below it is refused; the message names both legs and gives
+that value. For example, the supply and return pads of a SOIC-8 sit on diagonal
+corners, so an 0603 capacitor needs at least 5.335 mm and a 5 mm limit is
+refused. The check uses only these two parts: other parts, the outline and
+copper clearance can raise the distance a real placement needs, so passing it
+does not prove a placement exists. A footprint with a missing or curved
+courtyard, or a land with a drill offset, chamfer or other shape, gets no
+check.
+
 A connector's rotated front courtyard must reach within 1 mm of its declared
 edge. The fixed-pose gate checks position, rotation and insertion side. Through-edge
 connectors require `local_mating_axis` (`x+`, `x-`, `y+`, `y-`) in the footprint

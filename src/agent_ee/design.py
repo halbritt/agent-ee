@@ -560,6 +560,36 @@ def validate(design, captures=None, *, cad_only=False):
                         path + "." + key,
                         f"{t[0]}.{t[1]} has repeated lands; this compiler cannot yet derive the native land UUID; use an unambiguous package",
                     )
+        legs = [d[key] for key in ("supply", "return")]
+        if (
+            d["device"] in footprints
+            and d["capacitor"] in footprints
+            and number(d["max_distance_mm"])
+            and all(
+                isinstance(leg, list)
+                and len(leg) == 2
+                and all(isinstance(t, str) for t in leg)
+                and [t.split(".", 1)[0] for t in leg] == [d["device"], d["capacitor"]]
+                for leg in legs
+            )
+        ):
+            from .design_geometry import decoupling_reach
+
+            reach = decoupling_reach(
+                footprints[d["device"]],
+                footprints[d["capacitor"]],
+                *[tuple(t.split(".", 1)[1] for t in leg) for leg in legs],
+            )
+            # 1 nm absorbs floating-point error; the bound itself is never rounded down.
+            if reach is not None and reach > d["max_distance_mm"] + 1e-6:
+                fail(
+                    path + ".max_distance_mm",
+                    f"{'-'.join(legs[0])} and {'-'.join(legs[1])} cannot both be within "
+                    f"{d['max_distance_mm']:g} mm: with the {d['device']} and {d['capacitor']} "
+                    f"courtyards apart, in every quarter-turn rotation, the longer leg is at least "
+                    f"{reach:.3f} mm. Raise max_distance_mm to {math.ceil(reach * 100 - 1e-6) / 100:g} mm "
+                    "or more, or choose pads or packages that let the capacitor sit closer",
+                )
     functional = design["functional"]
     if not isinstance(functional, list) or not functional:
         fail("functional", "supply at least one witnessed functional requirement")

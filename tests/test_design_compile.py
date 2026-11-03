@@ -1075,6 +1075,43 @@ class DesignCompileTests(unittest.TestCase):
         with self.assertRaisesRegex(DesignError, "different nets"):
             validate(d)
 
+    def put_footprint(self, name, pads, courtyard):
+        """An original two-pad footprint: (number, x, y) land centres and one F.CrtYd graphic."""
+        lands = "".join(f'(pad "{n}" smd rect (at {x} {y}) (size 0.6 0.6) (layers "F.Cu" "F.Mask"))'
+                        for n, x, y in pads)
+        (self.captures / f"cad/Owned.pretty/{name}.kicad_mod").write_bytes(kicad_footprint(
+            name, lands, extra=courtyard + ' (stroke (width 0.05) (type default)) (layer "F.CrtYd"))'))
+
+    def test_decoupling_limit_no_courtyard_arrangement_meets_is_refused_with_the_bound(self):
+        # Benchmark r4 led-flasher attempt-004: the supply and return pads of a 3.9 x 4.9 mm SOIC-8
+        # sit on diagonal corners and the capacitor is an 0603, so with the courtyards apart one leg
+        # is at least 5.335 mm in every rotation. Its 5 mm limit sent the placer into a search that
+        # could not succeed. These footprints have the same land centres and courtyard boxes.
+        from agent_ee.design import validate
+        self.put_footprint("DEV", [("1", 2.475, 1.905), ("2", -2.475, -1.905)],
+                           "(fp_rect (start -3.7 -2.7) (end 3.7 2.7)")
+        self.put_footprint("CAP", [("1", -0.775, 0), ("2", 0.775, 0)],
+                           "(fp_rect (start -1.48 -0.73) (end 1.48 0.73)")
+        seal_capture(self.captures)
+        self.design["parts"]["R1"]["footprint"] = "Owned:DEV"
+        self.design["parts"]["R2"]["footprint"] = "Owned:CAP"
+        relation = dict(capacitor="R2", device="R1", supply=["R1.1", "R2.1"], **{"return": ["R1.2", "R2.2"]})
+        for limit, refused in ((5, True), (5.334, True), (5.335, False), (5.34, False)):
+            self.design["decoupling"] = [dict(relation, max_distance_mm=limit)]
+            with self.subTest(limit=limit):
+                if refused:
+                    with self.assertRaisesRegex(DesignError, r"decoupling\[0\]\.max_distance_mm: R1\.1-R2\.1 and "
+                                                r"R1\.2-R2\.2 .* at least 5\.335 mm\. Raise max_distance_mm to 5\.34 mm"):
+                        validate(self.design, self.captures)
+                else:
+                    validate(self.design, self.captures)
+        # A curved courtyard has no box this check trusts, so the limit is not judged.
+        self.put_footprint("CAP", [("1", -0.775, 0), ("2", 0.775, 0)],
+                           "(fp_circle (center 0 0) (end 1.5 0)")
+        seal_capture(self.captures)
+        self.design["decoupling"] = [dict(relation, max_distance_mm=5)]
+        validate(self.design, self.captures)
+
     def test_device_symbol_families_cannot_lie_about_class(self):
         from agent_ee.design import validate, device_class
         for family, kind in (("R", "resistor"), ("C", "capacitor"), ("C_Polarized", "polarized_capacitor"),
