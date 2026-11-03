@@ -107,8 +107,9 @@ that version and records it (commit, clean-tree state and code digest in its ada
 report); a dirty checkout or an unreadable commit is refused, and a result outside the
 adapter's result contract is refused. Deterministic tests use the coordinator's fixture
 router, not a frozen kicad-route commit. A finished run verifies against the commit it
-recorded; work that continues a campaign must run on the commit its routing binding
-recorded. A main update does not mutate or invalidate a running experiment; the next run
+recorded; every turn of a campaign with a routing binding, routing or not, must run on
+the commit that binding recorded, or it stops before any step runs; a campaign bound before
+2026-11-03 (to the retired commit table) restarts. A main update does not mutate or invalidate a running experiment; the next run
 uses and records it. Any temporary production exception is explicit, dated and owned by529.
 
 449 owns a persistent render job, approximately every four hours, with an initial refresh

@@ -48,9 +48,12 @@ The adapter checks the tool as well as its reports:
   read-only checkout is never written, and with the repository's file-system
   monitor and hooks disabled. A modified, staged or untracked file that is not
   ignored, such as a `sitecustomize.py`, makes the tree dirty. Ignored files
-  (installed state, `__pycache__`) do not: the router runs with `-B` and a
-  private `PYTHONPYCACHEPREFIX` under `/work`, so cached bytecode in the
-  checkout is never read or written.
+  (installed state, `__pycache__`) do not, and are never executed: both the
+  sandboxed attempt (`PYTHONPYCACHEPREFIX` under `/work`) and the placement
+  job's board route and spokes diagnostic (`PYTHONPYCACHEPREFIX` under the
+  route's private home, `board_route_env`) run kicad-route with `-B` and a
+  private, empty cache prefix, so bytecode cached in the checkout, which the
+  code digest excludes, is never read or written.
 - A link or special file under `bin/` or `src/` is refused.
 - Any refusal stops the step before the router runs. Nothing updates or
   repairs the external checkout.
@@ -103,9 +106,14 @@ records the table's commit as `tool.pin` instead; it verifies against that
 commit (the router ran only when `tool.commit` equalled it), and a retained
 step's mount of the retired table is accepted when a receipt is verified, never
 in a new step. A campaign continues only on the commit its routing binding
-recorded (`validate_live_binding`): another commit, or a binding written with
-the retired table, raises `StaleRoutingEvidence`, and the campaign is rerun on
-the current checkout.
+recorded: `campaign.run_implementation_steps` calls `validate_live_binding` at
+the start of every turn of a campaign that has a routing binding, routing or not,
+so another commit raises `StaleRoutingEvidence` before any step of that turn runs
+or is adopted, and the campaign is rerun on the current checkout. A binding
+written with the retired table (before 2026-11-03; it records the table's commit
+as `pin` and its step mounts the table) is stale for continuation even when the
+checkout still holds that commit: its frozen step cannot be rebuilt without the
+table, so such a campaign restarts on the current checkout.
 
 The reported tool version is recorded as `unknown`: kicad-route has no version
 flag, and `doctor` is not used because it looks up upstream releases. The
@@ -1299,7 +1307,9 @@ Experiment evidence is never dropped and is never qualified.
   refuses M at `validate_live_binding` with `StaleRoutingEvidence`, whose
   full message names L and M and is compared by literal equality on the
   consumer path. A dirty runtime, other commits or any other reason never
-  refuse control A under A2. The low-level `run_step` on M is reported as a
+  refuse control A under A2; that includes `verdict-2r4`'s own control-A
+  contract (the retired table's refusal reasons), which A2 never consults for
+  control A. The low-level `run_step` on M is reported as a
   fresh run that records M. `k91_classify.py` and `k91_classify_a1.py` are
   unchanged records; every other control is judged by `verdict-2r4`. The
   live matrix (`scripts/k91_control_matrix.py`) and the live harness tests

@@ -912,10 +912,15 @@ def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owne
 
 
 def board_route_env(checkout, home):
-    """Build the isolated subprocess environment for a board-level kicad-route run."""
+    """Build the isolated subprocess environment for a board-level kicad-route run.
+
+    PYTHONPYCACHEPREFIX names a private, empty directory under home, as the sandbox attempt's
+    does: -B only stops writing caches, so without it Python would read bytecode cached in the
+    checkout, which the recorded code digest (kicad_route_attempt.code_files) excludes."""
     Path(home).mkdir(parents=True, exist_ok=True)
     return {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
             'TMPDIR': str(home), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
+            'PYTHONPYCACHEPREFIX': str(Path(home) / 'pycache'),
             'KICAD_ROUTE_STATE': str(checkout), 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
             'GIT_OPTIONAL_LOCKS': '0'}
 

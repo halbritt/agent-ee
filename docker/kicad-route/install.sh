@@ -62,6 +62,22 @@ fetch_commit() {
     [ "$(git -C "$dir" rev-parse HEAD)" = "$commit" ] || fail "$dir HEAD is not $commit"
 }
 
+# The rustc and cargo banners the record holds; an unreadable banner stops the build.
+read_toolchain() {
+    rustc=$(rustc --version) && [[ $rustc =~ $RUSTC_BANNER ]] || fail "unreadable rustc version '$rustc'"
+    cargo=$(cargo --version) && [[ $cargo =~ $CARGO_BANNER ]] || fail "unreadable cargo version '$cargo'"
+}
+
+# grid_router.__version__ as the built venv imports it; an unreadable version stops the build.
+read_engine_version() {
+    engine=$(cd "$KRT" && "$VENV/bin/python" -I -B -X pycache_prefix=/dev/null -c '
+import sys
+sys.path.insert(0, "rust_router")
+import grid_router
+print(getattr(grid_router, "__version__", ""))') &&
+        [[ $engine =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+-][0-9A-Za-z.+-]+)?$ ]] || fail "unreadable engine version '$engine'"
+}
+
 venv_versions() {
     "$VENV/bin/python" -I -B -X pycache_prefix=/dev/null -c '
 import importlib.metadata as m
@@ -74,9 +90,8 @@ install_tool() {
     resolve_commit
     fetch_commit "$KICAD_ROUTE_URL" "$ROOT" "$KICAD_ROUTE_COMMIT"
     [ -z "$(git -C "$ROOT" status --porcelain)" ] || fail "kicad-route checkout is dirty after checkout"
-    local rustc cargo
-    rustc=$(rustc --version) && [[ $rustc =~ $RUSTC_BANNER ]] || fail "unreadable rustc version '$rustc'"
-    cargo=$(cargo --version) && [[ $cargo =~ $CARGO_BANNER ]] || fail "unreadable cargo version '$cargo'"
+    local rustc cargo engine
+    read_toolchain
     [ -s "$REQUIREMENTS" ] || fail "kicad-route $KICAD_ROUTE_COMMIT has no $REQUIREMENTS"
     local tmp
     tmp=$(mktemp -d)
@@ -106,13 +121,7 @@ PY
     # no external KRT checkout, release lookup or prebuilt binary fallback.
     "$VENV/bin/python" -I -B -X pycache_prefix=/dev/null "$KRT/build_router.py" --target-dir "$tmp/router-native"
     KICAD_ROUTE_STATE="$ROOT" "$ROOT/bin/kicad-route" state-manifest
-    local engine
-    engine=$(cd "$KRT" && "$VENV/bin/python" -I -B -X pycache_prefix=/dev/null -c '
-import sys
-sys.path.insert(0, "rust_router")
-import grid_router
-print(getattr(grid_router, "__version__", ""))')
-    [[ $engine =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+-][0-9A-Za-z.+-]+)?$ ]] || fail "unreadable engine version '$engine'"
+    read_engine_version
     [ -z "$(git -C "$ROOT" status --porcelain)" ] || fail "the engine build dirtied the kicad-route checkout"
     "$PYTHON" -I -B -X pycache_prefix=/dev/null - "$tmp/wheels" "$REQUIREMENTS" > "$MANIFEST" <<PY
 import hashlib, json, platform, subprocess, sys
@@ -211,8 +220,12 @@ print("grid_router", grid_router.__version__, "numpy", numpy.__version__, "scipy
 
 }
 
-case ${1:-} in
-    install) install_tool ;;
-    verify) verify_tool ;;
-    *) fail "usage: install.sh install|verify" ;;
-esac
+# Run as a command (`install.sh install|verify`); sourced, it only defines the functions, so the
+# version refusals can be exercised on their own.
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+    case ${1:-} in
+        install) install_tool ;;
+        verify) verify_tool ;;
+        *) fail "usage: install.sh install|verify" ;;
+    esac
+fi

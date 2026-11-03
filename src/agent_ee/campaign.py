@@ -377,12 +377,15 @@ def run_implementation_steps(work, design, manifest, state, deadline, plan, *, s
     # other turns keep their historical manifest contract.
     expected_files = dict(manifest['files']) if routing_turn else None
     try:
-        if routing_turn:
+        if state.get('routing_binding') is not None:
+            # Every turn of a campaign bound to a router commit continues that campaign, routing or
+            # not: on another commit it stops here as StaleRoutingEvidence, before any step runs.
             from .routing_adapter import validate_live_binding
+            validate_live_binding(state['routing_binding'])
+        if routing_turn:
             from .stage_receipts import file_tree
             if file_tree(design) != (expected_files, []):
                 raise ValueError('routing writer changed the verified placed source')
-            validate_live_binding(state['routing_binding'])
         for entry in plan:
             if routing_turn and file_tree(design) != (expected_files, []):
                 raise ValueError('routing producer input differs from preceding adopted receipt')

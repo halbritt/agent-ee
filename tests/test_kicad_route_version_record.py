@@ -17,21 +17,29 @@ commit, so any change to the router is a new commit or a dirty tree:
   it with a fixed one.
 """
 import contextlib
+import importlib._bootstrap_external
+import importlib.util
 import io
 import json
 import re
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agent_ee import campaign
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
+from agent_ee import stage_receipts
 from agent_ee.stage_receipts import observe_tool
-from tests.kicad_route_fixture import commit_all, git
+from agent_ee.storage import digest
+from tests.kicad_route_fixture import commit_all, git, make_checkout
 from tests.test_kicad_route_adapter import REQUEST, Case, forge
+from tests.test_stage_receipts import TOOL, step
+from tests.toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL = ROOT / 'docker/kicad-route/install.sh'
@@ -249,17 +257,113 @@ class VersionRecordTest(unittest.TestCase):
                                                    'pin': commit})
 
 
+class BoardRouteCacheTest(unittest.TestCase):
+    """The board route never reads bytecode cached in the checkout (review of fcfb4385, finding 3)."""
+
+    def test_an_ignored_cache_cannot_run_code_the_recorded_digest_excludes(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-route-cache-') as temp:
+            root = Path(temp)
+            checkout, _ = make_checkout(root / 'router', 'complete')
+            script = checkout / 'bin/kicad-route'
+            script.write_text(script.read_text().replace(
+                "ROOT = Path(__file__).resolve().parents[1]",
+                "ROOT = Path(__file__).resolve().parents[1]\nsys.path.insert(0, str(ROOT / 'src'))\nimport kicad_route", 1))
+            commit_all(checkout, 'import router package')
+            before = routing_adapter.preflight(checkout)
+            # An unchecked hash-based cache of the router's own package, which git ignores.
+            source = checkout / 'src/kicad_route/__init__.py'
+            cache = Path(importlib.util.cache_from_source(str(source)))
+            cache.parent.mkdir(exist_ok=True)
+            code = compile("raise SystemExit('UNRECORDED_CACHE_EXECUTED')", str(source), 'exec')
+            cache.write_bytes(importlib._bootstrap_external._code_to_hash_pyc(code, b'\0' * 8, checked=False))
+            after = routing_adapter.preflight(checkout)
+            self.assertEqual(after['problems'], [])
+            self.assertEqual({k: after[k] for k in attempt.CHECKOUT_KEYS}, {k: before[k] for k in attempt.CHECKOUT_KEYS})
+            argv = routing_adapter.board_route_argv(checkout, root / 'input', root / 'out', budget_s=5)
+            env = routing_adapter.board_route_env(checkout, root / 'home')
+            done = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=120)
+            self.assertNotIn('UNRECORDED_CACHE_EXECUTED', done.stderr)
+            self.assertTrue(cache.is_file())
+            # The same command without the private prefix runs the cached code: the hazard guarded.
+            exposed = {k: v for k, v in env.items() if k != 'PYTHONPYCACHEPREFIX'}
+            done = subprocess.run(argv, env=exposed, capture_output=True, text=True, timeout=120)
+            self.assertIn('UNRECORDED_CACHE_EXECUTED', done.stderr)
+
+
+class CampaignContinuationTest(unittest.TestCase):
+    """Every turn of a campaign with a routing binding stops on another commit (review of fcfb4385,
+    finding 4): a non-routing step never runs or adopts on M under L's binding."""
+
+    def setUp(self):
+        require_toolchain()
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-route-campaign-')
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_a_non_routing_turn_on_another_commit_is_refused_before_it_runs(self):
+        root = Path(self.tmp.name)
+        checkout, recorded = make_checkout(root / 'checkout', 'complete')
+        declaration = routing_adapter.validate_declaration(dict(
+            schema='agent-ee.routing-adapter/1', project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
+            name='rc', label='campaign', checkout=str(checkout), budget=5, timeout=30))
+        spec = routing_adapter.validate_campaign_step(routing_adapter.declaration_spec(declaration))
+        binding = dict(spec=spec, tool=stage_receipts.observe_tool(spec), commit=recorded,
+                       adapter_sha256=digest(routing_adapter.ADAPTER_SOURCE))
+        (checkout / 'src/kicad_route/__init__.py').write_text('# later commit\n')
+        current = commit_all(checkout, 'later runtime')
+        # The reviewer's campaign-path case: a placement-stage step that would edit the design.
+        work = root / '1'
+        work.mkdir()
+        design = root / 'design'
+        (design / 'project').mkdir(parents=True)
+        (design / 'project/board.txt').write_text('original')
+        tool = root / 'tool'
+        tool.mkdir()
+        (tool / 'step.py').write_text(TOOL)
+        custom = step(mounts=[dict(source=str(tool), at='/tool')])
+        manifest = dict(candidate_id='fixture', files=stage_receipts.file_tree(design)[0])
+        state = dict(routing_binding=binding, stage_receipts={}, mutable_inputs=['project/board.txt'])
+        with self.assertRaises(routing_adapter.StaleRoutingEvidence) as caught:
+            campaign.run_implementation_steps(work, design, manifest, state, time.monotonic() + 30,
+                                              [dict(kind='step', spec=custom, receipt_index=1)])
+        self.assertEqual((caught.exception.recorded, caught.exception.current), (recorded, current))
+        # The step never ran: the design is unchanged and no step receipt exists.
+        self.assertEqual((design / 'project/board.txt').read_text(), 'original')
+        self.assertEqual(sorted(p.name for p in (work / 'receipts').glob('*')) if (work / 'receipts').exists() else [],
+                         [])
+        # The guard is the binding's, not the plan's: a turn without steps is refused too.
+        (root / '2').mkdir()
+        with self.assertRaises(routing_adapter.StaleRoutingEvidence):
+            campaign.run_implementation_steps(root / '2', design, manifest, state, time.monotonic() + 30, [])
+
+
 class InstallRecordRulesTest(unittest.TestCase):
-    """The image installer records versions and refuses only a missing or unparseable one."""
+    """The image installer records versions and refuses only a missing or unparseable one. The refusals
+    run in install.sh itself: it is sourced, and its functions read fake toolchains and engines."""
 
     def setUp(self):
         self.script = INSTALL.read_text()
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-install-rules-')
+        self.addCleanup(self.tmp.cleanup)
+        self.count = 0
 
-    def rule(self, name):
-        return re.search(rf"^{name}='([^']*)'$", self.script, re.M).group(1)
+    def tool(self, directory, name, output, status=0):
+        """An executable that prints output and exits with status, whatever its arguments."""
+        path = Path(directory) / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'#!/bin/bash\nprintf "%s\\n" {json.dumps(output)}\nexit {status}\n')
+        path.chmod(0o755)
+        return path
 
-    def bash_match(self, pattern, value):
-        return subprocess.run(['bash', '-c', '[[ $1 =~ $2 ]]', 'match', value, pattern]).returncode == 0
+    def run_installer(self, commands, env=None):
+        """`source install.sh; COMMANDS` in bash; (exit status, stdout, stderr)."""
+        done = subprocess.run(['bash', '-c', f'source "$1"; {commands}', 'install-rules', str(INSTALL)],
+                              capture_output=True, text=True, timeout=60,
+                              env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', **(env or {})})
+        return done.returncode, done.stdout, done.stderr
+
+    def fresh(self):
+        self.count += 1
+        return Path(self.tmp.name) / str(self.count)
 
     def test_versions_are_resolved_and_recorded_not_compared(self):
         # No commit, engine version, toolchain banner or wheel version is written into the installer.
@@ -273,25 +377,51 @@ class InstallRecordRulesTest(unittest.TestCase):
         self.assertIn('ARG KICAD_ROUTE_COMMIT=\n', dockerfile)
 
     def test_a_missing_or_unparseable_toolchain_banner_is_refused(self):
-        for name, good, tool in (('RUSTC_BANNER', 'rustc 1.99.1 (58cf8f9c3 2026-10-13)', 'rustc'),
-                                 ('CARGO_BANNER', 'cargo 1.101.0 (5f94df478 2027-01-02)', 'cargo')):
-            pattern = self.rule(name)
-            with self.subTest(name):
-                self.assertTrue(self.bash_match(pattern, good))
-                for bad in ('', tool, f'{tool} 1.99 (58cf8f9c3 2026-10-13)', f'{tool} 1.99.1',
-                            f'{tool} 1.99.1-nightly (58cf8f9c3 2026-10-13)', 'error: no toolchain'):
-                    self.assertFalse(self.bash_match(pattern, bad), bad)
+        good = {'rustc': 'rustc 1.99.1 (58cf8f9c3 2026-10-13)', 'cargo': 'cargo 1.101.0 (5f94df478 2027-01-02)'}
+        cases = [('recorded', good, 0, None)]
+        for tool in ('rustc', 'cargo'):
+            for bad in ('', tool, f'{tool} 1.99 (58cf8f9c3 2026-10-13)', f'{tool} 1.99.1',
+                        f'{tool} 1.99.1-nightly (58cf8f9c3 2026-10-13)', 'error: no toolchain'):
+                cases.append((f'{tool} {bad!r}', {**good, tool: bad}, 0, tool))
+            cases.append((f'{tool} fails', good, 127 if tool == 'rustc' else 1, tool))
+        for label, banners, status, refused in cases:
+            with self.subTest(label):
+                bin_dir = self.fresh()
+                for tool, banner in banners.items():
+                    self.tool(bin_dir, tool, banner, status if tool == refused else 0)
+                code, out, err = self.run_installer('read_toolchain; printf "%s|%s" "$rustc" "$cargo"',
+                                                    {'PATH': f'{bin_dir}:/usr/bin:/bin'})
+                if refused is None:
+                    self.assertEqual((code, out), (0, f"{good['rustc']}|{good['cargo']}"), err)
+                else:
+                    self.assertEqual(code, 1, (out, err))
+                    self.assertIn(f'kicad-route install: unreadable {refused} version', err)
 
-    def test_a_missing_or_unparseable_engine_version_or_commit_is_refused(self):
-        engine = re.search(r'\[\[ \$engine =~ (\S+) \]\]', self.script).group(1)
-        for good in ('0.23.1', '0.24.0', '1.0.0-rc.1'):
-            self.assertTrue(self.bash_match(engine, good), good)
-        for bad in ('', '0.23', 'unknown', 'v0.23.1'):
-            self.assertFalse(self.bash_match(engine, bad), bad)
-        commit = re.search(r'\[\[ \$KICAD_ROUTE_COMMIT =~ (\S+) \]\]', self.script).group(1)
-        self.assertTrue(self.bash_match(commit, 'a' * 40))
-        for bad in ('', 'main', 'a' * 39, 'A' * 40):
-            self.assertFalse(self.bash_match(commit, bad), bad)
+    def test_a_missing_or_unparseable_engine_version_is_refused(self):
+        for version, status in (('0.23.1', 0), ('0.24.0', 0), ('1.0.0-rc.1', 0),
+                                ('', 0), ('0.23', 0), ('unknown', 0), ('v0.23.1', 0), ('0.23.1', 1)):
+            with self.subTest(version=version, status=status):
+                root = self.fresh()
+                (root / 'krt').mkdir(parents=True)
+                self.tool(root / 'venv/bin', 'python', version, status)
+                code, out, err = self.run_installer(f'KRT={root / "krt"}; VENV={root / "venv"}; read_engine_version; '
+                                                    'printf "%s" "$engine"')
+                if status == 0 and re.fullmatch(r'\d+\.\d+\.\d+(-rc\.1)?', version):
+                    self.assertEqual((code, out), (0, version), err)
+                else:
+                    self.assertEqual(code, 1, (out, err))
+                    self.assertIn('kicad-route install: unreadable engine version', err)
+
+    def test_a_commit_argument_that_is_not_a_commit_is_refused(self):
+        for value, accepted in (('a' * 40, True), ('main', False), ('a' * 39, False), ('A' * 40, False)):
+            with self.subTest(value=value):
+                code, out, err = self.run_installer('resolve_commit; printf "%s %s" "$KICAD_ROUTE_COMMIT" "$REQUESTED"',
+                                                    {'KICAD_ROUTE_COMMIT': value})
+                if accepted:
+                    self.assertEqual((code, out), (0, f'{value} {value}'), err)
+                else:
+                    self.assertEqual(code, 1, (out, err))
+                    self.assertIn('is not a commit', err)
 
 
 if __name__ == '__main__':
