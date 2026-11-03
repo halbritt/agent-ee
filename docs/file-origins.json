@@ -355,21 +355,30 @@
       ]
     },
     "T13": {
-      "name": "Seeded-benchmark source boards (metadata only)",
-      "description": "Records about five pinned public boards (SparkFun Qwiic Directional Pad, SparkFun RFID USB-C Reader, sparkengineering host-usb-pmod, Protocentral TMF8829, rmingon i2c-over-rj45): commits, hashes, embedded symbol and library identifiers, reference designators, UUIDs and source values. No design file bytes are tracked.",
+      "name": "Benchmark source records and task specifications",
+      "description": "Records about five pinned public boards (SparkFun Qwiic Directional Pad, SparkFun RFID USB-C Reader, sparkengineering host-usb-pmod, Protocentral TMF8829, rmingon i2c-over-rj45): commits, hashes, embedded symbol and library identifiers, reference designators, UUIDs and source values. No design file bytes are tracked. Also includes task text and metadata from PCBSchemaGen-Benchmarks (PCBBench and Open-Schematics-Eval), extracted into fixtures/pcbschemagen-tier1/; these contain task specifications, not source CAD.",
       "upstream": {
         "repository": "Per-board repository and commit in benchmarks/seeded/expectations.json",
         "local_path": null,
         "revisions": {},
-        "license_file": "Per-board license path, SHA-256 and Git blob in benchmarks/seeded/expectations.json"
+        "license_file": "Per-board license path, SHA-256 and Git blob in benchmarks/seeded/expectations.json",
+        "pcbschemagen": {
+          "repository": "https://huggingface.co/datasets/Hzou9/PCBSchemaGen-Benchmarks",
+          "local_path": "/home/halbritt/git/PCBSchemaGen-Benchmarks",
+          "revision": "baf1235ae6270419b8444ffe618632f17621a3f9",
+          "license_file": "references/pcbschemagen-benchmarks-LICENSE.txt"
+        }
       },
-      "upstream_license": "CC-BY-SA-4.0 (SparkFun boards), CERN-OHL-P-2.0 and CERN-OHL-S-2.0, as recorded per board. The records mark repository publication as not authorized.",
+      "upstream_license": "CC-BY-SA-4.0 (SparkFun boards), CERN-OHL-P-2.0 and CERN-OHL-S-2.0, as recorded per board. The records mark repository publication as not authorized. PCBSchemaGen-Benchmarks task specifications are MIT at baf1235ae6270419b8444ffe618632f17621a3f9; its verbatim copyright and license notice is retained in references/pcbschemagen-benchmarks-LICENSE.txt. This upstream license does not change the unresolved owner publication status.",
       "license_verified": true,
       "permission_status": "unresolved-owner-decision-required",
       "owner_decision": "Confirm that metadata and extracted identifiers about these boards may be published. Design files and modified derivatives stay outside the repository (docs/seeded-benchmark.md).",
       "evidence": [
         "benchmarks/seeded/expectations.json",
-        "docs/seeded-benchmark.md"
+        "docs/seeded-benchmark.md",
+        "scripts/generate_tier1_manifest.py",
+        "fixtures/pcbschemagen-tier1/manifest.json",
+        "references/pcbschemagen-benchmarks-LICENSE.txt"
       ]
     },
     "T14": {
@@ -647,7 +656,8 @@
         "GLOSSARY.md",
         "README.md",
         "docs/",
-        "evidence/README.md"
+        "evidence/README.md",
+        "TEST_INFRA.md"
       ],
       "kind": "owned-documentation",
       "origins": [
@@ -4395,7 +4405,7 @@
     },
     {
       "paths": [
-        "src/agent_ee/acquisition_reverse_blocking.py"
+        "src/agent_ee/acquisition/reverse_blocking.py"
       ],
       "kind": "owned-source",
       "origins": [
@@ -4405,8 +4415,8 @@
     },
     {
       "paths": [
-        "src/agent_ee/acquisition_film.py",
-        "src/agent_ee/acquisition_film_analysis.py",
+        "src/agent_ee/acquisition/film.py",
+        "src/agent_ee/acquisition/film_analysis.py",
         "tests/test_acquisition_film.py"
       ],
       "kind": "owned-source",
@@ -4438,6 +4448,63 @@
         "AE"
       ],
       "reviewed": "Original synthetic KiCad syntax, EasyEDA fixture geometry and PDF envelope bytes for offline compiler tests; no supplier CAD or vendor document is copied."
+    },
+    {
+      "paths": [
+        "fixtures/design-requirements/"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original short engineering requirements authored for the bounded design-generation benchmark; no external design or supplier source bytes."
+    },
+    {
+      "paths": [
+        "fixtures/pcbschemagen-tier1/"
+      ],
+      "kind": "third-party-data",
+      "origins": [
+        "AE",
+        "T13"
+      ],
+      "note": "Task text and metadata extracted from PCBSchemaGen-Benchmarks at baf1235ae6270419b8444ffe618632f17621a3f9 by scripts/generate_tier1_manifest.py; interface wrappers and package metadata are authored for agent-ee. Upstream MIT notice is retained at references/pcbschemagen-benchmarks-LICENSE.txt. Publication status remains unresolved under T13."
+    },
+    {
+      "paths": [
+        "references/pcbschemagen-benchmarks-LICENSE.txt"
+      ],
+      "kind": "third-party-document",
+      "origins": [
+        "T13"
+      ],
+      "note": "Verbatim MIT notice from PCBSchemaGen-Benchmarks at baf1235ae6270419b8444ffe618632f17621a3f9; this records the upstream license, not owner publication approval."
+    },
+    {
+      "paths": [
+        "tests/e2e/e2e_common.py",
+        "tests/e2e/test_tier1_m3_artwork.py",
+        "tests/e2e/test_tier2_boundaries_part1.py",
+        "tests/e2e/test_tier2_boundaries_part2.py",
+        "tests/e2e/test_tier5_adversarial.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original test code and synthetic KiCad syntax: empty board shells, simple outline/text primitives and malformed mutation strings authored in these files. No third-party CAD or library bytes are embedded, and scripted boundaries do not establish native qualification."
+    },
+    {
+      "paths": [
+        "tests/test_design_generate.py",
+        "tests/test_design_tools.py",
+        "tests/test_local_return_seed.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression code. Inline KiCad syntax is authored empty project/board shells, synthetic rectangles for courtyard-area measurements and a minimal custom-pad refusal input. Other symbols and footprints come from existing owned native-binding and land-pattern fixture generators; no third-party CAD or vendor document is embedded."
     },
     {
       "paths": [
