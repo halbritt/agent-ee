@@ -5,6 +5,7 @@ rights. These tests exercise the real repository and the main failure
 boundaries on small synthetic trees.
 """
 import importlib.util
+import copy
 import json
 from pathlib import Path
 import tempfile
@@ -118,6 +119,39 @@ class RepositoryInventoryTests(unittest.TestCase):
         self.assertEqual(self.errors, [])
         self.assertEqual(self.summary['files'], self.summary['classified'])
         self.assertGreater(self.summary['files'], 5000)
+
+    def test_tier1_task_records_preserve_distinct_upstream_licence_chains(self):
+        tasks = json.loads((ROOT / 'fixtures/pcbschemagen-tier1/manifest.json').read_text())['tasks']
+        groups = REAL['origins']['T13']['upstream']['pcbschemagen']['task_sources']
+        self.assertEqual(len(groups['pcbbench']['task_ids']), 18)
+        self.assertTrue(groups['pcbbench']['license_verified'])
+        self.assertEqual(groups['pcbbench']['license'], 'MIT')
+        self.assertEqual(set(groups['open_schematics']['task_ids']),
+                         {'104', '146', '176', '181', '208', '218', '246'})
+        self.assertFalse(groups['open_schematics']['license_verified'])
+        chain = groups['open_schematics']['source_chain']
+        self.assertEqual([source['license'] for source in chain], ['MIT', 'CC-BY-4.0', 'unreviewed'])
+        self.assertEqual(chain[1]['author'], 'bshada')
+        self.assertEqual(chain[1]['url'], 'https://huggingface.co/datasets/bshada/open-schematics')
+        for task in tasks:
+            for suffix in ('json', 'md'):
+                path = f"fixtures/pcbschemagen-tier1/tasks/{task['id']}.{suffix}"
+                with self.subTest(path=path):
+                    record = self.files[path]
+                    rule = REAL['rules'][record['rule']]
+                    self.assertEqual(record['permission_status'], UNRESOLVED)
+                    self.assertIn('T13', record['origins'])
+                    self.assertEqual(rule['license_verified'], task['dataset'] == 'pcbbench')
+        self.assertFalse(REAL['origins']['T13']['license_verified'])
+        self.assertIn('25 Tier-1 task specifications', REAL['origins']['T13']['owner_decision'])
+
+    def test_tier1_cannot_be_relabelled_as_an_owned_ae_fixture(self):
+        changed = copy.deepcopy(REAL)
+        for rule in changed['rules']:
+            if any(path.startswith('fixtures/pcbschemagen-tier1/') for path in rule['paths']):
+                rule.update(kind='owned-fixture', origins=['AE'])
+        errors, _ = origins.check(ROOT, inventory=changed)
+        self.assertTrue(any('declared source origin T13 is missing' in error for error in errors), errors)
 
     def test_fome_mc_copies_and_adapted_logic_follow_the_mit_decision(self):
         # 2026-10-22: T1 and T2 are owner-confirmed; copies that also declare stock KiCad data (T6) stay unresolved.

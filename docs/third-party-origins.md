@@ -85,7 +85,7 @@ files are retained evidence, which is classified by directory.
 | T10 | NXP, Infineon, ST, Maxim, TI datasheets | Proprietary | 21 PDFs and text extractions; two one-line TJA1051 quotations in a fixture and a test |
 | T11 | LCSC pages and web-search captures | Proprietary; terms not reviewed | 11 pages and captures |
 | T12 | KiCad 10.0 PPA signing public key | No license stated | `docker/kicad-10.0-releases.asc` |
-| T13 | Benchmark source records and task specifications | CC-BY-SA-4.0, CERN-OHL-P/S-2.0 for seeded-board metadata; MIT for PCBSchemaGen tasks | Metadata in `benchmarks/seeded/` and task specifications in `fixtures/pcbschemagen-tier1/`; no source CAD. PCBSchemaGen notice: `references/pcbschemagen-benchmarks-LICENSE.txt`. Publication status remains unresolved. |
+| T13 | Benchmark source records and task specifications | Seeded metadata: CC-BY-SA-4.0, CERN-OHL-P/S-2.0. PCBBench tasks: MIT. Open-Schematics-Eval: MIT benchmark layer → CC-BY-4.0 dataset → unreviewed source-project licences | Tier-1 tasks and derivatives remain published pending the owner decision. The combined chain is not licence-verified; publication status is unresolved. |
 | T14 | three.js r180 (0.180.0) | MIT; upstream notice retained | Viewer runtime, loader and controls in `src/agent_ee/viewer_assets/vendor/`; exact sources and transforms in its manifest |
 | T15 | FOME-MC seeded-benchmark records (`halbritt/fome-mc`, `5954c3a`) | No license found | None tracked: the AGENTEE-108 expectations manifest and run reports stay in a private store; the repository keeps only their SHA-256 hashes ([seeded benchmark](seeded-benchmark.md)). Publication is AGENTEE-118 |
 | T16 | fome-mc reference block captures (`halbritt/fome-mc`, `df304f3`) | No licence file in fome-mc; owner holds the rights and admitted derived sheets with upstream licences recorded (2026-10-18): `T3` and `T8` (FOME-Tech Polygonus-Universal-112 `ddcf0f7` and Polygonus `b3176cb`, no licence file found), `T4` (FOME-Tech `kicad-libraries` `ab9c5f8`, no licence file found; SamacSys terms not reviewed), `T6` (KiCad 10.0.7 stock libraries, CC-BY-SA-4.0 with the KiCad library exception), `T9` (`mck1117/wideband` Rev C `ca2adce`, MIT notice in `fixtures/fome-mc/LICENSE-NOTICE.md`); files report `derived` | `fixtures/fome-mc/`: copied sheets and project libraries (inventory, PSU block and wideband channels), and the block entries, contracts and inventories generated from them (each carrying `upstream_origin` and `upstream_license`); planning documents are cited by pinned identity, not copied |
@@ -210,3 +210,32 @@ example `owner-relayed`) and the scope it `applies` to; its files then report
 `owner-confirmed-upstream-license`, never `owner-confirmed`. A decision to remove or
 replace files is a separate change. Do not delete or rewrite retained evidence
 to make the inventory pass.
+
+### Tier-1 benchmark task provenance
+
+The 18 PCBBench tasks in `fixtures/pcbschemagen-tier1/tasks/` retain the MIT
+record from PCBSchemaGen-Benchmarks at
+`baf1235ae6270419b8444ffe618632f17621a3f9`. Its verbatim notice is
+[retained here](../references/pcbschemagen-benchmarks-LICENSE.txt).
+
+The seven Open-Schematics-Eval tasks **104, 146, 176, 181, 208, 218 and 246**,
+both their JSON and Markdown files, have a longer chain:
+PCBSchemaGen-Benchmarks (MIT), derived from **Open Schematics: A Dataset of
+Electronic Schematics and PCB Layouts from Hardware Projects**, by **bshada**,
+Hugging Face, 2026 ([dataset and attribution](https://huggingface.co/datasets/bshada/open-schematics)),
+derived from original source projects whose licences have not been reviewed.
+The [dataset card](https://huggingface.co/datasets/bshada/open-schematics/blob/main/README.md)
+declares [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) and requires compliance with original source-project
+licences. The [PCBSchemaGen_v2 README](https://github.com/HZou9/PCBSchemaGen_v2#license)
+instead calls that dataset MIT. This inconsistency is unresolved; the
+Open-Schematics task chain and the mixed Tier-1 manifest are **not licence-verified**.
+
+T13 records these source groups separately and leaves publication status
+unresolved. Its open owner question explicitly covers continued publication
+of all 25 Tier-1 task specifications, their derivatives and the mixed manifest
+in this public repository. The files remain in place pending that decision.
+
+The retained task specifications were extracted into the Tier-1 subset and
+wrapped with agent-ee interface and placement requirements; they are derivatives,
+not unmodified copies of original project CAD. The upstream notices and this
+attribution do not establish that the source-project licences have been satisfied.

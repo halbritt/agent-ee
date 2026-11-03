@@ -8,6 +8,9 @@ material are not silently classified as agent-ee material, and that retained
 captures and archives declare every origin their inputs came from. It does not
 establish anyone's rights or read upstream licenses.
 
+An origin's repository_paths bind that source to in-tree files independently of
+their classification rules, so relabelling a fixture cannot silently drop it.
+
 Evidence relocated out of the tree (evidence/relocation.json, AGENTEE-20) is
 still classified: its exact paths come from the hash-pinned files manifest, and
 the byte-derived facts the check needs (content markers, captured origins) were
@@ -133,6 +136,15 @@ def validate(inventory):
         for field in ('name', 'upstream_license', 'owner_decision'):
             if not str(origin.get(field) or '').strip():
                 errors.append(f'origin {key}: missing {field}')
+        repository_paths = origin.get('repository_paths', [])
+        if not isinstance(repository_paths, list):
+            errors.append(f'origin {key}: repository_paths must be a list')
+        else:
+            for path in repository_paths:
+                if (not isinstance(path, str) or not path or path.startswith('/')
+                        or '..' in PurePosixPath(path).parts
+                        or PurePosixPath(path).as_posix() != path.rstrip('/')):
+                    errors.append(f'origin {key}: invalid repository path {path!r}')
         embedded = origin.get('embedded_origins', [])
         if not isinstance(embedded, list):
             errors.append(f'origin {key}: embedded_origins must be a list')
@@ -405,6 +417,13 @@ def check(root=ROOT, inventory=None, paths=None, relocation=None):
     assigned, problems = classify(inventory, paths)
     errors += problems
     rules = inventory['rules']
+    for origin, record in inventory['origins'].items():
+        declared = record.get('repository_paths', [])
+        if not declared:
+            continue
+        for path, index in assigned.items():
+            if matches({'paths': declared}, path) and origin not in rules[index]['origins']:
+                errors.append(f'{path}: declared source origin {origin} is missing from rule {index}')
     third_party = {key for key in inventory['origins'] if key not in OWNED}
     for path, index in assigned.items():
         rule = rules[index]

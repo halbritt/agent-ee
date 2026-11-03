@@ -366,18 +366,98 @@
           "repository": "https://huggingface.co/datasets/Hzou9/PCBSchemaGen-Benchmarks",
           "local_path": "/home/halbritt/git/PCBSchemaGen-Benchmarks",
           "revision": "baf1235ae6270419b8444ffe618632f17621a3f9",
-          "license_file": "references/pcbschemagen-benchmarks-LICENSE.txt"
+          "license_file": "references/pcbschemagen-benchmarks-LICENSE.txt",
+          "license": "MIT",
+          "license_verified": true,
+          "task_sources": {
+            "pcbbench": {
+              "task_ids": [
+                "3",
+                "5",
+                "6",
+                "13",
+                "14",
+                "25",
+                "27",
+                "28",
+                "29",
+                "30",
+                "31",
+                "32",
+                "33",
+                "37",
+                "38",
+                "42",
+                "43",
+                "44"
+              ],
+              "license": "MIT",
+              "license_verified": true,
+              "derivation": "18 hand-authored PCBBench task specifications; upstream MIT notice retained."
+            },
+            "open_schematics": {
+              "task_ids": [
+                "104",
+                "146",
+                "176",
+                "181",
+                "208",
+                "218",
+                "246"
+              ],
+              "license_verified": false,
+              "source_chain": [
+                {
+                  "name": "PCBSchemaGen-Benchmarks",
+                  "license": "MIT",
+                  "revision": "baf1235ae6270419b8444ffe618632f17621a3f9",
+                  "notice": "references/pcbschemagen-benchmarks-LICENSE.txt"
+                },
+                {
+                  "name": "Open Schematics: A Dataset of Electronic Schematics and PCB Layouts from Hardware Projects",
+                  "author": "bshada",
+                  "year": 2026,
+                  "publisher": "Hugging Face",
+                  "url": "https://huggingface.co/datasets/bshada/open-schematics",
+                  "license": "CC-BY-4.0",
+                  "card": "https://huggingface.co/datasets/bshada/open-schematics/blob/main/README.md",
+                  "license_url": "https://creativecommons.org/licenses/by/4.0/"
+                },
+                {
+                  "name": "Original source projects described by the tasks",
+                  "license": "unreviewed",
+                  "license_verified": false
+                }
+              ],
+              "upstream_inconsistency": "PCBSchemaGen_v2 README calls the upstream open-schematics dataset MIT; bshada/open-schematics dataset card declares CC-BY-4.0 and requires compliance with original source-project licences. The full chain is not licence-verified.",
+              "project_descriptions": {
+                "104": "USB_DATA_LOGGER",
+                "146": "LDO_5V_LED_SUPPLY",
+                "176": "EXT_BITCART_NODE",
+                "181": "EXT_TF2SENTRYEE",
+                "208": "CURRENT_SENSOR",
+                "218": "IOT12_SUPERVISOR",
+                "246": "USB_C_INTERFACE"
+              }
+            }
+          }
         }
       },
-      "upstream_license": "CC-BY-SA-4.0 (SparkFun boards), CERN-OHL-P-2.0 and CERN-OHL-S-2.0, as recorded per board. The records mark repository publication as not authorized. PCBSchemaGen-Benchmarks task specifications are MIT at baf1235ae6270419b8444ffe618632f17621a3f9; its verbatim copyright and license notice is retained in references/pcbschemagen-benchmarks-LICENSE.txt. This upstream license does not change the unresolved owner publication status.",
-      "license_verified": true,
+      "upstream_license": "Seeded-board metadata: CC-BY-SA-4.0, CERN-OHL-P-2.0 and CERN-OHL-S-2.0 as recorded per board. PCBSchemaGen-Benchmarks: MIT at baf1235ae6270419b8444ffe618632f17621a3f9, with its notice retained; the 18 PCBBench task specifications retain that MIT record. The 7 Open-Schematics-Eval task specifications derive through open-schematics (bshada, Hugging Face, 2026; CC-BY-4.0 per its dataset card) from source projects whose licences are unreviewed. The upstream README describes open-schematics as MIT, contradicting the dataset card. The combined origin and Open-Schematics chain are not licence-verified; publication remains unresolved.",
+      "license_verified": false,
       "permission_status": "unresolved-owner-decision-required",
-      "owner_decision": "Confirm that metadata and extracted identifiers about these boards may be published. Design files and modified derivatives stay outside the repository (docs/seeded-benchmark.md).",
+      "owner_decision": "Confirm that metadata and extracted identifiers about these boards may be published. Design files and modified derivatives stay outside the repository (docs/seeded-benchmark.md). Also decide whether this public repository may continue publishing the 25 Tier-1 task specifications, their Markdown derivatives and the mixed manifest in fixtures/pcbschemagen-tier1/, including the 7 Open-Schematics-Eval tasks with CC-BY-4.0 dataset attribution and unreviewed original source-project licences. The files remain in place pending the owner publication decision.",
       "evidence": [
         "benchmarks/seeded/expectations.json",
         "docs/seeded-benchmark.md",
         "scripts/generate_tier1_manifest.py",
         "fixtures/pcbschemagen-tier1/manifest.json",
+        "references/pcbschemagen-benchmarks-LICENSE.txt",
+        "https://github.com/HZou9/PCBSchemaGen_v2#license",
+        "https://huggingface.co/datasets/bshada/open-schematics/blob/main/README.md"
+      ],
+      "repository_paths": [
+        "fixtures/pcbschemagen-tier1/",
         "references/pcbschemagen-benchmarks-LICENSE.txt"
       ]
     },
@@ -4468,7 +4548,8 @@
         "AE",
         "T13"
       ],
-      "note": "Task text and metadata extracted from PCBSchemaGen-Benchmarks at baf1235ae6270419b8444ffe618632f17621a3f9 by scripts/generate_tier1_manifest.py; interface wrappers and package metadata are authored for agent-ee. Upstream MIT notice is retained at references/pcbschemagen-benchmarks-LICENSE.txt. Publication status remains unresolved under T13."
+      "note": "Mixed Tier-1 manifest and task family from PCBSchemaGen-Benchmarks. Exact task rules distinguish 18 MIT PCBBench tasks from 7 Open-Schematics-Eval derivatives carrying the bshada open-schematics CC-BY-4.0 dataset attribution and unreviewed original project licences. No publication decision is implied.",
+      "license_verified": false
     },
     {
       "paths": [
@@ -4515,6 +4596,80 @@
         "AE"
       ],
       "reviewed": "Original minimal XML inventory for the PCBSchemaGen adapter tests; pin names and numbers are facts, with no upstream implementation or descriptive text copied."
+    },
+    {
+      "paths": [
+        "fixtures/pcbschemagen-tier1/tasks/3.json",
+        "fixtures/pcbschemagen-tier1/tasks/3.md",
+        "fixtures/pcbschemagen-tier1/tasks/5.json",
+        "fixtures/pcbschemagen-tier1/tasks/5.md",
+        "fixtures/pcbschemagen-tier1/tasks/6.json",
+        "fixtures/pcbschemagen-tier1/tasks/6.md",
+        "fixtures/pcbschemagen-tier1/tasks/13.json",
+        "fixtures/pcbschemagen-tier1/tasks/13.md",
+        "fixtures/pcbschemagen-tier1/tasks/14.json",
+        "fixtures/pcbschemagen-tier1/tasks/14.md",
+        "fixtures/pcbschemagen-tier1/tasks/25.json",
+        "fixtures/pcbschemagen-tier1/tasks/25.md",
+        "fixtures/pcbschemagen-tier1/tasks/27.json",
+        "fixtures/pcbschemagen-tier1/tasks/27.md",
+        "fixtures/pcbschemagen-tier1/tasks/28.json",
+        "fixtures/pcbschemagen-tier1/tasks/28.md",
+        "fixtures/pcbschemagen-tier1/tasks/29.json",
+        "fixtures/pcbschemagen-tier1/tasks/29.md",
+        "fixtures/pcbschemagen-tier1/tasks/30.json",
+        "fixtures/pcbschemagen-tier1/tasks/30.md",
+        "fixtures/pcbschemagen-tier1/tasks/31.json",
+        "fixtures/pcbschemagen-tier1/tasks/31.md",
+        "fixtures/pcbschemagen-tier1/tasks/32.json",
+        "fixtures/pcbschemagen-tier1/tasks/32.md",
+        "fixtures/pcbschemagen-tier1/tasks/33.json",
+        "fixtures/pcbschemagen-tier1/tasks/33.md",
+        "fixtures/pcbschemagen-tier1/tasks/37.json",
+        "fixtures/pcbschemagen-tier1/tasks/37.md",
+        "fixtures/pcbschemagen-tier1/tasks/38.json",
+        "fixtures/pcbschemagen-tier1/tasks/38.md",
+        "fixtures/pcbschemagen-tier1/tasks/42.json",
+        "fixtures/pcbschemagen-tier1/tasks/42.md",
+        "fixtures/pcbschemagen-tier1/tasks/43.json",
+        "fixtures/pcbschemagen-tier1/tasks/43.md",
+        "fixtures/pcbschemagen-tier1/tasks/44.json",
+        "fixtures/pcbschemagen-tier1/tasks/44.md"
+      ],
+      "kind": "third-party-data",
+      "origins": [
+        "AE",
+        "T13"
+      ],
+      "license_verified": true,
+      "source_group": "T13.upstream.pcbschemagen.task_sources.pcbbench",
+      "note": "Exact task specifications and authored interface wrappers. The named source group records the upstream licence chain; publication status remains unresolved."
+    },
+    {
+      "paths": [
+        "fixtures/pcbschemagen-tier1/tasks/104.json",
+        "fixtures/pcbschemagen-tier1/tasks/104.md",
+        "fixtures/pcbschemagen-tier1/tasks/146.json",
+        "fixtures/pcbschemagen-tier1/tasks/146.md",
+        "fixtures/pcbschemagen-tier1/tasks/176.json",
+        "fixtures/pcbschemagen-tier1/tasks/176.md",
+        "fixtures/pcbschemagen-tier1/tasks/181.json",
+        "fixtures/pcbschemagen-tier1/tasks/181.md",
+        "fixtures/pcbschemagen-tier1/tasks/208.json",
+        "fixtures/pcbschemagen-tier1/tasks/208.md",
+        "fixtures/pcbschemagen-tier1/tasks/218.json",
+        "fixtures/pcbschemagen-tier1/tasks/218.md",
+        "fixtures/pcbschemagen-tier1/tasks/246.json",
+        "fixtures/pcbschemagen-tier1/tasks/246.md"
+      ],
+      "kind": "third-party-data",
+      "origins": [
+        "AE",
+        "T13"
+      ],
+      "license_verified": false,
+      "source_group": "T13.upstream.pcbschemagen.task_sources.open_schematics",
+      "note": "Exact task specifications and authored interface wrappers. The named source group records the upstream licence chain; publication status remains unresolved."
     }
   ]
 }
