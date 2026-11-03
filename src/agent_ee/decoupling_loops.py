@@ -54,7 +54,7 @@ class CopperGraph:
             if zone.GetNetname() != net or zone.GetIsRuleArea() or zone.IsTeardropArea():
                 continue
             for layer in zone.GetLayerSet().CuStack():
-                if not zone.HasFilledPolysForLayer(layer):
+                if not zone.IsFilled() or not zone.HasFilledPolysForLayer(layer):
                     raise ValueError('declared net has an unfilled zone')
                 native = zone.GetFilledPolysList(layer)
                 for poly in _polyset(native):
