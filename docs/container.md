@@ -142,7 +142,9 @@ verifies on a 10.0.8 image, and each differing tool is printed as an
 `observation:` line, recorded versus current
 ([cli-reference.md](cli-reference.md#inspect-and-verify)). Only a run in
 progress, or a caller that continues work on the run (`verify --current-host`,
-adjudication, a campaign in progress), refuses the difference.
+adjudication, a campaign in progress), refuses the difference; such a caller
+also compares the DC tools the launch expectation declared and requires this
+host's install record to be the one the run retained.
 
 No check compares with one fixed KiCad version. Native readers refuse only a
 release outside the 10.x line their formats are written for

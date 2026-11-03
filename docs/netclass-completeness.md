@@ -18,7 +18,11 @@ a release of the 10.x line) and `native_writer` (`GetBuildVersion()`). They must
 agree: the build is the release itself or the release packaged as
 `<release>-<release>~<suffix>`, so a prerelease, nightly or other suffix is
 refused. The profile, fixture digest and source digests stay the 10.0.7
-derivation. The native test runs the
+derivation. A new run with an `agent-ee.netclass-qualification/1` record (one
+`native_writer` field) is refused when it is captured. A finished run that
+retained a /1 record still verifies: the record is decoded as it was accepted
+when the run was captured, and the captured input is never rewritten
+([historical run fixture](../fixtures/historical-netclass-c683cffd/README.md)). The native test runs the
 installed writer and requires the same bytes.
 Its [generator](../fixtures/netclass-completeness/generate.py)
 uses no third-party design; `LoadProject` reports false for the new, absent project,

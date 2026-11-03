@@ -341,10 +341,14 @@ still agree: `runtime_files` must equal the launch expectation's, which
 verification recomputes from the run, and a retained `kicad-install.json` must
 have its recorded SHA-256, be a valid install record and describe the run's
 recorded installed `kicad-cli` and pcbnew extension. `--current-host` is for
-work that continues on the run on this host. It also requires the run's tools
-and implementation to be this host's, and refuses a difference with `tool
-runtime changed; rerun under the current tools` or `review implementation
-changed; rerun under the current rules`. `adjudicate` and `close-correction`
+work that continues on the run on this host. It also requires the run's tools,
+the tools its launch expectation declared (such as the DC tools and
+`pcbnew.py`), its implementation and the host's KiCad install record to be the
+ones the run recorded, and refuses a difference with `tool runtime changed;
+rerun under the current tools`, `declared tool changed since the run`,
+`review implementation changed; rerun under the current rules` or `KiCad
+install record on this host differs from the one the run retained`. Without it,
+a declared tool that differs is an `observation:` line too. `adjudicate` and `close-correction`
 write into runs and always apply that requirement. Historical restoration is covered in
 [evidence reproduction](reproducing-evidence.md).
 
