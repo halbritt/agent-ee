@@ -8,16 +8,19 @@ attempted and the origin frame) and three replay plumbing failures. Adapted only
 as a test; every change is marked ADAPTED: checkout-relative paths, observations written to the
 temporary directory, consumer_state given the slot name (revision 4 judges by contract), and the
 two assertions that encoded the H4 defect now assert the corrected outcome (INCOMPLETE, and
-controls_refused False). The probe body is otherwise the reviewer's.
+controls_refused False). ADAPTED 2026-11-03 (integrator agent-724, after the owner's direction that
+router versions are fixed and recorded, not held): control A presents another clean commit M to a
+campaign bound to L; its reason is the continuation guard's refusal, origin validate_live_binding,
+and the aggregate is judged by amendment A2. The probe body is otherwise the reviewer's.
 """
 import copy, json, sys, tempfile, traceback, unittest
 from pathlib import Path
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))  # ADAPTED: checkout-relative, not cwd-relative
-import k91_consumer as k, k91_classify as c
+import k91_consumer as k, k91_classify as c, k91_classify_a2 as a2  # ADAPTED: A2 judges control A
 from agent_ee import campaign, routing_adapter, stage_receipts
-from tests.kicad_route_fixture import make_candidate, make_checkout
+from tests.kicad_route_fixture import commit_all, make_candidate, make_checkout
 from tests.test_routing_experiment_boundary import CURRENT
 observations={}; stacks=[]
 original=campaign.run_implementation_steps
@@ -44,6 +47,7 @@ class ReasonProbeTest(unittest.TestCase):
             root=Path(temp); checkout,_=make_checkout(root/'checkout',{'name':'complete'})
             mismatch,_=make_checkout(root/'mismatch',{'name':'complete'})
             with (mismatch/'src/kicad_route/__init__.py').open('a') as f:f.write('# different runtime\n')
+            other=commit_all(mismatch,'different runtime')  # ADAPTED: a different clean commit M, not a dirty tree
             with k.production(), patch.object(campaign,'run_implementation_steps',witness):
                 decl=k.declaration(checkout,project='project',board='rc.kicad_pcb',schematic='rc.kicad_sch',name='rc',budget=5,timeout=30,policy=CURRENT)
                 bind=k.binding(decl); work=root/'positive/1'; work.mkdir(parents=True)
@@ -60,7 +64,7 @@ class ReasonProbeTest(unittest.TestCase):
                 actual_stacks=stacks[start:]
                 assert len(actual_stacks)==4,actual_stacks
                 expected={
-                    'a_mismatched_runtime':('kicad-route does not qualify: tool file differs from pin', [False,False,False], 'validate_campaign_step'),
+                    'a_mismatched_runtime':(a2.continuation_message(bind['commit'],other), [False,False,False], 'validate_live_binding'),  # ADAPTED: continuation guard
                     'b_tampered_candidate':('stage receipt outputs changed',[True,True,False], 'validate_receipt'),
                     'b_tampered_sidecar':('retained routing artifacts differ from the adapter report',[True,True,False], '_verify'),
                     'c_stale_input':('routing receipt chain input differs from preceding adopted output',[True,False,False], 'run_implementation_steps')}
@@ -77,7 +81,7 @@ class ReasonProbeTest(unittest.TestCase):
                     observations[name]={'record':rec,'exception':stack,'reason_confirmed':True}
                     print('INTENDED',name,':',rec['consumer']['error'],'origin=',stack['traceback'][-1],'unchanged=True')
                 assert controls['b_tampered_sidecar']['direct_adopt']['accepted'] is True
-                verdict=c.v2_verdict({'controls':controls}); assert verdict['controls_refused']
+                verdict=a2.v2a2_verdict({'controls':controls},a2.identities_of(bind,other)); assert verdict['controls_refused']  # ADAPTED: A2
                 # Challenge the source concern with REAL replay failures, never stub verification/adoption.
                 attacks={}
                 for mode in ('binding-mismatch','invalid-json','missing-receipt'):
@@ -97,7 +101,7 @@ class ReasonProbeTest(unittest.TestCase):
                     reported=c.consumer_state(rec,'b_tampered_candidate')  # ADAPTED: revision 4 judges by the slot's contract
                     assert reported==c.INCOMPLETE,(mode,reported)  # ADAPTED: was ==c.REFUSED (the H4 defect); fixed expectation
                     altered=copy.deepcopy(controls); altered['b_tampered_candidate']=rec
-                    aggregated=c.v2_verdict({'controls':altered})['controls_refused']
+                    aggregated=a2.v2a2_verdict({'controls':altered},a2.identities_of(bind,other))['controls_refused']  # ADAPTED: A2
                     assert aggregated is False  # ADAPTED: was `is True` (the H4 defect); fixed expectation
                     attacks[mode]={'record':rec,'exception':stack,'classifier_state':reported,'controls_refused':aggregated,'reviewer_state':'incomplete'}
                     print('PLUMBING',mode,': replay_error=',rec['consumer_run_step']['error'],'final_error=',rec['consumer']['error'],'verify/adopt skipped; classifier=',reported,'controls_refused=',aggregated,'reviewer=incomplete')

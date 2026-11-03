@@ -234,14 +234,15 @@ def run_controls(out, positive_work, decl, bind, mismatch, make_design, board, *
     copy of the captured input at path and returns it; board is its board path (project/<board>)."""
     out, controls = Path(out), {}
 
-    # (a) Another runtime: refused by the production binding (preflight) and by the production
-    # consumer, which re-checks the live binding before run_step. The low-level observation of the
-    # historical harness is kept apart: run_step executed directly (the router never starts), then
-    # verify and the bare adoption on another design copy.
+    # (a) Another runtime M in place of the bound one L. Since 2026-11-03 (versions fixed and recorded
+    # per run, not held): a fresh binding of a different clean commit is accepted and records it; the
+    # production consumer, continuing the campaign bound to L, refuses M before run_step
+    # (validate_live_binding). The low-level observation is kept apart: run_step executed directly on
+    # M (a fresh run, recorded in its adapter report), then verify and the bare adoption.
     root = out / 'control-a-runtime'
     host = observe(lambda: binding({**decl, 'checkout': str(Path(mismatch).resolve())}))
     if host['accepted']:
-        host = {'attempted': True, 'accepted': True, 'value': None}
+        host = {'attempted': True, 'accepted': True, 'value': {'commit': host['value']['commit']}}
     work = root / '1'
     work.mkdir(parents=True)
     other = runtime_binding(bind, mismatch)
@@ -262,7 +263,8 @@ def run_controls(out, positive_work, decl, bind, mismatch, make_design, board, *
             low / STEP_DIR, stage_receipts.validate_receipt(low / STEP_DIR), make_design(root / 'low-level-direct'))),
         'sandbox': None if sandbox is None else {
             'classification': sandbox['semantics']['classification'], 'reasons': sandbox['semantics']['reasons'],
-            'candidate': sandbox['candidate']}}}
+            'candidate': sandbox['candidate'], 'commit': sandbox['tool'].get('commit'),
+            'clean': sandbox['tool'].get('clean')}}}
 
     # (b) One byte of the delivered candidate board, and separately of the retained sidecar.
     target = next(iter(bind['spec']['writes'].values()))

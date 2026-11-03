@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""One bounded native K91 positive through the real routing consumer path (AGENTEE-442).
+"""HISTORICAL: one bounded native K91 positive through the real routing consumer path (AGENTEE-442).
+
+This harness no longer runs (2026-11-03): it qualified a proposed router commit by patching the
+adapter's committed commit table (kicad_route_attempt.PIN and PINNED_CODE, verify_code), which was
+retired when router versions became fixed and recorded per run. main() refuses with HISTORICAL. Its
+run is retained in evidence/k91-native-positive (evidence-manifest.json harness_sha256); the bytes
+that ran are kept unchanged in scripts/historical/k91_native_positive-553e4151.py. Its helpers stay
+importable for scripts/k91_native_positive_v2.py. The text below describes the run as it was.
 
     k91_native_positive.py --checkout L --frozen-source F --mismatch M --out OUT [--budget S]
 
@@ -164,7 +171,14 @@ def file_record(path):
     return {'path': str(path), 'sha256': sha256(path)} if Path(path).is_file() else None
 
 
+HISTORICAL = ('k91_native_positive.py is historical and does not run: it patched the retired router '
+              'commit table (kicad_route_attempt.PIN, PINNED_CODE, verify_code; removed 2026-11-03). Its run '
+              'is retained in evidence/k91-native-positive; the bytes that ran are '
+              'scripts/historical/k91_native_positive-553e4151.py.')
+
+
 def main(argv=None):
+    raise SystemExit(HISTORICAL)
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--checkout', required=True)
     ap.add_argument('--frozen-source', required=True)

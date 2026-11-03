@@ -5,9 +5,13 @@
 
 Every row runs the ACTUAL production routing consumer, campaign.run_implementation_steps
 (run_step, verify_campaign_receipt, adopt, unstubbed), through DIR/k91_consumer.py on the
-synthetic fixture router, and judges the result with DIR/k91_classify.py v2_verdict. DIR
-defaults to this checkout's scripts/; pointing it at another tree's scripts (for example
-57083ef8) runs the same rows against that classifier. Only the API both share is used.
+synthetic fixture router, and judges the result with DIR/k91_classify.py v2_verdict under
+amendment A2 (DIR/k91_classify_a2.py) for control A: since 2026-11-03 router versions are
+recorded, not held, so control A presents a different clean commit M to a campaign bound to L
+and expects the continuation-guard refusal (integrator agent-724). A DIR without A2 is judged
+by v2 alone. DIR defaults to this checkout's scripts/; pointing it at another tree's scripts
+(for example 57083ef8) runs the same rows against that classifier. Only the API both share is
+used.
 
 Rows:
 - positives: the executed positive and the untouched replay (verify AND adopt accepted);
@@ -71,7 +75,7 @@ def load(scripts):
 
 class Matrix:
     def __init__(self, k, c, root):
-        from tests.kicad_route_fixture import make_candidate, make_checkout
+        from tests.kicad_route_fixture import commit_all, make_candidate, make_checkout
         from tests.test_routing_experiment_boundary import CURRENT
         self.k, self.c, self.root, self.make = k, c, Path(root), make_candidate
         self.rows, self.count, self.attacks = [], 0, {}
@@ -79,6 +83,8 @@ class Matrix:
         self.mismatch, _ = make_checkout(self.root / 'mismatch', {'name': 'complete'})
         with (self.mismatch / 'src/kicad_route/__init__.py').open('a') as handle:
             handle.write('# another runtime\n')
+        # Another clean commit M, not a dirty tree: a dirty runtime is refused for that reason alone.
+        self.mismatch_commit = commit_all(self.mismatch, 'another runtime')
         self.production = k.production()
         self.production.__enter__()
         self.decl = k.declaration(checkout, project='project', board='rc.kicad_pcb', schematic='rc.kicad_sch',
@@ -452,10 +458,21 @@ def matches(row):
     return row['expected'] == row['actual'] and row.get('expected_controls_refused') == row.get('actual_controls_refused')
 
 
+def load_a2(scripts):
+    """DIR/k91_classify_a2.py, or None for a tree that has no amendment A2."""
+    if not (Path(scripts) / 'k91_classify_a2.py').is_file():
+        return None
+    sys.modules.pop('k91_classify_a2', None)
+    return importlib.import_module('k91_classify_a2')
+
+
 def run_matrix(scripts=ROOT / 'scripts'):
     k, c = load(scripts)
+    a2 = load_a2(scripts)
     with tempfile.TemporaryDirectory(prefix='agent-ee-k91-matrix-') as temp:
         matrix = Matrix(k, c, temp)
+        if a2 is not None:
+            matrix.c = a2.Judge(a2.identities_of(matrix.bind, matrix.mismatch_commit))
         try:
             return matrix.run()
         finally:

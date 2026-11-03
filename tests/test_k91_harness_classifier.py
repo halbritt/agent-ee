@@ -14,6 +14,7 @@ import hashlib
 import importlib.util
 import json
 import shutil
+import sys
 import tempfile
 import types
 import unittest
@@ -22,7 +23,7 @@ from unittest.mock import patch
 
 from agent_ee import stage_receipts
 from tests import test_routing_experiment_boundary as boundary
-from tests.kicad_route_fixture import make_candidate, make_checkout
+from tests.kicad_route_fixture import commit_all, make_candidate, make_checkout
 from tests.toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +40,8 @@ def load(name):
 
 
 classify = load('k91_classify')
+sys.path.insert(0, str(ROOT / 'scripts'))
+import k91_classify_a2 as a2  # noqa: E402  (imports k91_classify by name)
 
 
 def historical():
@@ -52,8 +55,14 @@ def sha256(path):
 class HistoricalRecordTest(unittest.TestCase):
     def test_the_frozen_harness_and_its_record_are_unchanged(self):
         manifest = historical()
-        self.assertEqual(sha256(ROOT / 'scripts/k91_native_positive.py'), V1_HARNESS_SHA256)
+        # The bytes that ran are kept unchanged; the live entry point is marked historical (2026-11-03:
+        # it patched the retired router commit table) and refuses instead of failing part-way.
+        self.assertEqual(sha256(ROOT / 'scripts/historical/k91_native_positive-553e4151.py'), V1_HARNESS_SHA256)
         self.assertEqual(manifest['harness_sha256'], V1_HARNESS_SHA256)
+        harness = load('k91_native_positive')
+        with self.assertRaises(SystemExit) as caught:
+            harness.main(['--checkout', 'L', '--frozen-source', 'F', '--mismatch', 'M', '--out', 'OUT'])
+        self.assertEqual(caught.exception.code, harness.HISTORICAL)
         for line in (EVIDENCE / 'SHA256SUMS').read_text().splitlines():
             digest, name = line.split('  ', 1)
             with self.subTest(name):
@@ -260,6 +269,8 @@ class ProductionConsumerTest(unittest.TestCase):
         mismatch, _ = make_checkout(root / 'mismatch', {'name': 'complete'})
         with (mismatch / 'src/kicad_route/__init__.py').open('a') as handle:
             handle.write('# another runtime\n')
+        # Control A presents another clean commit M (a dirty tree is refused for that reason alone).
+        cls.mismatch_commit = commit_all(mismatch, 'another runtime')
         cls.commit = commit
         with cls.consumer.production() as adapter:
             cls.adapter = adapter
@@ -275,7 +286,10 @@ class ProductionConsumerTest(unittest.TestCase):
             cls.kept = cls.consumer.tree_sha256(cls.work)
             cls.controls = cls.consumer.run_controls(root / 'controls', cls.work, cls.decl, cls.bind, mismatch,
                                                      make_candidate, 'project/rc.kicad_pcb')
-        cls.verdict = classify.v2_verdict({'positive': cls.positive, 'controls': cls.controls})
+        # Control A is judged by amendment A2 (integrator agent-724, 2026-11-03): the campaign bound to L
+        # refuses the different clean commit M at the continuation guard. Other controls are v2's own.
+        cls.identities = a2.identities_of(cls.bind, cls.mismatch_commit)
+        cls.verdict = a2.v2a2_verdict({'positive': cls.positive, 'controls': cls.controls}, cls.identities)
 
     @classmethod
     def tearDownClass(cls):
@@ -303,20 +317,25 @@ class ProductionConsumerTest(unittest.TestCase):
 
     def test_each_control_is_refused_at_its_own_layer(self):
         runtime = self.controls['a_mismatched_runtime']
-        self.assertIn('kicad-route does not qualify', runtime['host_binding']['error'])
-        # The production consumer re-checks the live binding and refuses before run_step.
-        self.assertIn('kicad-route does not qualify', runtime['consumer']['error'])
+        recorded, current = self.identities['binding_commit'], self.identities['runtime_commit']
+        self.assertEqual((recorded, current), (self.bind['commit'], self.mismatch_commit))
+        # A fresh binding of the different clean commit M is accepted and records M.
+        self.assertEqual(runtime['host_binding'], {'attempted': True, 'accepted': True, 'value': {'commit': current}})
+        # The production consumer, continuing the campaign bound to L, refuses M before run_step.
+        self.assertEqual(runtime['consumer']['error'],
+                         'StaleRoutingEvidence: ' + a2.continuation_message(recorded, current))
         self.assertEqual([runtime[k]['attempted'] for k in ('consumer_run_step', 'consumer_verify', 'consumer_adopt')],
                          [False, False, False])
         self.assertEqual(runtime['direct_adopt'], {'attempted': False, 'reason': 'no receipt was retained'})
-        # The low-level observation, kept apart: run_step executed directly, sandbox not_run (no router),
-        # verify returns the coherent not_run, the bare adoption on another copy refuses.
+        # The low-level observation, kept apart: run_step executed directly on M is a fresh run that
+        # routes and records M in its adapter report.
         low = runtime['low_level']
         self.assertTrue(low['run_step']['accepted'])
-        self.assertEqual((low['sandbox']['classification'], low['sandbox']['candidate']), ('not_run', None))
-        self.assertTrue(classify.not_run_refusal(low['verify']['value']))
-        self.assertIn('no output adopted', low['direct_adopt']['error'])
-        self.assertEqual(self.verdict['low_level']['a_mismatched_runtime'], classify.REFUSED)
+        self.assertEqual((low['sandbox']['classification'], low['sandbox']['commit'], low['sandbox']['clean']),
+                         ('complete', current, True))
+        self.assertEqual(self.verdict['low_level']['a_mismatched_runtime'], a2.FRESH_RUN)
+        # The frozen verdict-2r4 contract names the retired commit table's refusal: it cannot refuse it.
+        self.assertEqual(classify.consumer_state(runtime, 'a_mismatched_runtime'), classify.INCOMPLETE)
         for name in ('b_tampered_candidate', 'b_tampered_sidecar'):
             with self.subTest(name):
                 record = self.controls[name]
@@ -400,9 +419,16 @@ class ContractRulesTest(unittest.TestCase):
 
     def test_the_contract_table_names_origin_reason_path_layers_and_preconditions(self):
         self.assertEqual(set(classify.CONTRACTS), set(classify.CONTROLS_V2))
+        identities = ProductionConsumerTest.identities
         for name, contract in classify.CONTRACTS.items():
             with self.subTest(name):
                 self.assertEqual(set(contract), {'origin', 'reason', 'path', 'layers', 'finalization', 'preconditions'})
+                if name == a2.CONTROL:
+                    # Control A's live refusal is the continuation guard's, accepted only through A2.
+                    self.assertTrue(classify.contract_match(name, self.controls[name]))
+                    self.assertEqual(a2.contract_match(name, self.controls[name], identities), [])
+                    self.assertEqual(a2.consumer_state(self.controls[name], name, identities), classify.REFUSED)
+                    continue
                 self.assertEqual(classify.contract_match(name, self.controls[name]), [])
                 self.assertEqual(classify.consumer_state(self.controls[name], name), classify.REFUSED)
 
@@ -529,16 +555,17 @@ class ContractRulesTest(unittest.TestCase):
                     self.assertEqual(classify.consumer_state(record, name), classify.NOT_REFUSED)
 
     def test_required_controls_decide_and_the_sidecar_is_reported(self):
-        verdict = classify.v2_verdict({'controls': self.controls})
+        identities = ProductionConsumerTest.identities
+        verdict = a2.v2a2_verdict({'controls': self.controls}, identities)
         self.assertTrue(verdict['controls_refused'])
         self.assertEqual(verdict['not_refused_because'], {})
         self.assertTrue(self.controls['b_tampered_sidecar']['direct_adopt']['accepted'])
         for name in classify.REQUIRED_V2:
             with self.subTest(name):
                 altered = {**self.controls, name: {'skipped': 'absent'}}
-                self.assertFalse(classify.v2_verdict({'controls': altered})['controls_refused'])
+                self.assertFalse(a2.v2a2_verdict({'controls': altered}, identities)['controls_refused'])
         altered = {**self.controls, 'b_tampered_sidecar': {'skipped': 'absent'}}
-        self.assertTrue(classify.v2_verdict({'controls': altered})['controls_refused'])
+        self.assertTrue(a2.v2a2_verdict({'controls': altered}, identities)['controls_refused'])
 
 
 class SuccessorCommandLineTest(unittest.TestCase):

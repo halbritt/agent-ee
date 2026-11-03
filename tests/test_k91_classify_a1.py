@@ -264,21 +264,32 @@ class Group4OtherContractsUnchanged(Base):
 
     def test_control_matrix_rows_unchanged_under_a1(self):
         """Every existing control-matrix row (actual consumer on the fixture router) keeps its expected
-        outcome when judged by A1 instead of verdict-2r4. Without identities A1 adds nothing."""
+        outcome when judged by A1 instead of verdict-2r4. Without identities A1 adds nothing: every
+        control's state under A1 equals its state under verdict-2r4. Since 2026-11-03 the live control
+        A is the continuation-guard refusal of a different clean commit, which only amendment A2
+        accepts (integrator agent-724), so the rows are judged by A2 once A1 is shown to add nothing."""
+        import k91_classify_a2 as a2
         spec = importlib.util.spec_from_file_location('k91_control_matrix', ROOT / 'scripts/k91_control_matrix.py')
         matrix = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(matrix)
         k, c = matrix.load(ROOT / 'scripts')
+        compared = []
 
         class Amended:
+            identities = None
+
             def __getattr__(self, name):
                 return getattr(c, name)
 
             def v2_verdict(self, manifest):
-                return a1.v2a1_verdict(manifest, None)
+                under_a1, under_v2 = a1.v2a1_verdict(manifest, None), c.v2_verdict(manifest)
+                compared.append(under_a1['controls'] == under_v2['controls'])
+                return a2.v2a2_verdict(manifest, self.identities)
 
+        amended = Amended()
         with tempfile.TemporaryDirectory(prefix='agent-ee-k91-a1-matrix-') as temp:
-            m = matrix.Matrix(k, Amended(), temp)
+            m = matrix.Matrix(k, amended, temp)
+            amended.identities = a2.identities_of(m.bind, m.mismatch_commit)
             try:
                 rows = m.run()
             finally:
@@ -286,6 +297,7 @@ class Group4OtherContractsUnchanged(Base):
         differ = [row['id'] for row in rows if not matrix.matches(row)]
         self.assertGreater(len(rows), 0)
         self.assertEqual(differ, [])
+        self.assertTrue(compared and all(compared))
 
 
 class Group5OriginalsImmutable(unittest.TestCase):
