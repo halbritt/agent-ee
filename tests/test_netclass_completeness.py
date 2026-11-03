@@ -168,3 +168,54 @@ class NetclassTests(unittest.TestCase):
         with self.assertRaises(CheckError) as raised:
             check_netclass_completeness(ctx)
         self.assertEqual(raised.exception.execution, 'malformed')
+
+
+class HistoricalQualificationTests(unittest.TestCase):
+    """A run captured by c683cffd with qualification /1 verifies against its own records;
+    new runs need qualification /2 (fixtures/historical-netclass-c683cffd)."""
+
+    HISTORICAL = Path(__file__).resolve().parents[1] / 'fixtures/historical-netclass-c683cffd/run'
+
+    def test_retained_schema_1_run_verifies_and_reports_its_older_implementation(self):
+        import os
+        import shutil
+        from unittest.mock import patch
+        from agent_ee.kicad_install import RECORD_ENV
+        from agent_ee.run_record import policy_files, verify
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)/'run'
+            shutil.copytree(self.HISTORICAL, run)
+            self.assertEqual(read_json(run/'inputs/qualification.json')['schema'], 'agent-ee.netclass-qualification/1')
+            host = {'policy_files': policy_files(), 'runtime_files': {}}
+            observations = []
+            with patch.dict(os.environ, {RECORD_ENV: str(Path(tmp)/'no-install-record.json')}):
+                result = verify(run, current_source=False, observations=observations, host=host)
+                self.assertEqual([(c['id'], c['execution'], c['outcome']) for c in result['checks']],
+                                 [('classes', 'ok', 'pass')])
+                self.assertEqual([o['kind'] for o in observations], ['policy_difference'])
+                with self.assertRaisesRegex(ValueError, 'review implementation changed'):
+                    verify(run, current_source=False, host=host, current_host=True)
+            # Verification leaves the captured input as it was.
+            self.assertEqual((run/'inputs/qualification.json').read_bytes(),
+                             (self.HISTORICAL/'inputs/qualification.json').read_bytes())
+
+    def test_new_run_with_a_schema_1_qualification_is_refused_at_capture(self):
+        legacy = (self.HISTORICAL/'inputs/qualification.json').read_bytes()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root/'native.kicad_pro').write_bytes((FIXTURE/'native.kicad_pro').read_bytes())
+            (root/'requirements.md').write_text('Default netclass must retain complete fields.')
+            (root/'qualification.json').write_bytes(legacy)
+            paths = ['native.kicad_pro', 'requirements.md', 'qualification.json']
+            write_json(root/'scope.json', {'schema': 'agent-ee.scope/3', 'inputs': [{'path': p, 'at': p} for p in paths],
+                'checks': [{'id': 'classes', 'kind': 'netclass_completeness',
+                            'params': {'project': 'native.kicad_pro', 'qualification': 'qualification.json'}}],
+                'requirements': ['requirements.md'], 'baseline': {
+                    'requirements': [{'id': 'complete', 'statement': 'Complete Default',
+                                      'source': {'path': 'requirements.md', 'locator': 'Default'},
+                                      'checks': ['classes'], 'intent': 'acceptance'}],
+                    'targets': ['requirements.md'], 'reference_architectures': ['requirements.md']}})
+            (root/'run').mkdir()
+            with self.assertRaisesRegex(ValueError, 'new runs require agent-ee.netclass-qualification/2'):
+                capture(root/'scope.json', root/'run')
+            self.assertFalse((root/'run/candidate.json').exists())

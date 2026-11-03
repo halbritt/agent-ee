@@ -1,0 +1,7 @@
+{
+  "board_sha256": "9ca0a895067c9fd2cbf63ef61a2ec0ce8be19ad0e1117c96d8fbeab86573f9c4",
+  "images": [],
+  "reason": "explicit skip_visuals/AGENT_EE_SKIP_VISUALS flag",
+  "schema": "agent-ee.candidate-visuals/1",
+  "status": "skipped"
+}

@@ -1,0 +1,98 @@
+{
+  "candidate_id": "41b9a1288c6b88a05b10cc31b0a847fa1e192e3cab862ebde44a134aa262f533",
+  "files": {
+    "board.kicad_pcb": "9ca0a895067c9fd2cbf63ef61a2ec0ce8be19ad0e1117c96d8fbeab86573f9c4",
+    "native.kicad_pro": "b6926d42f788c322d057974fd76feb970434914950aee8d01d66303706c1b9ff",
+    "qualification.json": "a30349fa0aaf1be641604151b17265f6cebe7cb38c320b8d1a267981e34c1c7a",
+    "requirements.md": "a998ffa5c868f81e226b9e1dfb91fae8bc29df084df12bd1871476dd67260e42",
+    "sheet.kicad_sch": "19c4a2fb4ce6457569528bf4e7a54251eb1136cc5d2e0282f70b952b9efca5e5"
+  },
+  "schema": "agent-ee.candidate/1",
+  "scope": {
+    "baseline": {
+      "reference_architectures": [
+        "requirements.md"
+      ],
+      "requirements": [
+        {
+          "checks": [
+            "classes"
+          ],
+          "id": "complete",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Default",
+            "path": "requirements.md"
+          },
+          "statement": "Complete Default"
+        }
+      ],
+      "targets": [
+        "requirements.md"
+      ]
+    },
+    "board": "board.kicad_pcb",
+    "checks": [
+      {
+        "id": "classes",
+        "kind": "netclass_completeness",
+        "params": {
+          "project": "native.kicad_pro",
+          "qualification": "qualification.json"
+        }
+      }
+    ],
+    "inputs": [
+      {
+        "at": "native.kicad_pro",
+        "path": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/native.kicad_pro"
+      },
+      {
+        "at": "qualification.json",
+        "path": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/qualification.json"
+      },
+      {
+        "at": "requirements.md",
+        "path": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/requirements.md"
+      },
+      {
+        "at": "board.kicad_pcb",
+        "path": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/board.kicad_pcb"
+      },
+      {
+        "at": "sheet.kicad_sch",
+        "path": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/sheet.kicad_sch"
+      }
+    ],
+    "name": "Historical netclass",
+    "requirements": [
+      "requirements.md"
+    ],
+    "schema": "agent-ee.scope/3",
+    "schematic": "sheet.kicad_sch",
+    "scope": "Synthetic Default field presence"
+  },
+  "scope_path": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/scope.json",
+  "scope_sha256": "285c7aacc2d7adaaf3f3b0bd6c5d3194c9bf4166fe50ffa3ab826ecafad4bead",
+  "source_revisions": {
+    "board.kicad_pcb": null,
+    "native.kicad_pro": null,
+    "qualification.json": null,
+    "requirements.md": null,
+    "sheet.kicad_sch": null
+  },
+  "sources": {
+    "board.kicad_pcb": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/board.kicad_pcb",
+    "native.kicad_pro": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/native.kicad_pro",
+    "qualification.json": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/qualification.json",
+    "requirements.md": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/requirements.md",
+    "sheet.kicad_sch": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/goal-20261103/unpin/kicad-review/historical-netclass-c683/sheet.kicad_sch"
+  },
+  "visuals": {
+    "board_sha256": "9ca0a895067c9fd2cbf63ef61a2ec0ce8be19ad0e1117c96d8fbeab86573f9c4",
+    "images": [],
+    "reason": "explicit skip_visuals/AGENT_EE_SKIP_VISUALS flag",
+    "schema": "agent-ee.candidate-visuals/1",
+    "status": "skipped"
+  }
+}

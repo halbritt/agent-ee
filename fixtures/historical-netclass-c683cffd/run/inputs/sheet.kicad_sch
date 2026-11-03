@@ -1,0 +1,9 @@
+(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (generator_version "10.0")
+  (uuid "df71bd8a-00b5-4ab0-b4ae-097eb322f6da")
+  (paper "A4")
+  (title_block (title "Owned PCB-only DC model fixture: schematic has no electrical criterion"))
+  (lib_symbols)
+)

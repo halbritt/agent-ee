@@ -1,0 +1,13 @@
+{
+  "baseline_id": "6fa73d7d38af055ddca3bd02f2d71e6db0125140e7471120032d5b318a1bffbb",
+  "candidate_id": "41b9a1288c6b88a05b10cc31b0a847fa1e192e3cab862ebde44a134aa262f533",
+  "checks": {
+    "classes": {
+      "artifacts": {
+        "work/classes/netclasses.json": "360dc26682d87dc1b50b19e3343aa75d4a4ab3a6616db7c0efe1ca46456d7cdb"
+      },
+      "result": "11969a9b87aa9f8e0c4b8fe3c15c92935b35dfc40c7e7e0952ee560f00808c3c"
+    }
+  },
+  "schema": "agent-ee.evidence/1"
+}

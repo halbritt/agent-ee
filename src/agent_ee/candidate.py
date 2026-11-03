@@ -101,6 +101,9 @@ def capture(scope_path, run_dir, profile_path=None):
     manifest["candidate_id"] = identity({"scope": scope, "files": before})
     from .baseline import compile_baseline
     baseline = compile_baseline(scope, before, inputs)
+    # Admission rules that apply to new runs only; finished runs keep the records they retained.
+    from .netclass_completeness import require_admissible
+    require_admissible(scope, inputs)
     if baseline is not None:
         write_json(run_dir / "baseline.json", baseline)
     write_json(run_dir / "candidate.json", manifest)

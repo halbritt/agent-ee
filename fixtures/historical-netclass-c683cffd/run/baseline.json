@@ -1,0 +1,71 @@
+{
+  "baseline_id": "6fa73d7d38af055ddca3bd02f2d71e6db0125140e7471120032d5b318a1bffbb",
+  "coverage": {
+    "checks": {
+      "classes": {
+        "can_evaluate_bound": true,
+        "capability_version": "netclass_completeness/1",
+        "check_id": "classes",
+        "immutable_inputs": [
+          "qualification.json"
+        ],
+        "kind": "netclass_completeness",
+        "predicates": [
+          "netclass:default-completeness"
+        ],
+        "prerequisites": [],
+        "status": "supported",
+        "unsupported_reasons": []
+      }
+    },
+    "coverage_id": "9e03774b86cb7cbe1342378fdd54e8c310c80740034e65816877845e637e1ee1",
+    "policy": "executable-acceptance/1",
+    "requirements": {
+      "complete": {
+        "acceptance_checks": [
+          "classes"
+        ],
+        "intent": "acceptance",
+        "mapped_checks": [
+          "classes"
+        ]
+      }
+    },
+    "schema": "agent-ee.coverage/1"
+  },
+  "criteria": [
+    {
+      "id": "classes",
+      "kind": "netclass_completeness",
+      "params": {
+        "project": "native.kicad_pro",
+        "qualification": "qualification.json"
+      }
+    }
+  ],
+  "files": {
+    "qualification.json": "a30349fa0aaf1be641604151b17265f6cebe7cb38c320b8d1a267981e34c1c7a",
+    "requirements.md": "a998ffa5c868f81e226b9e1dfb91fae8bc29df084df12bd1871476dd67260e42"
+  },
+  "reference_architectures": [
+    "requirements.md"
+  ],
+  "requirements": [
+    {
+      "checks": [
+        "classes"
+      ],
+      "id": "complete",
+      "intent": "acceptance",
+      "source": {
+        "locator": "Default",
+        "path": "requirements.md"
+      },
+      "statement": "Complete Default"
+    }
+  ],
+  "schema": "agent-ee.baseline/2",
+  "targets": [
+    "requirements.md"
+  ]
+}

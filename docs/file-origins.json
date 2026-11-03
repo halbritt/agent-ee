@@ -1837,6 +1837,48 @@
     },
     {
       "paths": [
+        "fixtures/historical-netclass-c683cffd/README.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Fixture documentation for the historical netclass run: its producer commit, inputs and test; no third-party text."
+    },
+    {
+      "paths": [
+        "fixtures/historical-netclass-c683cffd/run/REPORT.md",
+        "fixtures/historical-netclass-c683cffd/run/baseline.json",
+        "fixtures/historical-netclass-c683cffd/run/candidate.json",
+        "fixtures/historical-netclass-c683cffd/run/checks/classes.json",
+        "fixtures/historical-netclass-c683cffd/run/result.json",
+        "fixtures/historical-netclass-c683cffd/run/work/candidate.visuals/manifest.json",
+        "fixtures/historical-netclass-c683cffd/run/work/classes/netclasses.json",
+        "fixtures/historical-netclass-c683cffd/run/work/rf-routing/evidence.json",
+        "fixtures/historical-netclass-c683cffd/run/work/verification/evidence.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "Byte-for-byte agent-ee c683cffd run records of a checks-only review of owned inputs (result, candidate manifest, baseline, check record, evidence seals and report), produced by the 2026-11-03 cross-class review to keep a qualification /1 run verifiable; no third-party content."
+    },
+    {
+      "paths": [
+        "fixtures/historical-netclass-c683cffd/run/inputs/board.kicad_pcb",
+        "fixtures/historical-netclass-c683cffd/run/inputs/native.kicad_pro",
+        "fixtures/historical-netclass-c683cffd/run/inputs/qualification.json",
+        "fixtures/historical-netclass-c683cffd/run/inputs/requirements.md",
+        "fixtures/historical-netclass-c683cffd/run/inputs/sheet.kicad_sch"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Captured copies of owned fixtures: fixtures/netclass-completeness native.kicad_pro and qualification.json as of cac03d1f, fixtures/dc-path straight.kicad_pcb and dc_path.kicad_sch, and a one-line owned requirement."
+    },
+    {
+      "paths": [
         "fixtures/stock-stage-gate-pod-v5/README.md"
       ],
       "kind": "owned-documentation",

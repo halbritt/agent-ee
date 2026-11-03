@@ -16,6 +16,8 @@ from .storage import digest, write_json
 # (fixture_sha256). The check reads captured project bytes and runs no KiCad. A
 # qualification names the 10.x writer build that reproduced those bytes.
 PROFILE = 'kicad-10.0.7-net-settings-5'
+SCHEMA = 'agent-ee.netclass-qualification/2'
+LEGACY_SCHEMA = 'agent-ee.netclass-qualification/1'
 DEFAULT_KEYS = frozenset('name priority schematic_color pcb_color tuning_profile '
     'wire_width bus_width line_style clearance track_width via_diameter via_drill '
     'microvia_diameter microvia_drill diff_pair_width diff_pair_gap diff_pair_via_gap'.split())
@@ -44,13 +46,38 @@ def capability(params, files, inputs):
     if inputs is None:
         raise ValueError('qualification requires captured inputs')
     qualification = load_json(Path(inputs) / params['qualification'])
-    exact_keys(qualification, 'schema profile native_release native_writer fixture_sha256 sources')
-    if (qualification['schema'] != 'agent-ee.netclass-qualification/2' or
-            qualification['profile'] != PROFILE or qualification['sources'] != SOURCES or
-            not writer_agrees(qualification['native_release'], qualification['native_writer']) or
+    if not isinstance(qualification, dict) or qualification.get('schema') not in (SCHEMA, LEGACY_SCHEMA):
+        raise ValueError('unsupported netclass qualification')
+    if qualification['schema'] == SCHEMA:
+        exact_keys(qualification, 'schema profile native_release native_writer fixture_sha256 sources')
+        writer = writer_agrees(qualification['native_release'], qualification['native_writer'])
+    else:
+        # Retained /1 qualifications are decoded exactly as they were accepted when captured
+        # (c683cffd), so finished runs still verify; new runs need /2 (require_admissible).
+        exact_keys(qualification, 'schema profile native_writer fixture_sha256 sources')
+        writer = (isinstance(qualification['native_writer'], str) and
+                  line_release(qualification['native_writer'].split('-', 1)[0]) is not None)
+    if (not writer or qualification['profile'] != PROFILE or qualification['sources'] != SOURCES or
             qualification['fixture_sha256'] != 'b6926d42f788c322d057974fd76feb970434914950aee8d01d66303706c1b9ff'):
         raise ValueError('unsupported netclass qualification')
     return {'immutable_inputs':[params['qualification']], 'predicates':['netclass:default-completeness']}
+
+
+def require_admissible(scope, inputs):
+    """A new run's netclass qualifications must be schema /2, which records the writer's
+    release and build separately and checks that they agree. Called when a run is captured;
+    verifying a finished run decodes the /1 records it retained (capability)."""
+    for spec in scope.get('checks', []):
+        if spec.get('kind') != 'netclass_completeness' or not isinstance(spec.get('params'), dict):
+            continue
+        rel = spec['params'].get('qualification')
+        try:
+            schema = load_json(Path(inputs) / str(safe_relative(rel))).get('schema')
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue  # capability() reports an unreadable or malformed qualification
+        if schema == LEGACY_SCHEMA:
+            raise ValueError(f"netclass check {spec.get('id')}: new runs require {SCHEMA} "
+                             '(native_release and native_writer recorded separately)')
 
 
 def writer_agrees(release, build):

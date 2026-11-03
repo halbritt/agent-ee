@@ -1,0 +1,1 @@
+Keep complete Default netclass fields.
