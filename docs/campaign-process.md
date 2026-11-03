@@ -101,13 +101,15 @@ records catch up.
 
 ## Production runtime and renders
 
-Production must use the current integrated kicad-route with a qualified installed engine
-and compatible agent-ee adapter/image. Check upstream freshness against a recorded main
-revision, separately from deterministic tests of a frozen pin. Refuse production execution
-when the selected runtime does not match that pin. An intentionally retained historical
-runtime may be healthy for replay while still being ineligible for current production.
-A main update does not mutate or invalidate a running frozen experiment; qualify it for
-the next run. Any temporary production exception is explicit, dated and owned by529.
+Production uses the current kicad-route: the image installs kicad-route `main` when it is
+built, and a host checkout runs at the clean commit it holds. Each routing attempt fixes
+that version and records it (commit, clean-tree state and code digest in its adapter
+report); a dirty checkout or an unreadable commit is refused, and a result outside the
+adapter's result contract is refused. Deterministic tests use the coordinator's fixture
+router, not a frozen kicad-route commit. A finished run verifies against the commit it
+recorded; work that continues a campaign must run on the commit its routing binding
+recorded. A main update does not mutate or invalidate a running experiment; the next run
+uses and records it. Any temporary production exception is explicit, dated and owned by529.
 
 449 owns a persistent render job, approximately every four hours, with an initial refresh
 now. Render top/bottom/isometric views from the latest consistent snapshot and publish to
