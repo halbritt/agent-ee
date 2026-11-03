@@ -612,11 +612,22 @@ Limitations. They are observations, not findings: no harness that changed ran in
 the review. `verify` and `verify-campaign` print one `observation:` line for
 each unused harness that differs from a retained run's capture, and still exit
 0. `verify-campaign` adds the campaign's implementation definition to every
-retained run's used set, because the writer ran in the campaign: a change to the
-writer's harness refuses the campaign even when no reviewer uses that harness,
-while `verify` of a single review run observes it. A used harness or native tool change still refuses with `runtime_drift` at
-launch, `implementation or tool runtime changed during review; rerun required`
-at completion, and `tool runtime changed` at verification.
+retained run's used set, because the writer ran in the campaign.
+
+A used harness or native tool that changes while a run is in progress refuses:
+`runtime_drift` at launch and `implementation or tool runtime changed during
+review; rerun required` at completion. A finished run is verified against its
+own records instead (integrator decision, 2026-11-03, under the owner's "versions
+should be fixed and recorded"): a used tool that differs on the verifying host is
+an `observation:` line (`kind: host_difference`, with the recorded and current
+entries), never a failure. A campaign in progress, which builds on its runs with
+this host's tools, and `verify --current-host` still refuse such a difference
+with `tool runtime changed; rerun under the current tools`. A `result.json`
+whose `runtime_files` disagrees with its launch expectation refuses everywhere
+with `tool runtime changed in the run's records`. These are consistency checks
+over unkeyed records: a writer who rewrites `result.json` and a matching launch
+expectation consistently is not detected without independent custody of the
+evidence.
 
 A resubmission under the [bounded resubmission decision](decisions.md#bounded-resubmission-after-an-output-format-refusal-2026-10-17)
 is a new call, so it passes a new guard. A used harness that no longer matches

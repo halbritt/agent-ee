@@ -10,8 +10,11 @@ independent review. No production file is changed by this delivery.
 
 [run_record.verify_records](../src/agent_ee/run_record.py) selects
 `candidate.verify_snapshot` when `current_source=False`, but still compares
-current policy and runtime fingerprints. Both required-policy and unrelated
-module identity changes therefore refuse snapshot review verification.
+current policy fingerprints. Both required-policy and unrelated module identity
+changes therefore refuse snapshot review verification. Since 2026-11-03 runtime
+fingerprints are not compared that way: a finished run is verified against its
+recorded runtime, and a tool that differs on this host is an observation
+(`current_host=True` restores the refusal for work continuing on the run).
 [The CLI](../src/agent_ee/cli.py) maps `verify --snapshot-only` to this argument
 and prints `fresh` followed by the stored outcome on success. That flag is not
 an implemented non-accepting historical-integrity mode.
@@ -95,9 +98,11 @@ the retained image inspection records the image ID and build-input digest.
 
 [test_historical_integrity_526.py](../tests/test_historical_integrity_526.py)
 uses real captured files and the existing public verification API, with supplied
-filesystem/runtime observations and no internal mocks. Five tests cover unchanged
+filesystem/runtime observations and no internal mocks. Six tests cover unchanged
 incomplete history, changed live requirements, unrelated/required policy drift,
-runtime replacement and retained input/artifact tampering. The policy test
+runtime replacement (verified from the record and reported, refused only with
+`current_host=True`), a rewritten runtime record, and retained input/artifact
+tampering. The policy test
 explicitly characterizes today's defect; it must be reconciled when the new
 historical-integrity contract is implemented.
 

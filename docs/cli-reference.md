@@ -41,7 +41,7 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 | `render3d` | `SOURCE --out NEW [--models DIR] [--fetch-models] [--width N --height N] [--quality basic\|high] [--jobs N] [--timeout SECONDS]` | Ray trace top, bottom and isometric PNGs with native KiCad |
 | `diagnose` | `RUN_OR_CAMPAIGN [--json] [--snapshot-only]` | Report retained facts, unavailable evidence and ambiguous transitions without writes |
 | `inspect` | `RUN` | Show recorded outcome/state, findings, checks, freshness and correction links |
-| `verify` | `RUN [--snapshot-only]` | Check input, policy, runtime and retained evidence consistency |
+| `verify` | `RUN [--snapshot-only] [--current-host]` | Check input, policy, recorded runtime and retained evidence consistency |
 | `resume` | `RUN --out NEW_RUN [--max-seconds N]` | Read the old manifest's scope path, recapture and rerun all work |
 | `adjudicate` | `RUN DECISIONS_JSON` | Validate and append operator-supplied dispositions |
 | `close-correction` | `OLD_RUN NEW_RUN --finding ID --checks IDS --reason TEXT` | Append a verified correction link to the old run |
@@ -324,12 +324,23 @@ target is reported; the original event is retained.
 Normal verification checks the original scope file and currently declared
 source bytes as well as the copied snapshot. `--snapshot-only` skips the live
 scope/source comparison. It still checks the captured candidate, Python policy,
-runtime binaries and retained artifacts. It does not mean "ignore all stale
-evidence" and does not bypass changed tool versions. A changed harness that the
-run's profile never invokes is printed as an `observation:` line and does not
-fail verification; `verify-campaign` also counts the campaign writer's harness
-as used ([used and unused harnesses](result-reference.md#used-and-unused-harnesses)). Historical restoration is
-covered in [evidence reproduction](reproducing-evidence.md).
+the recorded runtime and retained artifacts. It does not mean "ignore all stale
+evidence".
+
+A finished run is verified against its own records. It used the tools it
+recorded in `result.json` `runtime_files` (KiCad, ngspice, Bubblewrap, Python,
+harnesses) and the tools its scope declares (measurement tools, the datasheet
+extractor). A different tool on the verifying host, for example KiCad 10.0.8 for
+a run made with 10.0.7, does not fail verification: each one is printed as an
+`observation: NAME differs on this host` line with the recorded and current
+path and SHA-256. A changed harness that the run's profile never invokes is also
+an `observation:` line ([used and unused harnesses](result-reference.md#used-and-unused-harnesses)).
+The records must still agree: `runtime_files` must equal the launch expectation's,
+which verification recomputes from the run. `--current-host` is for work that
+continues on the run on this host. It also requires the tools the run used to
+be this host's, and refuses a difference with `tool runtime changed; rerun under
+the current tools`. Historical restoration is covered in
+[evidence reproduction](reproducing-evidence.md).
 
 ## `adjudicate`
 
@@ -381,7 +392,8 @@ as the whole campaign outcome.
 
 `verify-campaign CAMPAIGN` takes no snapshot-only flag. It checks historical run
 snapshots without requiring their original live sources, but still requires the
-recorded Python/runtime identities and retained evidence. It prints the verified
+recorded Python identity, consistent runtime records and retained evidence. Tool
+differences on this host are printed as `observation:` lines, once each. It prints the verified
 campaign state and exits 0 on integrity success, including for honestly incomplete
 or escalated campaigns. For a satisfied generation campaign it recomputes the final
 run's sealed fab artifact hashes, refuses a state whose `fab_artifacts` differ, and

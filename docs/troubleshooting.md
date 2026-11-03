@@ -54,7 +54,8 @@ temporarily changed design.
 | `review scope changed; evidence is stale` | Exact scope file bytes changed; inspect the change and recapture |
 | `candidate snapshot changed; evidence is stale` | Copied inputs were edited, added, removed or linked; restore only from trusted original evidence or rerun |
 | `review implementation changed` | Python policy differs; use matching historical implementation for inspection or rerun current policy |
-| `tool runtime changed` | A fingerprinted native tool, or a harness the run's profile (or, for `verify-campaign`, the campaign writer) invokes, differs; historical binary portability is not promised. An unused harness prints an `observation:` line instead |
+| `tool runtime changed; rerun under the current tools` | A tool the run used differs on this host, and the caller claims this host's tools for the run (a campaign in progress, `verify --current-host`). Plain `verify` and `verify-campaign` print an `observation:` line instead and verify the run against its records |
+| `tool runtime changed in the run's records` | `result.json` `runtime_files` is missing or differs from the run's launch expectation; the record was edited. Preserve and investigate |
 | `execution/review evidence changed` | Raw or interpreted retained artifacts differ; preserve and investigate the discrepancy |
 | `stored result contradicts its execution and finding records` | Outcome projection does not match its contents; do not accept it |
 | `check projection differs` / `review projection differs` | Final result and retained check/review records disagree; investigate rather than patching acceptance |
@@ -112,7 +113,7 @@ context may be included in the stored exception.
 | `witness must establish a freshly failed criterion` | Claimed defect cites a passing, unknown or nonexecuted check | Reproduce an applicable criterion violation; retain an unproven claim as a concern |
 | `only executable check findings may be accepted` | Scope/2 adjudication attempted to accept reviewer prose | Accept the mapped check finding or retain/duplicate the reviewer analysis appropriately |
 | `evidence seal contradicts retained check artifacts` | Saved seal does not reproduce from the retained checks/raw files | Preserve and investigate; do not regenerate a seal to hide changed evidence |
-| `declared measurement tool changed since review` | Pinned producer executable no longer matches | Use the matching historical tool or create a newly declared run |
+| `declared measurement tool changed since review` | The declared producer executable differs on this host and the caller claims this host's tools (`verify --current-host`); plain `verify` prints an `observation:` line | Use the declared tool, or create a newly declared run |
 | `measurement parser altered raw tool evidence` / `measurement parser altered coordinator request` | Parser crossed its evidence boundary | Inspect invocation and mount records; reject that attempt |
 | `campaign terminal state contradicts convergence history` | Stored state and recomputed history disagree | Preserve records and investigate the state mutation |
 | `another writer owns` | Supported writer lease is held | Inspect the actual process; wait for its completion or resolve the running operation; do not unlink the lock |

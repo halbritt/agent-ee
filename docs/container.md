@@ -127,11 +127,12 @@ that release. Runs record what they used with their evidence: `result.json`
 digests; native checks keep the `kicad_version` of their DRC and ERC reports,
 the `pcbnew_version` of their geometry probes and the `kicad-cli` version and
 digest of schematic renders; DC checks record the tool digests they measured
-when they started. `agent-ee verify` still compares a run's recorded
-`runtime_files` with the verifying host, as for every tool: on an image with
-another KiCad build, an older run is reported as made with other tools
-("tool runtime changed; rerun under the current tools"), and its records keep
-the release it used.
+when they started. `agent-ee verify` checks a finished run against these
+records, not against the verifying host: a run made with 10.0.7 verifies on a
+10.0.8 image, and each differing tool is printed as an `observation:` line,
+recorded versus current ([cli-reference.md](cli-reference.md#inspect-and-verify)). Only a run
+in progress, or a caller that claims this host's tools for the run (`verify
+--current-host`, a campaign in progress), refuses the difference.
 
 No check compares with one fixed KiCad version. Native readers refuse only a
 release outside the 10.x line their formats are written for
