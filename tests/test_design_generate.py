@@ -929,10 +929,7 @@ class TraceTests(ScriptedLoop):
                          [('Rails:', True), ('Input | 12 V', True), ('Output | 3.3 V', True)])
 
     def test_a_null_item_is_valid_for_the_validator_and_both_seat_schemas(self):
-        try:
-            import jsonschema
-        except ImportError:
-            self.skipTest('jsonschema is not installed')
+        # Structural, so it runs in the CI image, which has no jsonschema: strict mode refuses skips.
         from agent_ee.harnesses import strict_schema
         envelope = self.response()
         envelope['trace'][0]['item'] = None
@@ -940,15 +937,21 @@ class TraceTests(ScriptedLoop):
         for row in envelope['trace'][2:]:
             row['item'] = None
         envelope['untraced'] = [dict(quote='Measure it on hardware', item=None, status='not_applicable', reason='Bench.')]
-        schemas = {'codex': strict_schema(loop.AUTHOR_SCHEMA), 'agy': loop.AUTHOR_SCHEMA}
         self.assertEqual(loop.validate_response(copy.deepcopy(envelope)), envelope)
+
+        def allowed(node):
+            kinds = node.get('type', [])
+            kinds = {kinds} if isinstance(kinds, str) else set(kinds)
+            for branch in node.get('anyOf', []):
+                kinds |= allowed(branch)
+            return kinds
+
+        schemas = {'codex': strict_schema(loop.AUTHOR_SCHEMA), 'agy': loop.AUTHOR_SCHEMA}
         for name, schema in schemas.items():
-            with self.subTest(schema=name):
-                jsonschema.validate(envelope, schema)
-                wrong = copy.deepcopy(envelope)
-                wrong['trace'][0]['item'] = '1'
-                with self.assertRaises(jsonschema.ValidationError):
-                    jsonschema.validate(wrong, schema)
+            for field in ('trace', 'untraced'):
+                with self.subTest(schema=name, field=field):
+                    item = schema['properties'][field]['items']['properties']['item']
+                    self.assertEqual(allowed(item), {'integer', 'null'})
 
     def test_an_item_number_is_null_or_a_positive_integer(self):
         for item in (0, -1, 1.5, '1', True):

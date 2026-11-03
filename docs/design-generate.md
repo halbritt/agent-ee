@@ -257,6 +257,12 @@ sandbox launcher or host run that starts its own session does) can outlive a
 stopped run outside a container. In the documented container deployment,
 container teardown ends it.
 
+Limit: a SIGTERM that arrives in the few statements between the end of a
+phase's launch and the start of its supervision in `native_run` is raised
+before supervision can stop the new group. The run is still reported
+`interrupted`, but outside a container that phase group can keep running after
+the coordinator exits. Container teardown ends it in the documented deployment.
+
 A SIGKILL of the coordinator cannot be handled: its reports stay `running`, and
 its phase groups are not stopped. In the documented container deployment,
 container teardown ends every process.
