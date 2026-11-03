@@ -560,7 +560,7 @@ def placement_summary(findings):
                 if candidate.get('seed') is not None and candidate['seed'] not in row['seeds']:
                     row['seeds'].append(candidate['seed'])
         final = job.get('final') or {}
-        errors = {split: (final.get('errors') or {}).get(split, {}).get('by_type')
+        errors = {split: ((final.get('errors') or {}).get(split) or {}).get('by_type')
                   for split in ('placement_introduced', 'routing_introduced', 'pre_existing')}
         locality = final.get('locality') or {}
         edge = final.get('edge_intent') or {}
@@ -568,10 +568,10 @@ def placement_summary(findings):
             validity=job.get('validity'), engine_violations=list(merged.values()),
             native_errors={k: v for k, v in errors.items() if v}, opens=final.get('opens'),
             integrity=final.get('integrity'),
-            edge_intent=dict(status=edge.get('status'), violations=edge.get('violations', [])),
+            edge_intent=dict(status=edge.get('status'), violations=edge.get('violations') or []),
             locality=dict(status=locality.get('status'),
-                          defects=[_locality_leg(d) for d in locality.get('defects', [])],
-                          unknown=[_locality_leg(d) for d in locality.get('unknown', [])])))
+                          defects=[_locality_leg(d) for d in locality.get('defects') or [] if isinstance(d, dict)],
+                          unknown=[_locality_leg(d) for d in locality.get('unknown') or [] if isinstance(d, dict)])))
     return summary
 
 
@@ -990,10 +990,13 @@ def _generate(requirements_path, out, options, identity=None):
             except PhaseFailure as exc:
                 row.update(status='failed', failing_stage=exc.stage, reason=str(exc),
                     refusal_classes=refusal_classes(str(exc)))
-                models = read_optional(Path(row['capture']) / 'models-report.json') \
-                    if exc.stage == 'capture' and 'capture' in row else None
-                if models:
-                    row['missing_models'] = [r for r in models.get('files', []) if r.get('status') == 'not-found']
+                models = None
+                if exc.stage == 'capture' and 'capture' in row:
+                    with contextlib.suppress(OSError, ValueError):
+                        models = read_optional(Path(row['capture']) / 'models-report.json')
+                if isinstance(models, dict):
+                    row['missing_models'] = [r for r in models.get('files') or []
+                                             if isinstance(r, dict) and r.get('status') == 'not-found']
                 feedback = phase_feedback(exc.stage, str(exc), row)
                 (attempt / 'refusal.txt').write_text(str(exc), encoding='utf-8')
                 if exc.stage in ('capture', 'compile') and not row['refusal_classes']:

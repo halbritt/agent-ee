@@ -594,6 +594,7 @@ def validate(design, captures=None, *, cad_only=False):
             d["device"] in footprints
             and d["capacitor"] in footprints
             and number(d["max_distance_mm"])
+            and d["max_distance_mm"] > 0
             and all(
                 isinstance(leg, list)
                 and len(leg) == 2
