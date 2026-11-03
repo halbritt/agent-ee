@@ -24,6 +24,17 @@ class StatementTests(unittest.TestCase):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.design = design_fixture(self.root / 'capture')
 
+    def test_free_text_with_declared_mechanics_is_an_actionable_validation_refusal(self):
+        self.design['mechanics'] = dict(access_owners=[])
+        self.design['markings'] = [label(), label(id='name', text='NAME', anchor=dict(at_mm=[20, 15]))]
+        with self.assertRaises(DesignError) as refused:
+            validate(self.design, self.root / 'capture')
+        self.assertIn('markings[1].anchor', str(refused.exception))
+        self.assertIn('free board text cannot be combined with declared mechanics yet; '
+                      'attach the label to a part instead', str(refused.exception))
+        self.design.pop('mechanics')
+        validate(self.design, self.root / 'capture')
+
     def test_free_part_and_pin_labels_validate_and_compile(self):
         rows = [label(), dict(id='name', text='Owned divider', layer='B.SilkS', anchor=dict(at_mm=[15, 4])),
                 dict(id='part', text='INPUT', layer='F.SilkS', anchor=dict(reference='R2', offset_mm=[0, 4]))]
@@ -191,15 +202,12 @@ class NativeTests(unittest.TestCase):
                          (work / 'console.log').read_text())
         return work
 
-    def mechanics_statement_places(self, include_free):
+    def test_attached_label_with_mechanics_places_and_passes_artwork_condition(self):
         import shutil
         design = design_fixture(self.root / 'capture')
         design['board'].update(width_mm=40, height_mm=30)
         design['mechanics'] = dict(access_owners=[])
         design['markings'] = [label(anchor=dict(reference='R1', pin='1', offset_mm=[0, 3]))]
-        if include_free:
-            design['markings'].append(dict(id='name', text='TEXT', layer='F.SilkS',
-                anchor=dict(at_mm=[20, 15]), height_mm=1.000001, stroke_mm=.150001, rotation_deg=90))
         compile_design(design, self.root / 'capture', self.root / 'bundle')
         shutil.copytree(self.root / 'bundle/inputs', self.inputs, dirs_exist_ok=True)
         self.native('''
@@ -226,23 +234,23 @@ normal=job.normalize_intent({'fixed_poses':[]},{'groups':[]})
 problem,_=placement_problem.capture(description,normal)
 assert description==original, 'builder mutated captured mechanics or text'
 assert Path('/candidate/analysis/geometry-model.json').read_text()==recipe['model_raw']
+# The artwork-stage block_package._mechanics_only_basis condition must accept
+# this exact production problem, not a substituted or derived model.
+mechanics=problem.get('mechanics',{})
+refused=(problem.get('problem_sha256')!=placement_problem.identity(problem)
+         or mechanics.get('binding_sha256')!=binding['binding_sha256']
+         or mechanics.get('model_raw')!=recipe['model_raw']
+         or mechanics.get('sources')!=recipe['declaration']['sources'])
+assert not refused, 'artwork-stage mechanics original problem identity differs'
+assert {r['uuid'] for r in problem['footprints']}=={r['uuid'] for r in facts['footprints']}
 search={'seeds':[{'seed':0,'start':'scattered'}],'steps_per_seed':20000,'shortlist':1}
 out,_=job.solve(problem,search,Path('/work'),deadline_s=10,executable='/engine')
 assert out['shortlist'] and out['shortlist'][0]['terms']['hard_count']==0,out
-for row in problem['footprints']:
-    if row['native_ref'].startswith('board-text:'):
-        assert row['source_body_local_nm']==row['occupancy']['local_rect_nm'],row
 placed=job.materialize(path,out['shortlist'][0]['poses'],Path('/work/placed'),b'{}\\n',normalized=normal)
 assert placed['integrity']=='preserved',placed
 saved=k.LoadBoard(placed['board']);assert len(list(saved.GetFootprints()))==2
 assert evaluate(saved,doc,limits)['outcome']=='pass',evaluate(saved,doc,limits)
 ''', setup=GEOMETRY, engine=True)
-
-    def test_statement_with_mechanics_free_and_pin_labels_places(self):
-        self.mechanics_statement_places(include_free=True)
-
-    def test_statement_with_mechanics_and_only_a_pin_label_places(self):
-        self.mechanics_statement_places(include_free=False)
 
     def test_build_problem_search_reserves_free_and_attached_text_and_materializes_only_parts(self):
         self.native('''
@@ -263,6 +271,7 @@ normal=job.normalize_intent({'fixed_poses':[],'edge_connectors':[]},{'groups':[]
 problem,_=placement_problem.capture(description,normal)
 real=next(r for r in problem['footprints'] if r['native_ref']=='J1')
 reservation=next(r for r in problem['footprints'] if r['native_ref'].startswith('board-text:'))
+assert reservation==description['text_obstacles'][0] and 'mechanics' not in problem
 assert reservation['role']=='fixed_body' and len(problem['footprints'])==2
 assert real['occupancy']['local_rect_nm'][2]>=5000000, real
 search={'seeds':[{'seed':0,'start':'scattered'}],'steps_per_seed':20000,'shortlist':1}

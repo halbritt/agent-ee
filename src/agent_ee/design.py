@@ -391,6 +391,9 @@ def validate(design, captures=None, *, cad_only=False):
                 if marking.get(key, floors[floor]) < floors[floor]:
                     fail(f"markings[{i}].{key}", f"must be at least {floors[floor]} mm from the fabrication profile")
             if "at_mm" in marking["anchor"]:
+                if "mechanics" in design:
+                    fail(f"markings[{i}].anchor", "free board text cannot be combined with declared mechanics yet; "
+                         "attach the label to a part instead")
                 x, y = marking["anchor"]["at_mm"]
                 if not (0 <= x <= design["board"]["width_mm"] and 0 <= y <= design["board"]["height_mm"]):
                     fail(f"markings[{i}].anchor.at_mm", "must be within the declared board")

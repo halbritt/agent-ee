@@ -295,30 +295,6 @@ class AcquisitionMechanicsTests(unittest.TestCase):
                 'pads':[{'uuid':row['pads'][0]['uuid'],'number':'1','net':'GND','position_nm':[x,y],
                          'rotation_deg':0,'shape':0,'size_nm':[100000,100000]}]})
 
-    def test_text_body_projection_preserves_sources_and_refuses_resealing_changed_bytes(self):
-        binding = self.mechanics.bind(self.recipe, self.facts)
-        desc = self.mechanics.attach(copy.deepcopy(self.description), binding, self.facts)
-        ref = 'board-text:00000000-0000-5000-8000-0000000000aa'
-        desc['text_obstacles'] = [dict(uuid=ref.split(':')[1], native_ref=ref, role='fixed_body',
-            pose=dict(x_nm=25*MM, y_nm=17*MM, quarter_turns=0),
-            occupancy=dict(status='derived', label='derived_occupancy', rung='silk+pads',
-                           local_rect_nm=[-2000001, -500001, 2000000, 500000]),
-            copper_local_nm=[], mask_local_nm=[], holes_local_nm=[], pads=[], rotations=[0])]
-        original = copy.deepcopy(desc)
-        problem, _ = problem_builder.capture(desc, job.normalize_intent({'fixed_poses': []}, {'groups': []}))
-        self.assertEqual(desc, original)
-        row = next(r for r in problem['footprints'] if r['native_ref'] == ref)
-        self.assertEqual(row['source_body_local_nm'], [-2000001, -500001, 2000001, 500001])
-        self.assertEqual(row['source_body_local_nm'], row['occupancy']['local_rect_nm'])
-        projected = problem['mechanics']
-        self.assertEqual(projected['text_keepout_projection']['original_sources'], desc['mechanics']['sources'])
-        model = json.loads(projected['model_raw'])
-        for name, package in self.recipe['model']['packages'].items():
-            self.assertEqual(model['packages'][name], package)
-        desc['mechanics']['model_raw'] += ' '
-        with self.assertRaisesRegex(problem_builder.JobRefusal, 'source model bytes changed'):
-            problem_builder.capture(desc, job.normalize_intent({'fixed_poses': []}, {'groups': []}))
-
     def test_exact_source_bodies_access_and_native_fixed_roles_reach_both_builders(self):
         binding = self.mechanics.bind(self.recipe,self.facts)
         desc = self.mechanics.attach(copy.deepcopy(self.description),binding,self.facts)

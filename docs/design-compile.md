@@ -101,11 +101,10 @@ projected regions reserve space on both sides. Connector seat geometry keeps
 its original native body bounds. Attached text retains its declared offset;
 the artwork mover does not relocate it. Final checks also refuse a label covered
 by another part's same-side courtyard (or native bounds when no courtyard exists).
-When mechanics are declared, free text also gets its own source body in the
-solver's derived mechanics model. The captured model and real part bodies remain
-unchanged; the problem records the original source hashes and the derived text
-boxes. Odd box dimensions grow outwards by at most one nanometre to fit the
-engine's even-width body representation. This projection adds no physical parts.
+When a statement declares `mechanics`, free board text (`anchor.at_mm`) is
+refused at validation: free board text cannot be combined with declared
+mechanics yet; attach the label to a part instead. Part and pin labels remain
+supported with mechanics and retain the original mechanics model and sources.
 
 The final `board_text` file check verifies content, visibility, attachment, side,
 position, angle, font and size on the saved board. It requires the full native
