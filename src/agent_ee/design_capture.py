@@ -246,48 +246,10 @@ def _capture_design(design, out, *, kicad_root, stock_endpoint, supplier_endpoin
                 + "; ".join(failed)
             ]
         )
-    bindings, official = [], {}
-    for lcsc in sorted(catalog["parts"]):
-        raw = json.loads((out / f"stock/responses/{lcsc}.json").read_bytes())
-        row = next(
-            r
-            for r in raw["data"]["componentPageInfo"]["list"]
-            if r["componentCode"] == lcsc
-        )
-        url = row.get("dataManualFileAccessIdUrl") or row.get("dataManualUrl")
-        bindings.append(dict(id=lcsc, datasheet_url=url))
-        official[lcsc] = row.get("dataManualOfficialLink")
-    from .datasheet_capture import capture_datasheets
+    # Ordered sources per part, each recorded; see design_datasheets.
+    from .design_datasheets import acquire
 
-    attempts = out / "datasheet-attempts"
-    attempts.mkdir()
-    datasheets = capture_datasheets(bindings, attempts / "signed")
-    failed_ids = {r["id"] for r in datasheets["parts"] if r["missing"]}
-    if failed_ids and all(official.get(lcsc) for lcsc in failed_ids):
-        fallback = [
-            dict(
-                id=b["id"],
-                datasheet_url=official[b["id"]]
-                if b["id"] in failed_ids
-                else b["datasheet_url"],
-            )
-            for b in bindings
-        ]
-        datasheets = capture_datasheets(fallback, out / "datasheets")
-    else:
-        import shutil
-
-        shutil.copytree(attempts / "signed", out / "datasheets")
-    missing = [
-        r["id"] + ": " + str(r["reason"]) for r in datasheets["parts"] if r["missing"]
-    ]
-    if missing:
-        raise DesignError(
-            [
-                "parts: datasheet download failed; retry with fresh signed URLs: "
-                + "; ".join(missing)
-            ]
-        )
+    acquire(design, out, catalog)
     for lcsc in sorted(catalog["parts"]):
         capture_supplier(lcsc, out / "supplier", endpoint=supplier_endpoint)
     from .models3d import fetch_stock_references

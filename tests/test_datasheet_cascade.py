@@ -372,10 +372,20 @@ class CascadeTests(CascadeFixture, unittest.TestCase):
         self.assertIn('cli-online/search/0.json', json.loads(replay.stdout)['dependencies'])
 
     def test_no_check_or_offline_module_imports_the_cascade_producer(self):
+        # design_datasheets is design capture's host-side datasheet acquisition. Only
+        # design_capture names it, and imports it inside capture.
         root = Path(cascade.__file__).parent
-        importers = [p.name for p in root.glob('*.py') if p.name != 'datasheet_cascade.py'
-                     and 'datasheet_cascade' in p.read_text(encoding='utf-8')]
-        self.assertEqual(importers, [])
+        for producer, allowed in (('datasheet_cascade', 'design_datasheets.py'), ('design_datasheets', 'design_capture.py')):
+            importers = [p.name for p in root.glob('*.py') if p.name not in (producer + '.py', allowed)
+                         and producer in p.read_text(encoding='utf-8')]
+            self.assertEqual(importers, [], producer)
+        # Importing the offline design readers, compiler and generate loop loads neither producer.
+        probe = ('import sys, agent_ee.design, agent_ee.design_capture, agent_ee.design_compile, '
+                 'agent_ee.design_generate; print(sorted(m for m in sys.modules '
+                 'if m in ("agent_ee.datasheet_cascade", "agent_ee.design_datasheets")))')
+        environment = {**os.environ, 'PYTHONPATH': str(Path(cascade.__file__).parents[1])}
+        loaded = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, env=environment)
+        self.assertEqual((loaded.returncode, loaded.stdout.strip()), (0, '[]'), loaded.stderr)
 
 
 class CascadeToBindingFillTests(CascadeFixture, unittest.TestCase):

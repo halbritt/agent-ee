@@ -78,6 +78,31 @@ def device_polarized(lib_id):
     )
 
 
+def datasheet_source(parts, ref, path, fail):
+    """Check a declared datasheet source ``{url, sha256?}`` (its shape is already checked).
+
+    Datasheets are captured per LCSC id, so parts that share one declare the same source.
+    """
+    from .datasheet_capture import validate_url
+
+    source = parts[ref]["datasheet"]
+    try:
+        validate_url(source["url"])
+    except ValueError:
+        fail(path + ".url", "supply an http or https URL without credentials or a fragment")
+    if "sha256" in source and not re.fullmatch(r"[0-9a-f]{64}", source["sha256"]):
+        fail(path + ".sha256", "supply the PDF's SHA-256 as 64 lowercase hexadecimal digits, or omit it")
+    others = sorted(
+        r for r, q in parts.items()
+        if r != ref and isinstance(q, dict) and q.get("lcsc") == parts[ref]["lcsc"] and "datasheet" in q
+    )
+    if any(parts[r]["datasheet"] != source for r in others):
+        fail(
+            path,
+            f"parts with lcsc {parts[ref]['lcsc']} share one datasheet; declare the same source as parts.{others[0]}.datasheet",
+        )
+
+
 def validate(design, captures=None, *, cad_only=False):
     """Validate decisions and captured pin inventories without writing anything."""
     from .design_shape import problems
@@ -261,7 +286,7 @@ def validate(design, captures=None, *, cad_only=False):
         if not re.fullmatch(r"[A-Z]+[1-9][0-9]*", ref):
             fail(path, "use a physical KiCad reference such as U1")
         if not fields(
-            p, ("lcsc", "value", "lib_id", "footprint", "group"), ("connector",), path
+            p, ("lcsc", "value", "lib_id", "footprint", "group"), ("connector", "datasheet"), path
         ):
             continue
         if not isinstance(p["lcsc"], str) or not re.fullmatch(
@@ -286,6 +311,8 @@ def validate(design, captures=None, *, cad_only=False):
                         path + ".connector",
                         "rows and columns must be positive integers",
                     )
+        if "datasheet" in p:
+            datasheet_source(parts, ref, path + ".datasheet", fail)
         if cad is not None:
             try:
                 lib, symbol = p["lib_id"].split(":")
@@ -787,13 +814,23 @@ def validate(design, captures=None, *, cad_only=False):
                         ref,
                     )
                 )
-                prepare_record(
+                record = prepare_record(
                     root,
                     p["lcsc"],
                     blob(root, "stock/catalog.json"),
                     blob(root, "datasheets/manifest.json"),
                     dsid,
                 )
+                source = p.get("datasheet")
+                if source is not None and (
+                    record["datasheet_url"] != source["url"]
+                    or source.get("sha256") not in (None, record["artifact"]["sha256"])
+                ):
+                    fail(
+                        "parts." + ref + ".datasheet",
+                        f"the captured datasheet ({record['datasheet_url']}, sha256 {record['artifact']['sha256']}) "
+                        "is not this declared source; run design capture again into a new directory",
+                    )
                 from .design_capture import validate_supplier_capture
 
                 validate_supplier_capture(root, p["lcsc"])

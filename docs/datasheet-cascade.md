@@ -9,6 +9,8 @@ decision before `part_record` and `binding_fill` run.
 
 It is preparation only. Checks never run it, and no check or offline module
 imports it. Exa search never runs inside a check sandbox.
+[Design capture](design-compile.md#datasheet-sources) runs it, with only the
+JLC tier declared, for each part whose earlier datasheet sources fail.
 
 ## Cascade order
 

@@ -69,12 +69,14 @@ def problems(design):
             obj(
                 part,
                 dict(lcsc=str, value=str, lib_id=str, footprint=str, group=str),
-                dict(connector=None),
+                dict(connector=None, datasheet=dict),
                 path,
             )
             and part.get("connector") is not None
         ):
             obj(part["connector"], dict(rows=int, columns=int), {}, path + ".connector")
+        if isinstance(part, dict) and isinstance(part.get("datasheet"), dict):
+            obj(part["datasheet"], dict(url=str), dict(sha256=str), path + ".datasheet")
     for net, terms in design["nets"].items():
         for i, term in rows(terms, "nets." + net):
             expect(term, str, f"nets.{net}[{i}]")

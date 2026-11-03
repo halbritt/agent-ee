@@ -50,6 +50,7 @@ refused URL, a network failure or the deadline. A Python caller can pass a
 dictionary as `details=` to `capture_datasheets`. For each URL it receives the
 failure class, whether the failure can be temporary, the HTTP status, and the
 declared and received byte counts. The manifest does not change.
+[Design capture](design-compile.md#failures-and-refusal) lists the classes.
 
 Each URL runs in an owned capture subprocess, with a hard elapsed-time deadline
 (default 30 seconds, maximum 60), including startup, DNS, redirects and reads.
