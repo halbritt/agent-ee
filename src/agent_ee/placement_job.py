@@ -1499,6 +1499,7 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
                 originals = {path.name: path.read_bytes() for path in staged.iterdir() if path.is_file()}
                 members = [r for r in local_decoupling['relations'] if r['id'] in bank['relations']]
                 document = dict(local_decoupling, relations=members, tie_other_pads=False)
+                document.pop('banks', None)  # Derive the subset's bank inventory for the strict producer.
                 refusal = local_fallback_reason
                 bank_record = None
                 try:

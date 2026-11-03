@@ -696,6 +696,7 @@ class LocalCopperTests(unittest.TestCase):
             other[leg][0]['reference'] = 'OTHER'
             other[leg][1]['reference'] = 'SECOND'
         doc['relations'].append(other)
+        doc['banks'] = local.banks(doc)  # Compiled contracts carry the full bank inventory.
         fake = dict(violations=[], unconnected_items=[])
         def seeded_drc(path, directory, **kwargs):
             if Path(directory).name == 'before':
