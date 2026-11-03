@@ -327,6 +327,9 @@ class LocalCopperTests(unittest.TestCase):
         p = next(p for p in other.Pads() if p.GetNumber() == '2')
         p.SetNet(self.board.FindNet('/foreign'))
         p.SetPosition(self.k.VECTOR2I(34_000_000, 31_000_000))
+        layers = self.k.LSET()
+        layers.AddLayer(self.k.B_Cu)
+        p.SetLayerSet(layers)
         self.save()
         receipt = self.seed()
         native = self.k.LoadBoard(str(self.path))
@@ -352,8 +355,8 @@ class LocalCopperTests(unittest.TestCase):
         import copy
         second = copy.deepcopy(doc['relations'][0])
         second['id'] = 'second'
-        # Supply pin and capacitor are shared; return uses the other land.
-        second['return'][1]['reference'] = 'OTHER'
+        # Sharing a supply segment is valid; both returns select the same capacitor.
+        second['return'][0]['reference'] = 'OTHER'
         doc['relations'].append(second)
         self.seed(doc)
         native = self.k.LoadBoard(str(self.path))
@@ -488,8 +491,25 @@ class LocalCopperTests(unittest.TestCase):
         doc = contract()
         other = deepcopy(doc['relations'][0])
         other['id'] = 'innocent'
+        fp = self.k.FOOTPRINT(self.board)
+        fp.SetReference('SECOND')
+        self.board.Add(fp)
+        for number, y, net in [('1', 29, '/rail'), ('2', 31, '/return')]:
+            p = self.k.PAD(fp)
+            p.SetNumber(number)
+            p.SetAttribute(self.k.PAD_ATTRIB_SMD)
+            p.SetShape(self.k.PAD_SHAPE_RECT)
+            p.SetSize(self.k.VECTOR2I(700_000, 700_000))
+            layers = self.k.LSET()
+            layers.AddLayer(self.k.F_Cu)
+            p.SetLayerSet(layers)
+            p.SetPosition(self.k.VECTOR2I(41_000_000, y * 1_000_000))
+            p.SetNet(self.board.FindNet(net))
+            fp.Add(p)
+        self.save()
         for leg in ('supply', 'return'):
-            other[leg][1]['reference'] = 'OTHER'
+            other[leg][0]['reference'] = 'OTHER'
+            other[leg][1]['reference'] = 'SECOND'
         doc['relations'].append(other)
         fake = dict(violations=[], unconnected_items=[])
         def seeded_drc(path, directory, **kwargs):
@@ -509,6 +529,22 @@ class LocalCopperTests(unittest.TestCase):
 
 
 class ContractTests(unittest.TestCase):
+    def test_shared_plane_return_refuses_before_placement_but_shared_supply_is_valid(self):
+        from copy import deepcopy
+        doc = contract()
+        second = deepcopy(doc['relations'][0])
+        second['id'] = 'other-cell'
+        second['return'][1]['reference'] = 'OTHER'
+        doc['relations'].append(second)
+        with self.assertRaisesRegex(ValueError, r'other-cell and cell: shared plane-net device pad IC.2'):
+            local.validate(doc)
+        second['return'][0]['reference'] = 'OTHER'
+        second['return'][1]['reference'] = 'BYP'
+        self.assertEqual(local.validate(doc), doc)
+        second['return'][1]['reference'] = 'IC'
+        with self.assertRaisesRegex(ValueError, 'bypasses its capacitor through another plane entry'):
+            local.validate(doc)
+
     def test_malformed_limits_and_unknown_fields_refuse(self):
         for limit in (True, -1, 0, float('inf'), float('nan')):
             with self.subTest(limit=limit):

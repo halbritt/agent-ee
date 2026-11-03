@@ -760,6 +760,17 @@ class DesignCompileTests(unittest.TestCase):
             self.compile()
         self.assertFalse((self.root / 'bundle').exists())
 
+    def test_shared_plane_return_conflict_is_a_compile_refusal_not_a_placement_failure(self):
+        self.design['parts']['R3'] = copy.deepcopy(self.design['parts']['R2'])
+        self.design['nets']['SIGNAL'].append('R3.1')
+        self.design['nets']['GND'].append('R3.2')
+        self.design['decoupling'] = [dict(capacitor=cap, device='R1',
+            supply=['R1.1', cap + '.1'], **{'return': ['R1.2', cap + '.2']}, max_distance_mm=6)
+            for cap in ('R2', 'R3')]
+        with self.assertRaisesRegex(DesignError, r'decoupling-2 and decoupling-1: shared plane-net device pad R1.2'):
+            self.compile()
+        self.assertFalse((self.root / 'bundle').exists())
+
     def test_compiler_accepts_clean_plated_local_pads(self):
         from agent_ee.design_compile import placement
         self.design['decoupling'] = [dict(capacitor='R2', device='R1',

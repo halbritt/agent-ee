@@ -537,9 +537,12 @@ def placement(design, root):
         if 'max_loop_mm' in pair:
             row.update(max_loop_mm=pair['max_loop_mm'], basis=BASIS)
         relations.append(row)
-    write_json(root / 'local-decoupling.json', validate_local(dict(
-        schema=SCHEMA, relations=relations, tie_other_pads=False,
-        planes=[dict(net=native_net(design, design['plane']['net']), layer=design['plane']['layer'])])))
+    try:
+        local_document = validate_local(dict(schema=SCHEMA, relations=relations, tie_other_pads=False,
+            planes=[dict(net=native_net(design, design['plane']['net']), layer=design['plane']['layer'])]))
+    except ValueError as exc:
+        raise DesignError([str(exc)]) from exc
+    write_json(root / 'local-decoupling.json', local_document)
     write_json(
         root / "planes.json",
         dict(

@@ -23,7 +23,7 @@ def validate(document):
         text(plane['net'])
         if plane['layer'] not in ('F.Cu', 'B.Cu'):
             raise ValueError('local copper currently supports a two-layer stack')
-    ids = set()
+    ids, plane_returns = set(), {}
     for row in document['relations']:
         required = {'id', 'supply', 'return'}
         if not isinstance(row, dict) or not required <= row.keys() or row.keys() - required - {'max_loop_mm', 'basis'}:
@@ -49,6 +49,41 @@ def validate(document):
                 raise ValueError(row['id'] + ': positive finite max_loop_mm and measurement basis required')
         elif 'basis' in row:
             raise ValueError('basis requires a loop limit')
+        # Separate entries for a shared device pin necessarily bypass each
+        # other's capacitor. Placement cannot repair this declared topology.
+        for leg in ('supply', 'return'):
+            first, second = row[leg]
+            if first['net'] not in {p['net'] for p in document['planes']}:
+                continue
+            key = (first['reference'], first['pad'], first['net'])
+            previous = plane_returns.get(key)
+            if previous is not None and previous[1] != second:
+                raise ValueError(row['id'] + ' and ' + previous[0] + ': shared plane-net device pad ' +
+                                 first['reference'] + '.' + first['pad'] +
+                                 ' cannot reach separate capacitor plane entries without bypass; declare one return cell')
+            plane_returns[key] = (row['id'], second)
+    adjacency, entries = {}, {}
+    def terminal_key(endpoint):
+        return tuple(endpoint[k] for k in ('reference', 'pad', 'net'))
+    for row in document['relations']:
+        for leg in ('supply', 'return'):
+            first, second = map(terminal_key, row[leg])
+            adjacency.setdefault(first, set()).add(second)
+            adjacency.setdefault(second, set()).add(first)
+            if second[2] in {p['net'] for p in document['planes']}:
+                entries[second] = row['id']
+    for row in document['relations']:
+        for leg in ('supply', 'return'):
+            first, blocked = map(terminal_key, row[leg])
+            reached, pending = {first}, [first]
+            while pending:
+                node = pending.pop()
+                if node in entries and node != blocked:
+                    raise ValueError(row['id'] + ' and ' + entries[node] + ': declared local copper at ' +
+                                     first[0] + '.' + first[1] + ' bypasses its capacitor through another plane entry')
+                for other in adjacency.get(node, set()) - reached - {blocked}:
+                    reached.add(other)
+                    pending.append(other)
     return document
 
 
@@ -148,6 +183,39 @@ def _leg(board, first, second, *, clock, cancel_dir):
     return _track(board, path, first.GetNetCode(), layer, width)
 
 
+def _junction_in_pad(first, second, terminal, layer):
+    from . import local_loop_geometry as geo
+    import pcbnew as k
+    def line(item):
+        if item.GetClass() == 'PCB_TRACK':
+            return position_point(item.GetStart()), position_point(item.GetEnd())
+        return position(item), position(item)
+    a, b = line(first)
+    c, d = line(second)
+    contacts = list(geo.closest((a, b), (c, d)))
+    for t in geo.intersections(a, b, c, d):
+        point = tuple(x + t * (y-x) for x, y in zip(a, b))
+        if math.dist(point, geo.project(point, c, d)) < 1:
+            contacts.append(point)
+    return all(terminal.GetEffectiveShape(layer).Collide(k.VECTOR2I(round(p[0]), round(p[1])), 0)
+               for p in contacts)
+
+
+def _clear_tie_path(board, path, terminal, layer, width):
+    import pcbnew as k
+    for a, b in zip(path, path[1:]):
+        segment = k.PCB_TRACK(board)
+        segment.SetStart(k.VECTOR2I(*a))
+        segment.SetEnd(k.VECTOR2I(*b))
+        segment.SetWidth(width)
+        segment.SetLayer(layer)
+        for other in board.GetTracks():
+            if other.IsOnLayer(layer) and segment.GetEffectiveShape(layer).Collide(other.GetEffectiveShape(layer), 1):
+                if not _junction_in_pad(segment, other, terminal, layer):
+                    return False
+    return True
+
+
 def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):
     import pcbnew as k
     from .placement_job import _check_stop
@@ -194,6 +262,8 @@ def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):
             path = _obstacle_path(a, b, front, clock=clock, cancel_dir=cancel_dir)
             if path is None or sum(math.dist(p, q) for p, q in zip(path, path[1:])) > 2_000_000:
                 continue
+            if not _clear_tie_path(board, path, terminal, layer, width):
+                continue
             via = k.PCB_VIA(board)
             via.SetPosition(k.VECTOR2I(*b))
             via.SetWidth(rules['diameter'])
@@ -228,7 +298,7 @@ def seed(board_path, document, *, clock, cancel_dir=None):
     if board is None or board.GetCopperLayerCount() != 2:
         raise JobRefusal('local decoupling requires a native two-layer board')
     before = digest(board_path)
-    rows, protected, tied = [], [], set()
+    rows, protected, tied, plane_ties = [], [], set(), {}
     for relation in document['relations']:
         _check_stop(clock, cancel_dir)
         added, legs = [], []
@@ -242,8 +312,11 @@ def seed(board_path, document, *, clock, cancel_dir=None):
                 for plane in document['planes']:
                     if plane['net'] == second.GetNetname():
                         target = board.GetLayerID(plane['layer'])
-                        tie_items = _tie(board, second, target, clock=clock, cancel_dir=cancel_dir,
-                                         away_from=position(first))
+                        tie_key = (second.m_Uuid.AsString(), target)
+                        if tie_key not in plane_ties:
+                            plane_ties[tie_key] = _tie(board, second, target, clock=clock, cancel_dir=cancel_dir,
+                                                       away_from=position(first))
+                        tie_items = plane_ties[tie_key]
                         added += tie_items
                         legs.append(dict(kind='plane_tie', pads=[second.m_Uuid.AsString()],
                                          tracks=[t.m_Uuid.AsString() for t in tie_items]))
@@ -310,20 +383,22 @@ def verify_geometry(board, receipt):
     pads = [p for fp in board.GetFootprints() for p in fp.Pads()]
     generated = {r['uuid'] for r in receipt['protected']}
     tracks = {t.m_Uuid.AsString(): t for t in board.GetTracks() if t.m_Uuid.AsString() in generated}
-    allowed, ties = {}, {}
+    allowed, ties, groups = {}, {}, {}
     owners = {}
     for relation in receipt['relations']:
         for uid in relation['copper']:
             owners.setdefault(uid, set()).add(relation['id'])
-        for leg in relation['legs']:
+        for index, leg in enumerate(relation['legs']):
             for uid in leg['tracks']:
                 allowed.setdefault(uid, set()).update(leg['pads'])
+                groups.setdefault(uid, set()).add((relation['id'], index))
                 if leg['kind'] == 'plane_tie':
                     ties.setdefault(uid, set()).update(leg['tracks'])
     for row in receipt['other_pads']:
         for uid in row.get('copper', []):
             allowed.setdefault(uid, set()).add(row['pad'])
             ties[uid] = set(row['copper'])
+            groups.setdefault(uid, set()).add(('other', row['pad']))
     for uid, item in tracks.items():
         via = item.GetClass() == 'PCB_VIA'
         clearance = _rules(board, item)['clearance']
@@ -349,6 +424,15 @@ def verify_geometry(board, receipt):
                 for layer in board.GetEnabledLayers().CuStack():
                     if other.IsOnLayer(layer) and item.GetEffectiveShape(layer).Collide(other.GetEffectiveShape(layer), 1):
                         raise JobRefusal(label + 'plane via touches another generated leg: ' + uid + ', ' + other_uid)
+        else:
+            layer = item.GetLayer()
+            for other_uid, other in tracks.items():
+                if other_uid == uid or groups.get(uid, set()) & groups.get(other_uid, set()) or not other.IsOnLayer(layer):
+                    continue
+                if item.GetEffectiveShape(layer).Collide(other.GetEffectiveShape(layer), 1):
+                    shared = allowed.get(uid, set()) & allowed.get(other_uid, set())
+                    if not any(p.m_Uuid.AsString() in shared and _junction_in_pad(item, other, p, layer) for p in pads):
+                        raise JobRefusal(label + 'generated legs meet outside a declared shared pad: ' + uid + ', ' + other_uid)
     return dict(status='pass', generated_vias=sum(t.GetClass() == 'PCB_VIA' for t in tracks.values()),
                 pad_clearance='effective net-class clearance on every pad, including same-net pads',
                 tracks='declared endpoint pads only')

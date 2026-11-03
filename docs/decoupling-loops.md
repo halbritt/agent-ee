@@ -19,7 +19,13 @@ the plane layer. The device return leg therefore leads to the capacitor's
 plane entry. The via search uses the side of the capacitor away from the device
 and keeps every generated via clear of all pads and other generated legs.
 The final report retains the actual bypass paths and plane-entry UUIDs;
-shared return pins and copper added by the router need separate attribution. Optional other-pad ties give remaining
+copper added by the router and authored plated device pads need separate attribution.
+A plane-net device pin shared by different capacitor entries is refused during
+compilation: each entry would bypass the other capacitor, independently of
+placement. The diagnostic names both relations and the shared pad. More general
+declared leg chains are also checked for a path to another capacitor's entry.
+Shared non-plane supply segments remain valid. A capacitor entry shared by
+multiple relations is generated once. Optional other-pad ties give remaining
 surface pads on plane nets their own short track and via where one fits.
 The compiler leaves `tie_other_pads` false: the example controls completed with
 and without them, and the additional ties increased routing time. Required
@@ -30,7 +36,8 @@ The local search uses effective native net-class routing sizes and clearance,
 bounded visibility paths around copper and every undeclared pad, including
 same-net pads, and radial via escapes outside all solder lands. Each generated
 via keeps effective net-class clearance from every pad on every copper layer.
-Generated tracks may touch only their declared endpoint pads. A separate native
+Generated tracks may touch only their declared endpoint pads; different legs
+may meet only inside a declared shared pad. A separate native
 shape check rejects violations even when native DRC permits same-net contact. A wide class may neck into a small land down to the unchanged
 board minimum. Paths are bounded to 12 mm; via escapes to 2 mm. These are finite
 search budgets, not electrical acceptance limits. Native DRC grades generated
