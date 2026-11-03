@@ -220,9 +220,9 @@ Each decoupling limit must also be reachable by its two parts. With the front
 courtyard boxes apart (touching is allowed) and every quarter-turn rotation,
 compile finds the smallest value of the longer of the two legs. A
 `max_distance_mm` below it is refused; the message names both legs and gives
-that value. For example, the supply and return pads of a SOIC-8 sit on diagonal
-corners, so an 0603 capacitor needs at least 5.335 mm and a 5 mm limit is
-refused. The check uses only these two parts: other parts, the outline and
+that value. For example, when the two device pads are diagonal corner pins of a
+3.9 x 4.9 mm SOIC-8 (pins 4 and 8, or 1 and 5), an 0603 capacitor needs at
+least 5.335 mm, so a 5 mm limit is refused. The check uses only these two parts: other parts, the outline and
 copper clearance can raise the distance a real placement needs, so passing it
 does not prove a placement exists. A footprint with a missing or curved
 courtyard, or a land with a drill offset, chamfer or other shape, gets no
