@@ -459,9 +459,10 @@ class TestVerifierBoundary(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['commit'], second)
 
     def test_dirty_tree_is_refused_with_its_changes(self):
+        # In this process the clean checkout's check would also need the real yaml and networkx
+        # packages; acceptance is covered by the isolated test above, refusal comes first here.
         root = self.temp / 'verifier'
         commit = owned_verifier(root)
-        self.assertEqual(check_pcbschemagen_checkout(root).commit, commit)
         (root / 'component.json').write_text('{"components": [], "edited": true}')
         with self.assertRaisesRegex(PCBSchemaGenInputError, 'must be clean.*' + commit + '(.|\\n)*component.json'):
             check_pcbschemagen_checkout(root)
