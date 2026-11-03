@@ -366,6 +366,65 @@ class LocalCopperTests(unittest.TestCase):
         self.assertEqual(checked['outcome'],'pass',checked)
         self.assertNotIn('; warnings: ',checked['summary'])
 
+    def test_route_refuses_cross_bank_device_pad_as_another_capacitor_entry(self):
+        from copy import deepcopy
+        from unittest.mock import patch
+        from agent_ee import placement_job as job
+        device=next(fp for fp in self.board.GetFootprints() if fp.GetReference()=='IC')
+        device.SetReference('U1');self.save()
+        doc=contract();first=doc['relations'][0];first['id']='A'
+        for leg in ('supply','return'):first[leg][0]['reference']='U1'
+        second=deepcopy(first);second['id']='B'
+        for leg in ('supply','return'):
+            second[leg][0]['reference']='OTHER';second[leg][1]['reference']='U1'
+        doc['relations'].append(second);doc['banks']=local.banks(doc)
+        self.assertEqual(len(doc['banks']),2)
+        # The regression is visible only when validating the complete statement.
+        for relation in doc['relations']:
+            subset=dict(doc,relations=[relation]);subset.pop('banks')
+            local.validate_topology(subset)
+        with patch('agent_ee.routing_adapter.preflight',return_value={'problems':[]}), \
+                patch.object(local,'seed',side_effect=AssertionError('bank seeded before whole-contract validation')) as seed, \
+                patch.object(job,'_route_attempt',side_effect=AssertionError('invalid contract reached router')) as router:
+            with self.assertRaisesRegex(JobRefusal,'A and B: device plane pad U1.2 is also a capacitor entry'):
+                job.route(self.root,self.root/'cross-bank-route','unused',budget_s=30,timeout_s=60,
+                    home=self.root/'router-home',local_decoupling=doc)
+        seed.assert_not_called();router.assert_not_called()
+
+    def test_unnamed_bank_refusal_preserves_each_reason_without_a_refuser(self):
+        doc=self.two_capacitors();bank=local.banks(doc)[0]
+        for reason in ['bounded generation time share exhausted','native DRC rejects generated copper: clearance']:
+            with self.subTest(reason=reason):
+                rows=local.bank_fallbacks(bank,doc['relations'],reason)
+                self.assertEqual({r['relation'] for r in rows},{'cell','bulk'})
+                for row in rows:
+                    self.assertIn('bank bank-1 refused without a named relation',row['reason'])
+                    self.assertIn(reason,row['reason'])
+                    self.assertNotIn('after relation',row['reason'])
+                    self.assertIsNone(row['refused_relation'])
+
+    def test_unattributed_native_drc_rejection_does_not_name_a_relation(self):
+        from unittest.mock import patch
+        from agent_ee import placement_job as job
+        doc=self.two_capacitors()
+        def checked_drc(path,directory,**kwargs):
+            return dict(violations=[] if Path(directory).name=='before' else
+                [dict(type='clearance',severity='error',items=[])],unconnected_items=[]),{}
+        with patch('agent_ee.routing_adapter.preflight',return_value={'problems':[]}), \
+                patch.object(job,'drc',side_effect=checked_drc), \
+                patch.object(job,'_route_attempt',return_value=dict(status='routed')):
+            result=job.route(self.root,self.root/'unnamed-route','unused',budget_s=30,timeout_s=60,
+                home=self.root/'router-home',local_decoupling=doc)
+        self.assertEqual(result['status'],'routed')
+        self.assertEqual(result['generated_relation_count'],0)
+        rows=result['local_decoupling']['fallbacks']
+        self.assertEqual({r['relation'] for r in rows},{'cell','bulk'})
+        for row in rows:
+            self.assertIn('bank bank-1 refused without a named relation',row['reason'])
+            self.assertIn('native DRC rejects generated copper: clearance',row['reason'])
+            self.assertNotIn('after relation',row['reason'])
+            self.assertIsNone(row['refused_relation'])
+
     def test_bank_refusal_reason_distinguishes_the_failed_relation_from_bank_mates(self):
         doc=self.two_capacitors();bank=local.banks(doc)[0]
         reasons=local.bank_fallbacks(bank,doc['relations'],'local decoupling bulk: blocked escape')

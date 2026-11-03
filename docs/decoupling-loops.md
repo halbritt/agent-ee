@@ -16,6 +16,10 @@ Each relation has a unique `id`, `supply` and `return` pairs in device/capacitor
 order. Each endpoint is `{reference, pad, net}`. A plane is `{net, layer}`.
 References and net names are data; no component or board recipe is selected.
 
+Routing validates the complete contract before generating any bank, including
+contracts supplied directly to placement rather than through the compiler.
+A device plane pad cannot also be a capacitor entry in another bank.
+
 After an eligible placement and pre-routing plane production, each successfully
 generated relation gets supply and return legs on a copper layer shared by its endpoints. A capacitor pad on
 a declared plane net gets a nearby through via when its surface differs from
@@ -58,6 +62,9 @@ pre-generation snapshot. Other banks keep their verified copper. The combined
 retained set passes the same geometry, floor and bank-group checks. Rejected
 copper and reports are retained. The refusing relation records its refusal;
 its bank-mates record "rolled back with bank B after relation R refused".
+If no relation is named, every member records the original cause as a bank-level
+refusal and `refused_relation: null`; no member is singled out. Native DRC errors
+without an implicated generated UUID use this bank-level attribution too.
 The router makes the remaining connections. A fallback alone never rejects a candidate.
 
 Generation uses at most one quarter of a candidate's remaining time share,

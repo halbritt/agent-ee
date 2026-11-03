@@ -796,6 +796,20 @@ MUTANTS.update({'R2_acquisition_seed_not_retained': ([('src/agent_ee/placement_j
     "'original_router_budget_s': budget, 'local_routing_seed': None}")],
     ['test_placement_job_guards.ControllerBoundaryTests.test_deferred_candidate_reuses_the_verified_acquisition_seed'])})
 
+# Round 3: whole-contract validation and honest unnamed attribution.
+MUTANTS.update({
+ 'R3_whole_contract_validation_removed': ([('src/agent_ee/placement_job.py',
+    '            local.validate_topology(local_decoupling)\n', '            pass\n')],
+    ['test_local_decoupling.LocalCopperTests.test_route_refuses_cross_bank_device_pad_as_another_capacitor_entry']),
+ 'R3_unnamed_bank_blames_first_relation': ([('src/agent_ee/local_decoupling.py',
+    "    failed = next((r['id'] for r in members if 'local decoupling ' + r['id'] + ':' in refusal), None)\n",
+    "    failed = next((r['id'] for r in members if 'local decoupling ' + r['id'] + ':' in refusal), members[0]['id'])\n")],
+    ['test_local_decoupling.LocalCopperTests.test_unnamed_bank_refusal_preserves_each_reason_without_a_refuser']),
+ 'R3_unattributed_DRC_blames_first_relation': ([('src/agent_ee/placement_job.py',
+    "                        names = ', '.join(row['id'] for row in bank_record['relations'] if error_items.intersection(row['copper']))\n",
+    "                        names = ', '.join(row['id'] for row in bank_record['relations'] if error_items.intersection(row['copper'])) or members[0]['id']\n")],
+    ['test_local_decoupling.LocalCopperTests.test_unattributed_native_drc_rejection_does_not_name_a_relation'])})
+
 def run(name):
     edits, tests = MUTANTS[name]
     work = WORK / name

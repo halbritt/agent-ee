@@ -602,7 +602,11 @@ GENERATION_FILE = 'local-decoupling-generation.json'
 
 def bank_fallbacks(bank, members, refusal):
     """Attribute the actual refusal and distinguish its bank-mates' rollback."""
-    failed = next((r['id'] for r in members if 'local decoupling ' + r['id'] + ':' in refusal), members[0]['id'])
+    failed = next((r['id'] for r in members if 'local decoupling ' + r['id'] + ':' in refusal), None)
+    if failed is None:
+        return [dict(relation=r['id'], bank=bank['id'], refused_relation=None,
+                     reason='bank ' + bank['id'] + ' refused without a named relation: ' + refusal)
+                for r in members]
     return [dict(relation=r['id'], bank=bank['id'],
                  reason=refusal if r['id'] == failed else
                     'rolled back with bank ' + bank['id'] + ' after relation ' + failed + ' refused')

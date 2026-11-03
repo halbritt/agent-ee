@@ -1441,6 +1441,12 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     from . import routing_adapter
     clock = clock or Clock(timeout_s)
     _check_stop(clock, cancel_dir)
+    if local_decoupling is not None:
+        from . import local_decoupling as local
+        try:
+            local.validate_topology(local_decoupling)
+        except ValueError as exc:
+            raise JobRefusal('local decoupling contract: ' + str(exc)) from exc
     check = routing_adapter.preflight(checkout, layout=layout)
     if check['problems']:
         raise JobRefusal('router preflight: ' + '; '.join(check['problems']))
@@ -1472,7 +1478,6 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     owned_copper = planes is not None and not list(pcbnew.LoadBoard(str(staged / 'board.kicad_pcb')).GetTracks())
     local_record = None
     if local_decoupling is not None:
-        from . import local_decoupling as local
         seed_clock = Clock(min(route_clock.remaining() / 4, clock.remaining()))
         local_dir = route_dir / 'local-decoupling'
         local_dir.mkdir()
@@ -1516,8 +1521,9 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
                     errors = [v for v in seeded['violations'] if v.get('severity') == 'error' and _key(v) not in existing]
                     if errors:
                         error_items = {item['uuid'] for error in errors for item in error.get('items', []) if 'uuid' in item}
-                        names = ', '.join(row['id'] for row in bank_record['relations'] if error_items.intersection(row['copper'])) or members[0]['id']
-                        raise JobRefusal('local decoupling ' + names + ': native DRC rejects generated copper: ' +
+                        names = ', '.join(row['id'] for row in bank_record['relations'] if error_items.intersection(row['copper']))
+                        attribution = 'local decoupling ' + names + ': ' if names else ''
+                        raise JobRefusal(attribution + 'native DRC rejects generated copper: ' +
                                          ', '.join(v['type'] for v in errors))
                     combined = dict(local_record, relations=local_record['relations'] + bank_record['relations'],
                                     protected=local_record['protected'] + bank_record['protected'])
