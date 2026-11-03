@@ -40,7 +40,9 @@ the optional policy for a separately measured workload.
 
 The local search uses effective native net-class routing sizes and clearance,
 bounded visibility paths around copper and every undeclared pad, including
-same-net pads, and radial via escapes outside all solder lands. Each generated
+same-net pads, and radial via escapes outside all solder lands. The search tries 36 directions
+at six fixed radii, with at most 216 candidate centres before the far-side filter;
+paths still stay within 2 mm and every pad, edge and copper rule remains in force. Each generated
 via keeps effective net-class clearance from every pad on every copper layer.
 Generated tracks may touch only their declared endpoint pads. Same-net
 device legs in one bank may share copper; other distinct legs may meet only
@@ -57,7 +59,9 @@ Generated tracks and vias are locked. The router receives `--protect locked`
 for a track-free source seeded by this operation. Final validation checks each
 generated item's UUID, geometry, net and lock state after native refill/save,
 and repeats the via/pad and declared-track contact checks. Identical locked
-segments shared by relations are reused, with one UUID in the protected inventory.
+segments shared by relations in one bank are reused, with one UUID in the
+protected inventory. Reuse is explicitly restricted to that bank; identical
+segments from different banks remain distinct and reach the cross-group guard.
 It also measures the final loops and rejects a candidate with broken copper,
 an unknown measurement or an exceeded declared loop limit. The package check
 repeats the measurement on its saved board. Seeding and its DRC share the
@@ -86,6 +90,10 @@ relations and supply/return device pins. `return.pin_bypasses_bank` reports a
 path to the plane after all same-net capacitor return pads in that bank are
 removed together. `device_return_reaches_plane_only_through_bank_capacitors`
 is true when every device return reaches the plane and no such bypass exists.
+If a return reaches no plane, the positive statement is null with
+`positive_statement_status: not_applicable`; `device_returns_without_plane`
+names those endpoints. This differs from a measured bypass (false positive
+statement) and an unknown measurement (`positive_statement_status: unknown`).
 The report retains each bypass path and entry UUID. Travel through another
 capacitor of the same bank is allowed. Per-relation supply, return, capacitor
 plane-access and loop lengths remain separate and carry their bank ID.
@@ -134,3 +142,45 @@ Capacitors in parallel on a shared device pin are ordinary supported input.
 The kicad-route audit still uses its own per-capacitor topology and can label a
 legitimate path through another bank capacitor `bypassed`. Its result is not the
 typed bank result.
+
+Local search counts and supported design size
+
+The documented design inventory is 1,024 components, 2,048 nets and 8,192
+terminals (docs/design-size-limits.md). There is no additional per-net copper
+item count ceiling in this check. For each net, native track/pad connectivity
+is traversed from every declared relation endpoint before constructing the
+measurement graph. This retains a remotely connected bypass via, but excludes
+disconnected remote items. It does not clip connectivity to a geometric radius
+or merge disconnected plane islands.
+
+The producer counts only obstacles intersecting a search corridor. Corridors
+expand from the direct leg to a final region covering the unchanged 12 mm path
+bound. A path is accepted only inside the region whose obstacles were counted.
+Diagonal tracks use short conservative rectangles, avoiding a large empty
+triangle in their whole-track bounding box. Existing same-net tracks are
+obstacles too, with openings only at declared shared pads. Full native shape
+verification remains the independent guard.
+
+The borrowed visibility primitive retains its local work guards: 1,024 boxes
+and 512 vertices. These are local geometry search budgets, not whole-design
+pad limits; a dense candidate may still exhaust them and advance the portfolio.
+The checker retains its documented filled-plane visibility work guards and
+180-second typed execution budget. None of these resource guards supplies a
+passing measurement on exhaustion.
+
+Redundant router stubs
+
+The producer does not create dangling stubs in the retained timer case. Native
+DRC flags an unlocked router-created 0.0707 mm spur whose endpoint lies in the
+interior of a locked generated segment. A generated-only diagnostic has no
+such warning. Removing just the router spur preserves zero native errors and
+zero opens; splitting the locked receiver also clears the warning, but the
+producer keeps its protected UUID/geometry contract.
+
+Final validation can trial removal of warned unlocked router tracks whose two
+endpoints are already on one generated straight track of the same net/layer,
+with no greater width. The original board and DRC are retained. A fresh native
+process prepares a disposable trial. The trial is adopted only with unchanged
+protected native content and generated items, zero errors, zero opens and no
+dangling-track warning. Every ordinary final plane, locality, loop, length and
+impedance check still runs on the resulting board. Kicad-route is unchanged.

@@ -505,3 +505,53 @@ def verify_geometry(board, receipt):
     return dict(status='pass', generated_vias=sum(t.GetClass() == 'PCB_VIA' for t in tracks.values()),
                 pad_clearance='effective net-class clearance on every pad, including same-net pads',
                 tracks='declared endpoint pads only')
+
+
+def prepare_stub_trial(request):
+    """Remove only unlocked warned tracks whose centreline is already on one generated track."""
+    import json
+    import shutil
+    import pcbnew as k
+    from .storage import write_json
+    source, output = Path(request['board']), Path(request['output'])
+    if digest(source) != request['board_sha256']:
+        raise ValueError('stub trial source changed')
+    board = k.LoadBoard(str(source))
+    protected = {row['uuid']: row for row in request['protected']}
+    items = {t.m_Uuid.AsString(): t for t in board.GetTracks()}
+    receivers = [t for uid,t in items.items() if uid in protected and t.GetClass() == 'PCB_TRACK']
+    removed = []
+    for uid in request['warnings']:
+        item = items.get(uid)
+        if item is None or uid in protected or item.IsLocked() or item.GetClass() != 'PCB_TRACK':
+            continue
+        if any(t.GetNetCode() == item.GetNetCode() and t.GetLayer() == item.GetLayer()
+               and item.GetWidth() <= t.GetWidth()
+               and all(t.GetEffectiveShape(t.GetLayer()).Collide(p,0) for p in (item.GetStart(),item.GetEnd()))
+               for t in receivers):
+            board.Remove(item)
+            removed.append(uid)
+    if not removed:
+        return dict(status='not_applicable', removed=[])
+    board.BuildConnectivity()
+    k.ZONE_FILLER(board).Fill(board.Zones())
+    if not k.SaveBoard(str(output), board):
+        raise ValueError('stub trial native save failed')
+    for suffix in ('.kicad_pro','.kicad_dru'):
+        if source.with_suffix(suffix).exists():
+            shutil.copyfile(source.with_suffix(suffix), output.with_suffix(suffix))
+    actual = {t.m_Uuid.AsString(): copper_identity(t) for t in board.GetTracks() if t.m_Uuid.AsString() in protected}
+    if json.loads(json.dumps(actual)) != protected:
+        raise ValueError('stub trial changed generated copper')
+    write_json(output.with_suffix('.removed.json'), removed)
+    return dict(status='prepared', removed=removed, board_sha256=digest(output), source_sha256=request['board_sha256'])
+
+
+if __name__ == '__main__':
+    import argparse
+    from .storage import read_json, write_json
+    parser = argparse.ArgumentParser()
+    parser.add_argument('request')
+    args = parser.parse_args()
+    request = read_json(args.request)
+    write_json(request['result'], prepare_stub_trial(request))

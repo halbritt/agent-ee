@@ -2211,6 +2211,46 @@ def _verify_local_routing(board, incumbent, normalized, planes, record, *, clock
     return result
 
 
+def _cleanup_local_router_stubs(board, report, receipt, directory, *, owned_zone_uuids=(), clock, cancel_dir):
+    """Trial a redundant router-only removal; every existing final gate still runs."""
+    warnings = {item['uuid'] for v in report['violations'] if v.get('type') == 'track_dangling'
+                for item in v.get('items', []) if 'uuid' in item}
+    if not warnings or report['unconnected_items'] or any(v.get('severity') == 'error' for v in report['violations']):
+        return dict(status='not_applicable')
+    directory.mkdir()
+    before = digest(board)
+    shutil.copyfile(board, directory / 'before.kicad_pcb')
+    write_json(directory / 'before-drc.json', report)
+    request, result, trial = directory/'request.json', directory/'result.json', directory/'board.kicad_pcb'
+    write_json(request, dict(board=str(board), board_sha256=before, output=str(trial), result=str(result),
+                             protected=receipt['protected'], warnings=sorted(warnings)))
+    done = _run_child([sys.executable,'-B','-m','agent_ee.local_decoupling',str(request)], clock=clock, cancel_dir=cancel_dir)
+    (directory/'prepare.log').write_bytes(done.stdout + done.stderr)
+    record = read_json(result) if result.is_file() else dict(status='rejected', reason='native stub preparation failed')
+    if done.returncode or record.get('status') != 'prepared':
+        write_json(directory/'cleanup.json', record)
+        return record
+    after, execution = drc(trial, directory, refill=True, label='trial-drc', clock=clock, cancel_dir=cancel_dir)
+    original = _non_footprint_nodes(board.read_bytes(), include_footprints=True, routing_owned=True, owned_zones=owned_zone_uuids)
+    candidate = _non_footprint_nodes(trial.read_bytes(), include_footprints=True, routing_owned=True, owned_zones=owned_zone_uuids)
+    safe = (digest(board) == before and record.get('source_sha256') == before
+            and record.get('board_sha256') == digest(trial)
+            and sorted(original,key=canonical) == sorted(candidate,key=canonical)
+            and not after['unconnected_items']
+            and not any(v.get('severity') == 'error' or v.get('type') == 'track_dangling' for v in after['violations']))
+    record.update(status='accepted' if safe else 'rejected', native_drc=execution)
+    if safe:
+        from .local_decoupling import verify
+        try:
+            record['protected'] = verify(trial, receipt)
+        except JobRefusal as exc:
+            record.update(status='rejected', reason=str(exc))
+        else:
+            shutil.copyfile(trial, board)
+    write_json(directory/'cleanup.json', record)
+    return record
+
+
 def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, refinement=None, clock=None, cancel_dir=None,
                  owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None,
                  input_board=None, input_board_sha256=None, local_routing=None, reject_silk_graphics=False,
@@ -2275,12 +2315,20 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     placed_keys = {_key(v) for v in placed_report['violations'] if v.get('severity') == 'error'}
     _check_stop(clock, cancel_dir)
     report_, exec_ = drc(board, final_dir, refill=True, label='native-drc', clock=clock, cancel_dir=cancel_dir)
+    drc_report_path = final_dir / 'native-drc.json'
+    local_stub_cleanup = None
+    if routed.get('local_decoupling') is not None:
+        local_stub_cleanup = _cleanup_local_router_stubs(board, report_, routed['local_decoupling'],
+            final_dir / 'local-stub-cleanup', owned_zone_uuids=owned_zone_uuids, clock=clock, cancel_dir=cancel_dir)
+        if local_stub_cleanup.get('status') == 'accepted':
+            report_, exec_ = drc(board, final_dir, refill=True, label='native-drc-after-stub-prune', clock=clock, cancel_dir=cancel_dir)
+            drc_report_path = final_dir / 'native-drc-after-stub-prune.json'
     plane_result = None
     if planes is not None:
         out = final_dir.parent / (final_dir.name + '-plane-verification')
         done = _run_child([sys.executable, '-B', '-m', 'agent_ee.final_planes', 'validate',
             '--inputs', str(final_dir), '--board', board.name, '--plan', 'plane-plan.json',
-            '--out', str(out), '--drc', str(final_dir / 'native-drc.json'),
+            '--out', str(out), '--drc', str(drc_report_path),
             '--timeout', str(max(0.001, min(180, clock.remaining())))], clock=clock, cancel_dir=cancel_dir)
         plane_result = read_json(out / 'result.json') if (out / 'result.json').is_file() else {
             'status': 'FAIL', 'errors': [done.stderr.decode(errors='replace')[-2000:]]}
@@ -2381,6 +2429,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
               or length_result is not None and length_result.get('status') != 'PASS'
               or ac_result is not None and ac_result.get('status') != 'PASS')
     return {'status': 'checked', 'board': str(board), 'board_sha256': final_board_sha256,
+            **({'local_stub_cleanup': local_stub_cleanup} if local_stub_cleanup is not None else {}),
             **({'local_decoupling': general_local_check} if general_local_check is not None else {}),
             **({'decoupling_loops': general_loops} if general_loops is not None else {}),
             **({'local_routing':local_check} if local_check is not None else {}),

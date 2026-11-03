@@ -740,6 +740,19 @@ class ReviewRegressionTests(unittest.TestCase):
         via.SetPosition(terminal.GetPosition());via.SetWidth(600_000);via.SetDrill(300_000)
         via.SetViaType(self.k.VIATYPE_THROUGH);via.SetLayerPair(self.k.F_Cu, self.k.B_Cu)
         via.SetNetCode(terminal.GetNetCode());board.Add(via)
+        return via
+
+    def test_reachable_graph_keeps_a_distant_router_bypass(self):
+        doc = contract();self.seed(doc)
+        board = self.k.LoadBoard(str(self.path))
+        via = self.device_via(board, doc['relations'][0]['return'][0])
+        via.SetPosition(self.k.VECTOR2I(40_000_000,37_000_000))
+        uid = via.m_Uuid.AsString()
+        local._track(board,[(30_000_000,31_000_000),(40_000_000,37_000_000)],via.GetNetCode(),self.k.F_Cu,400_000)
+        self.k.SaveBoard(str(self.path),board);self.filled()
+        bank = measure(self.path,doc)['banks'][0]
+        self.assertTrue(bank['return']['pin_bypasses_bank'])
+        self.assertIn(uid,[p['plane_entry'] for d in bank['return']['devices'] for p in d['bypass_paths']])
 
     def test_bank_without_a_plane_is_not_applicable_not_a_bypass(self):
         doc = self.two_devices('/return2')
@@ -778,6 +791,32 @@ class ReviewRegressionTests(unittest.TestCase):
         row = measure(self.path, doc)['records'][0]
         self.assertIsNone(row['return']['capacitor_to_plane_mm'])
         self.assertIn('return: capacitor has no native plane connection without the device pin', row['reasons'])
+
+    def test_redundant_router_stub_cleanup_keeps_native_connectivity_and_generated_items(self):
+        from agent_ee import placement_job as job
+        fp = next(fp for fp in self.board.GetFootprints() if fp.GetReference() == 'OTHER')
+        next(p for p in fp.Pads() if p.GetNumber() == '2').SetPosition(self.k.VECTOR2I(32_600_000,34_000_000))
+        self.save();receipt = self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        ret = board.FindNet('/return').GetNetCode();rail = board.FindNet('/rail').GetNetCode()
+        stub = local._track(board,[(32_000_000,31_000_000),(32_050_000,31_050_000)],ret,self.k.F_Cu,400_000)
+        tracks = stub + local._track(board,[(32_050_000,31_050_000),(32_600_000,31_600_000),(32_600_000,34_000_000)],ret,self.k.F_Cu,400_000)
+        tracks += local._track(board,[(33_000_000,29_000_000),(38_000_000,29_000_000)],rail,self.k.F_Cu,400_000)
+        for t in tracks:t.SetLocked(False)
+        uid = stub[0].m_Uuid.AsString()
+        self.k.SaveBoard(str(self.path),board);self.filled()
+        out = self.root/'stub-drc';out.mkdir()
+        report,_ = job.drc(self.path,out,refill=True,clock=Clock(120))
+        self.assertFalse(report['unconnected_items'])
+        self.assertIn(uid,{i['uuid'] for v in report['violations'] if v['type']=='track_dangling' for i in v['items']})
+        result = job._cleanup_local_router_stubs(self.path,report,receipt,self.root/'cleanup',
+            owned_zone_uuids={z.m_Uuid.AsString() for z in self.board.Zones()},clock=Clock(120),cancel_dir=None)
+        self.assertEqual(result['status'],'accepted',result)
+        self.assertEqual(result['removed'],[uid])
+        self.assertEqual(local.verify(self.path,receipt)['status'],'pass')
+        final,_ = job.drc(self.path,out,label='after',clock=Clock(120))
+        self.assertFalse(final['unconnected_items'])
+        self.assertFalse([v for v in final['violations'] if v.get('severity')=='error' or v['type']=='track_dangling'])
 
     def test_identical_segment_reuse_is_explicitly_bank_scoped(self):
         board = self.board
