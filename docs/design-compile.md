@@ -187,8 +187,12 @@ the generation done check.
 
 Capture needs one complete PDF for each purchased part (`lcsc`). A complete PDF
 starts with the PDF header and ends with the `%%EOF` end-of-file marker
-(trailing whitespace is ignored). For each LCSC id, capture tries these sources
-in order and stops at the first complete PDF:
+(trailing whitespace is ignored). This is an envelope check, not a PDF parse:
+a file damaged inside that still ends with `%%EOF` passes. Nothing checks that
+a PDF describes the purchased part. Any source, the cascade included, can serve
+another part's datasheet, and a declared `sha256` fixes the exact bytes, not
+their applicability. For each LCSC id, capture tries these sources in order and
+stops at the first complete PDF:
 
 1. the source declared in `parts.<ref>.datasheet` (below);
 2. JLC's hosted file: `dataManualFileAccessIdUrl` in the captured JLC row;
