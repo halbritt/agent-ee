@@ -1,6 +1,7 @@
 import hashlib
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,8 +18,8 @@ class DatasheetCaptureTests(unittest.TestCase):
         text_pdf(self.root / 'original.pdf', ['CANL 6', 'CANH 7'])
         self.pdf = (self.root / 'original.pdf').read_bytes()
         self.requests = []
-        # path -> (status, declared Content-Length or None, body bytes), or a list of those
-        # that successive requests receive in turn (the last one repeats).
+        # path -> (status, declared Content-Length or None, body bytes[, headers[, delay seconds]]),
+        # or a list of those that successive requests receive in turn (the last one repeats).
         self.routes = {}
         owner = self
 
@@ -29,12 +30,19 @@ class DatasheetCaptureTests(unittest.TestCase):
                     route = owner.routes[self.path]
                     if isinstance(route, list):
                         route = route[min(owner.requests.count(self.path), len(route)) - 1]
-                    status, length, body = route
+                    status, length, body, *extra = route
+                    headers = extra[0] if extra else None
+                    time.sleep(extra[1] if len(extra) > 1 else 0)
                     self.send_response(status)
+                    for name, value in (headers or {}).items():
+                        self.send_header(name, value)
                     if length is not None:
                         self.send_header('Content-Length', str(length))
                     self.end_headers()
-                    self.wfile.write(body)
+                    try:
+                        self.wfile.write(body)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass  # The client stopped waiting, as a deadline does.
                     return
                 if self.path == '/identified':
                     if self.headers.get('User-Agent') != 'agent-ee/1 (public datasheet acquisition)':
@@ -45,7 +53,6 @@ class DatasheetCaptureTests(unittest.TestCase):
                     self.wfile.write(owner.pdf)
                     return
                 if self.path == '/slow':
-                    import time
                     time.sleep(0.6)
                     return
                 if self.path in ('/redirect', '/bad-redirect'):
@@ -413,6 +420,63 @@ class DatasheetCaptureTests(unittest.TestCase):
                     self.assertIn(reason, record['reason'])
                 if not missing:
                     self.assertEqual((self.root / f'again-{number}' / record['path']).read_bytes(), whole)
+
+    def test_both_downloads_of_one_url_share_its_deadline(self):
+        # Review of 2584dce7: the second download got the whole timeout again, so a capture
+        # with timeout=1 finished after 1.4 s. The second download gets only the time left.
+        whole = b'%PDF-1.4\n% owned synthetic datasheet body\n%%EOF\n'
+        self.routes['/slow'] = [(200, None, whole[:20], None, 0.5), (200, None, whole, None, 2.0)]
+        details, started = {}, time.monotonic()
+        result = capture_datasheets([{'id': 'U1', 'datasheet_url': self.url + '/slow'}], self.root / 'shared',
+                                    timeout=1, details=details)
+        elapsed, detail = time.monotonic() - started, details[self.url + '/slow']
+        self.assertLess(elapsed, 1.35)
+        self.assertEqual((result['parts'][0]['missing'], detail['failure'], detail['transient']),
+                         (True, 'deadline', True))
+        # Under heavy load the first download alone can use up the second; then there is no second.
+        self.assertIn([f['failure'] for f in detail['fetches'] or []], ([], ['truncated', 'deadline']))
+
+    def test_permanent_failure_of_the_second_download_keeps_its_class_and_advice(self):
+        # Review of 2584dce7: after an unframed cut, a second download refused for good (a
+        # file: redirect, an expired certificate) became a temporary failure with retry advice.
+        import contextlib
+        import json
+        import ssl
+        import urllib.error
+        import urllib.request
+        from unittest.mock import patch
+        from agent_ee import datasheet_capture
+        from agent_ee.design_datasheets import _entry, _refusal
+
+        cut = b'%PDF-1.4\n% owned synthetic datasheet body\n'
+        self.routes.update({
+            '/cut-then-gone': [(200, None, cut), (404, None, b'gone')],
+            '/cut-then-file': [(200, None, cut), (302, None, b'', {'Location': 'file:///refused.pdf'})],
+            '/cut': (200, None, cut)})
+        # The certificate failure is raised where urllib opens the connection; the two fetch
+        # results then reach capture through its fetch-child boundary.
+        first = datasheet_capture._fetch(self.url + '/cut', 3, datasheet_capture.MAX_BYTES)
+        expired = ssl.SSLCertVerificationError(1, 'certificate verify failed: certificate has expired')
+        with patch.object(urllib.request.OpenerDirector, 'open', side_effect=urllib.error.URLError(expired)):
+            second = datasheet_capture._fetch(self.url + '/cut', 3, datasheet_capture.MAX_BYTES)
+        children = [json.dumps(first).encode(), json.dumps(second).encode()]
+        for path, failure, advice in (('/cut-then-gone', 'http_status', 'correct'),
+                                      ('/cut-then-file', 'invalid_url', 'correct'),
+                                      ('/cut', 'tls_verification', 'valid certificate, or a corrected trust store')):
+            with self.subTest(path=path):
+                details = {}
+                boundary = (patch.object(datasheet_capture, 'run_owned_child', side_effect=children)
+                            if path == '/cut' else contextlib.nullcontext())
+                with boundary:
+                    result = capture_datasheets([{'id': 'C1', 'datasheet_url': self.url + path}],
+                                                self.root / ('second' + path.replace('/', '-')), details=details)
+                detail = details[self.url + path]
+                self.assertEqual((detail['failure'], detail['transient']), (failure, False))
+                self.assertEqual([f['failure'] for f in detail['fetches']], ['truncated', failure])
+                attempt = _entry('declared', None, result['parts'][0], detail, 'datasheet-attempts/declared/manifest.json')
+                message = _refusal('C1', ['U1'], {'url': self.url + path}, [attempt])
+                self.assertNotIn('retry', message)
+                self.assertIn(advice, message)
 
     def test_certificate_verification_failure_repeats_while_transport_failures_stay_temporary(self):
         # Review of ffea1c80: an expired certificate was called temporary, with advice to retry.

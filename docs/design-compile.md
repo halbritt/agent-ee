@@ -278,12 +278,15 @@ records their hashes.
 | `http_status` | An HTTP error status. | 408, 425, 429, 500, 502, 503 and 504 only |
 | `hash_mismatch` | The PDF's SHA-256 differs from the declared `sha256`. | no |
 | `no_url` | The source gives no URL for the part. | no |
-| `incomplete_transfer` | Fewer bytes arrived than the server declared. Or a response without a declared length stopped before its end-of-file marker, and a second download did not return the same bytes. | yes |
+| `incomplete_transfer` | Fewer bytes arrived than the server declared. Or a response without a declared length stopped before its end-of-file marker, and a second download returned other truncated bytes or failed in a way that can be temporary. | yes |
 | `network` | A DNS, connection, socket timeout, HTTP protocol or other TLS failure. | yes |
-| `deadline` | The 30-second fetch deadline expired. | yes |
+| `deadline` | The 30-second fetch deadline expired. Both downloads of one URL share it. | yes |
 
 When the second download of a truncated PDF without a declared length is
-complete, capture uses it. `fetches` records both downloads.
+complete, capture uses it. A second download that fails in a way that repeats
+keeps that class and its advice, for example `tls_verification` or
+`invalid_url`. One that runs out of time is `deadline`. `fetches` records both
+downloads.
 
 A part without a complete PDF refuses the capture. The refusal has one line for
 each such part, under `parts.<ref>.datasheet` for the part's first reference.

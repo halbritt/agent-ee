@@ -13,6 +13,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -206,11 +207,15 @@ def _bounded_fetch(url, seconds, max_bytes):
                url, str(seconds), str(max_bytes)]
     stdout = run_owned_child(command, seconds)
     if stdout is None:
-        return {'record': {'url': url, 'final_url': None,
-                'fetched_at': datetime.now(timezone.utc).isoformat(), 'sha256': None,
-                'path': None, 'missing': True, 'reason': 'fetch deadline exceeded'}, 'pdf': None,
-                'detail': _detail('deadline', True)}
+        return _deadline_result(url, 'fetch deadline exceeded')
     return json.loads(stdout)
+
+
+def _deadline_result(url, reason):
+    return {'record': {'url': url, 'final_url': None,
+            'fetched_at': datetime.now(timezone.utc).isoformat(), 'sha256': None,
+            'path': None, 'missing': True, 'reason': reason}, 'pdf': None,
+            'detail': _detail('deadline', True)}
 
 
 def _stop_fetch(child, owner):
@@ -274,33 +279,47 @@ def _limits(timeout, max_bytes):
         raise ValueError('invalid PDF byte limit')
 
 
-def _download_again(url, timeout, max_bytes, first):
+def _unframed_truncation(detail):
+    return detail['failure'] == 'truncated' and detail['content_length'] is None
+
+
+def _download_again(url, seconds_left, max_bytes, first):
     """Class a truncated PDF that came without a declared length, by downloading it once more.
 
     Without a length, a connection closed early and a file cut at its source look alike.
-    The same truncated bytes twice mean the file is cut (``truncated``, repeats). A
-    complete second download is used. Any other result means the first transfer may have
-    been cut (``incomplete_transfer``, temporary). ``detail['fetches']`` keeps both downloads.
+    Both downloads share the URL's one deadline: the second gets ``seconds_left``, and with
+    no time left it is a deadline failure. A complete second download is used. Otherwise
+    the second download decides the class. The same truncated bytes again mean the file is
+    cut (``truncated``, repeats). A failure that repeats keeps its own class (for example
+    ``tls_verification`` or ``invalid_url``), and running out of time stays ``deadline``.
+    Any other result is ``incomplete_transfer`` (temporary). ``detail['fetches']`` keeps
+    both downloads.
     """
-    second = _bounded_fetch(url, timeout, max_bytes)
+    second = (_bounded_fetch(url, seconds_left, max_bytes) if seconds_left > 0 else
+              _deadline_result(url, 'fetch deadline exceeded before a second download could start'))
     fetches = [{**{k: v for k, v in r['detail'].items() if k != 'fetches'},
                 'fetched_at': r['record']['fetched_at'], 'reason': r['record']['reason']} for r in (first, second)]
     if not second['record']['missing']:
         second['detail']['fetches'] = fetches
         return second
-    size = first['detail']['size_bytes']
-    if second['detail']['failure'] == 'truncated' and second['detail']['body_sha256'] == first['detail']['body_sha256']:
+    size, again = first['detail']['size_bytes'], second['detail']
+    cut = (f'a response without a declared length stopped after {size} bytes without its %%EOF '
+           'end-of-file marker, and a second download ')
+    if _unframed_truncation(again) and again['body_sha256'] == first['detail']['body_sha256']:
         failure, transient = 'truncated', False
         reason = (f'{first["record"]["reason"]}; the response declared no length, and a second download '
                   f'returned the same {size} bytes')
+    elif _unframed_truncation(again):
+        failure, transient = 'incomplete_transfer', True
+        reason = 'incomplete transfer: ' + cut + 'returned different bytes'
+    elif not again['transient'] or again['failure'] == 'deadline':
+        failure, transient = again['failure'], again['transient']
+        reason = cut + 'failed: ' + second['record']['reason']
     else:
         failure, transient = 'incomplete_transfer', True
-        second_result = ('returned different bytes' if second['detail']['failure'] == 'truncated'
-                         else f'failed: {second["record"]["reason"]}')
-        reason = (f'incomplete transfer: a response without a declared length stopped after {size} bytes '
-                  f'without its %%EOF end-of-file marker, and a second download {second_result}')
+        reason = 'incomplete transfer: ' + cut + 'failed: ' + second['record']['reason']
     return {'record': {**second['record'], 'reason': reason}, 'pdf': None,
-            'detail': {**second['detail'], 'failure': failure, 'transient': transient, 'fetches': fetches}}
+            'detail': {**again, 'failure': failure, 'transient': transient, 'fetches': fetches}}
 
 
 def _capture_parts(parts, stage, timeout, max_bytes, fetched=None, details=None):
@@ -317,9 +336,11 @@ def _capture_parts(parts, stage, timeout, max_bytes, fetched=None, details=None)
                                 'sha256': None, 'path': None, 'missing': True, 'reason': 'no datasheet URL'}
                 detail = _detail('no_url', False)
             else:
+                started = time.monotonic()
                 response = _bounded_fetch(url, timeout, max_bytes)
-                if response['detail']['failure'] == 'truncated' and response['detail']['content_length'] is None:
-                    response = _download_again(url, timeout, max_bytes, response)
+                if _unframed_truncation(response['detail']):
+                    # Both downloads share this URL's one deadline.
+                    response = _download_again(url, timeout - (time.monotonic() - started), max_bytes, response)
                 record, detail = response['record'], response['detail']
                 if not record['missing']:
                     filename = hashlib.sha256(url.encode()).hexdigest() + '.pdf'

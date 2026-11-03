@@ -49,9 +49,12 @@ that stops before `%%EOF` (a truncated file), fewer bytes than the declared
 `Content-Length` (an incomplete transfer), the byte limit, an HTTP status, a
 refused URL or redirect target, a TLS certificate that fails verification,
 another network failure or the deadline. A truncated PDF that came without a
-declared `Content-Length` is downloaded once more. The same bytes again keep
-it a truncated file, a complete second download is used, and any other result
-makes it an incomplete transfer. A Python caller can pass a dictionary as
+declared `Content-Length` is downloaded once more, within the same deadline.
+A complete second download is used. Otherwise the second download decides:
+the same bytes again keep it a truncated file; a failure that repeats, such as
+a refused redirect or a certificate that fails verification, keeps its own
+class; running out of time is a deadline failure; and any other result makes
+it an incomplete transfer. A Python caller can pass a dictionary as
 `details=` to `capture_datasheets`. For each URL it receives the failure class,
 whether the failure can be temporary, the HTTP status, the declared and
 received byte counts, the body hash and, after a second download, both
@@ -60,6 +63,7 @@ downloads. The manifest does not change.
 
 Each URL runs in an owned capture subprocess, with a hard elapsed-time deadline
 (default 30 seconds, maximum 60), including startup, DNS, redirects and reads.
+A second download of the same URL gets only the time left of that deadline.
 Timeout and catchable cancellation terminate and reap the owned child before
 returning or propagating the original exception. Cleanup targets only that child,
 rechecking its process start time and working directory; an already-exited child
