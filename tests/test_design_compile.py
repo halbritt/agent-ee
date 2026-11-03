@@ -732,6 +732,17 @@ class DesignCompileTests(unittest.TestCase):
         self.assertIn('decoupling_loops', [c['kind'] for c in requirement['checks']])
         self.assertIn('9 mm', (root / 'spec.md').read_text())
 
+    def test_compiled_delivery_includes_the_required_sealed_fabrication_roundtrip(self):
+        self.compile()
+        root = self.root / 'bundle/inputs'
+        document = json.loads((root / 'requirement-map.json').read_text())
+        delivery = next(r for r in document['requirements'] if r['id'] == 'TEST-DELIV-1')
+        checks = delivery['checks']
+        package = next(c for c in checks if c['kind'] == 'fab_package')
+        roundtrip = next(c for c in checks if c['kind'] == 'fab_roundtrip')
+        self.assertEqual(roundtrip['params'], dict(package_check=package['id']))
+        self.assertLess(checks.index(package), checks.index(roundtrip))
+
     def test_power_routing_default_is_a_net_class_and_leaves_fabrication_minimum_alone(self):
         self.compile()
         root = self.root / 'bundle/inputs'
