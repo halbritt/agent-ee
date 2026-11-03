@@ -603,7 +603,8 @@ The attempt is `not_run` (exit 64), and the router does not start, when:
 
 - `/work/routing` already exists, since every attempt needs a fresh private OUT;
 - the candidate lacks the board or schematic, or contains a link;
-- the checkout is not the pin or its code differs;
+- the checkout's commit cannot be read, its tree is dirty or git cannot report
+  its state, or its code holds a link or special file;
 - an installed backend input is missing. The report names the exact path, for
   example `KICAD_ROUTE_STATE/.venv-krt/bin/python`, or, when the state manifest
   selects a router generation, `KICAD_ROUTE_STATE/.router-generations/<hex>/venv/bin/python`
@@ -719,7 +720,8 @@ same fields, whatever the outcome. Its `identity` covers every field.
 ## Verification
 
 `verify(run, inputs=None, *, receipt=None, layout=None)` rebuilds the outcome
-from the retained bytes, the pin and the adapter's constants, and raises
+from the retained bytes, the checkout record the report holds and the adapter's
+constants, and raises
 `ValueError` on any disagreement. The report's identity and retained hashes
 only show that the bytes agree with each other. They authenticate nothing.
 
@@ -755,8 +757,10 @@ For every outcome, `verify` refuses a report when:
   are not the report's (AGENTEE-442);
 - the classification, proposal, coverage and adapter exit do not match;
 - the reported router exit differs from the observed process exit;
-- the claimed pin, adapter compatibility or `kicad-route` path is not the pin's;
-- the tool version is anything but the pinned `unknown`, or the
+- the adapter compatibility does not name the recorded commit (`tool.commit`, or
+  `tool.pin` in a report retained before 2026-11-03), the checkout record is
+  incomplete, or the `kicad-route` path is not the layout's;
+- the tool version is anything but the recorded `unknown`, or the
   reproducibility label is not the backend's;
 - the backend identity differs from the retained `result.json` `backend`, or is
   claimed without one;
@@ -767,7 +771,9 @@ For every outcome, `verify` refuses a report when:
 
 When the router ran, it also refuses:
 
-- a commit or executable hash that is not the pin's code;
+- a record without a clean commit, a code digest and a positive file count, or,
+  in a report retained before 2026-11-03, a commit other than its recorded
+  `tool.pin`;
 - a write probe set that is not every state directory, each refused by the OS;
 - an argv, environment, working directory or timeout other than the fixed
   ones;
@@ -1030,7 +1036,7 @@ Experiment evidence is never dropped and is never qualified.
   `attempt.json` must carry the declaration exactly then, equal as canonical
   JSON. A run that omits either, or records another declaration, is a
   contradiction (`result settings differ from the fixed adapter settings`,
-  `attempt.json missing or shaped differently from the pinned tool` or
+  `attempt.json missing or shaped differently from the result contract` or
   `attempt.json experiment_policy differs from the declared policy`). The
   synthetic fixture router omitted both until the native bd1e633 run below
   showed it.
