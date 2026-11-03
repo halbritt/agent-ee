@@ -1,6 +1,7 @@
 # agent-ee native-check image: the newest KiCad 10.0 release and its libraries when
 # the image is built, corrected ngspice 47 / Bubblewrap 0.9.0 / Python 3.12, the
-# kicad-route/KRT router and this checkout's source launcher.
+# kicad-route/KRT router at the head of its main branch when the image is built, and
+# this checkout's source launcher.
 # Versions, the KiCad update path and required runtime privileges: docs/container.md.
 #
 # KiCad is not held at one version: docker/kicad/install.py records the release
@@ -117,6 +118,15 @@ RUN set -eu; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "python3-pip=${PYTHON3_PIP_VERSION}" build-essential python3-dev; \
     rm -rf /var/lib/apt/lists/*
+# kicad-route: the head of its main branch at build time, or the commit in this ARG.
+# docker/kicad-route/install.sh resolves the commit, takes the newest wheels that meet
+# the router's own requirements file, builds the owned engine and records the commit,
+# its clean-tree state, the engine version, the Rust toolchain banners and every
+# wheel's version and SHA-256 in /opt/kicad-route.install.json. The upstream ref
+# listing is this stage's cache key: a rebuild after a kicad-route commit installs it.
+# Every routing attempt also records the checkout it runs (commit, clean tree, code).
+ARG KICAD_ROUTE_COMMIT=
+ADD https://github.com/halbritt/kicad-route.git/info/refs?service=git-upload-pack /usr/local/share/agent-ee/kicad-route-upstream-refs
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN /usr/local/share/agent-ee/kicad-route/install.sh install
 
@@ -166,8 +176,8 @@ RUN set -eu; \
     test "$(dpkg-query -W -f='${Version}' tini)" = "${TINI_VERSION}"; \
     test -x /usr/bin/tini
 
-# kicad-route with its owned routing engine, pinned by install.sh. The checkout is
-# its own KICAD_ROUTE_STATE and belongs to the runtime user, as on a native host;
+# kicad-route with its owned routing engine, as install.sh installed and recorded it.
+# The checkout is its own KICAD_ROUTE_STATE and belongs to the runtime user, as on a native host;
 # routing steps mount it read-only in the tool sandbox. The verification runs
 # without network, so KRT's startup checks cannot fetch or rebuild anything.
 ENV AGENT_EE_KICAD_ROUTE_CHECKOUT=/opt/kicad-route
@@ -212,7 +222,7 @@ RUN set -eu; \
     useradd --create-home --uid 10001 --shell /bin/bash agentee
 
 LABEL org.opencontainers.image.title="agent-ee" \
-      org.opencontainers.image.description="agent-ee with the newest KiCad 10.0 release at build time (recorded in /opt/kicad.install.json), corrected ngspice 47, Bubblewrap 0.9.0, Python 3.12 and kicad-route owned engine 0.23.1"
+      org.opencontainers.image.description="agent-ee with the newest KiCad 10.0 release at build time (recorded in /opt/kicad.install.json), corrected ngspice 47, Bubblewrap 0.9.0, Python 3.12 and kicad-route main at build time (recorded in /opt/kicad-route.install.json)"
 
 # Bubblewrap needs an unprivileged user namespace; run as a non-root user.
 USER agentee
