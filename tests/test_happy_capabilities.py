@@ -13,7 +13,7 @@ import time
 
 class HappyCapabilityTests(unittest.TestCase):
     def setUp(self):
-        self.params = {'installation': '/installed', 'installation_sha256': 'a' * 64,
+        self.params = {'installation': '/installed',
                        'rules': [feedback_rule()], 'counted_rules': ['feedback'],
                        'blocking_rules': ['feedback']}
         self.scope = {'schematic': 'design.kicad_sch', 'board': 'design.kicad_pcb',
@@ -34,6 +34,11 @@ class HappyCapabilityTests(unittest.TestCase):
         self.params['blocking_rules'] = []
         self.assertFalse(self.describe()['can_evaluate_bound'])
 
+    def test_legacy_declared_digest_is_accepted_but_not_needed(self):
+        # Scopes written before run-recorded identities declare installation_sha256.
+        self.params['installation_sha256'] = 'a' * 64
+        self.assertEqual(self.describe()['status'], 'supported')
+
     def test_missing_or_unowned_source_and_native_input_refuse(self):
         for path in list(self.files):
             with self.subTest(path=path):
@@ -43,9 +48,10 @@ class HappyCapabilityTests(unittest.TestCase):
         self.scope['requirements'] = []
         self.assertEqual(self.describe()['status'], 'unsupported')
 
-    def test_unknown_rule_pin_and_ambient_refuse(self):
+    def test_malformed_legacy_digest_unknown_rule_and_ambient_refuse(self):
         original = copy.deepcopy(self.params)
         for mutate in (lambda p: p.update(installation_sha256='bad'),
+                       lambda p: p.pop('installation'),
                        lambda p: p.update(ambient_c=float('nan')),
                        lambda p: p['rules'][0].update(adapter='unknown/1')):
             self.params = copy.deepcopy(original)

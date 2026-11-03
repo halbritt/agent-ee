@@ -78,8 +78,8 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
         if spec.get('kind') == 'datasheet_facts':
             extractor = params['extractor']
             tools[extractor['path']] = extractor['sha256']
-        if spec.get('kind') in ('kicad_happy', 'kicad_happy_severity_gate'):
-            installations[str(Path(params['installation']).expanduser().resolve())] = params['installation_sha256']
+        # kicad-happy declares nothing here: each analyzer check records the installation it
+        # used, and the run refuses a change to it before completion (kicad_happy.verify_unchanged).
         tool = params.get('tool')
         if tool:
             tools[tool['argv'][0]] = tool['sha256']

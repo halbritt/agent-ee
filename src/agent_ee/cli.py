@@ -71,12 +71,14 @@ def doctor(checks_only=False, router_checkout=None):
             record["erc_json_coordinates"] = erc_coordinate_regime(
                 record["version_output"] if p.returncode == 0 else None)
         checks[name] = record
-    # Optional installed analyzers are tools, not core package dependencies.
+    # Optional installed analyzers are tools, not core package dependencies. The report
+    # names the installed version, its tag and commit when an install record exists, and
+    # the installed-file identity that runs record.
     analyzer = os.environ.get("AGENT_EE_KICAD_HAPPY")
     if analyzer:
-        from .kicad_happy import installation
+        from .kicad_happy import installation_record
         try:
-            installed = installation(Path(analyzer).expanduser().resolve())
+            installed = installation_record(Path(analyzer).expanduser().resolve())
             checks["kicad-happy"] = {"path": analyzer, "exit_code": 0, **installed}
         except (OSError, ValueError, KeyError, TypeError) as exc:
             checks["kicad-happy"] = {"path": analyzer, "error": str(exc)}

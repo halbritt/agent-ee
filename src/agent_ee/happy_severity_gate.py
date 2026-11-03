@@ -1,32 +1,38 @@
-"""Owner-declared severity policy over four pinned offline analyzer reports."""
+"""Owner-declared severity policy over four offline analyzer reports.
+
+The installed analyzer's version, commit and installed-file identity are recorded with
+each run (kicad_happy.run_analyzers); a scope names only the installation path.
+"""
 
 from .check_registry import register as _register_check
 from . import check_prerequisites as _requires
-import re
 from collections import Counter
 import shutil
 from pathlib import Path
 
 from .candidate import safe_relative
 from .hardware_interface import exact_keys, text
-from .kicad_happy import SEVERITY_ANALYZERS, normalize, run_analyzers
+from .kicad_happy import SEVERITY_ANALYZERS, legacy_declaration, normalize, run_analyzers
 from .netclass_completeness import load_json
 from .storage import digest, write_json
 
 KIND = 'kicad_happy_severity_gate'
 SCHEMA = 'agent-ee.happy-dispositions/1'
 PREDICATES = ['happy-severity:no-errors/1', 'happy-severity:warnings-dispositioned/1']
+FIELDS = {'installation', 'dispositions'}
+# Accepted from scopes written before identities were recorded per run; never a requirement.
+LEGACY_FIELDS = {'installation_sha256'}
 
 
 def capability(params, scope, files, inputs=None):
     if scope.get('schema') not in ('agent-ee.scope/2', 'agent-ee.scope/3'):
         raise ValueError('severity gate requires an immutable scope/2 or scope/3 baseline')
-    exact_keys(params, 'installation installation_sha256 dispositions')
+    if not isinstance(params, dict) or not FIELDS <= set(params) <= FIELDS | LEGACY_FIELDS:
+        raise ValueError('expected fields: installation dispositions (legacy: installation_sha256)')
     text(params['installation'])
     if not Path(params['installation']).expanduser().is_absolute():
         raise ValueError('installation must be an absolute path')
-    if not isinstance(params['installation_sha256'], str) or not re.fullmatch('[0-9a-f]{64}', params['installation_sha256']):
-        raise ValueError('installation_sha256 requires a SHA256 pin')
+    legacy_declaration(params)
     path = str(safe_relative(params['dispositions']))
     if path != params['dispositions'] or path not in files or path not in scope.get('requirements', []):
         raise ValueError('dispositions must be a captured immutable requirement')

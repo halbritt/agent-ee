@@ -1,8 +1,15 @@
-"""Qualified installed kicad-happy output, with explicit evaluation coverage."""
+"""Qualified installed kicad-happy output, with explicit evaluation coverage.
+
+A run uses the analyzer version that is installed; the image installs the newest
+release of the 2.x line when it is built. Each run records that version, the
+install record's tag and commit and the installed-file identity with its evidence.
+No declared version or digest is required. An unknown output format is refused.
+"""
 
 from .check_registry import register as _register_check
 from . import check_prerequisites as _requires
 import math
+import re
 from pathlib import Path
 
 from .storage import digest, identity, read_json, write_json
@@ -21,6 +28,13 @@ SEVERITY_ANALYZERS = {
 }
 # Only these observed calculation records have qualified scalar semantics.
 CALCULATIONS = {('schematic', 'RC-DET'): {'cutoff_hz', 'time_constant_s'}}
+KINDS = ('kicad_happy', 'kicad_happy_severity_gate')
+# The output contract agent-ee reads: the release line and the analyzer envelope formats.
+# The image build (docker/kicad-happy/install.py) selects its release with the same file.
+CONTRACT = read_json(Path(__file__).resolve().parent / 'data/kicad-happy-contract.json')
+OUTPUT_FORMATS = frozenset(CONTRACT['output_formats'])
+INSTALL_RECORD_SCHEMA = 'agent-ee.kicad-happy-install/1'
+SHA256 = re.compile('[0-9a-f]{64}')
 
 
 def installation(root):
@@ -37,9 +51,62 @@ def installation(root):
         if path.is_file():
             files[rel.as_posix()] = digest(path)
     metadata = read_json(root / '.claude-plugin/plugin.json')
-    if metadata.get('name') != 'kicad-happy' or metadata.get('version') != '2.3.1':
-        raise ValueError('only installed kicad-happy 2.3.1 is qualified')
+    if (metadata.get('name') != 'kicad-happy' or not isinstance(metadata.get('version'), str)
+            or not metadata['version']):
+        raise ValueError('unrecognized kicad-happy plugin metadata')
     return {'version': metadata['version'], 'files': files, 'sha256': identity(files)}
+
+
+def install_record(root):
+    """The image build's record beside the installation (<root>.install.json), or None.
+
+    A plain checkout has no record; its tag and commit are then recorded as unknown."""
+    root = Path(root)
+    path = root.with_name(root.name + '.install.json')
+    if not path.is_file():
+        return None
+    record = read_json(path)
+    if (not isinstance(record, dict) or record.get('schema') != INSTALL_RECORD_SCHEMA
+            or any(not isinstance(record.get(key), str) or not record[key]
+                   for key in ('tag', 'commit', 'version', 'output_format'))
+            or not isinstance(record.get('installation_sha256'), str)):
+        raise ValueError('unrecognized kicad-happy install record: ' + str(path))
+    return {'path': str(path), 'sha256': digest(path), **record}
+
+
+def installation_record(root):
+    """What a run records: version, tag, commit, installed-file identity and install record."""
+    installed = installation(root)
+    record = install_record(root)
+    if record is not None and (record['installation_sha256'], record['version']) != (
+            installed['sha256'], installed['version']):
+        raise ValueError('kicad-happy install record does not describe the installed files')
+    return {'root': str(Path(root)), **installed,
+            'tag': record['tag'] if record else None,
+            'commit': record['commit'] if record else None,
+            'install_record': record}
+
+
+def legacy_declaration(params):
+    """installation_sha256 from scopes written before run-recorded identities.
+
+    Optional and never a requirement: a run records the identity it used instead."""
+    if 'installation_sha256' in params and (not isinstance(params['installation_sha256'], str)
+                                            or not SHA256.fullmatch(params['installation_sha256'])):
+        raise ValueError('installation_sha256, when present, must be a SHA-256 hex digest')
+    return params.get('installation_sha256')
+
+
+def require_release_line(version):
+    """Refuse a release outside the contract line, whatever its envelope reports.
+
+    A different major release changes keys under the same envelope format (v3 renames
+    summary keys), so the release line is part of the output contract."""
+    from .checks import CheckError
+    match = re.match(r'(\d+)\.\d+\.\d+', version)
+    if not match or int(match[1]) != CONTRACT['release_major']:
+        raise CheckError('unsupported', f"kicad-happy {version} is outside the "
+                         f"{CONTRACT['release_major']}.x output contract agent-ee reads")
 
 
 def normalize(reports, rules):
@@ -47,7 +114,7 @@ def normalize(reports, rules):
     from .happy_adapters import Native, NotEvaluated, require
     findings = []
     for analyzer, report in reports.items():
-        if (not isinstance(report, dict) or report.get('schema_version') != '1.4.0'
+        if (not isinstance(report, dict) or report.get('schema_version') not in OUTPUT_FORMATS
                 or report.get('analyzer_type') != analyzer
                 or not isinstance(report.get('findings'), list)):
             raise CheckError('unsupported', f'unrecognized {analyzer} analyzer schema')
@@ -144,21 +211,29 @@ def declarations(params):
 
 
 def run_analyzers(ctx, *, severity_gate=False, ambient=25.0):
-    """Execute pinned installed sources and retain every sandbox artifact."""
+    """Execute the installed sources, record their identity and retain every sandbox artifact."""
     from .checks import CheckError, verified_hierarchy
     analyzers = SEVERITY_ANALYZERS if severity_gate else ANALYZERS
+    declared = legacy_declaration(ctx.params)
     root = Path(ctx.params['installation']).expanduser().resolve()
     if not (root / '.claude-plugin/plugin.json').is_file():
         raise CheckError('unavailable', 'kicad-happy installation not found')
     try:
-        before = installation(root)
+        before = installation_record(root)
     except ValueError as exc:
         raise CheckError('unsupported', str(exc)) from exc
-    if before['sha256'] != ctx.params['installation_sha256']:
-        raise CheckError('unsupported', 'installed analyzer bytes differ from declared pin')
-    ctx.result['details']['installation'] = {'root': str(root), **before}
-    write_json(ctx.work / 'installation.json', {'root': str(root), **before})
+    # Recorded first, so a refused release is named in the run's evidence too.
+    ctx.result['details']['installation'] = before
+    write_json(ctx.work / 'installation.json', before)
     ctx.evidence('installation.json')
+    require_release_line(before['version'])
+    if declared is not None:
+        ctx.result['details']['declared_installation_sha256'] = declared
+        if declared != before['sha256']:
+            ctx.result['limitations'].append(
+                f"The scope's installation_sha256 {declared} is a retired declaration, not a "
+                f"requirement; this run used and recorded kicad-happy {before['version']} "
+                f"with installed-file identity {before['sha256']}.")
     verified_hierarchy(ctx)
     request = {'ambient_c': ambient, 'schematic': ctx.candidate_path(ctx.scope['schematic']),
                'pcb': ctx.candidate_path(ctx.scope['board'])}
@@ -175,7 +250,7 @@ def run_analyzers(ctx, *, severity_gate=False, ambient=25.0):
         for path in sorted(ctx.work.rglob('*')):
             if path.is_file():
                 ctx.evidence(path.relative_to(ctx.work).as_posix())
-    if installation(root) != before:
+    if installation(root) != {key: before[key] for key in ('version', 'files', 'sha256')}:
         raise CheckError('unsupported', 'installed analyzer bytes changed during execution')
     executed = ctx.load_json('executed.json', 'executed analyzer helpers')
     if not isinstance(executed, dict) or not executed:
@@ -228,18 +303,52 @@ def check_kicad_happy(ctx):
         raise CheckError('malformed', str(exc)) from exc
 
 
-def verify_installations(checks):
+def verify_recorded(run, checks):
+    """Check each recorded analyzer installation against the run's own saved evidence.
+
+    A run used the installation it recorded. A later or different installation on the
+    verifying host does not change that record, so the host is not consulted."""
+    run = Path(run)
     for check in checks:
-        if check.get('kind') not in ('kicad_happy', 'kicad_happy_severity_gate'):
+        if check.get('kind') not in KINDS:
+            continue
+        details = check.get('details', {})
+        recorded = details.get('installation')
+        if recorded is None:
+            continue
+        cid, evidence = check.get('id'), check.get('evidence', [])
+        try:
+            saved = read_json(run / f'work/{cid}/installation.json')
+            executed = details.get('executed_files')
+            saved_executed = read_json(run / f'work/{cid}/executed.json') if executed is not None else None
+        except (OSError, ValueError) as exc:
+            raise ValueError(f'kicad-happy check {cid} lacks its saved installation evidence') from exc
+        if f'work/{cid}/installation.json' not in evidence or saved != recorded:
+            raise ValueError(f'kicad-happy installation recorded by check {cid} differs from its saved evidence')
+        files = recorded.get('files')
+        if not isinstance(files, dict) or identity(files) != recorded.get('sha256'):
+            raise ValueError(f'kicad-happy files recorded by check {cid} do not give the recorded identity')
+        manifest = recorded.get('install_record')
+        if manifest is not None and manifest.get('installation_sha256') != recorded['sha256']:
+            raise ValueError(f'kicad-happy install record of check {cid} describes other files')
+        if executed is not None and (f'work/{cid}/executed.json' not in evidence or saved_executed != executed
+                                     or any(files.get(rel) != sha for rel, sha in executed.items())):
+            raise ValueError(f'kicad-happy helpers executed by check {cid} differ from its recorded installation')
+
+
+def verify_unchanged(checks):
+    """Within one run: each recorded installation still has the bytes the run recorded."""
+    for check in checks:
+        if check.get('kind') not in KINDS:
             continue
         recorded = check.get('details', {}).get('installation')
         if recorded:
             try:
                 current = installation(recorded['root'])
             except (ValueError, OSError) as exc:
-                raise ValueError('kicad-happy installation changed or unavailable') from exc
-            if current != {k: v for k, v in recorded.items() if k != 'root'}:
-                raise ValueError('kicad-happy installation bytes changed since review')
+                raise ValueError('kicad-happy installation changed or unavailable during the run') from exc
+            if current != {key: recorded.get(key) for key in ('version', 'files', 'sha256')}:
+                raise ValueError('kicad-happy installation bytes changed during the run')
 
 
 def describe_capability(params, files):
@@ -249,16 +358,14 @@ def describe_capability(params, files):
     runtime qualification is performed. Only blocking qualified predicates can
     describe acceptance capability; runtime missing target/skip remains unknown.
     """
-    import re
     descriptor = {'capability_version': 'kicad_happy/1', 'status': 'unsupported',
                   'can_evaluate_bound': False, 'predicates': [], 'immutable_inputs': [],
                   'unsupported_reasons': []}
     try:
         rules, counted, blocking = declarations(params)
-        if (not isinstance(params.get('installation'), str) or not params['installation']
-                or not isinstance(params.get('installation_sha256'), str)
-                or not re.fullmatch('[0-9a-f]{64}', params['installation_sha256'])):
-            raise ValueError('missing pinned installed analyzer identity')
+        if not isinstance(params.get('installation'), str) or not params['installation']:
+            raise ValueError('missing installed analyzer path')
+        legacy_declaration(params)
         ambient = ambient_temperature(params)
         predicates, immutable = [], {}
         for rule in rules:

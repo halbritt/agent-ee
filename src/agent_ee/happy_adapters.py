@@ -1,7 +1,11 @@
-"""Closed target-level adapters for installed kicad-happy 2.3.1/schema 1.4.0.
+"""Closed target-level adapters for installed kicad-happy 2.x output, envelope schema 1.4.0.
 
 Native findings remain informational. These coordinator calculations establish
 only the named bounded proxy, with captured assumptions, never certification.
+The adapters read PR-DET, UC-002, PD-DET, TH-DET, ES-001 and the schematic,
+thermal and PCB inventories, not PP-001, PU-001 or RS-001, so the v2.3.2 changes
+to those three rules do not reach them. Each run records the analyzer version it
+used (kicad_happy.installation_record).
 """
 from decimal import Decimal
 import math

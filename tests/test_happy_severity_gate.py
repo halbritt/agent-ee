@@ -11,8 +11,8 @@ from pathlib import Path
 from agent_ee import candidate, checks
 from agent_ee.baseline import freeze_evidence, validate_witnesses, verify_evidence
 from agent_ee.capabilities import KINDS, describe_check
-from agent_ee.happy_severity_gate import KIND, PREDICATES, SCHEMA, dispositions, evaluate
-from agent_ee.kicad_happy import SEVERITY_ANALYZERS, installation, verify_installations
+from agent_ee.happy_severity_gate import KIND, PREDICATES, SCHEMA, capability, dispositions, evaluate
+from agent_ee.kicad_happy import SEVERITY_ANALYZERS, verify_recorded, verify_unchanged
 from agent_ee.storage import read_json, write_json
 from toolchain import require_toolchain
 
@@ -23,7 +23,6 @@ INSTALLED = Path(os.environ.get('AGENT_EE_KICAD_HAPPY', str(Path.home() / 'git/k
 
 def spec(root=INSTALLED):
     return {'id': 'severity', 'kind': KIND, 'params': {'installation': str(root),
-        'installation_sha256': installation(root)['sha256'],
         'dispositions': 'requirements/dispositions.json'}}
 
 
@@ -145,9 +144,43 @@ class SeverityPolicyTests(unittest.TestCase):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 dispositions(changed)
 
+    def test_name_only_rail_rs001_at_heuristic_confidence_still_needs_its_disposition(self):
+        # kicad-happy 2.3.2 (#54): RS-001 on a rail recognised only by name drops to heuristic
+        # confidence with empty pins; its severity and finding_id are unchanged.
+        fid = 'schematic:RS-001:vbat'
+        data = reports()
+        data['schematic']['findings'] = [{'finding_id': fid, 'rule_id': 'RS-001', 'severity': 'warning',
+            'confidence': 'heuristic', 'provenance': {'confidence': 'heuristic'}, 'source_path': 'none',
+            'components': [], 'nets': ['VBAT'], 'pins': []}]
+        data['schematic']['summary'] = {'total_findings': 1, 'by_severity': {'error': 0, 'warning': 1, 'info': 0}}
+        self.assertEqual(evaluate(data, {})['undispositioned_warning_ids'], [fid])
+        recorded = dispositions({'schema': SCHEMA, 'dispositions': [entry(fid)]})
+        self.assertEqual(evaluate(data, recorded)['undispositioned_warning_ids'], [])
+
+    def test_disposition_for_a_finding_a_newer_release_drops_is_unused_not_failing(self):
+        # kicad-happy 2.3.2 (#53) no longer reports PU-001 on a pin with a no-connect marker.
+        # A disposition recorded against the older output is reported unused and fails nothing.
+        recorded = dispositions({'schema': SCHEMA, 'dispositions': [entry('schematic:PU-001:u3')]})
+        result = evaluate(reports(), recorded)
+        self.assertEqual((result['error_finding_ids'], result['undispositioned_warning_ids']), ([], []))
+        self.assertEqual(result['unused_disposition_ids'], ['schematic:PU-001:u3'])
+
+    def test_retained_scope_with_legacy_digest_stays_valid_and_unknown_fields_refuse(self):
+        # The pod v5 fixture keeps its run's scope verbatim, including the installation_sha256
+        # of kicad-happy 2.3.1 that it declared: a record now, never a requirement.
+        manifest = read_json(REPO / 'fixtures/stock-stage-gate-pod-v5/run/candidate.json')
+        params = next(c['params'] for c in manifest['scope']['checks'] if c['kind'] == KIND)
+        self.assertIn('installation_sha256', params)
+        scope = {'schema': 'agent-ee.scope/3', 'requirements': [params['dispositions']]}
+        files = {params['dispositions']: 'b' * 64}
+        self.assertEqual(capability(params, scope, files)['predicates'], PREDICATES)
+        for changed in ({**params, 'installation_sha256': 'not-a-digest'}, {**params, 'version': '2.3.1'}):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                capability(changed, scope, files)
+
     def test_registration_and_static_coverage_require_captured_immutable_dispositions(self):
         check = {'id': 'severity', 'kind': KIND, 'params': {'installation': '/installed',
-            'installation_sha256': 'a' * 64, 'dispositions': 'dispositions.json'}}
+            'dispositions': 'dispositions.json'}}
         scope = {'schema': 'agent-ee.scope/3', 'schematic': 'gate.kicad_sch', 'board': 'gate.kicad_pcb',
                  'requirements': ['dispositions.json']}
         files = dict.fromkeys(['gate.kicad_sch', 'gate.kicad_pcb', 'dispositions.json'], 'b' * 64)
@@ -175,7 +208,7 @@ class NativeSeverityGateTests(unittest.TestCase):
     def setUpClass(cls):
         require_toolchain(native=True)
         if not (INSTALLED / '.claude-plugin/plugin.json').is_file():
-            raise AssertionError('pinned kicad-happy installation unavailable')
+            raise AssertionError('installed kicad-happy unavailable')
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-severity-')
@@ -234,7 +267,7 @@ class NativeSeverityGateTests(unittest.TestCase):
         pin = read_json(run / 'baseline.json')
         self.assertIn('requirements/dispositions.json', pin['files'])
         self.assertEqual(pin['coverage']['checks']['severity']['predicates'], PREDICATES)
-        verify_installations([result])
+        verify_recorded(run, [result])
         scope = read_json(self.root / 'scope.json')
         scope['mutable_inputs'].append('requirements/dispositions.json')
         write_json(self.root / 'mutable.scope.json', scope)
@@ -278,7 +311,7 @@ class NativeSeverityGateTests(unittest.TestCase):
                 _, result = self.run_check(installed=copied)
                 self.assertEqual((result['execution'], result['outcome']), (status, 'unknown'), result)
 
-    def test_public_verification_detects_installation_and_disposition_drift(self):
+    def test_public_verification_keeps_the_run_record_and_detects_disposition_drift(self):
         from agent_ee.run_record import run_review, verify
         copied = self.root / 'installed'
         shutil.copytree(INSTALLED, copied, ignore=shutil.ignore_patterns('.git', '__pycache__'))
@@ -287,19 +320,17 @@ class NativeSeverityGateTests(unittest.TestCase):
         run_review(self.root / 'scope.json', reviewed, 600, checks_only=True)
         verify(reviewed)
         helper = copied / 'skills/kicad/scripts/sexp_parser.py'
-        original = helper.read_bytes()
-        helper.write_bytes(original + b'\n# test-only installation drift\n')
-        with self.assertRaisesRegex(ValueError, 'bytes changed'):
-            verify_installations([result])
+        helper.write_bytes(helper.read_bytes() + b'\n# a later installation\n')
+        # A finished run keeps its recorded installation; a run in progress refuses the change.
+        with self.assertRaisesRegex(ValueError, 'bytes changed during the run'):
+            verify_unchanged([result])
         scope = read_json(self.root / 'scope.json')
         scope['mutable_inputs'].append('requirements/dispositions.json')
         write_json(self.root / 'mutable.scope.json', scope)
         rejected = self.root / 'rejected'; rejected.mkdir()
         with self.assertRaisesRegex(ValueError, 'immutable|mutable'):
             candidate.capture(self.root / 'mutable.scope.json', rejected)
-        with self.assertRaisesRegex(ValueError, 'bytes changed'):
-            verify(reviewed)
-        helper.write_bytes(original)
+        verify(reviewed)
         with (reviewed / 'work/severity/dispositions.json').open('a') as stream:
             stream.write(' ')
         with self.assertRaisesRegex(ValueError, 'changed|seal|stale'):

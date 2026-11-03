@@ -99,10 +99,13 @@ class NormalizationTest(unittest.TestCase):
                     declarations(changed)
                 self.assertEqual(describe_capability(changed, {})['status'], 'unsupported')
 
-    def test_unknown_schema_is_unsupported(self):
-        with self.assertRaises(CheckError) as error:
-            normalize({'schematic': {'schema_version': '99', 'findings': []}}, [])
-        self.assertEqual(error.exception.execution, 'unsupported')
+    def test_unknown_output_format_is_unsupported(self):
+        for version in ('99', '1.3.0', '1.5.0', None):
+            with self.subTest(version=version), self.assertRaises(CheckError) as error:
+                normalize({'schematic': {'analyzer_type': 'schematic', 'schema_version': version,
+                                         'findings': []}}, [])
+            self.assertEqual(error.exception.execution, 'unsupported')
+        normalize({'schematic': {'analyzer_type': 'schematic', 'schema_version': '1.4.0', 'findings': []}}, [])
 
 
 import json
@@ -113,19 +116,123 @@ import time
 from pathlib import Path
 
 from agent_ee import candidate, checks
-from agent_ee.kicad_happy import installation, verify_installations
+from agent_ee.kicad_happy import (INSTALL_RECORD_SCHEMA, installation, installation_record,
+                                  require_release_line, verify_recorded, verify_unchanged)
+from agent_ee.storage import read_json, write_json
 from toolchain import require_toolchain
 
 REPO = Path(__file__).resolve().parents[1]
 INSTALLED = Path(os.environ.get('AGENT_EE_KICAD_HAPPY', str(Path.home() / 'git/kicad-happy')))
+COMMIT_2_3_1 = '06840467ad0f5d76af45f64449b1f5ecb10f052f'
+COMMIT_2_3_2 = '2fd9aa0fe2d620f36627d9221e8b1393987ae38e'
 
 
 def specification(root):
     return {'id': 'happy', 'kind': 'kicad_happy', 'params': {
-        'installation': str(root), 'installation_sha256': installation(root)['sha256'],
+        'installation': str(root),
         'rules': [{'id': 'cutoff', 'analyzer': 'schematic', 'rule_id': 'RC-DET',
                   'components': ['R1', 'C1'], 'field': 'cutoff_hz', 'min': 150, 'max': 170}],
         'counted_rules': ['cutoff'], 'blocking_rules': ['cutoff']}}
+
+
+class RecordedInstallationTest(unittest.TestCase):
+    """The installed release is used and recorded; no fixed version or digest is compared."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-happy-record-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def install(self, name, version, **record):
+        """A minimal installed tree; with record fields, also the image's install record."""
+        root = self.root / name / 'kicad-happy'
+        write_json(root / '.claude-plugin/plugin.json', {'name': 'kicad-happy', 'version': version})
+        (root / 'skills').mkdir()
+        (root / 'skills/analyze.py').write_text('# installed analyzer bytes\n')
+        if record:
+            write_json(root.with_name('kicad-happy.install.json'), {
+                'schema': INSTALL_RECORD_SCHEMA, 'version': version, 'output_format': '1.4.0',
+                'installation_sha256': installation(root)['sha256'], **record})
+        return root
+
+    def recorded_run(self, name):
+        """One finished check's saved evidence; its installation was the 2.3.1 image's."""
+        root = self.install(name, '2.3.1', tag='v2.3.1', commit=COMMIT_2_3_1)
+        record = installation_record(root)
+        executed = {'skills/analyze.py': record['files']['skills/analyze.py']}
+        run = self.root / name / 'run'
+        write_json(run / 'work/happy/installation.json', record)
+        write_json(run / 'work/happy/executed.json', executed)
+        check = {'id': 'happy', 'kind': 'kicad_happy',
+                 'evidence': ['work/happy/installation.json', 'work/happy/executed.json'],
+                 'details': {'installation': record, 'executed_files': executed}}
+        return root, run, check
+
+    def test_release_other_than_the_previous_one_is_accepted_and_recorded(self):
+        # 2.3.2 as the image installs it, with its install record; 2.9.0 as a plain checkout.
+        for version, record, provenance in (
+                ('2.3.2', {'tag': 'v2.3.2', 'commit': COMMIT_2_3_2}, ('v2.3.2', COMMIT_2_3_2)),
+                ('2.9.0', {}, (None, None))):
+            with self.subTest(version=version):
+                root = self.install(version, version, **record)
+                require_release_line(version)
+                recorded = installation_record(root)
+                self.assertEqual((recorded['version'], recorded['tag'], recorded['commit']),
+                                 (version, *provenance))
+                self.assertEqual(recorded['sha256'], installation(root)['sha256'])
+                self.assertEqual(recorded['root'], str(root))
+
+    def test_release_outside_the_contract_line_is_unsupported(self):
+        for version in ('3.0.0', '1.3.2', '2.3', 'main'):
+            with self.subTest(version=version), self.assertRaises(CheckError) as error:
+                require_release_line(version)
+            self.assertEqual(error.exception.execution, 'unsupported')
+
+    def test_install_record_that_describes_other_files_is_refused(self):
+        root = self.install('edited', '2.3.2', tag='v2.3.2', commit=COMMIT_2_3_2)
+        (root / 'skills/analyze.py').write_text('# changed after the image build\n')
+        with self.assertRaisesRegex(ValueError, 'does not describe the installed files'):
+            installation_record(root)
+
+    def test_old_run_verifies_from_its_saved_evidence_not_this_host(self):
+        root, run, check = self.recorded_run('updated')
+        # This host has since moved to a newer release, then removed the installation.
+        write_json(root / '.claude-plugin/plugin.json', {'name': 'kicad-happy', 'version': '2.3.2'})
+        verify_recorded(run, [check])
+        shutil.rmtree(root)
+        verify_recorded(run, [check])
+
+    def test_saved_evidence_that_contradicts_the_record_is_refused(self):
+        def edit_saved(run, check):
+            saved = read_json(run / 'work/happy/installation.json')
+            write_json(run / 'work/happy/installation.json', {**saved, 'commit': COMMIT_2_3_2})
+
+        def forge_files(run, check):
+            check['details']['installation']['files']['skills/analyze.py'] = '0' * 64
+            write_json(run / 'work/happy/installation.json', check['details']['installation'])
+
+        mutations = {
+            'saved record edited': edit_saved,
+            'saved record not cited': lambda run, check: check['evidence'].remove('work/happy/installation.json'),
+            'saved record deleted': lambda run, check: (run / 'work/happy/installation.json').unlink(),
+            'files without their identity': forge_files,
+            'helper outside the installation': lambda run, check: (
+                check['details']['executed_files'].update({'skills/other.py': '0' * 64}),
+                write_json(run / 'work/happy/executed.json', check['details']['executed_files'])),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name):
+                _, run, check = self.recorded_run(name.replace(' ', '-'))
+                mutate(run, check)
+                with self.assertRaisesRegex(ValueError, 'kicad-happy'):
+                    verify_recorded(run, [check])
+
+    def test_installation_change_during_the_run_is_refused(self):
+        root, _, check = self.recorded_run('during')
+        verify_unchanged([check])
+        (root / 'skills/analyze.py').write_text('# changed during the run\n')
+        with self.assertRaisesRegex(ValueError, 'bytes changed during the run'):
+            verify_unchanged([check])
 
 
 class InstalledAnalyzerTest(unittest.TestCase):
@@ -134,8 +241,8 @@ class InstalledAnalyzerTest(unittest.TestCase):
         require_toolchain(native=True)
         if not (INSTALLED / '.claude-plugin/plugin.json').is_file():
             if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
-                raise AssertionError('installed kicad-happy 2.3.1 unavailable')
-            raise unittest.SkipTest('installed kicad-happy 2.3.1 unavailable')
+                raise AssertionError('installed kicad-happy unavailable')
+            raise unittest.SkipTest('installed kicad-happy unavailable')
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-happy-')
@@ -188,7 +295,11 @@ class InstalledAnalyzerTest(unittest.TestCase):
             report = json.loads((control_run / f'work/happy/{name}.json').read_text())
             self.assertEqual(report['schema_version'], '1.4.0')
         self.assertEqual(json.loads((control_run / 'work/happy/thermal.json').read_text())['summary']['components_assessed'], 0)
-        verify_installations([control])
+        # The run records the installed version, and in the image the build's tag and commit.
+        recorded = control['details']['installation']
+        self.assertEqual(recorded, installation_record(INSTALLED))
+        self.assertEqual(read_json(control_run / 'work/happy/installation.json'), recorded)
+        verify_recorded(control_run, [control])
 
     def test_exact_native_rc_target_population_flags(self):
         from agent_ee.benchmark import parse, children, values, one, replace_spans, span
@@ -244,22 +355,45 @@ class InstalledAnalyzerTest(unittest.TestCase):
         _, result = self.run_check(spec)
         self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
 
-    def test_changed_helper_bytes_are_rejected_by_verify(self):
+    def test_old_run_verifies_after_the_installation_changes(self):
         copied = self.root / 'installation'
         shutil.copytree(INSTALLED, copied, ignore=shutil.ignore_patterns('.git', '__pycache__'))
         run, result = self.run_check(specification(copied))
         self.assertEqual(result['execution'], 'ok', result)
-        verify_installations([result])
         from agent_ee.run_record import run_review, verify
         reviewed = self.root / 'reviewed'
         run_review(self.root / 'scope.json', reviewed, 600, checks_only=True)
         verify(reviewed)
         helper = copied / 'skills/kicad/scripts/sexp_parser.py'
-        helper.write_bytes(helper.read_bytes() + b'\n# changed bytes\n')
-        with self.assertRaisesRegex(ValueError, 'bytes changed'):
-            verify_installations([result])
-        with self.assertRaisesRegex(ValueError, 'bytes changed'):
+        helper.write_bytes(helper.read_bytes() + b'\n# a later installation\n')
+        # Finished runs keep their own record; only a run in progress refuses the change.
+        verify(reviewed)
+        verify_recorded(run, [result])
+        with self.assertRaisesRegex(ValueError, 'bytes changed during the run'):
+            verify_unchanged([result])
+        with (reviewed / 'work/happy/installation.json').open('a') as stream:
+            stream.write(' ')
+        with self.assertRaisesRegex(ValueError, 'saved evidence|evidence changed'):
             verify(reviewed)
+
+    def test_release_of_the_line_runs_and_is_recorded_and_another_major_is_unsupported(self):
+        for version, expected in (('2.99.0', ('ok', 'pass')), ('3.0.0', ('unsupported', 'unknown'))):
+            with self.subTest(version=version):
+                copied = self.root / ('release-' + version)
+                shutil.copytree(INSTALLED, copied, ignore=shutil.ignore_patterns('.git', '__pycache__'))
+                metadata = read_json(copied / '.claude-plugin/plugin.json')
+                write_json(copied / '.claude-plugin/plugin.json', {**metadata, 'version': version})
+                _, result = self.run_check(specification(copied))
+                self.assertEqual((result['execution'], result['outcome']), expected, result)
+                self.assertEqual(result['details']['installation']['version'], version)
+
+    def test_legacy_declared_digest_is_recorded_not_required(self):
+        spec = specification(INSTALLED)
+        spec['params']['installation_sha256'] = '0' * 64
+        _, result = self.run_check(spec)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertEqual(result['details']['declared_installation_sha256'], '0' * 64)
+        self.assertTrue(any('retired declaration' in line for line in result['limitations']), result)
 
     def test_crash_invalid_json_and_unrecognized_schema_have_distinct_status(self):
         # Boundary injectors live only in disposable test installations.

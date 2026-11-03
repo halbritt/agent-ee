@@ -1,0 +1,7 @@
+{
+  "schema": "agent-ee.kicad-happy-contract/1",
+  "release_major": 2,
+  "output_formats": [
+    "1.4.0"
+  ]
+}

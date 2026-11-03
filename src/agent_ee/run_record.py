@@ -166,8 +166,9 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
         raise ValueError("tool runtime changed; rerun under the current tools")
     if observations is not None:
         observations.extend(drift["unused_changes"])
-    from .kicad_happy import verify_installations
-    verify_installations(result["checks"])
+    # The analyzer installation a run used is checked against the run's own evidence, not this host.
+    from .kicad_happy import verify_recorded
+    verify_recorded(run, result["checks"])
     if artifacts(run) != result.get("artifact_hashes"):
         raise ValueError("execution/review evidence changed; prior acceptance is stale")
     if digest(run / "candidate.json") != result.get("manifest_sha256"):
@@ -659,8 +660,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         verify_source(run)
         from . import judgment_context as judgments
         judgments.read(run, result=result, deadline=deadline)
-        from .kicad_happy import verify_installations
-        verify_installations(result["checks"])
+        from .kicad_happy import verify_unchanged
+        verify_unchanged(result["checks"])
         from .preflight import runtime_drift
         drift = runtime_drift(result["runtime_files"], pinned(host, "runtime_files", runtime_files), definitions)
         # A harness this profile never invokes is recorded, not a reason to discard the review.

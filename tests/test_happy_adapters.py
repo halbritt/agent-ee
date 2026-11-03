@@ -24,7 +24,7 @@ from pathlib import Path
 import tempfile
 import time
 from agent_ee import candidate, checks
-from agent_ee.kicad_happy import installation, normalize
+from agent_ee.kicad_happy import normalize
 from toolchain import require_toolchain
 
 REPO = Path(__file__).resolve().parents[1]
@@ -47,7 +47,6 @@ class NativeCase(unittest.TestCase):
             if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
                 raise AssertionError('installed kicad-happy unavailable')
             raise unittest.SkipTest('installed kicad-happy unavailable')
-        cls.pin = installation(INSTALLED)['sha256']
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='happy-adapter-')
@@ -56,7 +55,7 @@ class NativeCase(unittest.TestCase):
         self.baseline_ids = {}
 
     def run_check(self, rule, variant='control', ambient=None):
-        params = {'installation': str(INSTALLED), 'installation_sha256': self.pin,
+        params = {'installation': str(INSTALLED),
                   'rules': [rule], 'counted_rules': [rule['id']], 'blocking_rules': [rule['id']]}
         if ambient is not None:
             params['ambient_c'] = ambient
@@ -313,7 +312,7 @@ class NativeAdaptersTest(NativeCase):
 class CapabilityHelperTest(unittest.TestCase):
     def test_pure_descriptor_binds_assumptions_file_and_only_qualified_predicates(self):
         from agent_ee.kicad_happy import describe_capability
-        params={'installation':'/installed','installation_sha256':'a'*64,
+        params={'installation':'/installed',
                 'rules':[feedback_rule()], 'counted_rules':['feedback'],'blocking_rules':['feedback']}
         descriptor=describe_capability(params, {'requirements.md':'b'*64})
         self.assertEqual(descriptor['status'],'supported')
