@@ -279,9 +279,11 @@ the extension cannot be located; a probed file that cannot be read records
 every shared library it loads; stock libraries are identified per run by the
 scope's captured input hashes.
 
-`--router-checkout DIR` adds a required `kicad-route` record with checkout/pin,
-backend identity and `problems`. Any pin, installed-backend or source mismatch
-makes this probe fail. Without this option doctor does not check the router.
+`--router-checkout DIR` adds a required `kicad-route` record with the checkout, its
+commit, clean-tree state and code digest, backend identity and `problems`. A dirty
+tree, an unreadable commit or an installed-backend or source mismatch makes this probe
+fail, as does the image's installed checkout holding another commit than its install
+record `/opt/kicad-route.install.json`. Without this option doctor does not check the router.
 
 `--checks-only` omits the reviewer harness probe (Claude) and names it under
 `skipped`. Use it where only native checks run, such as the

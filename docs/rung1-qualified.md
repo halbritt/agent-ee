@@ -30,10 +30,10 @@ assembled-header decision; the original hand-soldered spec is refused on this
 route.
 
 `--out` must not exist. `--profile` defaults to `profiles/claude-baseline.json`.
-`--kicad-route` must name a kicad-route checkout at the routing adapter's pin
-(`b577449`) with the owned engine and `.venv-krt` installed; the default is
+`--kicad-route` must name a clean kicad-route checkout (any commit; each attempt
+records it) with the owned engine and `.venv-krt` installed; the default is
 `$AGENT_EE_KICAD_ROUTE_CHECKOUT`, else the standard image path `/opt/kicad-route`
-(see [Routing pin](#routing-pin)). The test module gates on the same variable through
+(see [Router checkout](#router-checkout)). The test module gates on the same variable through
 `tests/toolchain.py`'s `require_kicad_route()`: unset is a skip, or a failure under
 `AGENT_EE_REQUIRE_TOOLCHAIN=1`; a configured checkout that does not qualify always fails.
 `--max-iterations` defaults to 4 and `--max-seconds` to 3600 (see
@@ -215,12 +215,13 @@ schematic turn, after the placement turn, after the routing turn. Two
 iterations would stop after the schematic turn, so the default is 4. The
 campaign budget stays at 3600 s, as the integrator set it.
 
-### Routing pin
+### Router checkout
 
-Current `routing_adapter.preflight` accepts only
-`b5774496d8466b67ffa0362b6665fee2108155a3`, with exact `bin/` and `src/`
-blob hashes and installed KRT state. Set `AGENT_EE_KICAD_ROUTE_CHECKOUT` to
-that detached checkout; the standard image provides `/opt/kicad-route`.
+`routing_adapter.preflight` accepts a clean kicad-route checkout at any commit with
+its installed KRT state, and every attempt records the commit, clean-tree state and
+code digest (2026-11-03; before that only `b5774496` and its exact `bin/` and `src/`
+blob hashes qualified). Set `AGENT_EE_KICAD_ROUTE_CHECKOUT` to the checkout; the
+standard image provides `/opt/kicad-route` at kicad-route `main` as of its build.
 [Owned-engine compatibility](routing-adapter.md#owned-routing-engine-agentee-277)
 records the migration. Historical rung-1 evidence used
 `08179cdc97d08864da127f14d53ac46cf5a27851` at

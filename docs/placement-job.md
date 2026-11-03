@@ -592,7 +592,7 @@ rules, including stricter coupling limits, always remain in force.
    Without a valid incumbent the best diagnostic candidate is kept separately in
    `best-diagnostic.json` and may be routed **only as an exploratory run**; the
    report then says `NO valid incumbent`.
-7. **Pinned router process** on a fresh copy (`kicad-route run`, the adapter's
+7. **Router process** (a clean checkout, its commit recorded) on a fresh copy (`kicad-route run`, the adapter's
    argv shape, copper protection as described above, `--diff-pairs auto`, the checkout's own
    state). The sandboxed `routing_adapter.step` refuses a candidate without a
    schematic, so a schematic-less board is routed by this direct process call;

@@ -154,7 +154,7 @@ checkpoint harness. It does not install host tools or claim release acceptance.
 The [Dockerfile](../Dockerfile) pins the demonstrated toolchain: KiCad
 10.0.7 with stock symbols, footprints, templates and `pcbnew` bindings, corrected
 ngspice 47, Bubblewrap 0.9.0 and Python 3.12, the installed kicad-happy analyzer and
-the pinned kicad-route with KRT for the routing stage, the Rust placement engine,
+kicad-route with KRT at the head of its main branch when the image is built (recorded) for the routing stage, the Rust placement engine,
 and this checkout
 installed through the source launcher. It contains no reviewer harness or credential, so it supports
 checks-only reviews and CI, not agent reviews. The
@@ -262,7 +262,8 @@ its Python version and binding probes use that interpreter. It probes executable
 versions and prints
 the SHA-256 of each probed binary, including the resolved Rust planner. An
 adjacent planner build receipt is hashed and checked against that binary when
-present. `--router-checkout DIR` additionally verifies the pinned checkout and
+present. `--router-checkout DIR` additionally records and verifies the checkout (a clean
+commit; the image's own checkout must hold its install record's commit) and its
 installed routing backend; failure makes doctor exit 1. Doctor does not
 read the credential file, validate subscription access, run a real sandboxed
 check, or perform inference. A passing doctor report is prerequisite evidence

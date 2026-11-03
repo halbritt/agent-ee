@@ -3,7 +3,7 @@
 `agent-ee design generate` asks a subscription author to turn requirements into
 an `agent-ee.design/1` statement, captures the selected parts, compiles the typed
 bundle and builds through package. Run native work inside the production image
-under `native-admit`, with the pinned router, planner and subscription login
+under `native-admit`, with the router checkout, planner and subscription login
 mounts required by the deployment. The command does not provide admission or
 install a native runtime itself. Capture/search download vendor bytes; they
 never upload project files or place orders.
@@ -231,7 +231,7 @@ one of these final states:
 | `attempts_exhausted` | `--max-attempts` ran out without acceptance. | continues |
 | `error` | An unexpected error; it is retained and propagated. | continues with an `error` row |
 | `seat_failed` | The author seat or a review seat failed (login, quota, transport or stream). | stops; later designs are `not_run` |
-| `runtime_refused` | The build refused the native runtime or router pin. | stops; later designs are `not_run` |
+| `runtime_refused` | The build refused the native runtime or the router checkout (dirty tree or unreadable commit). | stops; later designs are `not_run` |
 | `interrupted` | SIGINT or SIGTERM stopped the run. | stops; see below |
 
 Attempt rows use `refused`, `failed`, `author_timeout`, `seat_failed`,
@@ -245,7 +245,8 @@ filename order, one at a time. One design's error, before or after its report
 exists, becomes a row with status `error` and the reason; the other designs
 still run. The summary records the run identity under `run`: the UTC start
 time, a digest of every file of the imported agent-ee package and the checkout
-HEAD when there is one, the packaged kicad-route pin, the author, the bounds,
+HEAD when there is one, the kicad-route checkout (`router`: path, commit, clean-tree
+state, code digest and any refusal), the author, the bounds,
 the review profile and the roots.
 
 Every row has the same keys, with null where a value does not apply: `name`,

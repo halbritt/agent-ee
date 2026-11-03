@@ -27,7 +27,7 @@ What works through the normal entrypoint, `agent-ee build run`:
 | Parts | Binds authored parts, captured datasheets, symbols and footprints to the authored circuit intent | acquisition board |
 | Scaffold | Creates the native project, board outline, stackup, rules and fixed connectors | acquisition board |
 | Schematic | Emits the native schematic from the circuit intent, runs ERC and forward-annotates footprints | acquisition board; 130-part emitter benchmark |
-| Placement and routing | Rust placement search over declared groups, fixed poses, locality and planes; routing by the pinned [kicad-route](docs/routing-adapter.md); native DRC and locality checks on the saved board | acquisition board; esp_prog (placement and routing only) |
+| Placement and routing | Rust placement search over declared groups, fixed poses, locality and planes; routing by [kicad-route](docs/routing-adapter.md) at the commit each attempt records; native DRC and locality checks on the saved board | acquisition board; esp_prog (placement and routing only) |
 | Artwork | Moves silk reference fields off conflicts under a receipt | acquisition board |
 | Package | Checks-only review (ERC, DRC, parity, interval, SPICE, DFM, assembly readiness and others as mapped), then Gerber/drill/BOM/CPL export bound to the final board hash | acquisition board |
 

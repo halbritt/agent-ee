@@ -76,7 +76,7 @@ A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.
 | `requirement_source` | Name of a pinned authoritative source in `pod_driver.SOURCES`; the spec and capture must be its pinned bytes; see [requirement set](#requirement-set-agentee-197) |
 | `writer_inputs` | Exactly `{intent: PATH, deviations: PATH}`; both captured JSON paths |
 | `implementation_steps` | Existing stage-step declarations for the producers listed below |
-| `routing_adapter` | Existing `agent-ee.routing-adapter/1` declaration; command/pin/exit semantics remain owned by that adapter |
+| `routing_adapter` | Existing `agent-ee.routing-adapter/1` declaration; command, recorded router version and exit semantics remain owned by that adapter |
 | `placement_adapter` | Optional existing `agent-ee.placement-adapter/1` declaration for the owned placer; replaces the generic `place-board` step |
 | `net_constraints` | Optional captured constraint document; applies project/rules under receipt and registers native assignment verification; see [application](#net-constraint-application) |
 | `envelope_content` | Optional object declaring the envelope-content pre-receipt's extra inputs: any of `intent`, `layout`, `antenna_facts`, `captured_rule_areas` (captured paths) and `imu_reference`; see [envelope content](#envelope-content) |

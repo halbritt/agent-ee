@@ -63,7 +63,7 @@ Stage 7: Package       <--  Stage 6: Artwork <--  Stage 5: Placement & Routing <
 * **Operations**:
   * **Placement**: The Python coordinator converts board geometry, footprint shapes, and netlists into `agent-ee.placement-job-input/2` (in integer nanometres). The Rust placement engine (`agent-ee-placement`) runs multi-seed simulated annealing to optimize component locations against a multi-objective cost function (wirelength, group clustering, proximity, link alignment, escape space, and overlap penalties).
   * **Plane Fills**: Generates copper zones and ground plane pours (`F.Cu`, `B.Cu`).
-  * **Routing**: Coordinates routing with the pinned `kicad-route` engine in an isolated Bubblewrap step.
+  * **Routing**: Coordinates routing with the `kicad-route` engine, at the commit each attempt records, in an isolated Bubblewrap step.
   * **Verification**: Executes native KiCad DRC (`kicad-cli pcb drc`), requiring 0 unrouted nets, 0 track dangling errors, and 0 clearance violations.
 * **Outputs**: Fully placed and routed `.kicad_pcb` board file.
 
@@ -179,7 +179,7 @@ The Python coordinator communicates with the Rust placement engine (`agent-ee-pl
 
 ### Python Coordinator <-> KiCad Route Adapter
 Defined in `src/agent_ee/routing_adapter.py`:
-* **Input Step**: Prepares an `agent-ee.stage-step/1` declaration mounting the pinned `kicad-route` checkout at `/opt/kicad-route`.
+* **Input Step**: Prepares an `agent-ee.stage-step/1` declaration mounting the clean `kicad-route` checkout at `/opt/kicad-route`.
 * **Execution**: Executes the routing solver within the Bubblewrap sandbox.
 * **Verification**: The adapter re-reads the output board and executes native KiCad DRC checks to independently confirm track clearances and netlist connectivity before adopting the candidate.
 

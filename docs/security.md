@@ -200,13 +200,13 @@ receive neither implementation prose nor historical reviewer opinions.
 The [routing adapter](routing-adapter.md) runs kicad-route, an external
 checkout agent-ee does not control, as a coordinator step. The checkout and its
 installed backend state are read-only mounts. The step refuses to start unless
-a write probe into them fails at the OS level and the tool code matches the
-pinned blob hashes. The router gets a fixed argv and an environment rebuilt
+a write probe into them fails at the OS level and the checkout is a clean git
+commit, which the report records with a digest of its code. The router gets a fixed argv and an environment rebuilt
 from constants: no inherited variables, credentials, backend arguments or
 backend environment, and no network. Its outputs are untrusted data. The
 adapter discovers the single attempt directory itself, never follows `latest`
 or a reported path, refuses links, and delivers only a board whose hash the
-router validated. `verify` checks its report against the pin, the fixed argv
+router validated. `verify` checks its report against the commit it recorded, the fixed argv
 and environment and the retained bytes; only the AGENTEE-95 receipt
 authenticates those bytes. Read-only mounts do not stop other host processes from
 changing the checkout. Before/after identities detect content changes during

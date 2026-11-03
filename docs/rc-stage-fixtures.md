@@ -48,7 +48,7 @@ full DRC. Native exit 0 does not establish a pass.
 
 From the repository root, with the standard native toolchain (KiCad 10.0.7,
 ngspice and Bubblewrap), and `AGENT_EE_KICAD_ROUTE_CHECKOUT` set to a
-[qualified pinned checkout](routing-adapter.md#pinned-compatibility):
+[clean kicad-route checkout](routing-adapter.md#result-compatibility):
 
 ```sh
 PYTHONPATH=src python3 fixtures/rc/stages/generate.py --out build/rc-stages

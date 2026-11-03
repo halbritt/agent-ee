@@ -7,15 +7,15 @@ owner's KICADROUTE-91 boundary questions (AGENTEE-388). It covers:
 1. the trace, via, clearance and layer policy that applies to the pod and the
    fixtures, with each value's source and provenance class;
 2. what identifies a routing target for comparison, and what is missing;
-3. what agent-ee must change when it re-pins kicad-route onto the planned
+3. what agent-ee must change when kicad-route moves onto the planned
    `campaign/2` and `routability-experiment/1` work.
 
 The machine-readable summary is
 [`routing-policy-contract.json`](routing-policy-contract.json).
 [`tests/test_routing_policy_contract.py`](../tests/test_routing_policy_contract.py)
-checks the summary against the adapter's constants: pin, pinned-code digest,
-accepted schema versions, refusal classes, retained reports, the layer-policy
-argument translation and the fixed settings. It fails on any re-pin until this
+checks the summary against the adapter's constants: the per-attempt router version
+record, accepted schema versions, refusal classes, retained reports, the layer-policy
+argument translation and the fixed settings. It fails on any such change until this
 page and the summary are updated.
 
 The [routing adapter](routing-adapter.md) remains the authority for the protocol.
@@ -263,7 +263,7 @@ agent-ee runs only `kicad-route run`. It accepts:
   also listed in `result.evidence.records`. agent-ee binds it and never grades
   from it.
 
-It never reads `kicad-route/route-campaign/1` or `/2` (the pin's campaign record),
+It never reads `kicad-route/route-campaign/1` or `/2` (kicad-route's campaign record),
 `blocked/2`, revalidation records, the `kicad-route/copper-ownership/1` record's
 content, or any planned `campaign/2`. A `grep` of
 `src/` finds no other kicad-route schema.
@@ -341,7 +341,7 @@ When kicad-route moves to a commit with that work:
    failure. Its comparison key must still be rebuilt from the bytes agent-ee
    retains, not trusted as a label.
 5. **Re-implemented kicad-route behaviour.** Re-audit every place agent-ee mirrors
-   kicad-route internals, whenever the pin changes `cli.py`, `kicad/facts.py`,
+   kicad-route internals, whenever a new kicad-route commit changes `cli.py`, `kicad/facts.py`,
    `kicad/pour.py` or `pour.py`:
    - `pour_budget` and `pour_budget_probe`: area summation, 0.001 % rounding and
      the refill command;

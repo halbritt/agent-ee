@@ -139,7 +139,7 @@ descriptor-bound or protected from a source rename (AGENTEE-349).
 
 The explicit live-helper allow-list is `agent_ee/kicad_route_attempt.py`,
 `agent_ee/net_binding.py` and `agent_ee/symbol_library.py` relative to `src`.
-`routing_adapter._step` mounts these three standalone files to run the pinned
+`routing_adapter._step` mounts these three standalone files to run the
 routing adapter and its binding/parser imports. Only their canonical resolved
 paths as regular files qualify; a directory containing them or a bind alias of
 one of them does not qualify. All other package tools must use snapshots.

@@ -506,8 +506,8 @@ verification input; a stage receipt cannot waive it.
 
 ## Captured routing constraints
 
-The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route
-`c4af095` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
+The [campaign routing step](routing-adapter.md#the-step) runs kicad-route at the
+clean commit its checkout holds, recorded in the adapter report (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 in the writer's sandbox with a read-only checkout and state directory. Its receipt
 records provenance and applicability; it is not an acceptance check. The campaign
 verifies the retained routing result before adopting an exit-0 or exit-2 board and

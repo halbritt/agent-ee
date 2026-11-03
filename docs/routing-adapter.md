@@ -22,14 +22,16 @@ Campaigns opt in with `routing_adapter` and run it through the existing step pla
 The coordinator verifies both the generic receipt and routing semantics before
 adoption, and repeats those checks in `verify-campaign`.
 
-## Pinned compatibility
+## Result compatibility
 
-The adapter supports kicad-route commit
-`b5774496d8466b67ffa0362b6665fee2108155a3` only (AGENTEE-450; see the
+The adapter runs kicad-route at the clean commit its checkout holds and records
+that commit in every report (see
+[Router version recorded per attempt](#router-version-recorded-per-attempt)).
+The last commit qualified against the retired commit table was
+`b5774496d8466b67ffa0362b6665fee2108155a3` (AGENTEE-450; see the
 [pin qualification record](#pin-qualification-record-agentee-450-2026-10-22)).
-Routing evidence from any other pin is refused as `StaleRoutingEvidence`.
 It requires `result.json` schema `kicad-route/route/1` and the exact top-level
-result and attempt keys written by this pin. Unknown or absent result schema
+result and attempt keys kicad-route writes. Unknown or absent result schema
 versions are contradictions, even when the statuses and exit look successful.
 Default `attempt.json` requires `kicad-route/attempt/1`, including `schema` and
 `rules_files`. The coordinator can declare `diff_pairs="auto"` to pass
@@ -81,8 +83,11 @@ adapter's result contract.
 `kicad_route_attempt.preflight` is the one precondition sequence (checkout
 record, state verified only for a clean checkout, generation selection,
 required state entries). The host `routing_adapter.preflight`, the sandbox
-attempt and the placement job's board route all call it, and `doctor
---router-checkout` reports its record. `kicad_route_attempt.classify(result
+attempt and the placement job's board route all call it. `doctor
+--router-checkout` reports its record and, for the image's own checkout (the path
+named by `/opt/kicad-route.install.json`), fails unless the checkout holds the
+commit that install record names, clean; another checkout is reported with the
+record, not bound to it. `kicad_route_attempt.classify(result
 bytes, exit)` is the one rule over a router `result.json`: `refused` when it is
 not kicad-route's result for that exit (schema, key set, copper-ownership and
 runtime shapes, statuses), `accepted` for a passing process, COMPLETE routing
@@ -141,8 +146,8 @@ config["routing_adapter"] = {
 The declaration allows only the fields shown plus `state`, `timeout`, `backend`, opt-in `diff_pairs: "auto"`
 and an opt-in [`layer_policy`](#declared-layer-policy-agentee-231).
 Defaults match `step()`: state is the checkout, backend is KRT, budget is 300 s,
-and timeout is twice the budget plus 300 s. No argv, mount, environment or pin override
-is accepted. The selected board and schematic must equal the scope's identities,
+and timeout is twice the budget plus 300 s. No argv, mount, environment or router
+version override is accepted. The selected board and schematic must equal the scope's identities,
 and the board must be in `mutable_inputs`. The scope must be staged and declare
 routing. The campaign dispatches exactly one routing entry only when routing is
 its earliest failing stage; explicit routing `implementation_steps` cannot accompany
@@ -150,9 +155,11 @@ this opt-in. The writer must leave the complete placed source tree unchanged on
 that turn. A writer edit stops before the router starts.
 
 The first captured candidate freezes `state.json.routing_binding`: the canonical
-step, production adapter hash and pin, executable, source tree and complete mount
-identities. The adapter hash must match the captured policy. Before launch, a
-changed checkout or backend state is refused rather than rebaselined. Receipt
+step, production adapter hash, the kicad-route commit the checkout held, executable,
+source tree and complete mount identities. The adapter hash must match the captured
+policy. Before launch, another commit in the checkout is refused as
+`StaleRoutingEvidence`, and a changed checkout or backend state is refused rather than
+rebaselined. Receipt
 observations before and after execution must equal this binding. Replay first
 checks the anchored receipt chain, then the routing binding and exact executor
 command, including read-only mount source/target pairs and network isolation.
@@ -170,7 +177,7 @@ exit 2 would read as a partial route. It then runs:
   --name N --label L --protect existing --budget T
 ```
 
-`--out` names the sandbox's writable output directory; the pin accepts it
+`--out` names the sandbox's writable output directory; kicad-route accepts it
 before or after `run`. `--json` produces a versioned record on stdout. The design
 stays in the read-only `/candidate` mount, so the router cannot edit it. The router
 reads a staged copy instead (AGENTEE-442). After every other precondition holds,
@@ -254,8 +261,8 @@ the placed routing input and a declared signal-via budget, see the
 `signal_layers` and `pour_area_loss_pct` (0 to 100) are required. `layer_costs`
 (one multiplier from 1 to 1000 per signal layer) and `reference` are optional.
 The attempt receives it as one canonical JSON argument, `--layer-policy`. The
-policy requires KRT. It cannot be combined with `diff_pairs`, because the pin
-refuses `--backend-arg` with `--diff-pairs`. Only flags the pin defines are used:
+policy requires KRT. It cannot be combined with `diff_pairs`, because kicad-route
+refuses `--backend-arg` with `--diff-pairs`. Only flags kicad-route defines are used:
 
 | Policy field | Router argument |
 | --- | --- |
@@ -276,7 +283,7 @@ retained bytes. The grade is `semantics.layer_policy`, and `verify` returns it a
 | Item | Source | Defect | Unknown |
 | --- | --- | --- | --- |
 | `disallowed_tracks` | the router's `validate/candidate-facts.json`, bound to the validated board hash, and `facts/reference-facts.json`, bound to the input board hash in `snapshot.json` | a track or arc on a layer outside `signal_layers` that no input track matches, listed by UUID, layer and net; matched input tracks are listed as `preexisting`. Every listed track is a defect when the reference facts are not of the input board | facts missing or malformed, candidate facts of another board, or no input board hash in the snapshot |
-| `pour_integrity` | `validate/preservation.json` | the pin's check is FAIL | the check is missing |
+| `pour_integrity` | `validate/preservation.json` | kicad-route's check is FAIL | the check is missing |
 | `area_loss` | `validate/pour-integrity.json` | a net/layer lost more than the bound, listed under `exceeded`; a declared reference plane whose delta is null because it had no initial fill | no deltas, no pour, a bound other than the declared one, a null delta (no initial fill, listed under `unmeasured`), or a declared reference net/layer the router did not measure (listed under `absent`) |
 | `reference_continuity` (when declared) | `attempt/agent-ee-reference-continuity.json`, measured by KiCad's Python on the validated candidate | an RF track whose footprint is not covered by the reference net's fill on a reference layer (`interrupted`, with the uncovered mm²), or an RF via through a reference layer (`vias`) | a missing net, layer, zone or fill, custom clearance rules, an RF track on its own reference layer, no RF track, a measurement of another board or another specification, or a board the router rejected |
 
@@ -320,7 +327,7 @@ The overall grade is `defect` if any item is a defect, otherwise `unknown` if an
 item is unknown, otherwise `pass`. An exit 0 or 2 whose grade is not `pass`
 becomes `policy_failed` (adapter exit 5). Its board is hashed as
 `rejected_candidate_sha256` and is never delivered, so the receipt is not adoptable.
-When the pin's own pour_integrity fails on the bound, the result is exit 3,
+When kicad-route's own pour_integrity fails on the bound, the result is exit 3,
 `validation_failed`, and the grade records the defect. Classes that never graded
 a board carry an `unknown` grade. `verify` refuses a grade that differs from its
 own re-derivation, a grade without a declared policy, a delivered board whose grade
@@ -346,7 +353,7 @@ must determine its basis before campaign adoption; this feature supplies no new
 area-loss threshold or RF qualification.
 
 This declaration adds `items.per_net_signal_layers` to the adapter grade. It
-reads the pinned native `validate/candidate-facts.json`, bound to the validated
+reads kicad-route's native `validate/candidate-facts.json`, bound to the validated
 board hash, and checks every segment, arc and via of each listed net. All copper
 layers between a via's endpoints in the native copper stack count, including
 intermediate planes. A through-via therefore violates an F.Cu-only declaration.
@@ -525,7 +532,7 @@ after the adopted `add-planes` output). `ROUTING.json` is the campaign's
 `layer_policy_derivation` `policy`.
 
 The pilot runs `K` attempts (3 to 20, default 3). Each one is an ordinary coordinator
-stage step: the pinned adapter in the networkless sandbox on a copy of `DIR`. Attempt
+stage step: the routing adapter in the networkless sandbox on a copy of `DIR`. Attempt
 `i` is the campaign routing declaration with only two changes. Its label is
 `<label>-pilot-<i>`. Its layer policy keeps `signal_layers` and `layer_costs`, drops
 `reference`, and uses the permissive `pour_area_loss_pct` 100. The receipt binding is
@@ -589,12 +596,12 @@ The [scaffold producer](scaffold.md#default-class-clearance) writes only fab
 minimums as DRC floors (owner decision 2026-10-18). It records preferred limits as
 router targets in its receipt's `derivation.router_targets`. The preferred Default
 track width and via size are applied as the Default class routing defaults in the
-project file the router receives. agent-ee has not established how the pinned
-router uses class widths; its result is graded only by agent-ee's own checks. The preferred
-clearance is not applied, because a class clearance is a DRC floor. The pinned
+project file the router receives. agent-ee has not established how kicad-route
+uses class widths; its result is graded only by agent-ee's own checks. The preferred
+clearance is not applied, because a class clearance is a DRC floor. The
 adapter does not pass it on either: `default_clearance_mm` and
 `clearance_margin_mm` are fixed to `null` in the expected settings. A router that
-consumes the clearance target needs a new adapter protocol and its own pinned
+consumes the clearance target needs a new adapter protocol and its own
 validation.
 
 ## Before the router runs
@@ -623,7 +630,7 @@ and after the attempt. Any difference makes the attempt a contradiction.
 
 ## Finding the attempt
 
-The pin writes `OUT/runs/<name>/<label>/<UTC stamp>/` with a mutable `latest`
+kicad-route writes `OUT/runs/<name>/<label>/<UTC stamp>/` with a mutable `latest`
 link beside it. It has no top-level result. The adapter looks only inside its
 fresh OUT and requires exactly one real stamp directory. It never follows
 `latest` or a path named in a report. Any other entry under `runs/`, a second
@@ -634,7 +641,7 @@ working directory, and must land on the expected contained location.
 ## Exit semantics
 
 The numeric exit is never trusted alone. Each exit needs its exact status
-combination in a `result.json` and `attempt.json` of the pinned shape, plus the
+combination in a `result.json` and `attempt.json` of the contract shape, plus the
 fixed settings (`protect: existing`, empty backend environment, all nets, and
 backend args and pour bound exactly as the declared layer policy implies).
 
@@ -650,7 +657,7 @@ backend args and pour bound exactly as the declared layer policy implies).
 | — | the adapter's timeout or a cancellation (SIGTERM) | `timeout`, `cancelled` | none; the router's process group is killed | 75, 143 |
 | — | an unexpected fault in the adapter itself | no report | none; `verify()` refuses the attempt | 70 |
 
-The pin's own `overall_exit` returns 2 for any routing status other than
+kicad-route's own `overall_exit` returns 2 for any routing status other than
 COMPLETE after validation passes. The adapter accepts only INCOMPLETE. An
 AGENTEE-95 receipt adopts only exits 0 and 2. Every other exit is
 non-adoptable, so the pre-step design stays the iteration's diagnostic input
@@ -661,7 +668,7 @@ For 0 and 2 the candidate must also bind to the attempt and its inputs:
 - `run_dir` and both candidate paths resolve to the discovered attempt;
 - the board is reached without links;
 - `candidate/` and `reference/` each hold the real project directory and
-  nothing else except the links the pin places beside it so that
+  nothing else except the links kicad-route places beside it so that
   `${KIPRJMOD}/../<dir>` library paths resolve: each named for a top-level
   input directory other than the project (never a top-level input file),
   with the literal target `/work/routing/agent-ee-original/<same name>` (the
@@ -713,7 +720,7 @@ the executables (`kicad-route`, Python, `kicad-cli`) and the KiCad template
 library tables. For an eligible attempt it also records `candidate_files`, the
 hash of every file in the attempt's candidate project directory, because the
 candidate tree itself is a design file and is not retained. KiCad library
-directories come from the image's `/usr/share/kicad`, as the pin hard-codes.
+directories come from the image's `/usr/share/kicad`, as kicad-route hard-codes.
 That is recorded, not qualified as catalogue authority. Every report has the
 same fields, whatever the outcome. Its `identity` covers every field.
 
@@ -740,9 +747,9 @@ receipt. The receipt supplies the inputs, and the report must agree with:
 
 A report paired with another attempt's receipt is refused.
 
-`layout` overrides the production sandbox paths and pin. Only the fixture
-router's tests pass it. Without it, a report that claims any pin other than
-the supported pin is refused, so a fixture attempt never verifies as a kicad-route
+`layout` overrides the production sandbox paths. Only the fixture router's tests
+pass it. Without it, a report whose router ran anywhere but the sandbox checkout
+path is refused, so a host fixture attempt never verifies as a sandboxed kicad-route
 attempt.
 
 For every outcome, `verify` refuses a report when:
@@ -1279,6 +1286,29 @@ Experiment evidence is never dropped and is never qualified.
   Every other control, and the same-commit reasons, are judged as before
   (`tests/test_k91_classify_a1.py`). No evaluation under A1 is recorded
   until its review accepts it.
+
+  Amendment A2 (`scripts/k91_classify_a2.py`, classifier `verdict-2r4-a2`)
+  is an integrator decision (agent-724, 2026-11-03), made after the owner's
+  direction of the same day that router versions are fixed and recorded per
+  run, not held at one commit. It is not owner text. Control A's premise, a
+  runtime at another commit than the committed table is refused when bound,
+  is retired with that table. The live harness now presents a different
+  clean commit M to a campaign whose routing binding recorded L. A2 accepts
+  control A only when both parts of the policy are observed: the fresh host
+  binding of M is accepted and records M, and the production consumer
+  refuses M at `validate_live_binding` with `StaleRoutingEvidence`, whose
+  full message names L and M and is compared by literal equality on the
+  consumer path. A dirty runtime, other commits or any other reason never
+  refuse control A under A2. The low-level `run_step` on M is reported as a
+  fresh run that records M. `k91_classify.py` and `k91_classify_a1.py` are
+  unchanged records; every other control is judged by `verdict-2r4`. The
+  live matrix (`scripts/k91_control_matrix.py`) and the live harness tests
+  judge control A with A2 (`tests/test_k91_classify_a2.py`). A2 was chosen
+  over retiring control A because the harness can express the binding
+  without the retired table: the routing binding records its commit.
+  `scripts/k91_native_positive.py` is marked historical: it patched the
+  retired table and refuses to run; the bytes that ran are kept in
+  `scripts/historical/k91_native_positive-553e4151.py`.
 - **Pin.** The pinned `b5774496` (AGENTEE-450) `cli.py` has no
   `--experiment-policy` (the K91 producer commits `a0ed434` and `bd1e633f` are
   not its ancestors), and its `main` turns every usage error into a refusal
