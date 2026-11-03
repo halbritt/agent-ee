@@ -213,6 +213,74 @@ def design_fixture(root):
     return d
 
 
+class CompilePackagePolarityTests(unittest.TestCase):
+    """The same captured pin facts must select the same gate at both boundaries."""
+
+    def test_non_diode_references_agree_on_selection_and_polarity_failures(self):
+        from agent_ee.design_compile import cpl_policy
+        from agent_ee.cpl_rotation import evaluate, load_policy
+        from tests.test_cpl_rotation import diode_supplier, supplier, probe, footprint, board, DIODE_PADS
+        cases = (
+            # Unnamed board pins stay ungraded, even with a polarized family name.
+            ("C1", "C_Polarized", "", "", "+", "-", None),
+            ("C1", "C_Polarized", "", "", "1", "2", None),
+            ("F1", "Fuse_Polarized", "", "", "+", "-", None),
+            ("BT1", "Battery_Cell", "+", "-", "1", "2", "polarity_unknown"),
+            ("BT1", "Battery_Cell", "+", "-", "-", "-", "polarity_conflict"),
+            ("BT1", "Battery_Cell", "+", "-", "+", "-", None),
+            ("BT1", "Battery_Cell", "+", "-", "-", "+", None),
+            ("C1", "NamedCap", "+", "-", "1", "2", "polarity_unknown"),
+            ("F1", "NamedFuse", "+", "-", "1", "2", "polarity_unknown"),
+            ("Q1", "Q_Photo_NPN", "C", "E", "1", "2", None),
+        )
+        for ref, symbol, one, two, supplied_one, supplied_two, failure in cases:
+            with self.subTest(ref=ref, symbol=symbol, pins=(supplied_one, supplied_two)), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for directory in ("supplier", "named", "Owned.pretty"):
+                    (root / directory).mkdir()
+                pins = [("1", 0, "passive", one), ("2", 0, "passive", two)]
+                definition = GEN._definition(symbol, [(1, pins)])
+                definition = definition.replace('(name "P1"', '(name ' + json.dumps(one) ).replace(
+                    '(name "P2"', '(name ' + json.dumps(two))
+                (root / "Device.kicad_sym").write_text(
+                    '(kicad_symbol_lib (version 20241209) (generator "owned") ' + definition + ')')
+                pads = DIODE_PADS.format(k=one, a=two)
+                fp = root / "Owned.pretty/Chip.kicad_mod"
+                fp.write_bytes(kicad_footprint("Chip", pads))
+                write_json(root / "cad.json", dict(schema="agent-ee.footprint-libraries/1", complete=True,
+                    libraries=[dict(name="Owned", members=[dict(path="Owned.pretty/Chip.kicad_mod", sha256=digest(fp))])]))
+                raw = diode_supplier("C2", supplied_one, pin2_name=supplied_two)
+                (root / "supplier/C2.raweasy.json").write_bytes(raw)
+                (root / "supplier/C2.provenance.json").write_bytes(provenance("C2", "supplier/C2.raweasy.json", raw))
+                write_json(root / f"named/{ref}.json", dict(package="0603"))
+                design = dict(parts={ref: dict(footprint="Owned:Chip", lcsc="C2", lib_id="Device:" + symbol)})
+                if failure:
+                    with self.assertRaisesRegex(DesignError, rf"parts\.{ref}\.lcsc: {failure}"):
+                        cpl_policy(design, root)
+                    policy = dict(schema_version=1, policy_id="owned", provenance="owned fixture",
+                                  footprint_rules=[], component_overrides=[])
+                else:
+                    cpl_policy(design, root)
+                    policy = json.loads((root / "cpl/jlc-cpl-policy.json").read_bytes())
+                rows = [[ref, "70.000000", "-40.000000", "Top", "0.000000"]]
+                geometry = [probe(ref, "Owned:Chip", 70000000, 40000000,
+                    [[67950000, 39400000, 68850000, 40600000], [71150000, 39400000, 72050000, 40600000]])]
+                records, _, _ = evaluate(rows, geometry, board(footprint("Owned:Chip", ref, 70, 40, 0, pads)),
+                    {ref: "C2"}, load_policy(json.dumps(policy).encode()), {"C2": supplier(raw)}, 200)
+                record = records[0]
+                self.assertEqual([m["mode"] for m in record["modes"]], [failure] if failure else [])
+                if not failure:
+                    self.assertEqual(record["outcome"], "pass")
+                    diagnostic = json.loads((root / "design-compile-report.json").read_bytes())["land_patterns"][0]
+                    if not one or one == "C":
+                        self.assertEqual(record["polarity"]["assessment"], "ungraded")
+                        self.assertEqual(diagnostic["polarity"]["assessment"], "ungraded")
+                    else:
+                        self.assertEqual(record["polarity"]["board"], "anode")
+                        self.assertEqual(record["polarity"]["supplier"], "anode")
+                        self.assertEqual(diagnostic["polarity"]["supplier"], "anode")
+
+
 class DesignCompileTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -655,7 +723,10 @@ class DesignCompileTests(unittest.TestCase):
         self.assertEqual(default["track_width"], 0.2)
         derivation = json.loads((root / "project-rule-derivation.json").read_bytes())
         self.assertEqual(derivation["routing"]["clearance"]["selected"], 0.1)
-        self.assertIn("routing default", derivation["routing"]["track_width"]["basis"])
+        self.assertEqual(derivation["routing"]["track_width"]["basis"],
+                         "routing default (at least pinned native default)")
+        self.assertEqual(derivation["routing"]["clearance"]["basis"],
+                         "fabrication clearance floor")
         self.assertEqual(derivation["routing"]["track_width"]["native_default"], 0.2)
         facts = (root / "fab-sources/selected-facts.txt").read_text(encoding="utf-8")
         self.assertIn("https://jlcpcb.com/help/article/jlcpcb-copper-weight", facts)
@@ -904,7 +975,8 @@ class DesignCompileTests(unittest.TestCase):
         seal_capture(self.captures)
         for edge, angle, inset, accepted in (("right", 90, 5, True), ("right", 270, 5, False),
                                              ("right", 0, 3, True), ("right", 0, 3.1, False),
-                                             ("top", 270, 4, True), ("top", 90, 4, False)):
+                                             ("top", 270, 4, True), ("top", 90, 4, False),
+                                             ("right", 180, 4, True), ("right", 180, 4.1, False)):
             d = copy.deepcopy(self.design)
             d["connectors"] = [dict(reference="R1", edge=edge, position_mm=10,
                                     inset_mm=inset, rotation_deg=angle, insertion="from_top")]
@@ -952,15 +1024,37 @@ class DesignCompileTests(unittest.TestCase):
 
     def test_plain_numeric_intent_compiles_markdown_structure_names_field(self):
         from agent_ee.design import validate
-        for text in ("1.5 V board", "-5 V input", "#hashtag"):
+        for index, text in enumerate(("1.5 V board", "-5 V input", "#hashtag", "Board\u00a0", "Board\f",
+                                      "\u2003Board\u2003", " Board\t")):
             d = copy.deepcopy(self.design)
             d["intent"] = text
-            compile_design(d, self.captures, self.root / ("plain-" + str(len(text))))
+            compile_design(d, self.captures, self.root / ("plain-" + str(index)))
         for text in ("* x", "```code", "~~~code", "> quote", "1) item"):
             d = copy.deepcopy(self.design)
             d["intent"] = text
-            with self.subTest(text=text), self.assertRaisesRegex(DesignError, "intent:"):
+            with self.subTest(text=text), self.assertRaisesRegex(DesignError, "intent:") as caught:
                 validate(d)
+            self.assertNotRegex(str(caught.exception), r"byte \d+")
+
+    def test_overlap_warning_boundary_is_strictly_below_one_half(self):
+        from agent_ee.land_pattern import compare
+        for value, warned in (("0.499999", True), ("0.5", False), ("0.500001", False)):
+            def measured(*args, **kwargs):
+                result = compare(*args, **kwargs)
+                for metric in result["copper"].values():
+                    metric["presented"]["lower"] = value
+                return result
+            with self.subTest(value=value), patch("agent_ee.land_pattern.compare", side_effect=measured):
+                import warnings
+                with warnings.catch_warnings(record=True) as emitted:
+                    warnings.simplefilter("always")
+                    self.compile("overlap-" + value)
+                report = json.loads((self.root / ("overlap-" + value) / "inputs/design-compile-report.json").read_bytes())
+                overlap = [w for w in report["warnings"] if "measured copper overlap" in w]
+                self.assertEqual(bool(overlap), warned)
+                self.assertEqual([str(w.message) for w in emitted if "measured copper overlap" in str(w.message)], overlap)
+                if warned:
+                    self.assertTrue(all("parts.R" in w and value in w for w in overlap))
 
     def test_same_net_decoupling_and_diagonal_limit_are_refused(self):
         from agent_ee.design import validate

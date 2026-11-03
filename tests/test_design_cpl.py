@@ -36,6 +36,9 @@ class CompileCplTests(unittest.TestCase):
         package="0603",
         second_supplier=None,
     ):
+        symbol = self.root / "Owned.kicad_sym"
+        if not symbol.exists():
+            symbol.write_bytes(GEN.library())
         footprint = f"Owned:{name}"
         native_path = self.root / f"Owned.pretty/{name}.kicad_mod"
         native_path.write_bytes(kicad_footprint(name, pads))

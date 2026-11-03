@@ -147,8 +147,22 @@ Default track width is at least the pinned native routing default (0.2 mm);
 routing via sizes also preserve native defaults and meet drill and annular-width rules.
 These routing defaults are not fabrication limits. `project-rule-derivation.json` binds both sources and the selected values. CPL rotations come from footprint-local geometry
 and captured supplier pin-1 geometry before a board exists. Supplier preview
-remains a physical delivery obligation. The compiler reuses the CPL gate's pad-set
-and two-pad polarity rules, refuses reflections and incompatible pad sets, and
+remains a physical delivery obligation. Compile and package call the same
+`cpl_rotation.select_polarity` function: polarity is required for `D#`/`LED#`
+references and two-pad parts numbered 1/2 whose board pin 1 names a polarity.
+Both use `check_pin_polarity` for the selected supplier pin. Thus a battery with
+board pin 1 named `+` and unresolved supplier polarity is refused at compile,
+with its reference. The `C` cathode alias applies only to `D#`/`LED#`, so a
+phototransistor collector does not select this gate.
+
+An unnamed board pin 1 establishes no polarity, including on
+`Device:C_Polarized` and `Device:Fuse_Polarized`. No family convention is
+inferred. For references outside `D#`/`LED#`, these parts can compile; their
+compile report and package record explicitly say `assessment: "ungraded"`.
+Passing pin-number geometry does not verify their physical polarity. Named
+pins come from the captured symbol at compile and the board pinfunction or
+guarded sealed-netlist fallback at package.
+The compiler also shares pad-set comparison with the CPL gate, refuses reflections and incompatible pad sets, and
 uses component overrides when shared footprints need different rotations.
 
 The compiler refuses explicitly marked standard passive size mismatches (such as

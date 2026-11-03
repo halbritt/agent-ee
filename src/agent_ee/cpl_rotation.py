@@ -21,8 +21,9 @@ a JLC CPL and a per-designator evidence report:
   recovered from the board bytes by `land_pattern`) and of the captured
   EasyEDA footprint (`easyeda_footprint`) are classified into one of eight
   positions. The cycle difference is the supplier-to-board rotation offset; it
-  must equal the policy delta. A cycle mismatch is a reflection. For `D*` and
-  `LED*` designators pin-1 anode/cathode polarity is cross-checked.
+  must equal the policy delta. A cycle mismatch is a reflection. Pin-1 polarity
+  is required for `D#`/`LED#` and two-pad parts with a named board polarity;
+  other parts explicitly record an ungraded polarity assessment.
 
 Every CPL row is listed in exactly one of `applied_corrections` or
 `unmatched_footprints`. Designators the export manifest lists as excluded by
@@ -79,7 +80,7 @@ CORNERS = {frozenset(('leftside', 'bottomside')): 'leftside_bottom',
            frozenset(('topside', 'leftside')): 'topside_left'}
 POLARIZED = re.compile(r'(?:D|LED)[0-9]+')
 ANODE = frozenset(('a', 'anode', '+', 'pos', 'positive'))
-CATHODE = frozenset(('k', 'c', 'cathode', '-', 'neg', 'negative'))
+CATHODE = frozenset(('k', 'cathode', '-', 'neg', 'negative'))
 SEVERITY = {'ok': 0, 'unsupported': 1, 'failed': 2, 'malformed': 3}
 # mode -> per-designator execution; defect modes keep execution ok.
 MODES = {
@@ -283,9 +284,24 @@ def pin1_offset(supplier, board):
     return None
 
 
-def polarity(name):
+def polarity(name, *, diode=False):
     key = re.sub(r'[^a-z0-9+-]', '', (name or '').lower())
-    return 'anode' if key in ANODE else 'cathode' if key in CATHODE else None
+    return 'anode' if key in ANODE else 'cathode' if key in CATHODE or (diode and key == 'c') else None
+
+
+def select_polarity(record, ref, board_numbers, board_name, *, board_basis=BOARD_BASES[0]):
+    """Single compile/package selection rule; unnamed pins carry no family convention.
+
+    C is a cathode alias only for diode references, never a collector on Q#.
+    Ungraded polarity does not attest physical orientation, even when pin geometry passes.
+    """
+    if POLARIZED.fullmatch(ref) or (board_numbers == ['1', '2'] and polarity(board_name) is not None):
+        return True
+    record['polarity'] = dict(assessment='ungraded', board_pin1_function=board_name,
+                              board_basis=board_basis,
+                              reason='No board pin-1 polarity established; no symbol-family convention inferred. '
+                                     'Pin-number geometry does not verify physical polarity.')
+    return False
 
 
 def _top_view(pattern):
@@ -495,6 +511,8 @@ def evaluate(rows, geometry, board_bytes, bindings, policy, suppliers, tolerance
 def _board_pin1_name(found, ref, netlist, lcsc, pad_nets, mode):
     """The board's pin-1 function, and its source, with the sealed netlist as a guarded fallback."""
     board_name = _board_pin1_function(found, ref)
+    def classified(name):
+        return polarity(name, diode=bool(POLARIZED.fullmatch(ref)))
     board_basis, board_note = BOARD_BASES[0], None
     if netlist is not None:
         netlist_name = netlist['pins'].get('1')
@@ -509,17 +527,17 @@ def _board_pin1_name(found, ref, netlist, lcsc, pad_nets, mode):
             elif netlist['nets']['1'] != pad_nets['1']:
                 mode('polarity_conflict', f'board pad 1 net {pad_nets["1"]!r} differs from sealed netlist '
                                           f'pin 1 net {netlist["nets"]["1"]!r}')
-            elif polarity(netlist_name) is None:
+            elif classified(netlist_name) is None:
                 board_note = f'sealed netlist libpart pin 1 name {netlist_name!r} names no polarity'
             else:
                 board_name, board_basis = netlist_name, BOARD_BASES[1]
-        elif polarity(board_name) and polarity(netlist_name) and polarity(board_name) != polarity(netlist_name):
+        elif classified(board_name) and classified(netlist_name) and classified(board_name) != classified(netlist_name):
             mode('polarity_conflict', f'board pad 1 pinfunction {board_name!r} contradicts sealed netlist '
                                       f'libpart pin 1 {netlist_name!r}')
     return board_name, board_basis, board_note
 
 
-def _pad_with_board_polarity(supplier, lcsc, pads, board_polarity):
+def _pad_with_board_polarity(supplier, lcsc, pads, board_polarity, *, diode=False):
     """The supplier pad number that carries the board's pin-1 polarity on a two-pad part.
 
     Opposite numbering needs exactly one unambiguous symbol record for each pin.
@@ -532,7 +550,7 @@ def _pad_with_board_polarity(supplier, lcsc, pads, board_polarity):
         return '1'
     if sorted(pin['number'] for pin in pins) != ['1', '2'] or any(pin['displayed'] != pin['number'] for pin in pins):
         return '1'
-    names = {pin['number']: polarity(pin['name']) for pin in pins}
+    names = {pin['number']: polarity(pin['name'], diode=diode) for pin in pins}
     return '2' if names['1'] not in (None, board_polarity) and names['2'] == board_polarity else '1'
 
 
@@ -589,9 +607,11 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
     board_name = board_basis = board_note = None
     if POLARIZED.fullmatch(ref) or board_numbers == ['1', '2']:
         board_name, board_basis, board_note = _board_pin1_name(found, ref, netlist, lcsc, pad_nets, mode)
-    polarized = bool(POLARIZED.fullmatch(ref)) or (board_numbers == ['1', '2'] and polarity(board_name) is not None)
+    polarized = select_polarity(record, ref, board_numbers, board_name, board_basis=board_basis)
     if polarized:
-        supplier_pin = _pad_with_board_polarity(supplier, lcsc, supplier_pads, polarity(board_name))
+        diode = bool(POLARIZED.fullmatch(ref))
+        supplier_pin = _pad_with_board_polarity(supplier, lcsc, supplier_pads,
+                                               polarity(board_name, diode=diode), diode=diode)
         if supplier_pin != '1':
             supplier_pads = [({'1': '2', '2': '1'}[number], x, y) for number, x, y in supplier_pads]
             pin1['supplier_pin_with_board_polarity'] = supplier_pin
@@ -621,6 +641,8 @@ def check_pin_polarity(record, notes, supplier, lcsc, supplier_pin, board_name, 
     """Shared compile/package polarity gate after supplier pin registration."""
     def mode(name, message):
         notes.append({'mode': name, 'message': message})
+    def classified(name):
+        return polarity(name, diode=bool(POLARIZED.fullmatch(ref or '')))
     try:
         pins = [p for p in symbol_pins(supplier['raw'], lcsc)['pins'] if p['number'] == supplier_pin]
     except SupplierError as exc:
@@ -638,15 +660,15 @@ def check_pin_polarity(record, notes, supplier, lcsc, supplier_pin, board_name, 
             supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from BOM part {partnumber!r}'
         elif netlist is not None and netlist.get('mpn') and evidence['mpn'] != netlist['mpn']:
             supplier_note = f'polarity evidence MPN {evidence["mpn"]!r} differs from netlist part {netlist["mpn"]!r}'
-        elif polarity(supplier_name) is not None and polarity(supplier_name) != declared:
+        elif classified(supplier_name) is not None and classified(supplier_name) != declared:
             mode('polarity_conflict', f'supplier symbol pin {supplier_pin} {supplier_name!r} contradicts '
                                       f'polarity evidence {declared}')
-        elif polarity(supplier_name) is None:
+        elif classified(supplier_name) is None:
             supplier_name, supplier_basis = declared, SUPPLIER_BASES[1]
             used = {'path': evidence['path'], 'manufacturer_source': evidence['manufacturer_source'],
                     'package_feature_ids': evidence['package_feature_ids'],
                     'symbol_feature_ids': evidence['symbol_feature_ids'], 'limitation': evidence['limitation']}
-    sides = {'board': polarity(board_name), 'supplier': polarity(supplier_name)}
+    sides = {'board': classified(board_name), 'supplier': classified(supplier_name)}
     record['polarity'] = dict(sides, board_pin1_function=board_name, supplier_pin1_name=supplier_name,
                               board_basis=board_basis, supplier_basis=supplier_basis, evidence=used)
     if any(n['mode'] == 'polarity_conflict' for n in notes):

@@ -139,6 +139,32 @@ LAYERS_AND_SIZE = [('max_layers', 2, 'count', 'minimum'), ('max_board_mm', [20, 
 
 
 class EnvelopeValidationTests(unittest.TestCase):
+    def test_facing_agrees_with_connector_predicate_on_both_sides(self):
+        from agent_ee.placement_predicates import envelope_declarations, connector_edge
+        from tests.test_placement_predicates import part, probe, MM
+        outline = [[96*MM, 96*MM], [116*MM, 96*MM], [116*MM, 108*MM], [96*MM, 108*MM]]
+        for side in ('front', 'back'):
+            for edge in ('top', 'right', 'bottom', 'left'):
+                for axis in ('x+', 'x-', 'y+', 'y-'):
+                    for angle in (0, 90, 180, 270):
+                        with self.subTest(side=side, edge=edge, axis=axis, angle=angle):
+                            value = rc()
+                            value['fixed_footprints'][0].update(side=side, edge=edge, insertion='through_edge',
+                                position_mm=4, inset_mm=1, rotation_deg=angle)
+                            record = validate(raw(value))
+                            record['fixed_footprints'][0]['local_mating_axis'] = axis
+                            decl = envelope_declarations(record)[0]
+                            x, y = decl['anchor']
+                            fp = part(decl['reference'], x/MM, y/MM, side=decl['side'], rotation=angle)
+                            result = connector_edge(probe([fp], outline=outline), [decl])
+                            facing = any(v['kind'] == 'facing' for c in result['connectors'] for v in c['violations'])
+                            value['fixed_footprints'][0]['local_mating_axis'] = axis
+                            if facing:
+                                with self.assertRaisesRegex(ValueError, 'mating axis does not face'):
+                                    validate(raw(value))
+                            else:
+                                self.assertEqual(validate(raw(value))['fixed_footprints'][0]['local_mating_axis'], axis)
+
     def test_copper_roles_are_optional_exact_and_never_allowed_on_dielectric(self):
         legacy = validate(raw(rc()))
         self.assertNotIn('role', legacy['stackup']['layers'][0])

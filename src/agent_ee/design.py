@@ -180,10 +180,10 @@ def validate(design, captures=None, *, cad_only=False):
     try:
         parsed = Parser(("# Design intent\n\n" + design["intent"] + "\n").encode()).parse()
         if (len(parsed.headings) != 1 or parsed.items or len(parsed.prose) != 1
-                or parsed.text(parsed.prose[0]["byte_start"], parsed.prose[0]["byte_end"]) != design["intent"].strip()):
+                or parsed.text(parsed.prose[0]["byte_start"], parsed.prose[0]["byte_end"]).strip() != design["intent"].strip()):
             fail("intent", "supply plain paragraph text; Markdown structure changes the generated spec")
     except SpecRefused as exc:
-        fail("intent", f"supply plain paragraph text; {exc}")
+        fail("intent", "supply plain paragraph text; " + "; ".join(f["message"] for f in exc.findings))
     board = design["board"]
     if fields(
         board,

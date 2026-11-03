@@ -10,7 +10,6 @@ from pathlib import Path
 
 from .design import (
     CLASS_SYMBOLS,
-    device_polarized,
     DesignError,
     blob,
     footprint_path,
@@ -650,7 +649,10 @@ def cpl_policy(design, root):
                     f"parts.{ref}.lcsc: supplier and native pad sets disagree; select matching CAD and part"
                 ]
             )
-        if c.POLARIZED.fullmatch(ref) or device_polarized(part["lib_id"]):
+        board_name = None
+        board_numbers = sorted(p[0] for p in board_pads)
+        polarity_record = {}
+        if c.POLARIZED.fullmatch(ref) or board_numbers == ["1", "2"]:
             from .symbol_library import parse_library, resolve_symbol
 
             lib, symbol = part["lib_id"].split(":")
@@ -660,17 +662,22 @@ def cpl_policy(design, root):
             )
             names = {p["name"] for p in inventory if p["number"] == "1"}
             board_name = next(iter(names)) if len(names) == 1 else None
-            board_polarity = c.polarity(board_name)
+        if c.select_polarity(polarity_record, ref, board_numbers, board_name,
+                             board_basis="captured_symbol_pin_name"):
+            diode = bool(c.POLARIZED.fullmatch(ref))
+            board_polarity = c.polarity(board_name, diode=diode)
             supplier_pin = c._pad_with_board_polarity(
                 dict(raw=(root / provenance["path"]).read_bytes()),
                 lcsc,
                 supplier_pads,
                 board_polarity,
+                diode=diode,
             )
             polarity_notes = []
-            c.check_pin_polarity({}, polarity_notes,
+            c.check_pin_polarity(polarity_record, polarity_notes,
                                  dict(raw=(root / provenance["path"]).read_bytes()),
-                                 lcsc, supplier_pin, board_name)
+                                 lcsc, supplier_pin, board_name,
+                                 board_basis="captured_symbol_pin_name", ref=ref)
             if polarity_notes:
                 raise DesignError([f"parts.{ref}.lcsc: {n['mode']}: {n['message']}" for n in polarity_notes])
             if supplier_pin == "2":
@@ -726,6 +733,7 @@ def cpl_policy(design, root):
                 catalog_package=package,
                 copper=diagnostic["copper"],
                 holes=diagnostic["holes"],
+                polarity=polarity_record["polarity"],
                 limitation="Diagnostic overlap at declared CPL registration; no suitability threshold is enforced.",
             )
         )

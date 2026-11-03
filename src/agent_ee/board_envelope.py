@@ -910,7 +910,7 @@ def validate_fixed(footprints, vertices, edges):
             axis = footprint['local_mating_axis']
             if axis not in AXES:
                 raise ValueError(f'fixed footprint {ref} local_mating_axis must be x+, x-, y+ or y-')
-            if insertion == 'through_edge' and board_axis(axis, rotation, SIDES[footprint['side']]) != edge['outward']:
+            if insertion == 'through_edge' and board_axis(axis, rotation, {'front': 'F', 'back': 'B'}[footprint['side']]) != edge['outward']:
                 raise ValueError(f'fixed footprint {ref} mating axis does not face edge {edge["name"]}')
         (sx, sy), (ux, uy), (ix, iy) = edge['_start'], edge['_unit'], edge['_inward']
         anchor = (sx + ux * position + ix * inset, sy + uy * position + iy * inset)
