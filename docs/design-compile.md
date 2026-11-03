@@ -88,8 +88,14 @@ Electrical identity has an explicit basis in `design-compile-report.json`:
   at its pad centre under the existing `100000` nm tolerance. At least two identified
   electrical terminal groups must establish the automatic orientation. This is
   positional evidence for the repeated land, not proof of its physical function.
-  A separately listed supplier symbol pin cannot acquire its identity by this
-  positional rule.
+  Separate supplier symbol pin records do not veto that correspondence. Fully
+  renumbered groups inherit the native terminal's design net. Any supplier-number
+  net binding must agree with the native net, including an explicit unconnected
+  binding. When a group retains a shared native/supplier terminal number, an
+  additional unconnected supplier pin cannot alias onto its connected net. All
+  unconnected repeated lands may correspond; a connected pin cannot land on an
+  unconnected native terminal. These electrical checks run after orientation is
+  derived, so the design's nets cannot select a turn.
 - Other numbering needs a declaration. It records an author-supplied electrical
   identity, checked against the captured copper and circuit nets; it does not
   independently authenticate that identity against a manufacturer datasheet.
@@ -105,9 +111,10 @@ connector whose supplier calls one joined land `JOIN` could declare:
 ```
 
 The map must cover every supplier number and agree with every overlapping land.
-It cannot override a conflicting common pad number or merge distinct circuit
-nets. An optional legacy `rotation_degrees` can assert the independently derived
-quarter turn, but never selects it. Registrations requiring reflection, uncovered lands and ambiguous
+It cannot override a conflicting common pad number, contradict a supplier-number
+net binding or merge distinct circuit nets. An optional legacy `rotation_degrees`
+can assert the independently derived quarter turn, but never selects it.
+Registrations requiring reflection, uncovered lands and ambiguous
 rotations refuse. Geometrically indistinguishable reflections cannot be detected.
 Polarized parts still require their existing pin-1 polarity gate; this declaration
 cannot replace it.

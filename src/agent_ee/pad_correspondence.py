@@ -4,7 +4,8 @@ Geometry locates lands; it never makes two different terminal names equivalent.
 Identity comes from equal numbers, an exact composite of the overlapping native
 numbers, or an explicit map. Renumbered repeated plated lands can be located by
 their drills once the electrical lands establish a unique rotation. Every merged
-land must carry one connected net. All decisions are over captured bytes.
+land must carry one connected net, and renumbering must preserve the design's net
+bindings. All decisions are over captured bytes and the design's nets.
 """
 from fractions import Fraction
 
@@ -145,13 +146,32 @@ def _overlap_graph(left, right):
     return lp, rp, edges, possible, budget
 
 
-def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='100000', supplier_pins=()):
+def _check_alias_nets(mapping, nets):
+    """Supplier-only numbering inherits native nets; existing bindings cannot move.
+
+    A group that retains its native number also retains that net identity for
+    its supplier pins. An unconnected extra pin cannot join that connected group.
+    Fully renumbered repeated lands use the native terminal's design binding.
+    """
+    for name, targets in mapping.items():
+        for target in targets:
+            if name == target:
+                continue
+            if name not in nets and (len(targets) > 1 or target not in mapping):
+                continue
+            source_net, target_net = nets.get(name) or None, nets.get(target) or None
+            if source_net != target_net:
+                _refuse(f'supplier pad {name} net {source_net or "unconnected"!r} differs from '
+                        f'native pad {target} net {target_net or "unconnected"!r}')
+
+
+def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='100000'):
     """Prove complete land coverage and identity at one quarter-turn registration.
 
-    ``pad_map`` is supplier number -> native number list. ``nets`` is the
-    native terminal -> connected net map, required for merges of distinct pins.
-    Unknown or no-connect pins cannot authorize a physical short. Captured
-    supplier symbol pins exclude positional-only renumbering of those terminals.
+    ``pad_map`` is supplier number -> native number list. ``nets`` binds native
+    terminals and any separately assigned supplier numbers to design nets.
+    Unknown or no-connect pins cannot authorize a merged physical short. Repeated
+    plated aliases preserve supplied net bindings regardless of symbol pin count.
     This fixed-angle check does not establish independent orientation evidence.
     """
     left, right, translation = _registered(native, supplier, rotation)
@@ -176,8 +196,6 @@ def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='10
             known += 1
         elif pad_map is not None:
             basis = 'declared_map_and_copper'
-        elif any(pin['number'] == name for pin in supplier_pins):
-            _refuse(f'supplier pad {name} is a separate captured symbol pin; positional renumbering is not electrical identity')
         elif (len(names) == 1 and all(sum(k == j for _, k in edges) == 1
                 and sum(k == i for k, _ in edges) == 1
                 and _renumbered_plated(left, right, i, j, Fraction(tolerance)) for i, j in pairs)):
@@ -196,6 +214,7 @@ def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='10
         _refuse('automatic registration needs at least two identified electrical terminal groups')
     if any(lp[0][i][0] not in mapping[rp[0][j][0]] for i, j in possible):
         _refuse('copper may contact an unrelated electrical land on a shared layer')
+    _check_alias_nets(mapping, nets or {})
     return dict(rotation_degrees=rotation, pad_map=mapping, identity_proof=proofs, translation=translation,
                 pairs=[dict(native_index=i, supplier_index=j) for i, j in edges])
 
@@ -219,10 +238,10 @@ def derive(native, supplier, *, declaration=None, nets=None, supplier_pins=(), n
     mapping = validate_declaration(declaration)['pad_map'] if declaration is not None else None
     candidates, geometric, reasons = [], [], []
     snames, nnames = _symbol_names(supplier_pins, supplier=True), _symbol_names(native_pins)
-    geometry_nets = {p['number']: 'geometry-only' for p in native['pads']}
+    geometry_nets = {p['number']: 'geometry-only' for pattern in (native, supplier) for p in pattern['pads']}
     for angle in (0, 90, 180, 270):
         try:
-            candidates.append(verify(native, supplier, angle, nets=geometry_nets, supplier_pins=supplier_pins))
+            candidates.append(verify(native, supplier, angle, nets=geometry_nets))
         except PatternError as exc:
             reasons.append(f'{angle}: {exc}')
         # Geometry is evaluated without the author's pad map or circuit nets.
@@ -232,8 +251,7 @@ def derive(native, supplier, *, declaration=None, nets=None, supplier_pins=(), n
             lp, rp, edges, _, _ = _overlap_graph(left, right)
             inferred = {name: sorted({lp[0][i][0] for i, j in edges if rp[0][j][0] == name})
                         for name in {p[0] for p in rp[0]}}
-            provisional = verify(native, supplier, angle, pad_map=inferred,
-                                 nets={p[0]: 'geometry-only' for p in lp[0]})
+            provisional = verify(native, supplier, angle, pad_map=inferred, nets=geometry_nets)
             named = [(nnames[lp[0][i][0]], snames[rp[0][j][0]]) for i, j in edges
                      if lp[0][i][0] in nnames and rp[0][j][0] in snames]
             geometric.append((provisional, len(named) == len(edges) and all(a == b for a, b in named)))
@@ -254,7 +272,7 @@ def derive(native, supplier, *, declaration=None, nets=None, supplier_pins=(), n
     symbolic = next((result['pad_map'] for result, agrees in geometric
                      if agrees and result['rotation_degrees'] == angle), None)
     result = verify(native, supplier, angle, pad_map=mapping if mapping is not None else symbolic,
-                    nets=nets, supplier_pins=supplier_pins)
+                    nets=nets)
     if mapping is None and symbolic is not None:
         result['identity_proof'] = {name: 'captured_symbol_name_and_copper'
             if proof == 'declared_map_and_copper' else proof for name, proof in result['identity_proof'].items()}

@@ -52,8 +52,8 @@ def signal_lug_connector():
     records = document['packageDetail']['dataStr']['shape']
     for index, record in enumerate(records):
         fields = record.split('~')
-        if fields[8] in ('71', '72'):
-            fields[8] = {'71': 'VB', '72': 'ID'}[fields[8]]
+        if fields[8] in ('71', '72', '73', '74'):
+            fields[8] = 'ID' if fields[8] == '72' else 'VB'
             records[index] = '~'.join(fields)
     raw = supplier_symbol(json.dumps(document).encode(), {'VB': 'SUPPLY', 'ID': 'IDENTIFY'})
     fp = fp.replace(b'"CASE"', b'"VB"')
@@ -92,6 +92,15 @@ class OrientationAuthorityTests(unittest.TestCase):
         self.assertEqual(result['orientation_proof'], 'captured_symbol_pin_names')
         self.assertEqual(set(result['identity_proof'].values()), {'captured_symbol_name_and_copper'})
 
+    def test_design_nets_cannot_select_a_turn_of_symmetric_geometry(self):
+        _, _, native, package, _ = header()
+        nets = {n: 'NET_' + n for n, _, _, _ in LAYOUT}
+        nets.update({s: nets[n] for n, s, _, _ in LAYOUT})
+        for angle in (0, 180):
+            with self.subTest(angle=angle), self.assertRaisesRegex(PatternError, r'\[tool_gap\].*found 2 geometric'):
+                derive(native['pattern'], package['pattern'], nets=nets,
+                       declaration=dict(rotation_degrees=angle, pad_map=mapping(angle)))
+
     def test_repeated_or_contradictory_symbol_names_cannot_resolve_ambiguity(self):
         raw, _, native, package, names = header(named=True)
         for native_names in ({n: 'ALL_THE_SAME' for n in names},
@@ -111,27 +120,101 @@ class OrientationAuthorityTests(unittest.TestCase):
                 self.assertEqual(old, expected)
                 self.assertEqual(derive(native, package)['rotation_degrees'], expected)
 
-    def test_captured_separate_signal_pin_cannot_be_positionally_renamed_onto_a_repeated_terminal(self):
+class RepeatedLandNetTests(unittest.TestCase):
+    def setUp(self):
+        raw, self.fp, self.native, _ = connector()
+        self.raw = supplier_symbol(raw, {str(n): 'CASE' for n in range(71, 75)})
+        self.package = parse_package(self.raw, 'C900000017', 200)
+        self.pins = symbol_pins(self.raw, 'C900000017')['pins']
+
+    def test_four_separately_listed_shield_pins_on_one_net_are_accepted(self):
+        nets = {**NETS, **{str(n): 'CASE_NET' for n in range(71, 75)}}
+        result = derive(self.native['pattern'], self.package['pattern'], nets=nets, supplier_pins=self.pins)
+        self.assertEqual(result['rotation_degrees'], 0)
+        self.assertEqual(result['orientation_proof'], 'independent_pad_identities')
+        self.assertEqual({n: result['pad_map'][n] for n in ('71', '72', '73', '74')},
+                         {str(n): ['CASE'] for n in range(71, 75)})
+
+    def test_supplier_only_shield_numbers_inherit_the_native_design_net(self):
+        result = derive(self.native['pattern'], self.package['pattern'], nets=NETS, supplier_pins=self.pins)
+        self.assertEqual(result['pad_map']['74'], ['CASE'])
+
+    def test_one_of_four_shield_pins_on_a_different_net_is_refused(self):
+        nets = {**NETS, **{str(n): 'CASE_NET' for n in range(71, 75)}, '74': 'OTHER'}
+        with self.assertRaisesRegex(PatternError, 'supplier pad 74.*net.*OTHER.*CASE_NET'):
+            derive(self.native['pattern'], self.package['pattern'], nets=nets, supplier_pins=self.pins)
+
+    def test_one_explicitly_unconnected_shield_pin_cannot_join_a_connected_group(self):
+        for unconnected in (None, ''):
+            with self.subTest(unconnected=unconnected), self.assertRaisesRegex(PatternError, 'supplier pad 74.*unconnected.*CASE_NET'):
+                derive(self.native['pattern'], self.package['pattern'],
+                       nets={**NETS, '74': unconnected}, supplier_pins=self.pins)
+
+    def test_unconnected_repeated_lugs_are_accepted_but_a_connected_supplier_pin_is_not(self):
+        nets = {p: n for p, n in NETS.items() if p != 'CASE'}
+        self.assertEqual(derive(self.native['pattern'], self.package['pattern'], nets=nets,
+                                supplier_pins=self.pins)['pad_map']['71'], ['CASE'])
+        with self.assertRaisesRegex(PatternError, 'supplier pad 71.*net.*SUPPLY'):
+            derive(self.native['pattern'], self.package['pattern'], nets={**nets, '71': 'SUPPLY'},
+                   supplier_pins=self.pins)
+
+    def test_signal_id_cannot_alias_vb_on_a_different_net_even_with_a_declared_map(self):
         raw, _, native, package = signal_lug_connector()
-        with self.assertRaisesRegex(PatternError, 'ID is a separate captured symbol pin'):
+        declaration = dict(pad_map={'K1K2': ['K1', 'K2'], 'S0': ['S0'], 'S1': ['S1'],
+                                   'VB': ['VB'], 'ID': ['VB']})
+        for declared in (None, declaration):
+            with self.subTest(declared=declared), self.assertRaisesRegex(PatternError, 'supplier pad ID.*net.*IDENTIFY.*SUPPLY'):
+                derive(native['pattern'], package['pattern'], nets={**NETS, 'VB': 'SUPPLY', 'ID': 'IDENTIFY'},
+                       declaration=declared, supplier_pins=symbol_pins(raw, 'C900000017')['pins'])
+
+    def test_unconnected_id_cannot_alias_a_connected_shared_vb_terminal(self):
+        raw, _, native, package = signal_lug_connector()
+        with self.assertRaisesRegex(PatternError, 'supplier pad ID.*unconnected.*SUPPLY'):
             derive(native['pattern'], package['pattern'], nets={**NETS, 'VB': 'SUPPLY'},
                    supplier_pins=symbol_pins(raw, 'C900000017')['pins'])
 
+    def test_id_alias_is_allowed_when_the_design_puts_it_on_the_vb_net(self):
+        raw, _, native, package = signal_lug_connector()
+        result = derive(native['pattern'], package['pattern'], nets={**NETS, 'VB': 'SUPPLY', 'ID': 'SUPPLY'},
+                        supplier_pins=symbol_pins(raw, 'C900000017')['pins'])
+        self.assertEqual(result['pad_map']['ID'], ['VB'])
+
+    def test_compile_and_package_accept_separately_listed_renumbered_shield_pins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            design = policy_inputs(root, self.raw, self.fp, native_names={p: '~' for p in NETS})
+            for pin, net in NETS.items():
+                design['nets'].setdefault(net, []).append('J7.' + pin)
+            cpl_policy(design, root)
+            policy = c.load_policy((root / 'cpl/jlc-cpl-policy.json').read_bytes())
+            report = json.loads((root / 'design-compile-report.json').read_bytes())
+            registration = report['land_patterns'][0]['pad_correspondence']
+            self.assertEqual(registration['pad_map']['71'], ['CASE'])
+            pads = ' '.join(_sexpr(p) for p in children(parse_sexpr(self.fp), 'pad'))
+            placed = board(footprint('Owned:OwnedConnector', 'J7', 70, 40, 0, pads))
+            geometry = [probe('J7', 'Owned:OwnedConnector', 70000000, 40000000,
+                              [[67000000, 38000000, 73000000, 43000000]])]
+            records, _, _ = c.evaluate([['J7', '70', '-40', 'Top', '0']], geometry, placed,
+                {'J7': 'C900000017'}, policy, {'C900000017': supplier(self.raw)}, 200, pad_nets={'J7': NETS})
+            self.assertEqual(records[0]['outcome'], 'pass', records[0]['modes'])
+            self.assertEqual(records[0]['pin1']['pad_map']['74'], ['CASE'])
+
 
 class PackageOrientationTests(unittest.TestCase):
-    def test_compile_reads_separate_supplier_symbol_pins_before_positional_assignment(self):
+    def test_compile_refuses_id_on_a_different_net_from_vb(self):
         raw, fp, _, _ = signal_lug_connector()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             design = policy_inputs(root, raw, fp, native_names={**{p: '~' for p in NETS if p != 'CASE'}, 'VB': 'SUPPLY'})
             design['nets'] = {net: ['J7.' + pin] for pin, net in NETS.items() if pin != 'CASE'}
             design['nets']['SUPPLY'] = ['J7.VB']
+            design['nets']['IDENTIFY'] = ['J7.ID']
             # Preserve both joined native terminals on the connected return net.
             design['nets']['RETURN'] = ['J7.K1', 'J7.K2']
-            with self.assertRaisesRegex(DesignError, 'parts.J7.lcsc:.*ID is a separate captured symbol pin'):
+            with self.assertRaisesRegex(DesignError, 'parts.J7.lcsc:.*supplier pad ID.*IDENTIFY.*SUPPLY'):
                 cpl_policy(design, root)
 
-    def test_package_reads_separate_supplier_symbol_pins_before_positional_assignment(self):
+    def test_package_refuses_id_on_a_different_net_from_vb(self):
         raw, fp, _, _ = signal_lug_connector()
         pads = ' '.join(_sexpr(p) for p in children(parse_sexpr(fp), 'pad'))
         placed = board(footprint('Owned:OwnedConnector', 'J7', 70, 40, 0, pads))
@@ -140,10 +223,10 @@ class PackageOrientationTests(unittest.TestCase):
                                                footprint_rules=[], component_overrides=[])).encode())
         records, _, _ = c.evaluate([['J7', '70', '-40', 'Top', '0']], geometry, placed,
             {'J7': 'C900000017'}, policy, {'C900000017': supplier(raw)}, 200,
-            pad_nets={'J7': {**NETS, 'VB': 'SUPPLY'}})
+            pad_nets={'J7': {**NETS, 'VB': 'SUPPLY', 'ID': 'IDENTIFY'}})
         self.assertEqual(records[0]['outcome'], 'unknown')
         self.assertEqual(records[0]['modes'][0]['mode'], 'pad_correspondence')
-        self.assertIn('ID is a separate captured symbol pin', records[0]['modes'][0]['message'])
+        self.assertRegex(records[0]['modes'][0]['message'], 'supplier pad ID.*IDENTIFY.*SUPPLY')
 
     def test_package_symbol_names_require_matching_sealed_part_and_pad_nets(self):
         raw, fp, _, _, names = header(named=True)
