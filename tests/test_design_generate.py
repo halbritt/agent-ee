@@ -924,6 +924,9 @@ class TraceTests(ScriptedLoop):
                 self.assertEqual(report['status'], 'attempts_exhausted')
         # A line that only looks like a delimiter (no pipe) stays prose, as in the spec parser.
         self.assertEqual(loop.requirement_items('Use a 5 V input rail.\n---\n'), [('Use a 5 V input rail.', True)])
+        # Rows that start with a pipe but have no delimiter row are still one item each, never one paragraph.
+        self.assertEqual(loop.requirement_items('Rails:\n\n| Input | 12 V |\n| Output | 3.3 V |\n'),
+                         [('Rails:', True), ('Input | 12 V', True), ('Output | 3.3 V', True)])
 
     def test_a_null_item_is_valid_for_the_validator_and_both_seat_schemas(self):
         try:
