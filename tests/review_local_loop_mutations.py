@@ -1,0 +1,257 @@
+"""Opt-in reviewer mutation harness, adapted only for changed source anchors.
+
+Original: goal-20261103/local-loops-review/probe-code/tests/review_mutations.py.
+Run explicitly as tests.review_local_loop_mutations through native-admit.
+G5 now removes a redundant own-land guard: all-pad obstacles still enforce it.
+C7, F6 and R2 retain the reviewer's equivalent-mutant classification.
+"""
+import json
+import os
+import shutil
+import subprocess
+import time
+import unittest
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+ROOT = Path('/opt/agent-ee')
+WORK = Path('/tmp/review-mutants')
+OUT = Path('/phase/mutations')
+LD = 'src/agent_ee/local_decoupling.py'
+DL = 'src/agent_ee/decoupling_loops.py'
+PJ = 'src/agent_ee/placement_job.py'
+LR = 'src/agent_ee/local_return_seed.py'
+T_LOCAL = ['test_local_decoupling']
+T_CTRL = ['test_local_decoupling', 'test_placement_job_guards.ControllerBoundaryTests']
+T_SEED = ['test_local_return_seed']
+
+# The same 31 faults, with source anchors updated for this repair.
+MUTANTS = {'baseline': ([],
+              ['test_local_decoupling',
+               'test_placement_job_guards.ControllerBoundaryTests',
+               'test_local_return_seed']),
+ 'G1_no_capacitor_tie_via': ([('src/agent_ee/local_decoupling.py',
+                               'def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):\n'
+                               '    import pcbnew as k\n',
+                               'def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):\n'
+                               '    return []\n'
+                               '    import pcbnew as k\n')],
+                             ['test_local_decoupling']),
+ 'G2_leg_ignores_obstacles': ([('src/agent_ee/local_decoupling.py',
+                                "    boxes = _obstacles(board, first.GetNetCode(), layer, rules['clearance'] "
+                                '+ width // 2 + 25_000, (first, second))\n',
+                                '    boxes = []\n')],
+                              ['test_local_decoupling']),
+ 'G3_leg_tracks_unlocked': ([('src/agent_ee/local_decoupling.py',
+                              '        item.SetLocked(True)\n        board.Add(item)\n',
+                              '        board.Add(item)\n')],
+                            ['test_local_decoupling']),
+ 'G4_failure_omits_relation': ([('src/agent_ee/local_decoupling.py',
+                                 "raise JobRefusal('local decoupling ' + relation['id'] + ': ' + str(exc)) "
+                                 'from exc',
+                                 "raise JobRefusal('local decoupling: ' + str(exc)) from exc")],
+                               ['test_local_decoupling']),
+ 'G5_via_may_sit_in_own_land': ([('src/agent_ee/local_decoupling.py',
+                                  "            if (box.GetLeft() - radius - rules['clearance'] < b[0] < "
+                                  "box.GetRight() + radius + rules['clearance']\n"
+                                  "                    and box.GetTop() - radius - rules['clearance'] < b[1] "
+                                  "< box.GetBottom() + radius + rules['clearance']):\n"
+                                  '                continue\n',
+                                  '')],
+                                ['test_local_decoupling']),
+ 'G6_no_board_edge_margin': ([('src/agent_ee/local_decoupling.py',
+                               '            if not (edge.GetLeft() + margin < b[0] < edge.GetRight() - '
+                               'margin\n'
+                               '                    and edge.GetTop() + margin < b[1] < edge.GetBottom() - '
+                               'margin):\n'
+                               '                continue\n',
+                               '')],
+                             ['test_local_decoupling']),
+ 'G7_verify_ignores_changed_copper': ([('src/agent_ee/local_decoupling.py',
+                                        'if actual is None or json.loads(json.dumps(actual)) != row:',
+                                        'if actual is None:')],
+                                      ['test_local_decoupling']),
+ 'G8_leg_width_quarter_class': ([('src/agent_ee/local_decoupling.py',
+                                  "min(rules['width'], *(min(p.GetSize().x, p.GetSize().y) for p in (first, "
+                                  'second))))',
+                                  "min(rules['width'] // 4, *(min(p.GetSize().x, p.GetSize().y) for p in "
+                                  '(first, second))))')],
+                                ['test_local_decoupling']),
+ 'G9_leg_obstacle_margin_zero': ([('src/agent_ee/local_decoupling.py',
+                                   '    boxes = _obstacles(board, first.GetNetCode(), layer, '
+                                   "rules['clearance'] + width // 2 + 25_000, (first, second))\n",
+                                   '    boxes = _obstacles(board, first.GetNetCode(), layer, 0, (first, '
+                                   'second))\n')],
+                                 ['test_local_decoupling']),
+ 'G10_tie_ignores_other_net_obstacles': ([('src/agent_ee/local_decoupling.py',
+                                           '            if any(x < b[0] < u and y < b[1] < v for x, y, u, v '
+                                           'in obstacles):\n'
+                                           '                continue\n',
+                                           '')],
+                                         ['test_local_decoupling']),
+ 'C1_bypass_always_false': ([('src/agent_ee/decoupling_loops.py',
+                              '        return any(geo.shortest(self.adj, start, entry, blocked) is not None\n'
+                              '                   for entry, _, _, _ in self.entries)\n',
+                              '        return False\n')],
+                            ['test_local_decoupling']),
+ 'C2_no_junction_through_pad': ([('src/agent_ee/decoupling_loops.py',
+                                  "                    if item.GetClass() != 'PAD' and other.GetClass() != "
+                                  "'PAD' and any(\n"
+                                  '                            self.items[p].IsOnLayer(layer) and '
+                                  'all(self.items[p].GetEffectiveShape(layer).Collide(\n'
+                                  '                                k.VECTOR2I(round(point[0]), '
+                                  'round(point[1])), 0) for point in (a, b))\n'
+                                  '                            for p in touching[key] & touching[target]):\n'
+                                  '                        continue\n',
+                                  '')],
+                                ['test_local_decoupling']),
+ 'C3_plane_hop_free': ([('src/agent_ee/decoupling_loops.py',
+                         '                    hop = sum(math.dist(p, q) for p, q in zip(path, path[1:]))\n',
+                         '                    hop = 0\n')],
+                       ['test_local_decoupling']),
+ 'C4_via_barrel_free': ([('src/agent_ee/decoupling_loops.py',
+                          '                self.edge(a, b, '
+                          'int(self.board.GetDesignSettings().GetBoardThickness()))\n',
+                          '                self.edge(a, b, 0)\n')],
+                        ['test_local_decoupling']),
+ 'C5_open_path_not_a_defect': ([('src/agent_ee/decoupling_loops.py',
+                                 "                if row[leg]['path'] is None:\n"
+                                 "                    row['reasons'].append(leg + ': no native-connected "
+                                 "copper path')\n",
+                                 '')],
+                               ['test_local_decoupling']),
+ 'C6_limit_not_enforced': ([('src/agent_ee/decoupling_loops.py',
+                             "if row['loop_length_mm'] is not None and row['loop_length_mm'] > "
+                             "relation['max_loop_mm']:",
+                             'if False:')],
+                           ['test_local_decoupling']),
+ 'C7_islands_merged': ([('src/agent_ee/decoupling_loops.py',
+                         '                    if other != island or right is None:\n',
+                         '                    if right is None:\n')],
+                       ['test_local_decoupling']),
+ 'C8_check_unknown_passes': ([('src/agent_ee/decoupling_loops.py',
+                               "outcome='pass' if result['outcome'] == 'info' else result['outcome'],",
+                               "outcome='pass' if result['outcome'] in ('info', 'unknown') else "
+                               "result['outcome'],")],
+                             ['test_local_decoupling']),
+ 'C9_check_always_passes': ([('src/agent_ee/decoupling_loops.py',
+                              "outcome='pass' if result['outcome'] == 'info' else result['outcome'],",
+                              "outcome='pass',")],
+                            ['test_local_decoupling']),
+ 'C10_unknown_aggregates_to_info': ([('src/agent_ee/decoupling_loops.py',
+                                      "                         'unknown' if any(r['outcome'] == 'unknown' "
+                                      'for r in records) else\n',
+                                      '')],
+                                    ['test_local_decoupling']),
+ 'C11_cap_plane_access_ignored': ([('src/agent_ee/decoupling_loops.py',
+                                    '                        if access is None:\n'
+                                    "                            row['reasons'].append(leg + ': capacitor "
+                                    "has no native plane connection without the device pin')\n",
+                                    '')],
+                                  ['test_local_decoupling']),
+ 'C12_unfilled_zone_skipped': ([('src/agent_ee/decoupling_loops.py',
+                                 "                    raise ValueError('declared net has an unfilled "
+                                 "zone')\n",
+                                 '                    continue\n')],
+                               ['test_local_decoupling']),
+ 'C13_check_binding_skipped': ([('src/agent_ee/decoupling_loops.py',
+                                 "    if (result.get('board_sha256') != "
+                                 "ctx.manifest['files'][ctx.scope['board']]\n",
+                                 '    if (False\n')],
+                               ['test_local_decoupling']),
+ 'F1_no_fallthrough_after_local_failure': ([('src/agent_ee/placement_job.py',
+                                             '                retain_routing_trial(trial, suffix)\n'
+                                             '                continue\n'
+                                             "            report.pop('reason', None)\n"
+                                             "        with clock.phase('final_validation'):",
+                                             '                retain_routing_trial(trial, suffix)\n'
+                                             '                break\n'
+                                             "            report.pop('reason', None)\n"
+                                             "        with clock.phase('final_validation'):")],
+                                           ['test_local_decoupling',
+                                            'test_placement_job_guards.ControllerBoundaryTests']),
+ 'F2_seed_drc_errors_ignored': ([('src/agent_ee/placement_job.py',
+                                  '            if errors:\n'
+                                  "                error_items = {item['uuid'] for error in errors for item "
+                                  "in error.get('items', []) if 'uuid' in item}\n",
+                                  '            if False:\n'
+                                  "                error_items = {item['uuid'] for error in errors for item "
+                                  "in error.get('items', []) if 'uuid' in item}\n")],
+                                ['test_local_decoupling',
+                                 'test_placement_job_guards.ControllerBoundaryTests']),
+ 'F3_final_loop_outcome_ignored': ([('src/agent_ee/placement_job.py',
+                                     '              or general_loops is not None and '
+                                     "general_loops['outcome'] not in ('pass', 'info')\n",
+                                     '')],
+                                   ['test_local_decoupling',
+                                    'test_placement_job_guards.ControllerBoundaryTests']),
+ 'F4_final_protected_copper_unverified': ([('src/agent_ee/placement_job.py',
+                                            '            general_local_check = verify_local(board, '
+                                            "routed['local_decoupling'])\n",
+                                            "            general_local_check = {'status': 'pass'}\n")],
+                                          ['test_local_decoupling',
+                                           'test_placement_job_guards.ControllerBoundaryTests']),
+ 'F5_seed_refusal_escapes_candidate': ([('src/agent_ee/placement_job.py',
+                                         '        except JobRefusal as exc:\n'
+                                         "            write_json(local_dir / 'failure.json', {'reason': "
+                                         'str(exc)})\n',
+                                         '        except ZeroDivisionError as exc:\n'
+                                         "            write_json(local_dir / 'failure.json', {'reason': "
+                                         'str(exc)})\n')],
+                                       ['test_local_decoupling',
+                                        'test_placement_job_guards.ControllerBoundaryTests']),
+ 'F6_route_unlocked_policy': ([('src/agent_ee/placement_job.py',
+                                '    owned_copper = planes is not None and not '
+                                "list(pcbnew.LoadBoard(str(staged / 'board.kicad_pcb')).GetTracks())\n",
+                                '    owned_copper = planes is not None\n')],
+                              ['test_local_decoupling', 'test_placement_job_guards.ControllerBoundaryTests']),
+ 'R1_applies_without_refusal': ([('src/agent_ee/local_return_seed.py',
+                                  '    _refuse_declared_loops(recipe)\n'
+                                  "    model = recipe.get('model', {})\n"
+                                  '    if any(',
+                                  "    model = recipe.get('model', {})\n    if any(")],
+                                ['test_local_return_seed']),
+ 'R2_has_loops_from_fields_again': ([('src/agent_ee/local_return_seed.py',
+                                      '        has_loops = '
+                                      "mechanics.known_revision(recipe['declaration']['sources']['analysis/geometry-model.json'])\n",
+                                      "        has_loops = ('local_loops' in model or 'connections' in model "
+                                      'or '
+                                      "mechanics.known_revision(recipe['declaration']['sources']['analysis/geometry-model.json']))\n")],
+                                    ['test_local_return_seed'])}
+
+def run(name):
+    edits, tests = MUTANTS[name]
+    work = WORK / name
+    work.mkdir(parents=True)
+    for child in ROOT.iterdir():
+        if child.name in ('src', 'review-data'):
+            continue
+        (work / child.name).symlink_to(child)
+    shutil.copytree(ROOT / 'src', work / 'src')
+    for rel, old, new in edits:
+        path = work / rel
+        text = path.read_text()
+        if text.count(old) != 1:
+            return dict(name=name, status='mutation-did-not-apply', file=rel, count=text.count(old))
+        path.write_text(text.replace(old, new))
+    env = dict(os.environ, PYTHONPATH=f'{work}:{work}/src:{work}/tests', PYTHONDONTWRITEBYTECODE='1')
+    start = time.time()
+    done = subprocess.run(['/usr/bin/python3', '-B', '-m', 'unittest', *tests], cwd=work, env=env,
+                          capture_output=True, text=True, timeout=1500)
+    log = done.stdout + done.stderr
+    (OUT / (name + '.log')).write_text(log)
+    tail = [line for line in log.splitlines() if line.startswith(('Ran ', 'OK', 'FAILED'))]
+    failing = sorted({line.split(':', 1)[1].strip() for line in log.splitlines() if line.startswith(('FAIL:', 'ERROR:'))})
+    return dict(name=name, tests=tests, exit_code=done.returncode, seconds=round(time.time() - start, 1),
+                status=('KILLED' if done.returncode else 'SURVIVED') if name != 'baseline' else
+                ('GREEN' if done.returncode == 0 else 'BASELINE-RED'), summary=tail, failing=failing)
+
+
+class Mutations(unittest.TestCase):
+    def test_mutants(self):
+        OUT.mkdir(parents=True, exist_ok=True)
+        if WORK.exists():
+            shutil.rmtree(WORK)
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            results = list(pool.map(run, MUTANTS))
+        (OUT / 'results.json').write_text(json.dumps(results, indent=1))

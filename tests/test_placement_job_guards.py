@@ -182,7 +182,10 @@ class ControllerBoundaryTests(Fixture):
     def test_every_local_copper_failure_retains_the_relation_named_reason(self):
         self._portfolio_failure(local_failure=True, all_fail=True)
 
-    def _portfolio_failure(self, *, local_failure=False, all_fail=False):
+    def test_later_verification_failure_clears_the_previous_local_copper_reason(self):
+        self._portfolio_failure(local_failure=True, final_fail=True)
+
+    def _portfolio_failure(self, *, local_failure=False, all_fail=False, final_fail=False):
         """Controller fault injection only; normal native entrypoint runs separately."""
         problem, _ = self.problem()
         out = self.dir / 'portfolio'
@@ -217,15 +220,18 @@ class ControllerBoundaryTests(Fixture):
                 {'status': 'pass'}, {'status': 'failed'}, {'status': 'pass'}]))
             stack.enter_context(patch.object(job, 'drc', return_value=({'violations': [], 'unconnected_items': []}, {})))
             stack.enter_context(patch.object(job, 'route', side_effect=routed))
-            stack.enter_context(patch.object(job, 'final_checks', side_effect=[passed] if local_failure else [failed, passed]))
+            stack.enter_context(patch.object(job, 'final_checks', side_effect=[failed if final_fail else passed] if local_failure else [failed, passed]))
             report = job.run_job(config, out)
-        self.assertEqual(report['status'], 'local_copper_failed' if all_fail else 'completed')
+        self.assertEqual(report['status'], 'local_copper_failed' if all_fail else 'verification_failed' if final_fail else 'completed')
         self.assertEqual([Path(p).name for p in selected], ['a1-00-seed0', 'a1-02-seed2'])
         self.assertEqual([t['status'] for t in report['routing_trials']],
                          ['local_copper_failed' if local_failure else 'verification_failed',
-                          'local_copper_failed' if all_fail else 'completed'])
+                          'local_copper_failed' if all_fail else 'verification_failed' if final_fail else 'completed'])
         if all_fail:
             self.assertIn('local decoupling cell:', report['reason'])
+            self.assertFalse((out / 'routed-incumbent.json').exists())
+        elif final_fail:
+            self.assertNotIn('reason', report)
             self.assertFalse((out / 'routed-incumbent.json').exists())
         else:
             self.assertNotIn('reason', report)

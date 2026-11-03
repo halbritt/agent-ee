@@ -163,7 +163,8 @@ def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None):
     # all copper layers constrain a through-via, not only the pad's face.
     radius = rules['diameter'] // 2
     margin = rules['clearance'] + radius + 25_000
-    obstacles = [_box(p, margin) for fp in board.GetFootprints() for p in fp.Pads()]
+    obstacles = [_box(p, max(rules['clearance'], _rules(board, p)['clearance']) + radius + 25_000)
+                 for fp in board.GetFootprints() for p in fp.Pads()]
     obstacles += [_box(t, margin) for t in board.GetTracks()]
     obstacles += [b for l in board.GetEnabledLayers().CuStack()
                   for b in _obstacles(board, terminal.GetNetCode(), l, margin)]
@@ -310,7 +311,10 @@ def verify_geometry(board, receipt):
     generated = {r['uuid'] for r in receipt['protected']}
     tracks = {t.m_Uuid.AsString(): t for t in board.GetTracks() if t.m_Uuid.AsString() in generated}
     allowed, ties = {}, {}
+    owners = {}
     for relation in receipt['relations']:
+        for uid in relation['copper']:
+            owners.setdefault(uid, set()).add(relation['id'])
         for leg in relation['legs']:
             for uid in leg['tracks']:
                 allowed.setdefault(uid, set()).update(leg['pads'])
@@ -323,13 +327,20 @@ def verify_geometry(board, receipt):
     for uid, item in tracks.items():
         via = item.GetClass() == 'PCB_VIA'
         clearance = _rules(board, item)['clearance']
+        label = 'local decoupling ' + ', '.join(sorted(owners.get(uid, {'plane ties'}))) + ' geometry: '
         for terminal in pads:
             for layer in board.GetEnabledLayers().CuStack():
                 if not item.IsOnLayer(layer) or not terminal.IsOnLayer(layer):
                     continue
-                if item.GetEffectiveShape(layer).Collide(terminal.GetEffectiveShape(layer), clearance if via else 1):
+                gap = max(clearance, _rules(board, terminal)['clearance']) if via else 1
+                shape = terminal.GetEffectiveShape(layer)
+                collision = item.GetEffectiveShape(layer).Collide(shape, gap)
+                if via:
+                    # An invalid drill wider than its annulus still cannot enter a pad.
+                    collision |= shape.Collide(item.GetPosition(), int(item.GetDrillValue()) // 2 + gap)
+                if collision:
                     if via or terminal.m_Uuid.AsString() not in allowed.get(uid, set()):
-                        raise JobRefusal('local decoupling geometry: ' + uid + ' touches/violates pad clearance ' +
+                        raise JobRefusal(label + uid + ' touches/violates pad clearance ' +
                                          terminal.GetParentFootprint().GetReference() + '.' + terminal.GetNumber())
         if via:
             for other_uid, other in tracks.items():
@@ -337,7 +348,7 @@ def verify_geometry(board, receipt):
                     continue
                 for layer in board.GetEnabledLayers().CuStack():
                     if other.IsOnLayer(layer) and item.GetEffectiveShape(layer).Collide(other.GetEffectiveShape(layer), 1):
-                        raise JobRefusal('local decoupling geometry: plane via touches another generated leg: ' + uid + ', ' + other_uid)
+                        raise JobRefusal(label + 'plane via touches another generated leg: ' + uid + ', ' + other_uid)
     return dict(status='pass', generated_vias=sum(t.GetClass() == 'PCB_VIA' for t in tracks.values()),
                 pad_clearance='effective net-class clearance on every pad, including same-net pads',
                 tracks='declared endpoint pads only')

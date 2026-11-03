@@ -13,11 +13,13 @@ order. Each endpoint is `{reference, pad, net}`. A plane is `{net, layer}`.
 References and net names are data; no component or board recipe is selected.
 
 After an eligible placement and pre-routing plane production, each relation
-gets a direct surface supply leg and a surface return leg. A capacitor pad on
+gets supply and return legs on a copper layer shared by its endpoints. A capacitor pad on
 a declared plane net gets a nearby through via when its surface differs from
 the plane layer. The device return leg therefore leads to the capacitor's
-plane entry. Shared return pins can still bypass one capacitor through another;
-the final check reports this topology. Optional other-pad ties give remaining
+plane entry. The via search uses the side of the capacitor away from the device
+and keeps every generated via clear of all pads and other generated legs.
+The final report retains the actual bypass paths and plane-entry UUIDs;
+shared return pins and copper added by the router need separate attribution. Optional other-pad ties give remaining
 surface pads on plane nets their own short track and via where one fits.
 The compiler leaves `tie_other_pads` false: the example controls completed with
 and without them, and the additional ties increased routing time. Required
@@ -25,8 +27,11 @@ capacitor plane entries remain enabled. Explicit local contracts can select
 the optional policy for a separately measured workload.
 
 The local search uses effective native net-class routing sizes and clearance,
-bounded visibility paths around foreign copper, and radial via escapes outside
-the solder land. A wide class may neck into a small land down to the unchanged
+bounded visibility paths around copper and every undeclared pad, including
+same-net pads, and radial via escapes outside all solder lands. Each generated
+via keeps effective net-class clearance from every pad on every copper layer.
+Generated tracks may touch only their declared endpoint pads. A separate native
+shape check rejects violations even when native DRC permits same-net contact. A wide class may neck into a small land down to the unchanged
 board minimum. Paths are bounded to 12 mm; via escapes to 2 mm. These are finite
 search budgets, not electrical acceptance limits. Native DRC grades generated
 copper before routing. New errors reject that candidate, retaining the reason
@@ -36,7 +41,9 @@ Custom rules, board edges and rule areas remain subject to native DRC.
 
 Generated tracks and vias are locked. The router receives `--protect locked`
 for a track-free source seeded by this operation. Final validation checks each
-generated item's UUID, geometry, net and lock state after native refill/save.
+generated item's UUID, geometry, net and lock state after native refill/save,
+and repeats the via/pad and declared-track contact checks. Identical locked
+segments shared by relations are reused, with one UUID in the protected inventory.
 It also measures the final loops and rejects a candidate with broken copper,
 an unknown measurement or an exceeded declared loop limit. The package check
 repeats the measurement on its saved board. Seeding and its DRC share the
@@ -72,10 +79,29 @@ the hard continuity requirement. A supplied limit cannot change clearance,
 placement limits, or any existing gate. Examples intentionally retain their
 existing limits without inventing new loop acceptance numbers.
 
-This initial implementation supports two copper layers and same-face surface
-legs. Missing or ambiguous endpoints, unsupported arcs, unfilled planes and
+This implementation supports two copper layers, SMD pads on one face, and
+plated through-hole pads on both copper layers. Plated pads on a declared plane
+layer serve as their own plane entries. Legs use a common copper layer;
+incompatible layers, missing/ambiguous pads, unsupported pad attributes or
+malformed plated holes are refused during compilation with relation and pad
+names, before spending a placement budget. Missing or ambiguous endpoints, unsupported arcs, unfilled planes and
 plane searches exceeding 512 polygon vertices refuse measurement instead of
 approximating a pass. These are geometric measurements, not an inductance,
 impedance, EMC, physical-operation or fabrication-readiness claim.
 Plane visibility uses lazy A* with at most 50000 tested edges; exhaustion is
 an unknown measurement and cannot pass a requirement.
+
+The routing receipt calls its input `locked_local_copper_from_track_free_input`
+when the plane producer started from a track-free board and local copper was
+seeded before routing. The job identity includes the contract, generator,
+loop checker, path geometry and borrowed acquisition visibility primitive.
+A build plan carrying `local_decoupling` must carry a typed loop check bound to
+that same contract; empty designs omit the placement binding.
+
+The pinned kicad-route implementation differs from its `docs/decoupling.md`:
+it suppresses a track/via link whenever both items touch a common pad, including
+junctions outside that pad. This checker suppresses the link only on layers
+where the items meet inside the pad. The kicad-route audit remains read-only
+and unchanged; compare its selected pins and definition with the declared typed
+relations before interpreting differences. A ground-only plane cannot make
+both sides of a kicad-route cell `respects`.

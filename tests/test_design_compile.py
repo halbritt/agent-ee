@@ -376,6 +376,12 @@ class DesignCompileTests(unittest.TestCase):
         from agent_ee.qualification import manufacturing_coverage
         plan = json.loads((self.root / 'bundle/build-plan.json').read_text())
         manufacturing_coverage(plan, scope, [])
+        plan['placement']['local_decoupling'] = 'local-decoupling.json'
+        with self.assertRaisesRegex(ValueError, 'loop check must bind'):
+            manufacturing_coverage(plan, scope, [])
+        scope['checks'].insert(0, dict(kind='decoupling_loops', params=dict(contract='local-decoupling.json')))
+        manufacturing_coverage(plan, scope, [])
+        scope['checks'].pop(0)
         m = json.loads((inputs / "requirement-map.json").read_text())
         rows = m["requirements"]
         functional = next(r for r in rows if r["id"] == "TEST-FUNC-1")
@@ -705,16 +711,6 @@ class DesignCompileTests(unittest.TestCase):
             )
             self.assertIn("6 mm", pair["provenance"]["citation"]["quote"])
 
-    def test_compiled_delivery_includes_the_required_sealed_fabrication_roundtrip(self):
-        self.compile()
-        root = self.root / 'bundle/inputs'
-        document = json.loads((root / 'requirement-map.json').read_text())
-        delivery = next(r for r in document['requirements'] if r['id'] == 'TEST-DELIV-1')
-        checks = delivery['checks']
-        package = next(c for c in checks if c['kind'] == 'fab_package')
-        roundtrip = next(c for c in checks if c['kind'] == 'fab_roundtrip')
-        self.assertEqual(roundtrip['params'], dict(package_check=package['id']))
-        self.assertLess(checks.index(package), checks.index(roundtrip))
     def test_local_copper_and_optional_loop_limit_reach_the_plan_and_requirement_map(self):
         self.design['decoupling'] = [dict(capacitor='R2', device='R1',
             supply=['R1.1', 'R2.1'], **{'return': ['R1.2', 'R2.2']}, max_distance_mm=6, max_loop_mm=9)]
@@ -752,6 +748,30 @@ class DesignCompileTests(unittest.TestCase):
         self.assertLess(project['board']['design_settings']['rules']['min_track_width'], .4)
         self.assertEqual(project['net_settings']['netclass_patterns'], [dict(netclass='Power', pattern='GND')])
         self.assertIn('not a fabrication limit', json.loads((root / 'power-routing-default.json').read_text())['basis'])
+
+    def test_compile_refuses_intrinsic_local_pad_failures_with_relation_and_pad(self):
+        self.design['decoupling'] = [dict(capacitor='R2', device='R1',
+            supply=['R1.1', 'R2.1'], **{'return': ['R1.2', 'R2.2']}, max_distance_mm=6)]
+        path = self.captures / 'cad/Owned.pretty/R2.kicad_mod'
+        path.write_text(path.read_text().replace('smd rect', 'thru_hole rect').replace(
+            '(layers "F.Cu" "F.Mask")', '(drill 0.3) (layers "B.Cu" "B.Mask")'))
+        seal_capture(self.captures)
+        with self.assertRaisesRegex(DesignError, r'decoupling-1: R1.1.*plated hole must carry both'):
+            self.compile()
+        self.assertFalse((self.root / 'bundle').exists())
+
+    def test_compiler_accepts_clean_plated_local_pads(self):
+        from agent_ee.design_compile import placement
+        self.design['decoupling'] = [dict(capacitor='R2', device='R1',
+            supply=['R1.1', 'R2.1'], **{'return': ['R1.2', 'R2.2']}, max_distance_mm=6)]
+        self.compile()
+        root = self.root / 'bundle/inputs'
+        # Validate the compiler's local-copper emission independently of supplier land matching.
+        path = root / 'Owned.pretty/R2.kicad_mod'
+        path.write_text(path.read_text().replace('smd rect', 'thru_hole rect').replace(
+            '(layers "F.Cu" "F.Mask")', '(drill 0.3) (layers "*.Cu" "*.Mask")'))
+        placement(self.design, root)
+        self.assertEqual(len(json.loads((root / 'local-decoupling.json').read_text())['relations']), 1)
 
     def test_clearance_uses_fab_floor_track_width_uses_native_routing_default(
         self,

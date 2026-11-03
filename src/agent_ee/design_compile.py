@@ -1364,7 +1364,7 @@ def _compile_design(design, captures, out):
                 intent="placement.json",
                 groups="groups.json",
                 planes="planes.json",
-                local_decoupling="local-decoupling.json",
+                **(dict(local_decoupling="local-decoupling.json") if design["decoupling"] else {}),
                 budget_s=p.get("budget_s", 600),
                 search=dict(
                     seeds=[dict(seed=i, start="clustered") for i in range(seeds)],

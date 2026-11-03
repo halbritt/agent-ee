@@ -472,6 +472,7 @@ class LocalCopperTests(unittest.TestCase):
         cap = local.pad(board, contract()['relations'][0]['return'][1])
         # This return track touches the cap AND the tie via outside the pad.
         via = next(t for t in board.GetTracks() if t.GetClass() == 'PCB_VIA')
+        via.SetPosition(self.k.VECTOR2I(33_500_000, 31_000_000))
         local._track(board, [(30_000_000, 31_000_000), local.position(via)], cap.GetNetCode(), self.k.F_Cu, 400_000)
         self.k.SaveBoard(str(self.path), board)
         self.filled()
