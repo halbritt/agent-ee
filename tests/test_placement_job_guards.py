@@ -56,6 +56,35 @@ class ProtectedPoseTests(Fixture):
 
 
 class FinalInventoryTests(Fixture):
+    def test_final_drc_describes_the_saved_board_after_stub_pruning(self):
+        import pcbnew
+        from agent_ee import local_decoupling as local
+        problem,_=self.problem()
+        poses=fixtures.NativeTransformTests._evaluate(self,problem,{})['poses']
+        placed=materialize(self.board,poses,self.dir/'placed');placed['directory']=str(self.dir/'placed')
+        (self.dir/'placed/native-drc.json').write_text('{"violations":[],"unconnected_items":[]}')
+        native=pcbnew.LoadBoard(placed['board']);path=self.dir/'routed.kicad_pcb'
+        track=pcbnew.PCB_TRACK(native);track.SetStart(pcbnew.VECTOR2I(1_000_000,1_000_000))
+        track.SetEnd(pcbnew.VECTOR2I(1_100_000,1_000_000));track.SetWidth(200_000);native.Add(track)
+        uid=track.m_Uuid.AsString();pcbnew.SaveBoard(str(path),native)
+        def prune(board,*args,**kwargs):
+            candidate=pcbnew.LoadBoard(str(board))
+            candidate.Remove(next(t for t in candidate.GetTracks() if t.m_Uuid.AsString()==uid))
+            pcbnew.SaveBoard(str(board),candidate)
+            return dict(status='accepted',removed=[uid])
+        def drc(board,directory,**kwargs):
+            contains=any(t.m_Uuid.AsString()==uid for t in pcbnew.LoadBoard(str(board)).GetTracks())
+            return dict(violations=[],unconnected_items=[{}] if contains else []),dict(board_sha256=job.digest(board),label=kwargs['label'])
+        with patch.object(job,'_cleanup_local_router_stubs',side_effect=prune), patch.object(job,'drc',side_effect=drc), \
+             patch.object(local,'verify',return_value=dict(status='pass')), \
+             patch('agent_ee.decoupling_loops.measure',return_value=dict(outcome='info')), \
+             patch.object(job,'_group_views',return_value=dict(status='rendered')):
+            result=job.final_checks(dict(status='routed',board=str(path),local_decoupling=dict(contract={})),placed,
+                job._owners(native),set(),self.dir/'final-pruned',job.normalize_intent(intent(),groups()))
+        self.assertEqual(result['opens'],0,result)
+        self.assertEqual(result['drc']['label'],'native-drc-after-stub-prune')
+        self.assertEqual(result['drc']['board_sha256'],result['board_sha256'])
+
     def test_saved_incomplete_route_cannot_complete_despite_router_success(self):
         import pcbnew
         problem, _ = self.problem()

@@ -82,7 +82,7 @@ MUTANTS = {'baseline': ([],
                                    'second))\n')],
                                  ['test_local_decoupling']),
  'G10_tie_ignores_other_net_obstacles': ([('src/agent_ee/local_decoupling.py',
-                                           '        if _via_site_blocked(board, via, terminal, rules):\n'
+                                           '        if _via_site_blocked(board, via, terminal, rules, via_obstacles):\n'
                                            '            continue\n',
                                            '')],
                                          ['test_local_decoupling']),
@@ -303,6 +303,134 @@ MUTANTS = {'baseline': ([],
                                                        '    required_gap = 1\n')],
                                                      ['test_local_decoupling'])}
 
+# Reviewer r3 fault models; anchors updated for the fabrication-floor guards.
+MUTANTS.update({'R3_M1_corridor_counts_only_contained_boxes': ([('src/agent_ee/local_decoupling.py',
+                                                  '        local = sorted({box for box in boxes if box[0] <= '
+                                                  'u and box[2] >= x and box[1] <= v and box[3] >= y})\n',
+                                                  '        local = sorted({box for box in boxes if box[0] >= '
+                                                  'x and box[2] <= u and box[1] >= y and box[3] <= v})\n')],
+                                                ['test_local_decoupling']),
+ 'R3_M1b_corridor_path_may_leave_region': ([('src/agent_ee/local_decoupling.py',
+                                             '        if path is not None and all(x <= p[0] <= u and y <= '
+                                             'p[1] <= v for p in path):\n',
+                                             '        if path is not None:\n')],
+                                           ['test_local_decoupling']),
+ 'R3_M2_reachable_graph_skips_tracks': ([('src/agent_ee/decoupling_loops.py',
+                                          '                '
+                                          'pending.extend(list(conn.GetConnectedTracks(item)) + '
+                                          'list(conn.GetConnectedPads(item)))\n',
+                                          '                '
+                                          'pending.extend(list(conn.GetConnectedPads(item)))\n')],
+                                        ['test_local_decoupling']),
+ 'R3_M2b_reachable_graph_from_device_roots_only': ([('src/agent_ee/decoupling_loops.py',
+                                                     '            pending = [pad(board, endpoint) for '
+                                                     'endpoint in roots]\n',
+                                                     '            pending = [pad(board, endpoint) for '
+                                                     'endpoint in roots[0::2]]\n')],
+                                                   ['test_local_decoupling']),
+ 'R3_M3a_shared_pad_opening_on_every_same_net_track': ([('src/agent_ee/local_decoupling.py',
+                                                         '                if '
+                                                         'item.GetEffectiveShape(layer).Collide(terminal.GetEffectiveShape(layer), '
+                                                         '1):\n',
+                                                         '                if True:\n')],
+                                                       ['test_local_decoupling']),
+ 'R3_M3b_shared_pad_opening_enlarged_1mm': ([('src/agent_ee/local_decoupling.py',
+                                              '_subtract_box(box, _box(terminal, track_margin))]',
+                                              '_subtract_box(box, _box(terminal, track_margin + '
+                                              '1_000_000))]')],
+                                            ['test_local_decoupling']),
+ 'R3_M3c_same_net_track_margin_zero': ([('src/agent_ee/local_decoupling.py',
+                                         '            track_margin = max(0, margin - _rules(board, '
+                                         "item)['clearance'] + _separation_floor(board))\n",
+                                         '            track_margin = 0\n')],
+                                       ['test_local_decoupling']),
+ 'R3_M3d_via_site_ignores_same_net_tracks': ([('src/agent_ee/local_decoupling.py',
+                                               '        gap = _same_net_search_gap(board) if '
+                                               'item.GetNetCode() == terminal.GetNetCode() else '
+                                               "rules['clearance'] + 25_000\n",
+                                               '        if item.GetNetCode() == terminal.GetNetCode():\n'
+                                               '            continue\n'
+                                               "        gap = rules['clearance'] + 25_000\n")],
+                                             ['test_local_decoupling']),
+ 'R3_M3e_same_net_vias_also_relaxed': ([], ['test_local_decoupling']),
+ 'R3_M3f_verify_via_leg_contact_disabled': ([('src/agent_ee/local_decoupling.py',
+                                              "                    raise JobRefusal(label + kind + ': ' + "
+                                              "uid + ', ' + other_uid +\n"
+                                              "                                     '; native clearance "
+                                              "floor ' + str(required_gap / 1e6) + ' mm')\n",
+                                              '                    if not (via or other.GetClass() == '
+                                              "'PCB_VIA'):\n"
+                                              "                        raise JobRefusal(label + kind + ': ' "
+                                              "+ uid + ', ' + other_uid +\n"
+                                              "                                         '; native clearance "
+                                              "floor ' + str(required_gap / 1e6) + ' mm')\n")],
+                                            ['test_local_decoupling']),
+ 'R3_M4a_stub_ignores_locked': ([('src/agent_ee/local_decoupling.py',
+                                  '        if item is None or uid in protected or item.IsLocked() or '
+                                  "item.GetClass() != 'PCB_TRACK':\n",
+                                  '        if item is None or uid in protected or item.GetClass() != '
+                                  "'PCB_TRACK':\n")],
+                                ['test_local_decoupling',
+                                 'test_placement_job_guards.ControllerBoundaryTests']),
+ 'R3_M4b_stub_ignores_protected': ([('src/agent_ee/local_decoupling.py',
+                                     '        if item is None or uid in protected or item.IsLocked() or '
+                                     "item.GetClass() != 'PCB_TRACK':\n",
+                                     '        if item is None or item.IsLocked() or item.GetClass() != '
+                                     "'PCB_TRACK':\n")],
+                                   ['test_local_decoupling',
+                                    'test_placement_job_guards.ControllerBoundaryTests']),
+ 'R3_M4c_stub_one_endpoint_suffices': ([('src/agent_ee/local_decoupling.py',
+                                         '               and '
+                                         'all(t.GetEffectiveShape(t.GetLayer()).Collide(p,0) for p in '
+                                         '(item.GetStart(),item.GetEnd()))\n',
+                                         '               and '
+                                         'any(t.GetEffectiveShape(t.GetLayer()).Collide(p,0) for p in '
+                                         '(item.GetStart(),item.GetEnd()))\n')],
+                                       ['test_local_decoupling',
+                                        'test_placement_job_guards.ControllerBoundaryTests']),
+ 'R3_M4d_stub_width_unchecked': ([('src/agent_ee/local_decoupling.py',
+                                   '               and item.GetWidth() <= t.GetWidth()\n',
+                                   '')],
+                                 ['test_local_decoupling',
+                                  'test_placement_job_guards.ControllerBoundaryTests']),
+ 'R3_M4e_trial_opens_unchecked': ([('src/agent_ee/placement_job.py',
+                                    "            and not after['unconnected_items']\n",
+                                    '')],
+                                  ['test_local_decoupling',
+                                   'test_placement_job_guards.ControllerBoundaryTests']),
+ 'R3_M4f_trial_dangling_unchecked': ([('src/agent_ee/placement_job.py',
+                                       "            and not any(v.get('severity') == 'error' or "
+                                       "v.get('type') == 'track_dangling' for v in after['violations']))\n",
+                                       "            and not any(v.get('severity') == 'error' for v in "
+                                       "after['violations']))\n")],
+                                     ['test_local_decoupling',
+                                      'test_placement_job_guards.ControllerBoundaryTests']),
+ 'R3_M4g_trial_protected_verify_skipped': ([('src/agent_ee/placement_job.py',
+                                             "            record['protected'] = verify(trial, receipt)\n",
+                                             "            record['protected'] = dict(status='pass')\n")],
+                                           ['test_local_decoupling',
+                                            'test_placement_job_guards.ControllerBoundaryTests']),
+ 'R3_M4h_no_drc_after_prune': ([('src/agent_ee/placement_job.py',
+                                 "        if local_stub_cleanup.get('status') == 'accepted':\n",
+                                 '        if False:\n')],
+                               ['test_placement_job_guards.FinalInventoryTests.test_final_drc_describes_the_saved_board_after_stub_pruning']),
+ 'R3_M4i_trial_protected_nodes_unchecked': ([('src/agent_ee/placement_job.py',
+                                              '            and sorted(original,key=canonical) == '
+                                              'sorted(candidate,key=canonical)\n',
+                                              '')],
+                                            ['test_local_decoupling',
+                                             'test_placement_job_guards.ControllerBoundaryTests']),
+ 'R7_N1_via_filter_disabled': ([('src/agent_ee/local_decoupling.py',
+                                 '        return x <= a[0]+2_000_000 and u >= a[0]-2_000_000 and y <= '
+                                 'a[1]+2_000_000 and v >= a[1]-2_000_000\n',
+                                 '        return True\n')],
+                               ['test_local_decoupling.ReviewRegressionTests.test_via_site_work_ignores_8000_distant_obstacles']),
+ 'R7_N4_statement_order_encloses_later_capacitor': ([('src/agent_ee/local_decoupling.py',
+                                                      "    for relation in sorted(document['relations'], "
+                                                      'key=relation_order):\n',
+                                                      "    for relation in document['relations']:\n")],
+                                                    ['test_local_decoupling.ReviewRegressionTests.test_three_capacitor_bank_reaches_nearest_capacitor_before_enclosing_it'])})
+
 def run(name):
     edits, tests = MUTANTS[name]
     work = WORK / name
@@ -341,7 +469,8 @@ class Mutations(unittest.TestCase):
         (OUT / 'results.json').write_text(json.dumps(results, indent=1))
         self.assertEqual(next(r for r in results if r['name'] == 'baseline')['status'], 'GREEN')
         equivalent = {'G5_via_may_sit_in_own_land', 'C7_islands_merged',
-                      'F6_route_unlocked_policy', 'R2_has_loops_from_fields_again'}
+                      'F6_route_unlocked_policy', 'R2_has_loops_from_fields_again',
+                      'R3_M3e_same_net_vias_also_relaxed'}
         for row in results:
             if row['name'] != 'baseline':
                 allowed = ('KILLED', 'SURVIVED') if row['name'] in equivalent else ('KILLED',)

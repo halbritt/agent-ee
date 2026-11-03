@@ -130,7 +130,7 @@ loop checker, path geometry and borrowed acquisition visibility primitive.
 A build plan carrying `local_decoupling` must carry a typed loop check bound to
 that same contract; empty designs omit the placement binding.
 
-The pinned kicad-route implementation differs from its `docs/decoupling.md`:
+The kicad-route implementation differs from its `docs/decoupling.md`:
 it suppresses a track/via link whenever both items touch a common pad, including
 junctions outside that pad. This checker suppresses the link only on layers
 where the items meet inside the pad. The kicad-route audit remains read-only
@@ -221,3 +221,17 @@ samples. The far-side restriction, 2 mm escape path bound, 12 mm leg bound,
 locked-copper identity and bank rule are unchanged; verify_geometry additionally
 enforces the fabrication separation floor.
 A search refusal is not a proof that no geometrically legal layout exists.
+
+The local search orders relations within each automatically derived bank by the
+sum of their direct supply and return distances, reaching nearer capacitor
+endpoints first. This avoids enclosing an unvisited capacitor with earlier
+legs. Legs remain stars from device pads; all geometry and bank checks apply.
+Via-site obstacles are collected once per tie from the 2 mm search disk plus
+the via radius and applicable clearance. Every retained obstacle still receives
+the exact native-shape test for each site.
+
+Known junction limitation: the typed connectivity check locates in-pad junctions
+using centreline closest points, rather than the complete copper overlap.
+The generated-copper geometry guard separately clips native copper shapes to
+pad interiors and enforces the fabrication floor outside those pads. Router
+copper does not receive that generated-copper overlap audit.

@@ -331,16 +331,32 @@ def _via_pad_collision(board, via, terminal, rules):
     return False
 
 
-def _via_site_blocked(board, via, terminal, rules):
-    if any(_via_pad_collision(board, via, p, rules) for fp in board.GetFootprints() for p in fp.Pads()):
+def _via_obstacles(board, terminal, rules):
+    """Collect a conservative obstacle set once for the complete 2 mm via disk."""
+    a = position(terminal)
+    radius = max(rules['diameter'], rules['drill']) // 2
+    def near(item, gap):
+        x, y, u, v = _box(item, radius + gap)
+        return x <= a[0]+2_000_000 and u >= a[0]-2_000_000 and y <= a[1]+2_000_000 and v >= a[1]-2_000_000
+    pads = [p for fp in board.GetFootprints() for p in fp.Pads()
+            if near(p, max(rules['clearance'], _rules(board, p)['clearance']) + 25_000)]
+    tracks = [t for t in board.GetTracks()
+              if near(t, max(rules['clearance'], _same_net_search_gap(board)) + 25_000)]
+    drawings = [d for d in board.GetDrawings() if near(d, rules['clearance'] + 25_000)]
+    return pads, tracks, drawings
+
+
+def _via_site_blocked(board, via, terminal, rules, obstacles=None):
+    pads, tracks, drawings = _via_obstacles(board, terminal, rules) if obstacles is None else obstacles
+    if any(_via_pad_collision(board, via, p, rules) for p in pads):
         return True
-    for item in board.GetTracks():
+    for item in tracks:
         gap = _same_net_search_gap(board) if item.GetNetCode() == terminal.GetNetCode() else rules['clearance'] + 25_000
         for layer in board.GetEnabledLayers().CuStack():
             if item.IsOnLayer(layer) and via.GetEffectiveShape(layer).Collide(item.GetEffectiveShape(layer), gap):
                 return True
     point = position(via)
-    for item in board.GetDrawings():
+    for item in drawings:
         if any(item.IsOnLayer(layer) for layer in board.GetEnabledLayers().CuStack()):
             x, y, u, v = _box(item, rules['clearance'] + rules['diameter'] // 2 + 25_000)
             if x < point[0] < u and y < point[1] < v:
@@ -383,6 +399,7 @@ def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None, reusable=
     angles = sorted(set(range(0, 360, 10)) | set(range(0, 360, 45)), key=lambda angle: (
         0 if away_from is None else (away_from[0]-a[0])*math.cos(math.radians(angle))
         + (away_from[1]-a[1])*math.sin(math.radians(angle)), angle))
+    via_obstacles = _via_obstacles(board, terminal, rules)
     for b in _via_centres(a, angles):
         _check_stop(clock, cancel_dir)
         if away_from is not None and sum((v-u)*(w-u) for u, v, w in zip(a, b, away_from)) >= 0:
@@ -396,7 +413,7 @@ def _tie(board, terminal, plane, *, clock, cancel_dir, away_from=None, reusable=
         via.SetNetCode(terminal.GetNetCode())
         if _via_pad_collision(board, via, terminal, rules):
             continue
-        if _via_site_blocked(board, via, terminal, rules):
+        if _via_site_blocked(board, via, terminal, rules, via_obstacles):
             continue
         if not (edge.GetLeft() + margin < b[0] < edge.GetRight() - margin
                 and edge.GetTop() + margin < b[1] < edge.GetBottom() - margin):
@@ -436,7 +453,16 @@ def seed(board_path, document, *, clock, cancel_dir=None):
     rows, protected, tied, plane_ties = [], [], set(), {}
     bank_ids = {rid: bank['id'] for bank in banks(document) for rid in bank['relations']}
     bank_copper = {bank_id: set() for bank_id in bank_ids.values()}
-    for relation in document['relations']:
+    bank_order = {bank['id']: i for i, bank in enumerate(banks(document))}
+    def relation_order(relation):
+        try:
+            length = sum(math.dist(*(position(pad(board, endpoint)) for endpoint in relation[kind]))
+                         for kind in ('supply', 'return'))
+        except ValueError as exc:
+            raise JobRefusal(f"local decoupling {relation['id']}: {exc}") from exc
+        return bank_order[bank_ids[relation['id']]], length
+    # Reaching nearby capacitors first avoids enclosing a later bank endpoint.
+    for relation in sorted(document['relations'], key=relation_order):
         _check_stop(clock, cancel_dir)
         added, legs = [], []
         reusable = bank_copper[bank_ids[relation['id']]]

@@ -632,6 +632,145 @@ class ReviewRegressionTests(unittest.TestCase):
             i, j = divmod(n, 73)
             self.add_pad(fp, n+1, 21+i*.25, 21+j*.25, net, 100_000)
 
+    def test_three_capacitor_bank_reaches_nearest_capacitor_before_enclosing_it(self):
+        from copy import deepcopy
+        from agent_ee.storage import write_json
+        doc = contract()
+        for name, x, ys, size in [('CAP2',34.6,(29,31),600_000),('CAP3',31.6,(29,32.4),500_000)]:
+            fp = self.add_fp(name,[])
+            for number,y,net in [('1',ys[0],'/rail'),('2',ys[1],'/return')]:
+                self.add_pad(fp,number,x,y,net,size)
+            relation = deepcopy(doc['relations'][0]);relation['id'] = name
+            for kind in ('supply','return'):relation[kind][1]['reference'] = name
+            doc['relations'].append(relation)
+        # A fresh project name lets native settings load the authored fabrication floor.
+        self.path = self.root/'three-cap-bank.kicad_pcb';self.save()
+        write_json(self.path.with_suffix('.kicad_pro'),dict(
+            board=dict(design_settings=dict(rules=dict(min_clearance=.1))),
+            meta=dict(filename=self.path.with_suffix('.kicad_pro').name,version=1),
+            net_settings=dict(classes=[dict(name='Default',clearance=.2,track_width=.4,
+                via_diameter=.6,via_drill=.3)],meta=dict(version=3))))
+        import subprocess,sys,json
+        request=self.root/'bank-contract.json';result=self.root/'bank-result.json';write_json(request,doc)
+        done=subprocess.run([sys.executable,'-B','-c',
+            'import json,sys,pcbnew as k;from agent_ee import local_decoupling as l;'
+            'from agent_ee.decoupling_loops import measure;from agent_ee.placement_job import Clock;'
+            'doc=json.load(open(sys.argv[2]));r=l.seed(sys.argv[1],doc,clock=Clock(60));'
+            'b=k.LoadBoard(sys.argv[1]);k.ZONE_FILLER(b).Fill(b.Zones());k.SaveBoard(sys.argv[1],b);'
+            'json.dump(dict(floor=l._separation_floor(b),geometry=l.verify(sys.argv[1],r),'
+            'loops=measure(sys.argv[1],doc)),open(sys.argv[3],"w"))',
+            str(self.path),str(request),str(result)],capture_output=True,text=True,timeout=90)
+        self.assertEqual(done.returncode,0,done.stderr)
+        report=json.loads(result.read_text())
+        self.assertEqual(report['floor'],100_000)
+        self.assertEqual(report['geometry']['geometry']['status'],'pass')
+        self.assertEqual(len(report['loops']['records']),3)
+        self.assertTrue(report['loops']['banks'][0]['device_return_reaches_plane_only_through_bank_capacitors'])
+        self.assertFalse(report['loops']['banks'][0]['return']['pin_bypasses_bank'])
+
+    def test_via_site_work_ignores_8000_distant_obstacles(self):
+        from unittest.mock import patch
+        terminal = local.pad(self.board,contract()['relations'][0]['return'][1])
+        rules = local._rules(self.board,terminal)
+        baseline = local._via_obstacles(self.board,terminal,rules)
+        fp = self.add_fp('FAR',[])
+        for n in range(8000):self.add_pad(fp,n+1,80+(n%100)*.1,80+(n//100)*.1,None,50_000)
+        distant = local._track(self.board,[(80_000_000,80_000_000),(90_000_000,80_000_000)],
+                               terminal.GetNetCode(),self.k.F_Cu,400_000)[0]
+        drawing = self.k.PCB_SHAPE(self.board);drawing.SetShape(self.k.SHAPE_T_SEGMENT)
+        drawing.SetStart(self.k.VECTOR2I(80_000_000,82_000_000));drawing.SetEnd(self.k.VECTOR2I(90_000_000,82_000_000))
+        drawing.SetWidth(400_000);drawing.SetLayer(self.k.B_Cu);self.board.Add(drawing)
+        obstacles = local._via_obstacles(self.board,terminal,rules)
+        self.assertEqual([len(group) for group in obstacles],[len(group) for group in baseline])
+        via = self.k.PCB_VIA(self.board);via.SetWidth(rules['diameter']);via.SetDrill(rules['drill'])
+        via.SetLayerPair(self.k.F_Cu,self.k.B_Cu);via.SetNetCode(terminal.GetNetCode())
+        with patch.object(local,'_via_pad_collision',wraps=local._via_pad_collision) as examined:
+            for point in local._via_centres(local.position(terminal),range(0,360,10)):
+                via.SetPosition(self.k.VECTOR2I(*point))
+                local._via_site_blocked(self.board,via,terminal,rules,obstacles)
+            self.assertLessEqual(examined.call_count,1496*len(baseline[0]))
+        # Collection happens once per tie, independent of the number of trial sites.
+        with patch.object(local,'_via_obstacles',wraps=local._via_obstacles) as collect:
+            local._tie(self.board,terminal,self.k.B_Cu,clock=Clock(60),cancel_dir=None,
+                       away_from=(30_000_000,31_000_000))
+            self.assertEqual(collect.call_count,1)
+
+    def test_shared_pad_openings_do_not_erase_nearby_track_obstacles(self):
+        self.board.GetDesignSettings().m_MinClearance = 100_000
+        terminal = local.pad(self.board,contract()['relations'][0]['return'][0]);net=terminal.GetNetCode()
+        local._track(self.board,[(30_600_000,31_600_000),(31_500_000,31_600_000)],net,self.k.F_Cu,400_000)
+        local._track(self.board,[(30_000_000,31_000_000),(33_000_000,31_000_000)],net,self.k.F_Cu,400_000)
+        boxes = local._obstacles(self.board,net,self.k.F_Cu,425_000,(terminal,))
+        for point in [(30_610_000,31_610_000),(30_900_000,31_000_000)]:
+            self.assertTrue(any(x<=point[0]<=u and y<=point[1]<=v for x,y,u,v in boxes),point)
+
+    def test_geometry_rejects_plane_via_touching_a_different_generated_leg(self):
+        receipt,items = self.close_pair()
+        self.board.Remove(items[1])
+        via = self.k.PCB_VIA(self.board);via.SetPosition(self.k.VECTOR2I(35_000_000,33_200_000))
+        via.SetWidth(600_000);via.SetDrill(300_000);via.SetLayerPair(self.k.F_Cu,self.k.B_Cu)
+        via.SetNetCode(items[0].GetNetCode());via.SetLocked(True);self.board.Add(via)
+        row = receipt['relations'][1];row['copper']=[via.m_Uuid.AsString()]
+        row['legs'][0].update(kind='plane_tie',tracks=row['copper'])
+        receipt['protected']=[local.copper_identity(items[0]),local.copper_identity(via)]
+        self.assertRaisesRegex(JobRefusal,'plane via touches another generated leg',local.verify_geometry,self.board,receipt)
+
+    def test_stub_preparation_preserves_locked_protected_one_ended_and_wider_tracks(self):
+        from agent_ee.storage import digest
+        for kind in ('locked','protected','one-ended','wider'):
+            with self.subTest(kind=kind):
+                board = self.k.BOARD();board.SetCopperLayerCount(2)
+                net=self.k.NETINFO_ITEM(board,'/return');board.Add(net)
+                receiver=local._track(board,[(30_000_000,30_000_000),(33_000_000,30_000_000)],net.GetNetCode(),self.k.F_Cu,400_000)[0]
+                end=(32_000_000,31_000_000) if kind=='one-ended' else (32_000_000,30_000_000)
+                item=local._track(board,[(31_000_000,30_000_000),end],net.GetNetCode(),self.k.F_Cu,
+                                  600_000 if kind=='wider' else 200_000)[0]
+                item.SetLocked(kind=='locked')
+                path=self.root/(kind+'.kicad_pcb');self.k.SaveBoard(str(path),board)
+                protected=[local.copper_identity(receiver)]
+                if kind=='protected':protected.append(local.copper_identity(item))
+                before=digest(path);output=self.root/(kind+'-trial.kicad_pcb')
+                result=local.prepare_stub_trial(dict(board=str(path),board_sha256=before,output=str(output),
+                    protected=protected,warnings=[item.m_Uuid.AsString()]))
+                self.assertEqual(result['status'],'not_applicable',result)
+                self.assertFalse(output.exists());self.assertEqual(digest(path),before)
+
+    def test_stub_trial_rejects_opens_dangling_failed_verify_and_changed_native_nodes(self):
+        from unittest.mock import patch
+        from agent_ee import placement_job as job
+        from agent_ee.storage import digest,read_json,write_json
+        import subprocess
+        receipt=self.seed();native=self.k.LoadBoard(str(self.path))
+        stub=local._track(native,[(31_000_000,31_000_000),(32_000_000,31_000_000)],
+                          native.FindNet('/return').GetNetCode(),self.k.F_Cu,200_000)[0]
+        stub.SetLocked(False);self.k.SaveBoard(str(self.path),native)
+        warning=dict(type='track_dangling',severity='warning',items=[dict(uuid=stub.m_Uuid.AsString())])
+        report=dict(violations=[warning],unconnected_items=[])
+        for fault in ('opens','dangling','verify','native-nodes'):
+            with self.subTest(fault=fault):
+                before=digest(self.path)
+                def prepare(argv,**kwargs):
+                    request=read_json(argv[-1]);result=local.prepare_stub_trial(request)
+                    self.assertEqual(result['status'],'prepared')
+                    if fault=='native-nodes':
+                        trial=self.k.LoadBoard(request['output'])
+                        outline=next(d for d in trial.GetDrawings() if d.GetLayer()==self.k.Edge_Cuts)
+                        outline.SetWidth(outline.GetWidth()+100_000)
+                        self.k.SaveBoard(request['output'],trial)
+                        result['board_sha256']=digest(Path(request['output']))
+                    write_json(request['result'],result)
+                    return subprocess.CompletedProcess(argv,0,b'',b'')
+                after=dict(violations=[warning] if fault=='dangling' else [],
+                           unconnected_items=[dict(unconnected=True)] if fault=='opens' else [])
+                with patch.object(job,'_run_child',side_effect=prepare), patch.object(job,'drc',return_value=(after,{})):
+                    if fault=='verify':
+                        with patch.object(local,'verify',side_effect=JobRefusal('deliberate protected verification failure')):
+                            result=job._cleanup_local_router_stubs(self.path,report,receipt,self.root/('cleanup-'+fault),clock=Clock(60),cancel_dir=None)
+                    else:
+                        result=job._cleanup_local_router_stubs(self.path,report,receipt,self.root/('cleanup-'+fault),clock=Clock(60),cancel_dir=None)
+                self.assertEqual(result['status'],'rejected',result)
+                self.assertEqual(digest(self.path),before)
+
     def test_search_keeps_native_floor_from_an_earlier_escape(self):
         self.board.GetDesignSettings().m_MinClearance = 100_000
         net = self.board.FindNet('/return').GetNetCode()
