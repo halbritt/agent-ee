@@ -729,6 +729,73 @@ class LocalCopperTests(unittest.TestCase):
         self.assertTrue(row['return']['pin_bypasses_capacitor'], row)
         self.assertTrue(row['return']['bypass_paths'])
 
+    def test_cross_bank_geometry_refusal_rolls_back_only_the_later_bank(self):
+        import json
+        from copy import deepcopy
+        from unittest.mock import patch
+        from agent_ee import placement_job as job
+        from agent_ee.storage import read_json
+        doc=contract();later=deepcopy(doc['relations'][0]);later['id']='later'
+        for leg in ('supply','return'):
+            later[leg][0]['reference']='OTHER';later[leg][1]['reference']='SECOND'
+        doc['relations'].append(later);doc['banks']=local.banks(doc)
+        fp=self.k.FOOTPRINT(self.board);fp.SetReference('SECOND');self.board.Add(fp)
+        for number,y,net in [('1',29,'/rail'),('2',31,'/return')]:
+            p=self.k.PAD(fp);p.SetNumber(number);p.SetAttribute(self.k.PAD_ATTRIB_SMD)
+            p.SetShape(self.k.PAD_SHAPE_RECT);p.SetSize(self.k.VECTOR2I(700_000,700_000))
+            layers=self.k.LSET();layers.AddLayer(self.k.F_Cu);p.SetLayerSet(layers)
+            p.SetPosition(self.k.VECTOR2I(41_000_000,y*1_000_000));p.SetNet(self.board.FindNet(net));fp.Add(p)
+        self.save()
+        native_path=local._local_path
+        def crossed_path(a,b,boxes,**kwargs):
+            if a==(38_000_000,31_000_000) and b==(41_000_000,31_000_000):
+                # A later return leg crosses the earlier return at (32, 31),
+                # away from all pads; native geometry checks remain active.
+                return [a,(38_000_000,32_000_000),(32_000_000,32_000_000),
+                        (32_000_000,30_000_000),(41_000_000,30_000_000),b]
+            return native_path(a,b,boxes,**kwargs)
+        with patch('agent_ee.routing_adapter.preflight',return_value={'problems':[]}), \
+                patch.object(job,'drc',return_value=(dict(violations=[],unconnected_items=[]),{})), \
+                patch.object(local,'_local_path',side_effect=crossed_path), \
+                patch.object(job,'_route_attempt',return_value=dict(status='routed')) as router:
+            result=job.route(self.root,self.root/'cross-bank-route','unused',budget_s=60,timeout_s=120,
+                home=self.root/'router-home',local_decoupling=doc)
+        artifacts=self.root/'cross-bank-route/local-decoupling'
+        seeded={rid:read_json(artifacts/bank/'seed.json')
+                for rid,bank in [('cell','bank-1'),('later','bank-2')]}
+        self.assertEqual(result['status'],'routed');router.assert_called_once()
+        receipt=result['local_decoupling']
+        self.assertEqual([r['id'] for r in receipt['relations']],['cell'])
+        self.assertEqual(result['generated_relation_count'],1)
+        self.assertEqual(json.loads(json.dumps(receipt['protected'])),seeded['cell']['protected'])
+        self.assertEqual([(r['relation'],r['bank']) for r in receipt['fallbacks']],[('later','bank-2')])
+        self.assertIn('generated legs meet outside a declared shared pad',receipt['fallbacks'][0]['reason'])
+        staged=Path(router.call_args.kwargs['argv'][router.call_args.kwargs['argv'].index('--dir')+1])/'board.kicad_pcb'
+        native=self.k.LoadBoard(str(staged))
+        self.assertEqual({t.m_Uuid.AsString() for t in native.GetTracks()},
+                         {r['uuid'] for r in seeded['cell']['protected']})
+        self.assertEqual(local.verify(staged,receipt)['status'],'pass')
+        rejected=self.root/'cross-bank-route/local-decoupling/bank-2/rejected/board.kicad_pcb'
+        # The rejected board proves each bank is valid alone, but their union is not.
+        for row in seeded.values():self.assertEqual(local.verify(rejected,row)['status'],'pass')
+        combined=dict(receipt,relations=seeded['cell']['relations']+seeded['later']['relations'],
+                      protected=seeded['cell']['protected']+seeded['later']['protected'])
+        with self.assertRaisesRegex(JobRefusal,'generated legs meet outside a declared shared pad'):
+            local.verify(rejected,combined)
+
+    def test_deferred_kept_copper_is_reverified_before_router_reuse(self):
+        from unittest.mock import patch
+        from agent_ee import placement_job as job
+        receipt=self.seed()
+        board=self.k.LoadBoard(str(self.path));track=next(t for t in board.GetTracks() if t.GetClass()=='PCB_TRACK')
+        track.SetWidth(int(track.GetWidth())+10_000);self.k.SaveBoard(str(self.path),board)
+        with patch('agent_ee.routing_adapter.preflight',return_value={'problems':[]}), \
+                patch.object(job,'_route_attempt',return_value=dict(status='routed')) as router:
+            with self.assertRaisesRegex(JobRefusal,'protected copper missing/changed'):
+                job.route(self.root,self.root/'deferred-route','unused',budget_s=30,timeout_s=60,
+                    home=self.root/'router-home',local_decoupling=contract(),local_fallback_reason=receipt)
+        router.assert_not_called()
+
     def test_seed_drc_rejection_names_only_the_implicated_relation(self):
         from copy import deepcopy
         from unittest.mock import patch
