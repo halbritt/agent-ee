@@ -9,6 +9,7 @@ finding field that acceptance reads in an unknown shape, are refused.
 
 from .check_registry import register as _register_check
 from . import check_prerequisites as _requires
+import functools
 import hashlib
 import json
 import math
@@ -22,12 +23,24 @@ from .storage import digest, identity, read_json, write_json
 # Only these observed calculation records have qualified scalar semantics.
 CALCULATIONS = {('schematic', 'RC-DET'): {'cutoff_hz', 'time_constant_s'}}
 KINDS = ('kicad_happy', 'kicad_happy_severity_gate')
-# The output contract agent-ee reads: the release line and the analyzer envelope formats.
-# The image build (docker/kicad-happy/install.py) selects its release with the same file.
-CONTRACT = read_json(Path(__file__).resolve().parent / 'data/kicad-happy-contract.json')
-OUTPUT_FORMATS = frozenset(CONTRACT['output_formats'])
 INSTALLATION_KEYS = {'root', 'version', 'files', 'sha256'}
 PROVENANCE_KEYS = {'tag', 'commit', 'install_record'}
+
+
+@functools.cache
+def contract():
+    """The output contract agent-ee reads: the release line and the analyzer envelope formats.
+
+    The image build (docker/kicad-happy/install.py) selects its release with the same file.
+    It is read once, on first use, never at import: checks imports this module, and a
+    confined entrypoint must be able to refuse an unconfined host before any file read."""
+    return read_json(Path(__file__).resolve().parent / 'data/kicad-happy-contract.json')
+
+
+@functools.cache
+def output_formats():
+    """The analyzer envelope formats of the contract."""
+    return frozenset(contract()['output_formats'])
 
 
 def installation(root):
@@ -62,7 +75,7 @@ def install_record(root):
         return None
     data = path.read_bytes()
     try:
-        record = check_install_record(json.loads(data), OUTPUT_FORMATS)
+        record = check_install_record(json.loads(data), output_formats())
     except ValueError as exc:
         raise ValueError(f'unrecognized kicad-happy install record {path}: {exc}') from exc
     return {**record, 'path': str(path), 'sha256': hashlib.sha256(data).hexdigest()}
@@ -93,7 +106,7 @@ def legacy_declaration(params):
 
 def in_release_line(version):
     """True for a release or prerelease (X.Y.Z or X.Y.Z-pre) of the contract's major line."""
-    return release_major(version) == CONTRACT['release_major']
+    return release_major(version) == contract()['release_major']
 
 
 def require_release_line(version):
@@ -106,7 +119,7 @@ def require_release_line(version):
     from .checks import CheckError
     if not in_release_line(version):
         raise CheckError('unsupported', f"kicad-happy {version!r} is outside the "
-                         f"{CONTRACT['release_major']}.x output contract agent-ee reads")
+                         f"{contract()['release_major']}.x output contract agent-ee reads")
 
 
 def normalize(reports, rules):
@@ -115,7 +128,7 @@ def normalize(reports, rules):
     findings = []
     for analyzer, report in reports.items():
         try:
-            check_report(analyzer, report, OUTPUT_FORMATS)
+            check_report(analyzer, report, output_formats())
         except FormatError as exc:
             raise CheckError('unsupported', str(exc)) from exc
         for index, finding in enumerate(report['findings']):
@@ -340,7 +353,7 @@ def check_installation_record(recorded, *, succeeded):
     if not isinstance(nested, dict) or not {'path', 'sha256'} <= set(nested):
         raise ValueError('nested install record lacks its measured path and digest')
     content = install_record_content(nested)
-    check_install_record(content, OUTPUT_FORMATS)
+    check_install_record(content, output_formats())
     if (not isinstance(nested['path'], str) or not nested['path']
             or not isinstance(nested['sha256'], str) or not SHA256.fullmatch(nested['sha256'])
             or (content['version'], content['tag'], content['commit'], content['installation_sha256'])

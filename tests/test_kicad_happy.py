@@ -145,7 +145,7 @@ from unittest import mock
 
 from agent_ee import candidate, checks
 from agent_ee.kicad_happy_format import INSTALL_RECORD_SCHEMA
-from agent_ee.kicad_happy import (CONTRACT, installation, installation_record,
+from agent_ee.kicad_happy import (contract, installation, installation_record,
                                   require_release_line, verify_recorded, verify_unchanged)
 from agent_ee.storage import digest, identity, read_json, write_json
 from toolchain import require_toolchain
@@ -396,9 +396,9 @@ class ImageInstallerTest(unittest.TestCase):
             return mock.patch.object(self.installer.subprocess, 'run',
                                      return_value=subprocess.CompletedProcess([], 0, listing, ''))
         with remote('v1.3.2', 'v2', 'v2.3', 'v2.3.2', 'v2.4.0-rc.1', 'v2.9.0', 'v2.12.0', 'v3.0.0'):
-            self.assertEqual(self.installer.newest_release(CONTRACT['release_major']), 'v2.12.0')
+            self.assertEqual(self.installer.newest_release(contract()['release_major']), 'v2.12.0')
         with remote('v2', 'v2.3', 'v2.4.0-rc.1', 'v3.0.0'), self.assertRaisesRegex(SystemExit, 'no v2.x.y release'):
-            self.installer.newest_release(CONTRACT['release_major'])
+            self.installer.newest_release(contract()['release_major'])
 
     def test_format_probe_accepts_the_corrected_analyzer_and_refuses_the_bare_release(self):
         if not (INSTALLED / '.claude-plugin/plugin.json').is_file():
@@ -406,10 +406,10 @@ class ImageInstallerTest(unittest.TestCase):
         from test_happy_ac4_false_positives import analyzer_pair
         release, corrected = analyzer_pair(Path(self.tmp.name) / 'pair')
         # The build probes the corrected tree it installs, with the real analyzers.
-        self.assertEqual(self.installer.output_format(corrected, CONTRACT['output_formats']), '1.4.0')
+        self.assertEqual(self.installer.output_format(corrected, contract()['output_formats']), '1.4.0')
         # Without the correction, the reproducer's PP-001 notes are errors, not assumption notes.
         with self.assertRaisesRegex(SystemExit, 'reproducer probe lost the meaning'):
-            self.installer.output_format(release, CONTRACT['output_formats'])
+            self.installer.output_format(release, contract()['output_formats'])
 
     def test_format_probe_refuses_shape_and_meaning_drift_under_the_same_format_number(self):
         # The probe's expected findings, from the same fixture files the image build reads.
@@ -463,11 +463,11 @@ class ImageInstallerTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, '', '')
             with self.subTest(name), mock.patch.object(self.installer.subprocess, 'run', side_effect=analyzer):
                 if drift is None:
-                    self.assertEqual(self.installer.output_format(Path('/analyzer'), CONTRACT['output_formats']),
+                    self.assertEqual(self.installer.output_format(Path('/analyzer'), contract()['output_formats']),
                                      '1.4.0')
                     continue
                 with self.assertRaisesRegex(SystemExit, 'report on the .* probe (is outside|lost)'):
-                    self.installer.output_format(Path('/analyzer'), CONTRACT['output_formats'])
+                    self.installer.output_format(Path('/analyzer'), contract()['output_formats'])
 
 
 class InstalledAnalyzerTest(unittest.TestCase):
