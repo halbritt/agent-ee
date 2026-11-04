@@ -141,9 +141,10 @@ class NativeFootprintRulesTest(unittest.TestCase):
             footprint_rules.check(self.design, self.cad, self.root / 'pth-near')
         line = caught.exception.problems[0]
         self.assertTrue(line.startswith('parts.R1.footprint: '), line)
-        self.assertIn("measure 0.2700 mm against the 0.2800 mm limit of rule 'fab_pth-copper' hole clearance "
-                      "(custom rule 'fab_pth-copper' from fab profile limit 'pth-copper' "
-                      "(min_pth_hole_clearance_mm), in the board's .kicad_dru)", line)
+        # KiCad words a custom rule's hole finding "(rule '<name>' clearance <limit> mm; actual ...)".
+        self.assertIn("Pad 2 [GND] of R1 on F.Cu and PTH pad 1 [/SIGNAL] of R1 measure 0.2700 mm against the "
+                      "0.2800 mm limit of rule 'fab_pth-copper' clearance (custom rule 'fab_pth-copper' from fab "
+                      "profile limit 'pth-copper' (min_pth_hole_clearance_mm), in the board's .kicad_dru)", line)
         (self.cad / 'Owned.pretty/R2.kicad_mod').write_bytes(pth_footprint('R2', 0.28))
         report = footprint_rules.check(self.design, self.cad, self.root / 'pth-at')
         self.assertEqual([(p['reference'], p['status']) for p in report['parts']], [('R1', 'pass'), ('R2', 'pass')])
