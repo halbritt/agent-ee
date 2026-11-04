@@ -12,19 +12,27 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from agent_ee import native_run
 from agent_ee.design import DesignError
 from agent_ee.design_capture import capture_design, validate_capture_manifest
 from agent_ee.design_compile import compile_design
+from agent_ee.design_generate import refusal_classes
 from agent_ee.kicad_install import RECORD_ENV
 from tests.test_design_compile import design_fixture
+from tests.test_footprint_rules import hole_finding, owned_footprint, recorded
 from tests.test_kicad_install import record as install_record
 from tests.test_jlc_stock_capture import row, search
 from tests.land_pattern_fixtures import chip, component, pad
+from toolchain import require_toolchain
 
 
 class CaptureHttpTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        # The footprint rule check's scratch-board and DRC runs answer from canned reports:
+        # footprint_findings[ref] lists that part's DRC violations. One test runs it natively.
+        self.footprint_findings = {}
+        self.enterContext(native_run.using(recorded(self.footprint_findings)))
         original = self.root / "original"
         original.mkdir()
         self.design = design_fixture(original)
@@ -398,3 +406,43 @@ class CaptureHttpTests(unittest.TestCase):
         compile_design(self.design, out, self.root / 'explicit-bundle')
         receipt = json.loads((self.root / 'explicit-bundle/inputs/lib3d/.agent-ee-models.json').read_bytes())
         self.assertEqual(receipt['files']['Owned.3dshapes/Connector.step']['sha256'], sources['Owned.3dshapes/Connector.step']['sha256'])
+
+    def test_a_footprint_breaking_the_board_rules_is_refused_at_capture_before_any_download(self):
+        self.footprint_findings['R1'] = [hole_finding('R1')]
+        with self.assertRaises(DesignError) as caught:
+            self.capture()
+        message = str(caught.exception)
+        # A design field and no tool gap: the generate loop returns it to the author as a design issue.
+        self.assertEqual(refusal_classes(message), ['parts.R1.footprint'])
+        self.assertNotIn('[tool_gap]', message)
+        (line,) = caught.exception.problems
+        for text in ("parts.R1.footprint: Owned:R2 breaks this board's fabrication rules on its own, before "
+                     'placement or routing: 1 native DRC error inside the footprint, which final verification '
+                     'fails as pre-existing whatever the placement.',
+                     'hole_clearance: Pad 1 [/SIGNAL] of R1 on F.Cu and NPTH pad of R1 measure 0.1944 mm against '
+                     'the 0.2500 mm limit of board setup constraints hole clearance '
+                     "(board.design_settings.rules.min_hole_clearance, KiCad's default: the compiled project "
+                     'and the fab profile do not set it)',
+                     'Choose another footprint for R1 whose holes and pads meet these rules'):
+            self.assertIn(text, line)
+        self.assertEqual(self.requests, [])  # before the stock, datasheet and supplier downloads
+        report = json.loads((self.root / 'captured/footprint-rules/report.json').read_bytes())
+        self.assertEqual([(p['reference'], p['status']) for p in report['parts']], [('R1', 'refused'), ('R2', 'pass')])
+
+    def test_footprints_are_checked_under_the_rule_file_that_compile_emits(self):
+        captured = self.capture()
+        compile_design(self.design, captured, self.root / 'bundle')
+        self.assertEqual((captured / 'footprint-rules/inputs/owned.kicad_pro').read_bytes(),
+                         (self.root / 'bundle/inputs/project/owned.kicad_pro').read_bytes())
+        self.assertEqual(json.loads((captured / 'footprint-rules/report.json').read_bytes())['status'], 'pass')
+
+    def test_native_capture_refuses_a_footprint_whose_hole_is_too_close_to_its_pad(self):
+        require_toolchain(native=True)
+        (self.kicad / 'footprints/Owned.pretty/R2.kicad_mod').write_bytes(owned_footprint('R2', 0.15))
+        with native_run.using(None), self.assertRaises(DesignError) as caught:
+            self.capture()
+        message = str(caught.exception)
+        self.assertEqual(refusal_classes(message), ['parts.R1.footprint', 'parts.R2.footprint'])
+        self.assertIn('measure 0.1500 mm against the 0.2500 mm limit of board setup constraints hole clearance',
+                      message)
+        self.assertEqual(self.requests, [])

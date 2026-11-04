@@ -638,6 +638,16 @@
     },
     {
       "paths": [
+        "tests/test_footprint_rules.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original tool defect #32 footprint fabrication-rule regressions. The two-pad footprint with one NPTH hole is authored minimal KiCad footprint text written to a temporary directory, and the DRC findings are authored records in KiCad's report form. No third-party design or library text is copied."
+    },
+    {
+      "paths": [
         "tests/test_reserved_area.py"
       ],
       "kind": "owned-source",

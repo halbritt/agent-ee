@@ -235,6 +235,11 @@ def _capture_design(design, out, *, kicad_root, stock_endpoint, supplier_endpoin
         write_json(out / 'model-sources.json', model_sources)
     capture_cad(design, out / "cad", kicad_root)
     validate(design, out, cad_only=True)
+    # Each footprint alone against the board's own fabrication rules, before any download:
+    # a violation built into a footprint is refused here, not after placement and routing.
+    from .footprint_rules import check as check_footprint_rules
+
+    check_footprint_rules(design, out / "cad", out / "footprint-rules")
     from .jlc_stock_capture import capture_jlc_stock
 
     catalog = capture_jlc_stock(
