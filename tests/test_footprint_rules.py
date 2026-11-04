@@ -6,6 +6,7 @@ recorded() answers the same native runs with canned reports for the capture test
 import json
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 from agent_ee import native_run
@@ -38,6 +39,41 @@ def pth_footprint(name, hole_gap_mm):
             '  (pad "1" thru_hole circle (at -1 0) (size 1.1 1.1) (drill 0.8) (layers "*.Cu" "*.Mask"))\n'
             f'  (pad "2" smd rect (at {x:.4f} 0) (size 1 1) (layers "F.Cu" "F.Mask" "F.Paste"))\n'
             ')\n').encode()
+
+
+# A plated pad (0.8 mm drill, 1.1 mm copper, net A) and a 0.6 mm net-B track on F.Cu at x = {x} nm, saved
+# with the compiled rule files beside it. The copper stays 0.1 mm or more apart: only the hole rule can fire.
+TRACK_BOARD = """import pcbnew
+from pathlib import Path
+out = Path('/work/board.kicad_pcb')
+board = pcbnew.BOARD()
+footprint = pcbnew.FOOTPRINT(board)
+footprint.SetReference('J1')
+board.Add(footprint)
+nets = {{name: pcbnew.NETINFO_ITEM(board, name) for name in ('A', 'B')}}
+for net in nets.values():
+    board.Add(net)
+pad = pcbnew.PAD(footprint)
+pad.SetNumber('1')
+pad.SetAttribute(pcbnew.PAD_ATTRIB_PTH)
+pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
+pad.SetSize(pcbnew.VECTOR2I(1100000, 1100000))
+pad.SetDrillSize(pcbnew.VECTOR2I(800000, 800000))
+pad.SetLayerSet(pcbnew.LSET.AllCuMask())
+pad.SetPosition(pcbnew.VECTOR2I(10000000, 10000000))
+pad.SetNet(nets['A'])
+footprint.Add(pad)
+track = pcbnew.PCB_TRACK(board)
+track.SetStart(pcbnew.VECTOR2I({x}, 9000000))
+track.SetEnd(pcbnew.VECTOR2I({x}, 11000000))
+track.SetWidth(600000)
+track.SetLayer(pcbnew.F_Cu)
+track.SetNet(nets['B'])
+board.Add(track)
+assert pcbnew.SaveBoard(str(out), board)
+for source in Path('/candidate').glob('*.kicad_*'):
+    out.with_suffix(source.suffix).write_bytes(source.read_bytes())
+"""
 
 
 # The board's NPTH limit as compile now cites it in the refusal (fab profile limit npth-copper).
@@ -148,6 +184,34 @@ class NativeFootprintRulesTest(unittest.TestCase):
         (self.cad / 'Owned.pretty/R2.kicad_mod').write_bytes(pth_footprint('R2', 0.28))
         report = footprint_rules.check(self.design, self.cad, self.root / 'pth-at')
         self.assertEqual([(p['reference'], p['status']) for p in report['parts']], [('R1', 'pass'), ('R2', 'pass')])
+
+    def test_a_track_near_a_plated_hole_is_judged_by_the_sourced_limit(self):
+        # Review round 2: the plated-hole rule compared B.Pad_Type on a track, which has none, so a real
+        # track 0.27 mm from a plated hole passed. Same compiled rule files as the footprint check.
+        files, _ = footprint_rules.rule_files(self.design)
+        findings = {}
+        for gap in ('0.27', '0.28'):
+            inputs, board, work = (self.root / ('track-' + gap) / name for name in ('inputs', 'board', 'drc'))
+            for directory in (inputs, board, work):
+                directory.mkdir(parents=True)
+            for name, raw in files.items():
+                (inputs / name).write_bytes(raw)
+            x = 10_000_000 + 400_000 + int(Decimal(gap) * 1_000_000) + 300_000
+            (inputs / 'build.py').write_text(TRACK_BOARD.format(x=x))
+            record = native_run.run(native_run.Intent('pcbnew_script', ('/usr/bin/python3', '-B', '/candidate/build.py'),
+                                                      timeout=120), inputs=inputs, work=board)
+            self.assertEqual(record['execution'], 'ok', record)
+            record = native_run.run(native_run.Intent('drc', native_run.drc_argv(
+                '/candidate/board.kicad_pcb', '/work/native-drc.json', output_flag='--output'), timeout=120),
+                inputs=board, work=work)
+            self.assertEqual(record['execution'], 'ok', record)
+            report = json.loads((work / 'native-drc.json').read_text())
+            findings[gap] = [v for v in report['violations'] if v['type'] == 'hole_clearance']
+        self.assertEqual(findings['0.28'], [])
+        (finding,) = findings['0.27']
+        self.assertEqual(finding['severity'], 'error')
+        self.assertIn("(rule 'fab_pth-copper' clearance 0.2800 mm; actual 0.2700 mm)", finding['description'])
+        self.assertEqual(sorted(item['description'].split(' ', 1)[0] for item in finding['items']), ['PTH', 'Track'])
 
     def test_the_stock_usb_c_receptacle_of_benchmark_r5b_is_still_refused(self):
         # J1 of r5b usb-regulator attempt 2, the KiCad library footprint read in place: its four

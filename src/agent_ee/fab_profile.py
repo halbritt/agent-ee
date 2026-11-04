@@ -29,10 +29,12 @@ NATIVE = {
     # Hole edge to copper. KiCad tests a rule condition with A and B both ways and cannot
     # name which item holds the hole, so the plated-hole condition leaves out pairs with an
     # NPTH pad or a via: those holes keep the board-wide hole clearance (the NPTH limit).
+    # Pad_Type exists only on pads: on a track, arc, zone or copper graphic a comparison
+    # with it is false, so it is reached only after B.Type == 'Pad'.
     'min_npth_hole_clearance_mm': ('hole_clearance', 'hole_clearance', "A.Pad_Type == 'NPTH, mechanical'"),
     'min_pth_hole_clearance_mm': ('hole_clearance', 'hole_clearance',
                                   "A.Pad_Type == 'Through-hole' && B.Type != 'Via' && "
-                                  "B.Pad_Type != 'NPTH, mechanical'"),
+                                  "(B.Type != 'Pad' || B.Pad_Type != 'NPTH, mechanical')"),
 }
 GEOMETRY = {'max_layers', 'max_board_mm', 'supports_smt'}
 PROJECT_RULES = {'min_trace_mm': 'min_track_width', 'min_clearance_mm': 'min_clearance',

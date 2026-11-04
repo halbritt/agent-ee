@@ -622,7 +622,8 @@ class DesignCompileTests(unittest.TestCase):
         self.assertEqual(
             (inputs / "project/owned.kicad_dru").read_text(),
             '(version 1)\n(rule "fab_pth-copper"\n'
-            "  (condition \"A.Pad_Type == 'Through-hole' && B.Type != 'Via' && B.Pad_Type != 'NPTH, mechanical'\")\n"
+            "  (condition \"A.Pad_Type == 'Through-hole' && B.Type != 'Via' && "
+            "(B.Type != 'Pad' || B.Pad_Type != 'NPTH, mechanical')\")\n"
             "  (constraint hole_clearance (min 0.28mm)))\n")
         profile = json.loads((inputs / "fab-profile.json").read_text())
         facts = (inputs / "fab-sources/selected-facts.txt").read_text(encoding="utf-8")
