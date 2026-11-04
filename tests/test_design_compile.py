@@ -1502,6 +1502,8 @@ class DiffPairIntentTests(unittest.TestCase):
              "USB_D_P (positive) and USB_D_N (negative)"),
             ("swapped", ("USB_P", "USB_N", [{"positive": "USB_N", "negative": "USB_P"}]),
              "diff_pairs[0]: the router pairs nets only by name"),
+            ("stems", ("A_P", "B_N", [{"positive": "A_P", "negative": "B_N"}]),
+             "name this pair A_P (positive) and A_N (negative)"),
             ("undeclared-suffix", ("USB_P", "LOAD_P", [pair]), "nets.LOAD_P: with diff_pairs declared, "
              "the router treats LOAD_P as a differential-pair member (LOAD_P with LOAD_N) by its name; "
              "declare that pair in diff_pairs, or rename LOAD_P"),

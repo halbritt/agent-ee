@@ -333,10 +333,15 @@ class ControllerBoundaryTests(Fixture):
 
     def test_router_refusal_stops_the_trial_loop_and_keeps_the_message(self):
         """A refusal before routing does not depend on placement: one trial, no other seed (defect 31)."""
+        for router, mode in (({'checkout': 'unused'}, None), ({'checkout': 'unused', 'diff_pairs': 'auto'}, 'auto')):
+            with self.subTest(mode=mode):
+                self._refused_trial(router, mode)
+
+    def _refused_trial(self, router, mode):
         problem, _ = self.problem()
-        out = self.dir / 'refused'
+        out = self.dir / f'refused-{mode}'
         config = {'budget_s': 60, 'inputs': {k: {} for k in ('board', 'project', 'intent', 'groups')},
-                  'search': {'shortlist': 3}, 'router': {'checkout': 'unused'}}
+                  'search': {'shortlist': 3}, 'router': router}
         values = dict(board=(self.board, self.board.read_bytes()), project=(self.project, b'{}'),
                       intent=(self.board, json.dumps(intent()).encode()),
                       groups=(self.board, json.dumps(groups()).encode()))
@@ -363,7 +368,7 @@ class ControllerBoundaryTests(Fixture):
             stack.enter_context(patch.object(job, 'route', side_effect=routed))
             final = stack.enter_context(patch.object(job, 'final_checks'))
             report = job.run_job(config, out)
-        self.assertEqual(calls, [None], 'one trial, and no pair handling without a declaration')
+        self.assertEqual(calls, [mode], 'one trial, with pair handling only when declared')
         final.assert_not_called()
         self.assertEqual(report['status'], 'router_refused')
         self.assertEqual([t['status'] for t in report['routing_trials']], ['router_refused'])
