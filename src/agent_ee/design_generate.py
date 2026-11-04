@@ -511,6 +511,7 @@ def placement_findings(root):
     for path in sorted(root.glob('stages/*/placement/job-report.json')):
         job = design.load(path)
         result.append(dict(path=str(path), status=job['status'], reason=job.get('reason'),
+            **({'router_refusal': job['router_refusal']} if job.get('router_refusal') else {}),
             engine_feasible=job.get('engine_feasible'), validity=job.get('validity'),
             routed_candidate=job.get('routed_candidate'), best_diagnostic=job.get('best_diagnostic'),
             final={k: job.get('final', {}).get(k) for k in
@@ -592,6 +593,12 @@ def phase_feedback(stage, reason, row):
     if 'search_retry_skipped' in row:
         feedback += 'No automatic search retry: ' + row['search_retry_skipped'] + '\n'
     findings = row.get('placement_findings', [])
+    for job in findings:
+        refusal = job.get('router_refusal')
+        if isinstance(refusal, dict):
+            # Verbatim, with its class. The router refused before routing, so more seeds cannot change it.
+            feedback += (f"Router refusal (kicad-route reason_class {refusal.get('reason_class')}; before routing, "
+                         f"independent of placement seeds): {refusal.get('message')}\n")
     copper_warnings = [w for job in findings for w in (job.get('final', {}).get('decoupling_loops') or {}).get('warnings', [])]
     if copper_warnings:
         feedback += 'Local copper warnings: ' + json.dumps(copper_warnings) + '\n'

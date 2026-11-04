@@ -87,6 +87,20 @@ class RoutingFeedbackTests(Fixture):
             data['settings']['pairs'] = pairs
             write_json(result, data)
             self.assertIsNone(feedback(), 'missing pair detection or an actual pair cannot be treated as single-ended')
+        # A route without --diff-pairs has no pair handling, so no pair plan is expected (defect 31).
+        record['argv'] = ['python3', '-B', 'kicad-route', 'run', '--budget', '10']
+        del data['settings']['pairs']
+        write_json(result, data)
+        self.assertEqual(feedback()['nets'], ['A'])
+        for settings in ({'pairs': []}, {'diff_pairs': 'auto'}):
+            data['settings'] = settings
+            write_json(result, data)
+            self.assertIsNone(feedback(), 'pair evidence from an unpaired request is a contradiction')
+        record['argv'] += ['--diff-pairs', 'auto']
+        data['settings'] = {}
+        write_json(result, data)
+        self.assertIsNone(feedback(), 'a paired request needs the router to report an empty pair plan')
+        del record['argv']
         data['settings']['pairs'] = []
         data['routing']['unconnected_total'] = 1
         write_json(result, data)

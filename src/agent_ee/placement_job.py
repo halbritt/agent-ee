@@ -1417,8 +1417,14 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
             return None
         return {'kind': 'thermal_corridors', 'evidence': str(path), 'sha256': digest(path),
                 'pads': sorted({p['uuid'] + '@' + p['layer'] for p in pads})}
-    if (kinds == {'track_dangling'} and all(v == 'PASS' for v in preservation.values())
-            and result.get('settings', {}).get('pairs') == []):
+    settings = result.get('settings', {})
+    if record.get('argv') is not None and '--diff-pairs' not in record['argv']:
+        # No pair handling was requested, and the router reports none.
+        pair_free = 'pairs' not in settings and 'diff_pairs' not in settings
+    else:
+        # The router's own pair plan must be empty.
+        pair_free = settings.get('pairs') == []
+    if kinds == {'track_dangling'} and all(v == 'PASS' for v in preservation.values()) and pair_free:
         # The public force-reroute option cannot be combined with pair routing.
         # Only a positively established pair-free attempt may use this repair.
         import pcbnew
@@ -1441,7 +1447,7 @@ ROUTER_IDENTITY = ('commit', 'clean', 'code_sha256', 'code_files', 'executable_s
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
           bus=None, length_match=None, ac_match=None, local_decoupling=None,
-          defer_local_fallback=False, local_fallback_reason=None):
+          defer_local_fallback=False, local_fallback_reason=None, diff_pairs=None):
     """kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1596,7 +1602,7 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         checkout, staged, route_dir / 'out', design_name=design_name, owned_copper=owned_copper,
         budget_s=remaining, grid_step_mm=grid_step_mm, pair_layers=pair_layers,
         pair_impedance=pair_impedance, intra_pair_match=intra_pair_match,
-        bus=bus, length_match=length_match, ac_match=ac_match)
+        bus=bus, length_match=length_match, ac_match=ac_match, diff_pairs=diff_pairs)
     env = routing_adapter.board_route_env(checkout, home)
     record = _route_attempt(route_dir, argv=argv, env=env, clock=clock, cancel_dir=cancel_dir)
     attempts = [dict(record)]
@@ -1723,6 +1729,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         pair_layers = router_options['pair_layers']
         impedance = router_options['pair_impedance']
         matching = router_options['intra_pair_match']
+        diff_pairs = router_options['diff_pairs']
         unknown = set(config['inputs']) - {'board', 'project', 'rules', 'intent', 'groups', 'locality', 'planes', 'group_rails', 'block_contract', 'mechanics', 'local_decoupling'}
         if unknown:
             raise JobRefusal('unsupported placement input(s): ' + ', '.join(sorted(unknown)))
@@ -2108,10 +2115,20 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers, pair_impedance=impedance,
                            bus=bus, length_match=length_match, ac_match=ac_match, local_decoupling=local_contract,
                            defer_local_fallback=len(queue) > 1,
-                           local_fallback_reason=selected.get('local_fallback_reason'))
+                           local_fallback_reason=selected.get('local_fallback_reason'), diff_pairs=diff_pairs)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             trial['generated_relation_count'] = routed.get('generated_relation_count', 0)
             report['router_identity'] = {k: routed['preflight'][k] for k in ROUTER_IDENTITY}
+            if routed['status'] == 'router_refused':
+                # kicad-route refused the command or its input before any backend ran. That does
+                # not depend on the placement, so no other candidate or seed is tried.
+                refusal = routed['refusal']
+                status = 'router_refused'
+                trial.update(status=status, route=report['route'], router_refusal=refusal)
+                report.update(router_refusal=refusal,
+                              reason=f"kicad-route refused ({refusal['reason_class']}): {refusal['message']}")
+                retain_routing_trial(trial, suffix)
+                break
             if routed['status'] == 'local_copper_deferred':
                 # Unknown candidates get generation first; retained subsets rank by count.
                 queue.append({**selected, 'local_fallback_reason': routed.get('local_decoupling', routed['reason']),

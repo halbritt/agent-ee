@@ -866,8 +866,18 @@ def validate_router_options(router_config):
         if any(type(value) not in (int, float) or not math.isfinite(value) or value < 0.000001
                for value in matching.values()):
             raise ValueError('intra-pair matching values must be finite and at least 0.000001 mm')
+    # Pair handling is declared, never assumed: kicad-route's --diff-pairs auto treats every
+    # net named *_P/*_N (or +/-) as a pair member and refuses an unpaired one.
+    diff_pairs = router_config.get('diff_pairs')
+    if 'diff_pairs' in router_config and diff_pairs != 'auto':
+        raise ValueError("router.diff_pairs must be 'auto' (route declared pairs); omit it to route without pair handling")
+    dependent = [key for key in ('pair_layers', 'pair_impedance', 'intra_pair_match', 'ac_match') if key in router_config]
+    if dependent and diff_pairs != 'auto':
+        raise ValueError(', '.join('router.' + key for key in dependent)
+                         + " route differential pairs; declare them with router.diff_pairs 'auto'")
     return {'ac_match': ac_match, 'length_match': length_match, 'bus': bus,
-            'pair_layers': pair_layers, 'pair_impedance': impedance, 'intra_pair_match': matching}
+            'pair_layers': pair_layers, 'pair_impedance': impedance, 'intra_pair_match': matching,
+            'diff_pairs': diff_pairs}
 
 
 def router_python(*args, python=None):
@@ -904,13 +914,19 @@ def router_env(env=None):
 
 def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owned_copper=False, budget_s,
                      grid_step_mm=None, pair_layers=None, pair_impedance=None, intra_pair_match=None,
-                     bus=None, length_match=None, ac_match=None):
-    """Build the kicad-route CLI command for board-only / schematic-optional invocations."""
+                     bus=None, length_match=None, ac_match=None, diff_pairs=None):
+    """Build the kicad-route CLI command for board-only / schematic-optional invocations.
+
+    diff_pairs is 'auto' only for declared pairs; otherwise the router has no pair handling."""
     argv = router_python(str(Path(checkout) / 'bin' / 'kicad-route'), 'run', '--out', str(out_dir),
                          '--json', '--backend', attempt.CLI_BACKEND_NAMES['builtin'], '--dir', str(staged_dir),
                          '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', design_name,
                          '--label', 'placement-job', '--protect', 'locked' if owned_copper else 'existing',
-                         '--budget', str(int(budget_s)), '--diff-pairs', 'auto')
+                         '--budget', str(int(budget_s)))
+    if diff_pairs is not None:
+        if diff_pairs != 'auto':
+            raise ValueError("diff_pairs must be 'auto' or None")
+        argv += ['--diff-pairs', 'auto']
     if grid_step_mm is not None:
         argv += ['--grid-step', str(grid_step_mm)]
     if pair_layers is not None:
@@ -966,7 +982,8 @@ def board_retry_argv(argv, retry_dir, budget_s, feedback, pads, board_path):
         pads = feedback['pads']
     else:
         retry[retry.index('--dir') + 1] = str(Path(board_path).parent)
-        del retry[retry.index('--diff-pairs'):retry.index('--diff-pairs') + 2]
+        if '--diff-pairs' in retry:
+            del retry[retry.index('--diff-pairs'):retry.index('--diff-pairs') + 2]
         retry += ['--nets', *feedback['nets'], '--backend-arg=--force-reroute']
     for pad in pads:
         retry += ['--reserve-spoke-pad', pad]
@@ -978,12 +995,41 @@ def spokes_argv(checkout, run_dir):
     return router_python(str(Path(checkout) / 'bin/kicad-route'), 'spokes', str(run_dir))
 
 
+REFUSAL_SCHEMA = 'kicad-route/refusal/1'
+REFUSAL_CLASSES = ('usage', 'input', 'ledger', 'canary', 'state')
+
+
+def board_refusal(route_dir, argv, exit_code):
+    """The router's own refusal record for this invocation, or None.
+
+    With --json, kicad-route refuses before any backend runs by exiting 4 with
+    exactly one kicad-route/refusal/1 object on stdout (its docs/interface.md).
+    The record must name this command line: the router records its own arguments, everything
+    after the script in argv. Its message is kept verbatim."""
+    script = next((i for i, arg in enumerate(argv) if str(arg).endswith('/bin/kicad-route')), None)
+    if exit_code != 4 or script is None:
+        return None
+    try:
+        value = json.loads((Path(route_dir) / 'kicad-route.stdout').read_bytes())
+    except (OSError, ValueError):
+        return None
+    if (not isinstance(value, dict) or value.get('schema') != REFUSAL_SCHEMA or value.get('kind') != 'refusal'
+            or value.get('exit_code') != 4 or value.get('argv') != [str(arg) for arg in argv[script + 1:]]
+            or value.get('reason_class') not in REFUSAL_CLASSES
+            or not isinstance(value.get('message'), str) or not value['message']):
+        return None
+    return {'reason_class': value['reason_class'], 'message': value['message'], 'record': value.get('record')}
+
+
 def bind_board_attempt(route_dir, argv, exit_code):
     """Bind one board-level kicad-route attempt output directory and verify its candidate digest."""
     route_dir = Path(route_dir)
     record = {'argv': argv, 'exit_code': exit_code}
     results = sorted((route_dir / 'out').rglob('result.json'))
     if len(results) != 1:
+        refusal = board_refusal(route_dir, argv, exit_code) if not results else None
+        if refusal is not None:
+            return {**record, 'status': 'router_refused', 'refusal': refusal}
         return {**record, 'status': 'missing_output'}
     data = results[0].read_bytes()
     # The same result rule as the sandboxed route: schema, keys and statuses first.

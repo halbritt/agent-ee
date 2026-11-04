@@ -44,9 +44,63 @@ Unknown fields are refused.
 | `plane` | `{net, layer}`; choose a declared net and `F.Cu` or `B.Cu`. |
 | `functional` | Nonempty list of `{text, witnesses}`. Each requirement needs independent topology witnesses. |
 | `bench` | Nonempty list of physical follow-ups. These remain physical obligations, separate from executable file checks. |
+| `diff_pairs` | Optional list of declared differential pairs `{positive, negative}` with optional `intra_pair_match` and `impedance`; see [Differential pairs](#differential-pairs). Omitted means no pair handling. |
 | `placement` | Optional `{budget_s, seeds, steps_per_seed}`; defaults are 600 seconds, 4 seeds, and 100000 steps per seed. |
 | `mechanics` | Optional `{access_owners, packages}`; see below. Omitted means no declared body/access model. |
 | `markings` | Optional list of visible silkscreen labels; see Board text below. |
+
+## Differential pairs
+
+Declare a differential pair in `diff_pairs`. The router never infers one from a
+net name alone.
+
+```json
+"diff_pairs": [
+  {"positive": "USB_P", "negative": "USB_N",
+   "intra_pair_match": {"tolerance_mm": 0.1, "amplitude_mm": 1},
+   "impedance": {"target_ohm": 90, "tolerance_percent": 10, "max_uncoupled_mm": 3}}
+]
+```
+
+`positive` and `negative` are declared nets. A net belongs to at most one pair.
+The router pairs nets only by name, so a pair must be named `STEM_P` and
+`STEM_N`. The compiler never renames a net. A pair with other names is refused,
+and the message gives the names to use, for example `USB_D_P` and `USB_D_N` for
+`USB_DP` and `USB_DM`. Rename the nets in `nets`, `diff_pairs` and every
+witness.
+
+When `diff_pairs` is present, the router treats more nets as pair members:
+
+- every net whose name ends in `_P`, `_N`, `+` or `-`;
+- two nets whose names differ only in a final `P` and `N`, such as `TXP` and `TXN`.
+
+Each such net that is not in a declared pair is refused under `nets.<name>`.
+Declare its pair, or rename the net. Without `diff_pairs`, names are not
+constrained. A sense net such as `LOAD_P` then routes as an ordinary net, and
+the board router gets no `--diff-pairs` option.
+
+The compiled build plan carries the declaration in `placement.router`:
+`diff_pairs: "auto"`, plus `intra_pair_match`, and `pair_layers` with
+`pair_impedance`, when they are declared. The
+[placement job](placement-job.md) passes these to kicad-route as `--diff-pairs auto`,
+`--diff-pair-intra-match` and `--pair-impedance`. The router uses each net
+class's native diff-pair width and gap. The compiled project keeps KiCad's
+Default class values for these.
+
+Optional intent, with the router's own limits:
+
+- `intra_pair_match`: `tolerance_mm` and `amplitude_mm`, both finite and at
+  least 0.000001 mm. Saved pair lengths must match within the tolerance.
+- `impedance`: `target_ohm`, `tolerance_percent` (below 100) and
+  `max_uncoupled_mm`, all finite and positive. The pair is planned as nominal
+  microstrip on the outer layer opposite `plane.layer`, referenced to
+  `plane.net`. The placement job checks the board's stackup before routing and
+  measures the saved geometry after routing. This is an analytic estimate, not a
+  measured impedance.
+
+The router applies one matching setting and one impedance setting to every pair.
+Give every pair the same `intra_pair_match` and the same `impedance`, or omit
+them on all pairs. Different values per pair are refused as `[tool_gap]`.
 
 ## Board text
 

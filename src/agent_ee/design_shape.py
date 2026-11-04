@@ -47,7 +47,7 @@ def problems(design):
         functional=list,
         bench=list,
     )
-    if not obj(design, required, dict(placement=dict, mechanics=dict, markings=list), "design"):
+    if not obj(design, required, dict(placement=dict, mechanics=dict, markings=list, diff_pairs=list), "design"):
         return errors
     if errors:
         return errors
@@ -139,6 +139,15 @@ def problems(design):
                                     expect(v, str, f"{wp}.{k}[{n}]")
                 else:
                     errors.append(wp + ".type: use pin_net or element_between")
+    for i, pair in rows(design.get("diff_pairs", []), "diff_pairs"):
+        path = f"diff_pairs[{i}]"
+        if obj(pair, dict(positive=str, negative=str), dict(intra_pair_match=dict, impedance=dict), path):
+            if isinstance(pair.get("intra_pair_match"), dict):
+                obj(pair["intra_pair_match"], dict(tolerance_mm=None, amplitude_mm=None), {},
+                    path + ".intra_pair_match")
+            if isinstance(pair.get("impedance"), dict):
+                obj(pair["impedance"], dict(target_ohm=None, tolerance_percent=None, max_uncoupled_mm=None),
+                    {}, path + ".impedance")
     if "placement" in design:
         obj(
             design["placement"],

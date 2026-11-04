@@ -1638,3 +1638,34 @@ class DeferredCopperFeedbackTests(unittest.TestCase):
             self.assertEqual(summary['deferral_budget_warnings'][0]['deferral_budget_loss_s'],15.)
             feedback=design_generate.phase_feedback('placement-routing','test',dict(placement_findings=findings))
             self.assertIn('deferred_incumbent',feedback);self.assertIn('deferral_budget_loss_s',feedback)
+
+
+class RouterRefusalFeedbackTests(ScriptedLoop):
+    """A router input refusal goes to the author verbatim and is never a seed retry (defect 31)."""
+
+    MESSAGE = "unpaired differential net '/LOAD_P': expected '/LOAD_N'"
+
+    def refused_build(self, attempt):
+        self.build_report(attempt, accepted=False, stage='placement-routing',
+                          reason='ValueError: placement/routing did not pass: router_refused')
+        path = attempt / 'build/stages/05-placement/placement'
+        path.mkdir(parents=True)
+        refusal = dict(reason_class='input', message=self.MESSAGE, record='out/refusals/1.json')
+        write_json(path / 'job-report.json', dict(status='router_refused', router_refusal=refusal,
+            reason='kicad-route refused (input): ' + self.MESSAGE,
+            routing_trials=[dict(seed=3, status='router_refused', router_refusal=refusal)]))
+        return dict(execution='failed', exit_code=1)
+
+    def test_input_refusal_reaches_the_author_verbatim_without_a_seed_retry(self):
+        self.responses = [self.response(), self.response()]
+        with self.with_build(self.refused_build):
+            report = self.generate(max_attempts=2)
+        self.assertEqual([r['kind'] for r in report['attempts']], ['author', 'author'])
+        self.assertEqual(report['attempts'][0]['placement_findings'][0]['router_refusal']['message'], self.MESSAGE)
+        feedback = self.feedback(1)
+        line = ('Router refusal (kicad-route reason_class input; before routing, independent of placement '
+                'seeds): ' + self.MESSAGE)
+        self.assertIn(line, feedback)
+        self.assertLess(feedback.index(line), feedback.index('Placement summary'))
+        self.assertFalse(loop.search_failure(dict(attempts=[dict(stage='placement-routing')]),
+                                             self.root / 'run/attempt-001/build'))

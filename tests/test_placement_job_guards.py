@@ -331,6 +331,50 @@ class ControllerBoundaryTests(Fixture):
         for trial in state['routing_trials']:
             self.assertEqual(job.digest(trial['path']),trial['sha256'])
 
+    def test_router_refusal_stops_the_trial_loop_and_keeps_the_message(self):
+        """A refusal before routing does not depend on placement: one trial, no other seed (defect 31)."""
+        problem, _ = self.problem()
+        out = self.dir / 'refused'
+        config = {'budget_s': 60, 'inputs': {k: {} for k in ('board', 'project', 'intent', 'groups')},
+                  'search': {'shortlist': 3}, 'router': {'checkout': 'unused'}}
+        values = dict(board=(self.board, self.board.read_bytes()), project=(self.project, b'{}'),
+                      intent=(self.board, json.dumps(intent()).encode()),
+                      groups=(self.board, json.dumps(groups()).encode()))
+        output = {'timing': {'prepare_s': 0}, 'status': 'completed', 'counters': {}, 'seeds': [], 'prng': 'probe',
+                  'shortlist': [{'seed': n, 'cost': str(n + 1), 'poses': [n]} for n in range(3)]}
+        message = "unpaired differential net '/LOAD_P': expected '/LOAD_N'"
+        calls = []
+
+        def routed(directory, *_args, **kwargs):
+            calls.append(kwargs.get('diff_pairs'))
+            return {'status': 'router_refused', 'argv': ['python3'], 'exit_code': 4,
+                    'refusal': {'reason_class': 'input', 'message': message, 'record': 'out/refusals/1.json'},
+                    'preflight': {k: None for k in job.ROUTER_IDENTITY}}
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(job, 'verified_input', side_effect=lambda _entry, label: values[label]))
+            stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe', 'engine': 'unused'}))
+            stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
+            stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))
+            stack.enter_context(patch.object(job, 'materialize', side_effect=lambda _b, poses, *_a, **_k: {
+                'board': str(self.board), 'board_sha256': f'candidate-{poses[0]}', 'integrity': 'preserved',
+                'problems': []}))
+            stack.enter_context(patch.object(job, 'check_edge_intent', return_value={'status': 'pass'}))
+            stack.enter_context(patch.object(job, 'drc', return_value=({'violations': [], 'unconnected_items': []}, {})))
+            stack.enter_context(patch.object(job, 'route', side_effect=routed))
+            final = stack.enter_context(patch.object(job, 'final_checks'))
+            report = job.run_job(config, out)
+        self.assertEqual(calls, [None], 'one trial, and no pair handling without a declaration')
+        final.assert_not_called()
+        self.assertEqual(report['status'], 'router_refused')
+        self.assertEqual([t['status'] for t in report['routing_trials']], ['router_refused'])
+        self.assertEqual(report['routing_trials'][0]['router_refusal']['message'], message)
+        self.assertEqual(report['router_refusal'], {'reason_class': 'input', 'message': message,
+                                                    'record': 'out/refusals/1.json'})
+        self.assertEqual(report['reason'], f'kicad-route refused (input): {message}')
+        self.assertEqual(json.loads((out / 'job-report.json').read_text())['router_refusal']['message'], message)
+        state = json.loads((out / 'checkpoint.json').read_text())
+        self.assertEqual(len(state['routing_trials']), 1)
+
     def test_cancel_and_deadline_between_judge_route_and_final_preserve_incumbent(self):
         problem, _ = self.problem()
         for mode in ('cancel', 'deadline', 'cancel-after-route', 'deadline-after-route', 'integrity-failure'):

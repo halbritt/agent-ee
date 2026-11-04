@@ -55,6 +55,57 @@ def footprint_path(part):
     return f"{lib}.pretty/{name}.kicad_mod"
 
 
+def native_net(design, net):
+    return net if net == design["ground"] else "/" + net
+
+
+def router_pair(name, names):
+    """The (positive, negative) pair kicad-route forms from net ``name``, or None.
+
+    With ``--diff-pairs auto`` the router pairs nets by name only (its
+    src/kicad_route/diff_pairs.py ``detect``): a name ending in ``_P``/``_N`` or
+    ``+``/``-`` is always a pair member, and the router refuses it when the mate
+    is missing; a name ending in a bare ``P``/``N`` is a member when its mate is
+    in ``names``. The native ``/`` prefix is the same on both members, so the
+    rule gives the same answer on statement names.
+    """
+    if name.endswith(("_P", "_N")):
+        return name[:-2] + "_P", name[:-2] + "_N"
+    if name.endswith(("+", "-")):
+        return name[:-1] + "+", name[:-1] + "-"
+    if name.endswith(("P", "N")) and name[:-1] + ("N" if name[-1] == "P" else "P") in names:
+        return name[:-1] + "P", name[:-1] + "N"
+    return None
+
+
+def pair_routing(design):
+    """The board-router options that the declared differential pairs compile to.
+
+    Without declared pairs this is empty: the board routes with no pair handling.
+    The router applies one matching and one impedance setting to every pair it
+    detects, so the first pair's intent stands for all (validate checks they agree).
+    Impedance is nominal microstrip on the outer layer opposite ``plane``,
+    referenced to the plane net.
+    """
+    pairs = design.get("diff_pairs") or []
+    if not pairs:
+        return {}
+    router = {"diff_pairs": "auto"}
+    first = pairs[0]
+    if "intra_pair_match" in first:
+        router["intra_pair_match"] = dict(first["intra_pair_match"])
+    if "impedance" in first:
+        plane = design["plane"]
+        router["pair_layers"] = ["F.Cu" if plane["layer"] == "B.Cu" else "B.Cu"]
+        router["pair_impedance"] = dict(
+            target_ohm=first["impedance"]["target_ohm"],
+            tolerance_percent=first["impedance"]["tolerance_percent"],
+            reference_net=native_net(design, plane["net"]),
+            max_uncoupled_mm=first["impedance"]["max_uncoupled_mm"],
+        )
+    return router
+
+
 def number(value):
     return type(value) is int or (type(value) is float and math.isfinite(value))
 
@@ -101,6 +152,81 @@ def datasheet_source(parts, ref, path, fail):
             path,
             f"parts with lcsc {parts[ref]['lcsc']} share one datasheet; declare the same source as parts.{others[0]}.datasheet",
         )
+
+
+PAIR_FIELDS = ("intra_pair_match", "impedance")
+
+
+def validate_diff_pairs(design, nets, fail):
+    """Declared differential pairs, and the router's name convention when any are declared.
+
+    kicad-route understands pairs only through ``--diff-pairs auto``, which pairs
+    nets by name (router_pair). Declared intent and router behaviour agree only
+    when every declared pair is named STEM_P/STEM_N and no other net has a name
+    the router pairs. Names are never changed: a mismatch is a refusal. Without
+    declared pairs the board routes with no pair handling and names are free.
+    """
+    pairs = design.get("diff_pairs", [])
+    if not isinstance(pairs, list):
+        fail("diff_pairs", "supply a list of {positive, negative} pairs")
+        return
+    declared, valid = {}, []
+    for i, pair in enumerate(pairs):
+        path = f"diff_pairs[{i}]"
+        if not isinstance(pair, dict) or not {"positive", "negative"} <= pair.keys():
+            continue  # The shape check names the missing field.
+        refused = False
+        for key in ("positive", "negative"):
+            net = pair[key]
+            if net not in nets:
+                fail(f"{path}.{key}", "select a declared net")
+                refused = True
+            elif net in declared:
+                fail(f"{path}.{key}", f"{net} is already in diff_pairs[{declared[net]}]; a net belongs to one pair")
+                refused = True
+            else:
+                declared[net] = i
+        positive, negative = pair["positive"], pair["negative"]
+        if not refused and not (positive.endswith("_P") and negative == positive[:-2] + "_N"):
+            from os.path import commonprefix
+
+            stem = positive[:-2] if positive.endswith("_P") else (
+                commonprefix([positive, negative]).rstrip("_") or positive)
+            fail(path, f"the router pairs nets only by name, as STEM_P and STEM_N: name this pair "
+                 f"{stem}_P (positive) and {stem}_N (negative) in nets, diff_pairs and every witness; "
+                 "names are not changed automatically")
+            refused = True
+        if not refused:
+            valid.append((i, pair))
+    if not pairs:
+        return
+    for net in sorted(nets):
+        mate = router_pair(net, nets)
+        if net in declared or mate is None:
+            continue
+        fail("nets." + net, f"with diff_pairs declared, the router treats {net} as a differential-pair member "
+             f"({mate[0]} with {mate[1]}) by its name; declare that pair in diff_pairs, or rename {net} so it "
+             "does not end in _P, _N, + or -, nor in P or N beside a net with the other letter")
+    for key in PAIR_FIELDS:
+        values = [pair.get(key) for _, pair in valid]
+        for (i, pair), value in zip(valid, values):
+            if value != values[0]:
+                fail(f"diff_pairs[{i}].{key}", f"the router applies one {key} setting to every pair: give every "
+                     f"declared pair the same {key}, or omit it on all of them; different settings per pair "
+                     "are not supported yet [tool_gap]")
+                break
+    if len(valid) != len(pairs) or any(pair.get(key) != valid[0][1].get(key) for _, pair in valid for key in PAIR_FIELDS):
+        return
+    from .routing_adapter import validate_router_options
+
+    router = pair_routing(design)
+    for key, options in (("intra_pair_match", ("intra_pair_match",)),
+                         ("impedance", ("pair_layers", "pair_impedance"))):
+        if key in valid[0][1]:
+            try:
+                validate_router_options({"diff_pairs": "auto", **{k: router[k] for k in options}})
+            except (ValueError, TypeError) as exc:
+                fail(f"diff_pairs[0].{key}", str(exc))
 
 
 def validate(design, captures=None, *, cad_only=False):
@@ -170,7 +296,7 @@ def validate(design, captures=None, *, cad_only=False):
             "functional",
             "bench",
         ),
-        ("placement", "mechanics", "markings"),
+        ("placement", "mechanics", "markings", "diff_pairs"),
         "design",
     ):
         raise DesignError(errors)
@@ -687,6 +813,7 @@ def validate(design, captures=None, *, cad_only=False):
                     f"{reach:.3f} mm. Raise max_distance_mm to {math.ceil(reach * 100 - 1e-6) / 100:g} mm "
                     "or more, or choose pads or packages that let the capacitor sit closer",
                 )
+    validate_diff_pairs(design, nets, fail)
     functional = design["functional"]
     if not isinstance(functional, list) or not functional:
         fail("functional", "supply at least one witnessed functional requirement")

@@ -1419,3 +1419,141 @@ class DesignCompileTests(unittest.TestCase):
                         Decimal(str(offset)) + sign * Decimal(str(size)) / 2
                     ) * 1000000
                     self.assertEqual(bound_nm, bound_nm.to_integral_value())
+
+
+class DiffPairIntentTests(unittest.TestCase):
+    """Differential pairs are declared intent, never guessed from names (tool defect 31)."""
+
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.captures = self.root / "captures"
+        self.captures.mkdir()
+        self.design = design_fixture(self.captures)
+
+    def nets(self, first, second=None, pairs=None):
+        """R1/R2 on ``first``, R3/R4 on ``second`` (when given), every other pin on GND."""
+        d = self.design
+        d["parts"].update({r: dict(d["parts"]["R1"]) for r in ("R3", "R4")})
+        d["nets"] = {first: ["R1.1", "R2.1"], "GND": ["R1.2", "R2.2", "R3.2", "R4.2"]}
+        if second is None:
+            d["nets"]["GND"] += ["R3.1", "R4.1"]
+        else:
+            d["nets"][second] = ["R3.1", "R4.1"]
+        witnesses = d["functional"][0]["witnesses"]
+        witnesses[0]["nets"] = [first, "GND"]
+        witnesses[1]["net"] = first
+        if pairs is not None:
+            d["diff_pairs"] = pairs
+        return d
+
+    def plan(self, name="bundle"):
+        compile_design(self.design, self.captures, self.root / name)
+        return json.loads((self.root / name / "build-plan.json").read_text())
+
+    def refused(self, name):
+        with self.assertRaises(DesignError) as caught:
+            compile_design(self.design, self.captures, self.root / name)
+        self.assertFalse((self.root / name).exists())
+        return caught.exception.problems
+
+    def test_sense_net_named_like_a_pair_member_routes_without_pair_handling(self):
+        from agent_ee import routing_adapter
+
+        self.nets("LOAD_P")
+        router = self.plan()["placement"]["router"]
+        self.assertEqual(router, {"checkout": "/opt/kicad-route"})
+        options = routing_adapter.validate_router_options(router)
+        argv = routing_adapter.board_route_argv(
+            router["checkout"], "/staged", "/out", budget_s=60, diff_pairs=options["diff_pairs"])
+        self.assertNotIn("--diff-pairs", argv)
+
+    def test_declared_pair_and_its_intent_reach_the_router_command(self):
+        from agent_ee import routing_adapter
+
+        match = {"tolerance_mm": 0.1, "amplitude_mm": 1}
+        impedance = {"target_ohm": 90, "tolerance_percent": 10, "max_uncoupled_mm": 3}
+        self.nets("USB_P", "USB_N", [{"positive": "USB_P", "negative": "USB_N",
+                                      "intra_pair_match": match, "impedance": impedance}])
+        router = self.plan()["placement"]["router"]
+        self.assertEqual(router, {
+            "checkout": "/opt/kicad-route", "diff_pairs": "auto", "intra_pair_match": match,
+            "pair_layers": ["F.Cu"],  # the outer layer opposite the declared B.Cu plane
+            "pair_impedance": dict(impedance, reference_net="GND")})
+        recorded = json.loads((self.root / "bundle/inputs/design.json").read_text())
+        self.assertEqual(recorded["diff_pairs"], self.design["diff_pairs"])
+        options = routing_adapter.validate_router_options(router)
+        argv = routing_adapter.board_route_argv(
+            router["checkout"], "/staged", "/out", budget_s=60, diff_pairs=options["diff_pairs"],
+            pair_layers=options["pair_layers"], pair_impedance=options["pair_impedance"],
+            intra_pair_match=options["intra_pair_match"])
+        self.assertEqual(argv[argv.index("--diff-pairs") + 1], "auto")
+        self.assertEqual(argv[argv.index("--pair-impedance") + 1], "90")
+        self.assertEqual(argv[argv.index("--impedance-reference") + 1], "GND")
+        self.assertIn("--diff-pair-intra-match", argv)
+        self.nets("CLK_P", "CLK_N", [{"positive": "CLK_P", "negative": "CLK_N"}])
+        self.assertEqual(self.plan("plain")["placement"]["router"],
+                         {"checkout": "/opt/kicad-route", "diff_pairs": "auto"})
+
+    def test_pair_naming_refusals_say_how_to_name(self):
+        pair = {"positive": "USB_P", "negative": "USB_N"}
+        cases = [
+            ("convention", ("USB_DP", "USB_DM", [{"positive": "USB_DP", "negative": "USB_DM"}]),
+             "diff_pairs[0]: the router pairs nets only by name, as STEM_P and STEM_N: name this pair "
+             "USB_D_P (positive) and USB_D_N (negative)"),
+            ("swapped", ("USB_P", "USB_N", [{"positive": "USB_N", "negative": "USB_P"}]),
+             "diff_pairs[0]: the router pairs nets only by name"),
+            ("undeclared-suffix", ("USB_P", "LOAD_P", [pair]), "nets.LOAD_P: with diff_pairs declared, "
+             "the router treats LOAD_P as a differential-pair member (LOAD_P with LOAD_N) by its name; "
+             "declare that pair in diff_pairs, or rename LOAD_P"),
+            ("undeclared-sign", ("USB_P", "VOUT+", [pair]), "nets.VOUT+: with diff_pairs declared"),
+            ("undeclared-mates", ("TXP", "TXN", [{"positive": "TXP", "negative": "TXN"}]),
+             "name this pair TX_P (positive) and TX_N (negative)"),
+            ("unknown-net", ("USB_P", "USB_N", [{"positive": "USB_P", "negative": "OTHER_N"}]),
+             "diff_pairs[0].negative: select a declared net"),
+            ("one-pair-per-net", ("USB_P", "USB_N", [pair, pair]),
+             "diff_pairs[1].positive: USB_P is already in diff_pairs[0]"),
+        ]
+        for name, (first, second, pairs), message in cases:
+            with self.subTest(name=name):
+                self.setUp()
+                self.nets(first, second, pairs)
+                problems = self.refused(name)
+                self.assertTrue(any(message in p for p in problems), problems)
+        self.setUp()
+        self.nets("RXP", "RXN", [])  # Without declared pairs, nothing about names is constrained.
+        self.design["parts"].update(R5=dict(self.design["parts"]["R1"]), R6=dict(self.design["parts"]["R1"]))
+        self.design["nets"]["LOAD_P"] = ["R5.1", "R6.1"]
+        self.design["nets"]["GND"] += ["R5.2", "R6.2"]
+        self.assertNotIn("diff_pairs", self.plan("free")["placement"]["router"])
+
+    def test_undeclared_mates_beside_a_declared_pair_are_refused(self):
+        self.nets("USB_P", "USB_N", [{"positive": "USB_P", "negative": "USB_N"}])
+        self.design["parts"].update({r: dict(self.design["parts"]["R1"]) for r in ("R5", "R6")})
+        self.design["nets"].update(TXP=["R5.1", "R6.1"], TXN=["R5.2", "R6.2"])
+        problems = self.refused("mates")
+        self.assertEqual([p.split(":")[0] for p in problems], ["nets.TXN", "nets.TXP"])
+
+    def test_pair_intent_must_agree_and_be_routable(self):
+        match = {"tolerance_mm": 0.1, "amplitude_mm": 1}
+        self.nets("A_P", "A_N")
+        self.design["parts"].update({r: dict(self.design["parts"]["R1"]) for r in ("R5", "R6")})
+        self.design["nets"].update(B_P=["R5.1", "R6.1"], B_N=["R5.2", "R6.2"])
+        for name, pairs, message in (
+            ("disagree", [{"positive": "A_P", "negative": "A_N", "intra_pair_match": match},
+                          {"positive": "B_P", "negative": "B_N"}],
+             "diff_pairs[1].intra_pair_match: the router applies one intra_pair_match setting to every pair"),
+            ("value", [{"positive": "A_P", "negative": "A_N", "intra_pair_match": dict(match, tolerance_mm=0)},
+                       {"positive": "B_P", "negative": "B_N", "intra_pair_match": dict(match, tolerance_mm=0)}],
+             "diff_pairs[0].intra_pair_match: intra-pair matching values must be finite"),
+            ("impedance", [{"positive": "A_P", "negative": "A_N", "impedance": {
+                "target_ohm": 90, "tolerance_percent": 100, "max_uncoupled_mm": 3}}],
+             "diff_pairs[0].impedance: pair impedance needs positive finite numbers"),
+            ("shape", [{"positive": "A_P", "negative": "A_N", "layer": "F.Cu"}],
+             "diff_pairs[0].layer: unknown field"),
+        ):
+            with self.subTest(name=name):
+                self.design["diff_pairs"] = pairs
+                if name == "impedance":
+                    self.design["nets"]["GND"] += self.design["nets"].pop("B_P") + self.design["nets"].pop("B_N")
+                problems = self.refused(name)
+                self.assertTrue(any(message in p for p in problems), problems)

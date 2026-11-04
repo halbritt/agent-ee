@@ -29,7 +29,7 @@ def prepare(root, checkout):
     config = dict(schema=job.CONFIG_SCHEMA, budget_s=240,
         inputs={name: dict(path=str(path), sha256=digest(path)) for name, path in files.items()},
         search=dict(seeds=[dict(seed=0, start='scattered')], steps_per_seed=10, shortlist=1),
-        router=dict(checkout=str(checkout), pair_layers=['F.Cu'], ac_match=copy.deepcopy(SPEC)))
+        router=dict(checkout=str(checkout), diff_pairs='auto', pair_layers=['F.Cu'], ac_match=copy.deepcopy(SPEC)))
     write_json(root / 'job.json', config)
     return config
 

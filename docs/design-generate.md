@@ -180,6 +180,10 @@ What goes back to the author is bounded:
   follow. The feedback leaves out the provenance fields `declaration`,
   `source_records` and `manufacturing_floor`; the attempt and job reports keep
   them.
+- A kicad-route refusal comes before the placement summary, as one line with the
+  router's `reason_class` and its message, verbatim, for example
+  `Router refusal (kicad-route reason_class input; before routing, independent
+  of placement seeds): unpaired differential net '/LOAD_P': expected '/LOAD_N'`.
 
 A placement search failure first uses an automatic search retry while
 `--search-retries` allows: no model call, the same statement and captures, and
@@ -187,6 +191,8 @@ twice the placement seeds up to the compiler's 64. When the seeds are already 64
 the retry is skipped (`search_retry_skipped`) and the next author turn is told
 why. A job status of `placement_infeasible` (no incumbent and no hard-feasible
 engine state) is not retried either; the next author turn gets the violations.
+Nor is `router_refused`: kicad-route refused the board before routing, which no
+placement seed can change, so the next author turn gets the router's message.
 More seeds cannot fix a statement that no placement satisfies, such as an
 unreachable decoupling limit, and the loop cannot tell such a statement from a
 search that more seeds would complete. A retry attempt writes

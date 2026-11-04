@@ -191,8 +191,9 @@ may rip up its own generated copper (`--protect locked`). Authored copper keeps
 the default `--protect existing` policy. A fully connected result with a newly
 starved thermal may receive one retry reserving the exact native pad/layer
 corridors. A remaining dangling track may receive one scoped reroute, only when
-the saved result establishes that it has no differential pairs and every other
-preservation check passes. Both repairs share the original candidate's remaining
+the route had no pair handling (no `--diff-pairs`, and the saved result reports
+no pairs) or the saved result establishes that the router detected no pairs, and
+every other preservation check passes. Both repairs share the original candidate's remaining
 budget, retain all attempts and undergo unchanged native and final placement
 checks. A rejected router result cannot complete the job. See the
 [qualification and limits](qualification/plane-feedback-2026-10-24.md).
@@ -259,6 +260,19 @@ default. This is scheduling policy: on both sub-millimetre boards tried so far, 
 default left opens or dangling vias and 0.025 mm routed. The pinned CLI rejects
 non-finite, sub-nanometre or incompatible controls. Each entry in `routing_trials`
 records its `grid_step_mm` and `grid_basis`.
+
+Optional `router.diff_pairs` declares differential pairs. Its only value is
+`"auto"`, which passes `--diff-pairs auto`: kicad-route then pairs nets by name
+(`_P`/`_N`, `+`/`-`, or a final `P`/`N` when both nets exist), routes those pairs
+first, and refuses a name-matched net whose mate is missing. Without
+`router.diff_pairs`, the router gets no `--diff-pairs` option and routes every net
+as an ordinary net. `router.pair_layers`, `router.pair_impedance`,
+`router.intra_pair_match` and `router.ac_match` route pairs, so each requires
+`"diff_pairs": "auto"`; without it, the job refuses at setup. A coupled
+`router.length_match` group also needs it, because only then does the router
+detect the pairs. The [design compiler](design-compile.md#differential-pairs)
+writes `"diff_pairs": "auto"` only for a statement that declares pairs, and it
+refuses names that would make the router's pairs differ from the declared ones.
 
 Optional `router.intra_pair_match` requests length matching of newly routed
 pairs. Supply both `tolerance_mm` and `amplitude_mm`, for example
@@ -593,8 +607,8 @@ rules, including stricter coupling limits, always remain in force.
    `best-diagnostic.json` and may be routed **only as an exploratory run**; the
    report then says `NO valid incumbent`.
 7. **Router process** (a clean checkout, its commit recorded) on a fresh copy (`kicad-route run`, the adapter's
-   argv shape, copper protection as described above, `--diff-pairs auto`, the checkout's own
-   state). The sandboxed `routing_adapter.step` refuses a candidate without a
+   argv shape, copper protection as described above, `--diff-pairs auto` only with
+   `router.diff_pairs`, the checkout's own state). The sandboxed `routing_adapter.step` refuses a candidate without a
    schematic, so a schematic-less board is routed by this direct process call;
    the router's preflight identity is recorded either way.
    The input board's stem supplies the routing project name. The placement
@@ -605,7 +619,14 @@ rules, including stricter coupling limits, always remain in force.
    Every routed result receives fresh final checks. The first passing result
    stops the queue; this establishes a routable choice, not globally optimal
    copper length or via count. `routing_trials` retains failures as well as the
-   selected result. `routed-incumbent.json` binds that result to its receipt and
+   selected result. A kicad-route refusal (exit 4 with its `kicad-route/refusal/1`
+   record on stdout, naming this command line) is raised before any backend runs,
+   from the command, the router's state or the input project, so it does not
+   depend on the placement. The queue stops after that trial. The job status is
+   `router_refused`, `router_refusal` keeps the router's `reason_class`, message
+   and record path, and `reason` reads `kicad-route refused (<class>): <message>`.
+   Exit 4 without a valid record bound to the command stays `missing_output`, and
+   the queue goes on. `routed-incumbent.json` binds that result to its receipt and
    placement; `incumbent.json` continues to identify the best placement score.
 8. **Final checks, independent of the search**: reload the routed board; footprint
    UUIDs, refs, poses, sides, locks, FPIDs and pads must be unchanged by routing.

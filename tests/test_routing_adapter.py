@@ -1,4 +1,5 @@
 """Declared pair request and honest coverage, independent of routing completeness."""
+from pathlib import Path
 import unittest
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
@@ -101,6 +102,77 @@ class PairCoverageTests(unittest.TestCase):
             extra.SetStart(k.VECTOR2I(start.x, start.y)); extra.SetEnd(k.VECTOR2I(start.x, start.y + 100000))
             board.Add(extra)
             self.assertFalse(route_coverage(board, 'CAN+')['complete'], 'multiple copper endpoints in a pad')
+
+
+class BoardPairIntentTests(unittest.TestCase):
+    """Board routing handles pairs only when they are declared (tool defect 31)."""
+
+    SCRIPT = '/router/bin/kicad-route'  # the router records its arguments after this script
+
+    def argv(self, **options):
+        return routing_adapter.board_route_argv('/router', '/staged', '/out', budget_s=10, **options)
+
+    def test_pair_handling_only_when_declared(self):
+        self.assertNotIn('--diff-pairs', self.argv())
+        self.assertNotIn('--diff-pairs', self.argv(diff_pairs=None))
+        argv = self.argv(diff_pairs='auto')
+        self.assertEqual(argv[argv.index('--diff-pairs') + 1], 'auto')
+        with self.assertRaisesRegex(ValueError, 'diff_pairs'):
+            self.argv(diff_pairs='manual')
+
+    def test_router_options_declare_pairs_explicitly(self):
+        self.assertIsNone(routing_adapter.validate_router_options({'checkout': '/r'})['diff_pairs'])
+        self.assertEqual(routing_adapter.validate_router_options(
+            {'checkout': '/r', 'diff_pairs': 'auto'})['diff_pairs'], 'auto')
+        with self.assertRaisesRegex(ValueError, "router.diff_pairs must be 'auto'"):
+            routing_adapter.validate_router_options({'checkout': '/r', 'diff_pairs': None})
+        for key, value in (('pair_layers', ['F.Cu']), ('intra_pair_match', {'tolerance_mm': .1, 'amplitude_mm': 1}),
+                           ('ac_match', {'chains': [['C1', 'C2']], 'tolerance_mm': .1, 'amplitude_mm': 1})):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, f'router.{key} route differential pairs'):
+                    routing_adapter.validate_router_options({'checkout': '/r', key: value})
+                self.assertEqual(routing_adapter.validate_router_options(
+                    {'checkout': '/r', 'diff_pairs': 'auto', key: value})['diff_pairs'], 'auto')
+
+    def test_dangling_repair_retry_without_pair_flag(self):
+        argv = self.argv()
+        retry, _ = routing_adapter.board_retry_argv(argv, '/retry', 5, {'kind': 'dangling_net', 'nets': ['/A']},
+                                                    [], '/routed/board.kicad_pcb')
+        self.assertEqual(retry[-3:], ['--nets', '/A', '--backend-arg=--force-reroute'])
+        paired, _ = routing_adapter.board_retry_argv(self.argv(diff_pairs='auto'), '/retry', 5,
+            {'kind': 'dangling_net', 'nets': ['/A']}, [], '/routed/board.kicad_pcb')
+        self.assertNotIn('--diff-pairs', paired)
+
+    def refusal(self, command, **changes):
+        record = {'schema': 'kicad-route/refusal/1', 'kind': 'refusal', 'exit_code': 4, 'command': 'run',
+                  'reason_class': 'input', 'message': "unpaired differential net '/LOAD_P': expected '/LOAD_N'",
+                  'argv': command[command.index(self.SCRIPT) + 1:], 'cwd': '/x', 'input_fingerprint': None, 'discarded_run_dir': None,
+                  'refused_utc': '2026-11-04T01:42:21+00:00', 'record': 'out/refusals/1.json'}
+        record.update(changes)
+        return record
+
+    def test_router_refusal_record_is_bound_to_the_invocation(self):
+        import json
+        import tempfile
+        argv = self.argv(diff_pairs='auto')
+        with tempfile.TemporaryDirectory() as tmp:
+            route_dir = Path(tmp)
+            (route_dir / 'out').mkdir()
+            stdout = route_dir / 'kicad-route.stdout'
+            stdout.write_text(json.dumps(self.refusal(argv)))
+            record = routing_adapter.bind_board_attempt(route_dir, argv, 4)
+            self.assertEqual(record['status'], 'router_refused')
+            self.assertEqual(record['refusal'], {'reason_class': 'input', 'record': 'out/refusals/1.json',
+                'message': "unpaired differential net '/LOAD_P': expected '/LOAD_N'"})
+            for exit_code, changes in ((1, {}), (4, {'argv': argv[argv.index(self.SCRIPT) + 2:]}), (4, {'schema': 'kicad-route/refusal/2'}),
+                                       (4, {'reason_class': 'other'}), (4, {'message': ''}),
+                                       (4, {'exit_code': 1}), (4, {'kind': 'route'})):
+                with self.subTest(exit_code=exit_code, changes=changes):
+                    stdout.write_text(json.dumps(self.refusal(argv, **changes)))
+                    self.assertEqual(routing_adapter.bind_board_attempt(route_dir, argv, exit_code)['status'],
+                                     'missing_output')
+            stdout.write_text('not json')
+            self.assertEqual(routing_adapter.bind_board_attempt(route_dir, argv, 4)['status'], 'missing_output')
 
 
 if __name__ == '__main__':

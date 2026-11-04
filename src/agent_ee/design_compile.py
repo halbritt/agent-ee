@@ -14,6 +14,8 @@ from .design import (
     blob,
     footprint_path,
     load,
+    native_net,
+    pair_routing,
     validate,
     virtual_parts,
 )
@@ -38,10 +40,6 @@ NATIVE = [
     "The native component inventory shall match the declared parts membership and multiplicity.",
     "Every populated component shall carry purchasing properties and current JLCPCB stock evidence.",
 ]
-
-
-def native_net(design, net):
-    return net if net == design["ground"] else "/" + net
 
 
 def decoupling_text(pair):
@@ -1394,7 +1392,8 @@ def _compile_design(design, captures, out):
                     steps_per_seed=p.get("steps_per_seed", 100000),
                     shortlist=seeds,
                 ),
-                router=dict(checkout="/opt/kicad-route"),
+                # Pair handling only for declared pairs (design.pair_routing).
+                router=dict(checkout="/opt/kicad-route", **pair_routing(design)),
             ),
             verification_timeout_s=1800,
         )

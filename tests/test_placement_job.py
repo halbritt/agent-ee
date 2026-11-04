@@ -479,7 +479,7 @@ class EntryPointTests(Fixture):
         argv = report['route']['argv']
         self.assertEqual(argv[argv.index('--name') + 1], self.board.stem)
         self.assertEqual(argv[argv.index('--grid-step') + 1], '0.025')
-        self.assertEqual(argv[argv.index('--diff-pairs') + 1], 'auto')
+        self.assertNotIn('--diff-pairs', argv)  # No declared pairs: no pair handling (defect 31).
         self.assertEqual(report['routing_trials'][-1]['status'], 'completed')
         self.assertEqual(report['route_selection']['board_sha256'], report['routing_trials'][-1]['board_sha256'])
         self.assertEqual(set(report['phases']), set(job.PHASES))

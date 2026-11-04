@@ -47,7 +47,8 @@ def prepare(root, checkout):
     config = dict(schema=job.CONFIG_SCHEMA, budget_s=240,
         inputs={name: dict(path=str(path), sha256=digest(path)) for name, path in files.items()},
         search=dict(seeds=[dict(seed=0, start='scattered')], steps_per_seed=10, shortlist=1),
-        router=dict(checkout=str(checkout), grid_step_mm=0.025))
+        # The paired article declares its pairs; pair handling is never implied (defect 31).
+        router=dict(checkout=str(checkout), grid_step_mm=0.025, diff_pairs='auto'))
     write_json(root / 'job.json', config)
     return config
 
