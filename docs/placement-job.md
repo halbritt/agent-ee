@@ -620,9 +620,10 @@ rules, including stricter coupling limits, always remain in force.
    stops the queue; this establishes a routable choice, not globally optimal
    copper length or via count. `routing_trials` retains failures as well as the
    selected result. A kicad-route refusal (exit 4 with its `kicad-route/refusal/1`
-   record on stdout, naming this command line) is raised before any backend runs,
-   from the command, the router's state or the input project, so it does not
-   depend on the placement. The queue stops after that trial. The job status is
+   record on stdout, naming this command line) is raised before any backend runs.
+   Its causes, such as the command, the router's state or the project's nets and
+   rules, are the same for every placement, so the queue stops after that trial.
+   The job status is
    `router_refused`, `router_refusal` keeps the router's `reason_class`, message
    and record path, and `reason` reads `kicad-route refused (<class>): <message>`.
    Exit 4 without a valid record bound to the command stays `missing_output`, and

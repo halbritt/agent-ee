@@ -1456,12 +1456,17 @@ class DiffPairIntentTests(unittest.TestCase):
         self.assertFalse((self.root / name).exists())
         return caught.exception.problems
 
-    def test_sense_net_named_like_a_pair_member_routes_without_pair_handling(self):
+    def test_undeclared_design_keeps_pair_like_names_and_routes_without_pair_handling(self):
         from agent_ee import routing_adapter
 
-        self.nets("LOAD_P")
+        # The benchmark r5b sense net, beside names the router would pair under --diff-pairs auto.
+        self.nets("LOAD_P", "RXP")
+        self.design["parts"].update({r: dict(self.design["parts"]["R1"]) for r in ("R5", "R6")})
+        self.design["nets"].update(RXN=["R5.1", "R6.1"], **{"V+": ["R5.2", "R6.2"]})
         router = self.plan()["placement"]["router"]
         self.assertEqual(router, {"checkout": "/opt/kicad-route"})
+        project = json.loads((self.root / "bundle/inputs/project/owned.kicad_pro").read_text())
+        self.assertFalse([k for k in project["net_settings"]["classes"][0] if k.startswith("diff_pair")])
         options = routing_adapter.validate_router_options(router)
         argv = routing_adapter.board_route_argv(
             router["checkout"], "/staged", "/out", budget_s=60, diff_pairs=options["diff_pairs"])
@@ -1481,6 +1486,13 @@ class DiffPairIntentTests(unittest.TestCase):
             "pair_impedance": dict(impedance, reference_net="GND")})
         recorded = json.loads((self.root / "bundle/inputs/design.json").read_text())
         self.assertEqual(recorded["diff_pairs"], self.design["diff_pairs"])
+        # The router pairs only nets whose class has a diff-pair width and gap (native check below).
+        default = json.loads((self.root / "bundle/inputs/project/owned.kicad_pro").read_text())[
+            "net_settings"]["classes"][0]
+        self.assertEqual({k: default[k] for k in ("diff_pair_width", "diff_pair_gap", "diff_pair_via_gap")},
+                         {"diff_pair_width": 0.2, "diff_pair_gap": 0.25, "diff_pair_via_gap": 0.25})
+        derivation = json.loads((self.root / "bundle/inputs/project-rule-derivation.json").read_text())
+        self.assertEqual(derivation["routing"]["diff_pair_gap"]["selected"], 0.25)
         options = routing_adapter.validate_router_options(router)
         argv = routing_adapter.board_route_argv(
             router["checkout"], "/staged", "/out", budget_s=60, diff_pairs=options["diff_pairs"],
@@ -1508,7 +1520,7 @@ class DiffPairIntentTests(unittest.TestCase):
              "the router treats LOAD_P as a differential-pair member (LOAD_P with LOAD_N) by its name; "
              "declare that pair in diff_pairs, or rename LOAD_P"),
             ("undeclared-sign", ("USB_P", "VOUT+", [pair]), "nets.VOUT+: with diff_pairs declared"),
-            ("undeclared-mates", ("TXP", "TXN", [{"positive": "TXP", "negative": "TXN"}]),
+            ("bare-letters", ("TXP", "TXN", [{"positive": "TXP", "negative": "TXN"}]),
              "name this pair TX_P (positive) and TX_N (negative)"),
             ("unknown-net", ("USB_P", "USB_N", [{"positive": "USB_P", "negative": "OTHER_N"}]),
              "diff_pairs[0].negative: select a declared net"),
@@ -1521,12 +1533,6 @@ class DiffPairIntentTests(unittest.TestCase):
                 self.nets(first, second, pairs)
                 problems = self.refused(name)
                 self.assertTrue(any(message in p for p in problems), problems)
-        self.setUp()
-        self.nets("RXP", "RXN", [])  # Without declared pairs, nothing about names is constrained.
-        self.design["parts"].update(R5=dict(self.design["parts"]["R1"]), R6=dict(self.design["parts"]["R1"]))
-        self.design["nets"]["LOAD_P"] = ["R5.1", "R6.1"]
-        self.design["nets"]["GND"] += ["R5.2", "R6.2"]
-        self.assertNotIn("diff_pairs", self.plan("free")["placement"]["router"])
 
     def test_undeclared_mates_beside_a_declared_pair_are_refused(self):
         self.nets("USB_P", "USB_N", [{"positive": "USB_P", "negative": "USB_N"}])
@@ -1559,3 +1565,32 @@ class DiffPairIntentTests(unittest.TestCase):
                     self.design["nets"]["GND"] += self.design["nets"].pop("B_P") + self.design["nets"].pop("B_N")
                 problems = self.refused(name)
                 self.assertTrue(any(message in p for p in problems), problems)
+
+    def test_compiled_project_gives_declared_pairs_native_width_and_gap(self):
+        """kicad-route pairs a net only when its effective net class has a positive diff-pair width and
+        a gap no smaller than its clearance (router diff_pairs.detect, read as in its kicad/pairs.py)."""
+        from tests.toolchain import require_toolchain
+
+        require_toolchain(native=True)
+        import pcbnew
+        import shutil
+
+        self.nets("USB_P", "USB_N", [{"positive": "USB_P", "negative": "USB_N"}])
+        self.plan()
+        scratch, routed = self.root / "scratch", self.root / "routed"
+        scratch.mkdir()
+        routed.mkdir()
+        board = pcbnew.BOARD()
+        for name in ("/USB_P", "/USB_N"):
+            board.Add(pcbnew.NETINFO_ITEM(board, name))
+        pcbnew.SaveBoard(str(scratch / "owned.kicad_pcb"), board)
+        # The board beside the compiled project, as the router loads it; SaveBoard's own project stays apart.
+        shutil.copyfile(scratch / "owned.kicad_pcb", routed / "owned.kicad_pcb")
+        shutil.copyfile(self.root / "bundle/inputs/project/owned.kicad_pro", routed / "owned.kicad_pro")
+        settings = pcbnew.LoadBoard(str(routed / "owned.kicad_pcb")).GetDesignSettings().m_NetSettings
+        for name in ("/USB_P", "/USB_N"):
+            with self.subTest(net=name):
+                netclass = settings.GetEffectiveNetClass(name)
+                self.assertTrue(netclass.HasDiffPairWidth() and netclass.HasDiffPairGap())
+                self.assertGreater(netclass.GetDiffPairWidth(), 0)
+                self.assertGreaterEqual(netclass.GetDiffPairGap(), netclass.GetClearance())

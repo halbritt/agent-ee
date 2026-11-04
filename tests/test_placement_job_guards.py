@@ -366,10 +366,11 @@ class ControllerBoundaryTests(Fixture):
             stack.enter_context(patch.object(job, 'check_edge_intent', return_value={'status': 'pass'}))
             stack.enter_context(patch.object(job, 'drc', return_value=({'violations': [], 'unconnected_items': []}, {})))
             stack.enter_context(patch.object(job, 'route', side_effect=routed))
-            final = stack.enter_context(patch.object(job, 'final_checks'))
+            # Guard only: a loop that went on would reach final checks of a refused route.
+            stack.enter_context(patch.object(job, 'final_checks'))
             report = job.run_job(config, out)
         self.assertEqual(calls, [mode], 'one trial, with pair handling only when declared')
-        final.assert_not_called()
+        self.assertNotIn('final', report)
         self.assertEqual(report['status'], 'router_refused')
         self.assertEqual([t['status'] for t in report['routing_trials']], ['router_refused'])
         self.assertEqual(report['routing_trials'][0]['router_refusal']['message'], message)

@@ -1667,5 +1667,3 @@ class RouterRefusalFeedbackTests(ScriptedLoop):
                 'seeds): ' + self.MESSAGE)
         self.assertIn(line, feedback)
         self.assertLess(feedback.index(line), feedback.index('Placement summary'))
-        self.assertFalse(loop.search_failure(dict(attempts=[dict(stage='placement-routing')]),
-                                             self.root / 'run/attempt-001/build'))

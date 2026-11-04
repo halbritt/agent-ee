@@ -51,8 +51,8 @@ Unknown fields are refused.
 
 ## Differential pairs
 
-Declare a differential pair in `diff_pairs`. The router never infers one from a
-net name alone.
+Declare a differential pair in `diff_pairs`. A net name alone does not make a
+pair: without `diff_pairs`, the board routes with no pair handling.
 
 ```json
 "diff_pairs": [
@@ -69,7 +69,8 @@ and the message gives the names to use, for example `USB_D_P` and `USB_D_N` for
 `USB_DP` and `USB_DM`. Rename the nets in `nets`, `diff_pairs` and every
 witness.
 
-When `diff_pairs` is present, the router treats more nets as pair members:
+When `diff_pairs` is present, the router runs with `--diff-pairs auto`, which
+also treats these nets as pair members:
 
 - every net whose name ends in `_P`, `_N`, `+` or `-`;
 - two nets whose names differ only in a final `P` and `N`, such as `TXP` and `TXN`.
@@ -83,9 +84,12 @@ The compiled build plan carries the declaration in `placement.router`:
 `diff_pairs: "auto"`, plus `intra_pair_match`, and `pair_layers` with
 `pair_impedance`, when they are declared. The
 [placement job](placement-job.md) passes these to kicad-route as `--diff-pairs auto`,
-`--diff-pair-intra-match` and `--pair-impedance`. The router uses each net
-class's native diff-pair width and gap. The compiled project keeps KiCad's
-Default class values for these.
+`--diff-pair-intra-match`, `--pair-layers` and `--pair-impedance` with its
+`--impedance-*` limits. The router takes the pair width and gap from the pair's
+net class and refuses a pair without them. When pairs are declared, the compiled
+project's Default class therefore gets KiCad's own defaults: `diff_pair_width`
+0.2 mm, `diff_pair_gap` and `diff_pair_via_gap` 0.25 mm, each at least the
+routing track width or clearance. `project-rule-derivation.json` records them.
 
 Optional intent, with the router's own limits:
 

@@ -458,6 +458,18 @@ def envelope(design, root):
     routing["via_diameter"] = max(
         routing["via_diameter"], round(routing["via_drill"] + 2 * annular, 6)
     )
+    if design.get("diff_pairs"):
+        # kicad-route pairs a net only when its class has a positive diff-pair width and a gap no
+        # smaller than its clearance (router diff_pairs.detect). A compiled class written without them
+        # has none, so declared pairs get the pinned native defaults, raised to the routing floors.
+        for field, floor in (("diff_pair_width", "track_width"), ("diff_pair_gap", "clearance"),
+                             ("diff_pair_via_gap", "clearance")):
+            native_value, citation = native_geometry_defaults.DEFAULTS["net_settings.classes.Default." + field]
+            routing[field] = max(native_value, routing[floor])
+            routing_sources[field] = dict(
+                native_default=native_value, native_citation=citation, selected=routing[field],
+                basis=f"declared differential pairs: pinned native default, at least the routing {floor}",
+            )
     write_json(
         root / "project-rule-derivation.json",
         dict(
