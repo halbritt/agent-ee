@@ -1407,7 +1407,7 @@ class EnvironmentFailureTests(ScriptedLoop):
 
     def test_native_reader_design_refusal_keeps_author_retries_and_verbatim_feedback(self):
         from agent_ee import placement_job
-        message = 'intent.proximity[0].pads.R1: pad 99 is not on R1'
+        message = 'intent.proximity[0].pads.R1: selected pad is missing'
         done = subprocess.CompletedProcess([], 2, json.dumps({'error': message}).encode(), b'')
         with patch.object(placement_job, '_run_child', return_value=done):
             with self.assertRaises(placement_job.JobRefusal) as caught:

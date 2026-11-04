@@ -200,7 +200,7 @@ class CaptureBoundaryTests(Fixture):
             job.capture(self.board, job.normalize_intent(intent(), groups()), cancel_dir=self.dir)
 
     def test_failed_or_missing_child_output_never_returns_a_problem(self):
-        message = 'intent.proximity[0].pads.R1: pad 99 is not on R1'
+        message = 'intent.proximity[0].pads.R1: selected pad is missing'
         for code, output, error in ((2, json.dumps({'error': message}).encode(), job.JobRefusal),
                                    (1, b'', job.EnvironmentFailure),
                                    (1, b'{"error":"tool fault"}', job.EnvironmentFailure),

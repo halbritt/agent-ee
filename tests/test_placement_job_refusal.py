@@ -77,7 +77,7 @@ class RefusalReportTests(fixture.Fixture):
         build = self.dir / 'build'
         out = build / 'stages/placement-routing/placement'
         report = job.run_job(config, out)
-        message = 'intent.proximity[0].pads.R1: pad 99 is not on R1'
+        message = 'intent.proximity[0].pads.R1: selected pad is missing'
         self.assert_report(out, report, None, message)
         self.assertEqual(report['reason'], message)
         self.assertNotIn('failure_kind', report)
