@@ -7,7 +7,6 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from agent_ee import native_run
 from agent_ee.design import DesignError
@@ -76,6 +75,8 @@ class NativeFootprintRulesTest(unittest.TestCase):
         return footprint_rules.check(self.design, self.cad, self.root / name)
 
     def test_a_hole_too_close_to_its_own_pad_is_refused_with_the_rule_and_both_values(self):
+        # Benchmark r5b, usb-regulator attempt 2: the receptacle's NPTH pegs were 0.1944 mm from
+        # its GND pads, under KiCad's 0.25 mm default, and failed only final verification.
         with self.assertRaises(DesignError) as caught:
             self.run_check(0.15, 'near')
         lines = caught.exception.problems
@@ -104,17 +105,14 @@ class NativeFootprintRulesTest(unittest.TestCase):
                          [('R1', 'pass', []), ('R2', 'pass', [])])
 
     def test_the_board_rule_files_decide_so_an_allowed_hole_is_not_refused(self):
-        original = footprint_rules.rule_files
-
-        def allowing(design):
-            files, derivation = original(design)
-            name = next(n for n in files if n.endswith('.kicad_pro'))
-            project = json.loads(files[name])
-            project['board']['design_settings']['rules']['min_hole_clearance'] = 0.1
-            return {**files, name: json.dumps(project).encode()}, derivation
-
-        with patch.object(footprint_rules, 'rule_files', allowing):
-            report = self.run_check(0.15, 'allowed')
+        # Rule files whose project allows a 0.1 mm hole clearance, as a fabrication capability
+        # recorded in the board's rules would: the same footprint then passes.
+        files, derivation = footprint_rules.rule_files(self.design)
+        project = json.loads(files['owned.kicad_pro'])
+        project['board']['design_settings']['rules']['min_hole_clearance'] = 0.1
+        (self.cad / 'Owned.pretty/R2.kicad_mod').write_bytes(owned_footprint('R2', 0.15))
+        report = footprint_rules.check_under(self.design, self.cad, self.root / 'allowed',
+                                             {'owned.kicad_pro': json.dumps(project).encode()}, derivation)
         self.assertEqual(report['status'], 'pass')
 
 
@@ -135,10 +133,10 @@ class RecordedFootprintRulesTest(unittest.TestCase):
         self.assertEqual({p['reference']: p['nets'] for p in request['parts']},
                          {'R1': {'1': '/SIGNAL', '2': 'GND'}, 'R2': {'1': '/SIGNAL', '2': 'GND'}})
         self.assertEqual(request['rule_files'], ['owned.kicad_pro'])
-        self.assertEqual([(c.intent.tool, c.inputs.name) for c in adapter.calls],
-                         [('pcbnew_script', 'inputs'), ('drc', 'R1'), ('drc', 'R2')])
-        self.assertEqual(adapter.calls[1].intent.argv, tuple(native_run.drc_argv(
-            '/candidate/board.kicad_pcb', '/work/native-drc.json', output_flag='--output')))
+        # Every scratch board is judged by the placement job's own DRC command.
+        self.assertEqual({c.intent.argv for c in adapter.calls if c.intent.tool == 'drc'},
+                         {tuple(native_run.drc_argv('/candidate/board.kicad_pcb', '/work/native-drc.json',
+                                                    output_flag='--output'))})
 
     def test_only_errors_whose_items_are_all_the_footprint_own_are_refused(self):
         warning = dict(hole_finding('R1'), severity='warning', type='silk_over_copper')

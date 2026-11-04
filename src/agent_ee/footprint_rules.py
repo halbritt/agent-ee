@@ -129,15 +129,19 @@ def refusal(part, findings):
 
 
 def check(design, cad, out):
-    """Check every part's footprint alone; write out/report.json; refuse per part.
+    """Check every part's footprint alone under the rule files compile emits for this board."""
+    return check_under(design, cad, out, *rule_files(design))
 
-    cad is the capture's retained CAD directory; out must not exist. Returns the report.
-    A native run that does not complete refuses under captures.footprint-rules, never passes.
+
+def check_under(design, cad, out, files, derivation):
+    """Check every part's footprint alone under the given rule files; write out/report.json.
+
+    cad is the capture's retained CAD directory; out must not exist. Returns the report and
+    refuses per part. A native run that does not complete refuses under captures.footprint-rules.
     """
     out, cad = Path(out), Path(cad)
     inputs = out / 'inputs'
     inputs.mkdir(parents=True)
-    files, derivation = rule_files(design)
     for name, raw in files.items():
         (inputs / name).write_bytes(raw)
     parts = []

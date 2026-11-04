@@ -455,23 +455,26 @@ and routing would fail it as a pre-existing error (tool defect #32).
 
 For each part, a scratch board holds only that part's footprint, with the
 part's reference, value and design nets. Each no-connect pin gets its own net,
-and other pads get none. Next to the scratch board is the project file that
-compile emits for this board ([`footprint_rules.rule_files`](../src/agent_ee/footprint_rules.py)
-calls the compiler's own derivation). Every setting that the project leaves out
+and other pads get none. Next to the scratch board are the rule files that
+compile emits for this board, today one project file
+([`footprint_rules.rule_files`](../src/agent_ee/footprint_rules.py) calls the
+compiler's own derivation). Every setting that the project leaves out
 takes KiCad's default, as on the built board. For example, the JLC profile sets
 no hole-to-copper limit, so KiCad's 0.25 mm `min_hole_clearance` default applies.
 Native DRC runs in the sandbox with the same `kicad-cli pcb drc` command as the
 placement job's input DRC. Grading follows the placement job's pre-existing
 rule: an error-severity finding is refused only when every item it names
-belongs to the footprint. Errors of the scratch board itself (it has no outline),
-warnings and unconnected items are recorded but never refused.
+belongs to the footprint. The report lists the scratch board's own errors (it
+has no outline) and the warning types, and the retained DRC report keeps the
+unconnected items. None of these is refused.
 
 Each refused part gets one line under `parts.<ref>.footprint`. The line gives
-the footprint and the error count. For each finding it gives the rule type, the
-items KiCad names, the measured value, the limit and the limit's source: a fab
-profile limit, a value the compiled project sets, KiCad's default, a net class
-or a custom rule. It ends with what to do: choose another footprint whose holes
-and pads meet the rules. For example:
+the footprint and the error count. For each of up to six findings it gives the
+rule type and the items KiCad names. For a numeric rule it also gives the
+measured value, the limit and the limit's source: a fab profile limit, a value
+the compiled project sets, KiCad's default, a net class or a custom rule. It
+counts any further findings and ends with what to do: choose another footprint
+whose holes and pads meet the rules. For example:
 
 ```text
 Design refused:
