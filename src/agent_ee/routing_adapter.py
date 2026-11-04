@@ -879,7 +879,7 @@ def router_python(*args, python=None):
 
 def is_router_command(argv):
     """Whether argv runs Python with attempt.ROUTER_PYTHON_FLAGS: a router_python command, or one that
-    puts -I before the flags (pose_milp.child_argv)."""
+    puts -I before the flags (the pose solver's, from pose_milp or acquisition.placement)."""
     flags = list(attempt.ROUTER_PYTHON_FLAGS)
     head = [str(arg) for arg in argv[1:2 + len(flags)]]
     return head[:len(flags)] == flags or head == ['-I', *flags]
@@ -892,10 +892,14 @@ def router_env(env=None):
     options, so the environment names a private prefix too. With env None the result is os.environ with
     PYTHONPYCACHEPREFIX replaced by one that holds no bytecode, since the caller's own prefix may be
     shared; an explicit env keeps the private prefix it names (board_route_env) and gets that one
-    otherwise. placement_job._run_child applies this to every command is_router_command accepts."""
-    if env is None:
-        return {**os.environ, 'PYTHONPYCACHEPREFIX': attempt.NO_PYCACHE}
-    return dict(env) if env.get('PYTHONPYCACHEPREFIX') else {**env, 'PYTHONPYCACHEPREFIX': attempt.NO_PYCACHE}
+    otherwise. PYTHONDONTWRITEBYTECODE is always set, so those processes do not try to create cache
+    directories under the prefix either. placement_job._run_child applies this to every command
+    is_router_command accepts."""
+    result = dict(os.environ if env is None else env)
+    if env is None or not result.get('PYTHONPYCACHEPREFIX'):
+        result['PYTHONPYCACHEPREFIX'] = attempt.NO_PYCACHE
+    result['PYTHONDONTWRITEBYTECODE'] = '1'
+    return result
 
 
 def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owned_copper=False, budget_s,

@@ -321,10 +321,27 @@ class RouterCommandCacheTest(unittest.TestCase):
            for kind in ('pair_impedance', 'length_groups', 'ac_matching')},
     }
 
+    # The pose solver runs agent-ee code on the router environment's interpreter, isolated (-I).
+    ISOLATED = ('pose_milp.child_argv', 'acquisition.placement.child_argv')
+
     def commands(self):
+        """Every router command, with the pose solver's built both ways: by pose_milp alone, and after
+        ordinary mechanics handling has loaded the acquisition package, when pose_milp returns
+        acquisition.placement's command (review of 696c18de)."""
         from agent_ee import pose_milp
+        acquisition = ('agent_ee.acquisition.placement', 'agent_ee.acquisition_placement')
+        with patch.dict(sys.modules):
+            for name in acquisition:
+                sys.modules.pop(name, None)
+            alone = pose_milp.child_argv('/k')
+        from agent_ee import source_mechanics
+        source_mechanics.known_revision('0' * 64)   # resolves through agent_ee.acquisition.mechanics
+        from agent_ee.acquisition import placement
+        self.assertIn('agent_ee.acquisition.placement', sys.modules)
         return {**{name: build() for name, build in self.BUILDERS.items()},
-                'pose_milp.child_argv': pose_milp.child_argv('/k')}
+                'pose_milp.child_argv': alone,
+                'pose_milp.child_argv[acquisition loaded]': pose_milp.child_argv('/k'),
+                'acquisition.placement.child_argv': placement.child_argv('/k')}
 
     def test_every_router_command_carries_the_flags(self):
         builders = {name for name, value in vars(routing_adapter).items()
@@ -332,33 +349,93 @@ class RouterCommandCacheTest(unittest.TestCase):
         self.assertEqual(builders, {name.split('[')[0] for name in self.BUILDERS})
         for name, argv in self.commands().items():
             with self.subTest(name):
-                # The pose solver runs agent-ee's module with the router's own venv interpreter, isolated.
-                self.assertEqual(argv[1:5] if name.startswith('pose_milp') else argv[1:4],
-                                 ['-I', *self.FLAGS] if name.startswith('pose_milp') else self.FLAGS)
+                if name.startswith(self.ISOLATED):
+                    self.assertEqual(argv[1:5], ['-I', *self.FLAGS])
+                else:
+                    self.assertEqual(argv[1:4], self.FLAGS)
                 self.assertTrue(routing_adapter.is_router_command(argv))
         for argv in (['kicad-cli', 'version'], [sys.executable, '-B', '-m', 'agent_ee.final_planes'],
-                     [sys.executable, '-I', '-B', routing_adapter.ADAPTER_AT]):
+                     [sys.executable, '-I', '-B', routing_adapter.ADAPTER_AT],
+                     ['/k/.venv-krt/bin/python', '-I', '-B', '-c', 'pass']):
             self.assertFalse(routing_adapter.is_router_command(argv), argv)
 
-    def test_no_router_command_is_written_without_router_python(self):
-        """A list that passes -B to an interpreter in these modules is the flags themselves, a command
-        that starts from them, the sandboxed attempt's router run under its own private prefix, the
-        adapter step (the attempt script, which isolates the router it runs), the attempt's own KiCad
-        measurement script or an agent-ee module. A hand-written router command fails here; router
-        commands come from the builders above."""
+    # Words that tie a function to the router checkout or its environment.
+    ROUTER_STRINGS = ('.venv-krt', 'kicad-route', 'kicad_route')
+    ROUTER_NAMES = ('checkout', 'router_checkout')
+
+    @classmethod
+    def unisolated_router_commands(cls, source, label):
+        """label:line of every -B command list in source that may run router code without the flags.
+
+        A list is isolated when it holds ROUTER_PYTHON_FLAGS or a pycache_prefix= item. Otherwise it is a
+        router command when it names the router checkout or its environment (a checkout or
+        router_checkout name, or a string with .venv-krt, kicad-route or kicad_route), itself or through
+        a name its function assigns (interpreter = Path(checkout) / '.venv-krt/bin/python'), unless it is
+        the sandboxed adapter step (ADAPTER_AT, whose script isolates the router it runs) or runs an
+        agent-ee module (-m agent_ee.*) on agent-ee's own interpreter."""
         import ast
-        allowed = ('ROUTER_PYTHON_FLAGS', 'pycache_prefix=', 'ADAPTER_AT', 'MEASURE_REFERENCE', 'agent_ee.')
-        for module in ('routing_adapter', 'pose_milp', 'placement_job', 'kicad_route_attempt'):
-            path = ROOT / f'src/agent_ee/{module}.py'
-            for node in ast.walk(ast.parse(path.read_text())):
-                if not isinstance(node, (ast.List, ast.Tuple)):
-                    continue
-                if any(isinstance(e, ast.Constant) and e.value == '-B' for e in node.elts):
-                    words = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
-                    words |= {n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
-                    with self.subTest(module=module, line=node.lineno):
-                        self.assertTrue(any(word.startswith(allowed) for word in words),
-                                        f'{module}.py:{node.lineno} passes -B without ROUTER_PYTHON_FLAGS')
+        tree = ast.parse(source)
+        parent = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+
+        def words(node):
+            for n in ast.walk(node):
+                if isinstance(n, ast.Name):
+                    yield n.id
+                elif isinstance(n, ast.Attribute):
+                    yield n.attr
+                elif isinstance(n, ast.Constant) and isinstance(n.value, str):
+                    yield n.value
+
+        found = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, (ast.List, ast.Tuple))
+                    and any(isinstance(e, ast.Constant) and e.value == '-B' for e in node.elts)):
+                continue
+            own = list(words(node))
+            if any(w == 'ROUTER_PYTHON_FLAGS' or w.startswith('pycache_prefix=') for w in own):
+                continue
+            scope = node
+            while scope in parent and not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                scope = parent[scope]
+            near = list(own)
+            if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                used = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+                for assign in ast.walk(scope):
+                    if isinstance(assign, (ast.Assign, ast.AnnAssign)) and assign.value is not None:
+                        targets = assign.targets if isinstance(assign, ast.Assign) else [assign.target]
+                        if {n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)} & used:
+                            near += list(words(assign.value))
+            if not any(w in cls.ROUTER_NAMES or any(m in w for m in cls.ROUTER_STRINGS) for w in near):
+                continue
+            values = [e.value if isinstance(e, ast.Constant) else None for e in node.elts]
+            module_run = any(v == '-m' and isinstance(nxt, str) and nxt.startswith('agent_ee.')
+                             for v, nxt in zip(values, values[1:]))
+            own_interpreter = bool(node.elts) and (values[0] == '/usr/bin/python3' or (
+                isinstance(node.elts[0], ast.Attribute) and node.elts[0].attr == 'executable'))
+            if 'ADAPTER_AT' in own or (module_run and own_interpreter):
+                continue
+            found.append(f'{label}:{node.lineno}')
+        return found
+
+    def test_no_router_command_is_written_without_router_python(self):
+        """Every -B command list in src/agent_ee, acquisition/ included: a router command written
+        without the flags fails here, wherever it is (review of 696c18de: acquisition.placement's pose
+        command). Router commands come from router_python and the builders above."""
+        sources = sorted((ROOT / 'src/agent_ee').rglob('*.py'))
+        self.assertIn(ROOT / 'src/agent_ee/acquisition/placement.py', sources)
+        found = [hit for path in sources
+                 for hit in self.unisolated_router_commands(path.read_text(), str(path.relative_to(ROOT)))]
+        self.assertEqual(found, [])
+        # The scan finds what it is for: the pose command as acquisition.placement built it before
+        # 2026-11-03, and a hand-written checker command.
+        before = ("def child_argv(checkout):\n"
+                  "    interpreter = Path(checkout) / '.venv-krt/bin/python'\n"
+                  "    return [str(interpreter), '-I', '-B', '-c', 'from agent_ee.acquisition.placement import main']\n"
+                  "def checker_argv(root, board):\n"
+                  "    return [sys.executable, '-B', str(Path(root) / 'src/kicad_route/length_groups.py'), board]\n"
+                  "def planes_argv(board):\n"
+                  "    return [sys.executable, '-B', '-m', 'agent_ee.final_planes', board]\n")
+        self.assertEqual(self.unisolated_router_commands(before, 'before'), ['before:3', 'before:5'])
 
     def test_the_job_runs_every_router_command_with_a_private_prefix(self):
         """placement_job._run_child gives each router command routing_adapter.router_env, whoever
@@ -380,9 +457,11 @@ class RouterCommandCacheTest(unittest.TestCase):
                 with self.subTest(name):
                     job._run_child(argv, clock=job.Clock(60))
                     self.assertEqual(seen[-1]['PYTHONPYCACHEPREFIX'], attempt.NO_PYCACHE)
+                    self.assertEqual(seen[-1]['PYTHONDONTWRITEBYTECODE'], '1')
                     self.assertEqual(seen[-1]['AGENT_EE_PROBE'], '1')
                     job._run_child(argv, clock=job.Clock(60), env={'PATH': '/usr/bin:/bin'})
-                    self.assertEqual(seen[-1], {'PATH': '/usr/bin:/bin', 'PYTHONPYCACHEPREFIX': attempt.NO_PYCACHE})
+                    self.assertEqual(seen[-1], {'PATH': '/usr/bin:/bin', 'PYTHONPYCACHEPREFIX': attempt.NO_PYCACHE,
+                                                'PYTHONDONTWRITEBYTECODE': '1'})
                     job._run_child(argv, clock=job.Clock(60), env=board_env)
                     self.assertEqual(seen[-1], board_env)
             job._run_child(['kicad-cli', 'version'], clock=job.Clock(60))
@@ -460,6 +539,58 @@ class RouterCommandCacheTest(unittest.TestCase):
                         exposed = [arg for arg in argv if arg not in ('-X', 'pycache_prefix=/dev/null')]
                         done = job._run_child(exposed, clock=job.Clock(60))
                         self.assertIn('UNRECORDED_HELPER_CACHE_EXECUTED', done.stderr.decode(errors='replace'))
+
+    def test_the_delegated_pose_command_never_runs_cached_environment_bytecode(self):
+        """The reviewer's case (kicad-route-review/r3/export/review_legacy_pose.py): ordinary mechanics
+        handling loads the acquisition package, pose_milp then returns acquisition.placement's command,
+        and a cache planted in the environment's numpy, which neither preflight nor the solver's runtime
+        identity covers, must not run in a proposal."""
+        from agent_ee import placement_job as job
+        from agent_ee import pose_milp, source_mechanics
+        from agent_ee.storage import canonical
+        from tests.test_acquisition_placement import fixture
+        from tests.test_kicad_route_generations import copy_tool
+        from tests.toolchain import require_kicad_route
+        configured = require_kicad_route()
+        source_mechanics.known_revision('0' * 64)
+        self.assertIn('agent_ee.acquisition.placement', sys.modules)
+        with tempfile.TemporaryDirectory(prefix='agent-ee-pose-cache-') as temp:
+            root = Path(temp)
+            checkout = copy_tool(configured, root / 'router')
+            shutil.copytree(configured / '.venv-krt', checkout / '.venv-krt', symlinks=True)
+            shutil.copyfile(configured / 'manifest.json', checkout / 'manifest.json')
+            argv = pose_milp.child_argv(checkout)
+            self.assertIn('agent_ee.acquisition.placement import main', argv[-2])
+            self.assertEqual(argv[1:5], ['-I', *self.FLAGS])
+            before = routing_adapter.preflight(checkout)
+            runtime = job._pose_solver(checkout, {'operation': 'identity'}, clock=job.Clock(60))
+            python = checkout / '.venv-krt/bin/python'
+            tag = subprocess.run([str(python), '-I', '-c', 'import sys; print(sys.implementation.cache_tag)'],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+            numpy = next((checkout / '.venv-krt/lib').glob('python*/site-packages/numpy/__init__.py'))
+            cache = numpy.parent / '__pycache__' / f'__init__.{tag}.pyc'
+            cache.parent.mkdir(exist_ok=True)
+            code = compile("import sys; print('UNRECORDED_POSE_CACHE_EXECUTED', file=sys.stderr); "
+                           "raise SystemExit(73)", str(numpy), 'exec')
+            cache.write_bytes(importlib._bootstrap_external._code_to_hash_pyc(code, b'\0' * 8, checked=False))
+            after = routing_adapter.preflight(checkout)
+            self.assertEqual((before['problems'], after['problems']), ([], []))
+            self.assertEqual({k: after[k] for k in attempt.CHECKOUT_KEYS}, {k: before[k] for k in attempt.CHECKOUT_KEYS})
+            self.assertEqual(job._pose_solver(checkout, {'operation': 'identity'}, clock=job.Clock(60)), runtime)
+            problem, diagnostic = fixture()
+            request = canonical(dict(operation='propose', problem=problem, diagnostic=diagnostic,
+                                     max_seconds=1, runtime=runtime))
+            with patch.dict('os.environ'):
+                os.environ.pop('PYTHONPYCACHEPREFIX', None)
+                os.environ.pop('PYTHONDONTWRITEBYTECODE', None)
+                done = job._run_child(argv, clock=job.Clock(120), input_bytes=request)
+                self.assertNotIn(b'UNRECORDED_POSE_CACHE_EXECUTED', done.stderr)
+                self.assertEqual(done.returncode, 0, done.stderr[-2000:])
+                # The command as acquisition.placement built it before: the planted cache runs.
+                exposed = [arg for arg in argv if arg not in ('-X', 'pycache_prefix=/dev/null')]
+                done = job._run_child(exposed, clock=job.Clock(120), input_bytes=request)
+                self.assertEqual(done.returncode, 73)
+                self.assertIn(b'UNRECORDED_POSE_CACHE_EXECUTED', done.stderr)
 
 
 class CampaignContinuationTest(unittest.TestCase):

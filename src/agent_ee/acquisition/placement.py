@@ -136,9 +136,12 @@ def runtime_identity():
 
 
 def child_argv(checkout):
-    """Use only the already qualified checkout's numerical interpreter."""
+    """Use only the already qualified checkout's numerical interpreter, isolated (-I) and kept off
+    bytecode cached in its environment (kicad_route_attempt.ROUTER_PYTHON_FLAGS), like
+    pose_milp.child_argv, which returns this command once this module is loaded."""
+    from ..kicad_route_attempt import ROUTER_PYTHON_FLAGS
     interpreter = Path(checkout) / '.venv-krt/bin/python'
-    return [str(interpreter), '-I', '-B', '-c',
+    return [str(interpreter), '-I', *ROUTER_PYTHON_FLAGS, '-c',
             'import sys; sys.path.insert(0, sys.argv[1]); '
             'from agent_ee.acquisition.placement import main; main()',
             str(Path(__file__).resolve().parents[2])]
