@@ -501,7 +501,9 @@ def failed_checks(root):
         result = design.load(path)
         for row in result.get('checks', []):
             if row.get('execution') != 'ok' or row.get('outcome') not in ('pass', 'info'):
-                failures.append({k: row[k] for k in ('id', 'kind', 'execution', 'outcome', 'findings') if k in row})
+                # The summary names what failed, e.g. which net is narrower than its declared current needs.
+                failures.append({k: row[k] for k in ('id', 'kind', 'execution', 'outcome', 'summary', 'findings')
+                                 if k in row})
     return failures
 
 

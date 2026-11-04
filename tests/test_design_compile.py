@@ -1594,3 +1594,226 @@ class DiffPairIntentTests(unittest.TestCase):
                 self.assertTrue(netclass.HasDiffPairWidth() and netclass.HasDiffPairGap())
                 self.assertGreater(netclass.GetDiffPairWidth(), 0)
                 self.assertGreaterEqual(netclass.GetDiffPairGap(), netclass.GetClearance())
+
+
+def ipc2152_oracle_mm(current_a, rise_c, oz):
+    """The published IPC-2152 generic-chart fit restated independently, rounded up to 1 um."""
+    import math
+
+    area = (117.555 * rise_c ** -0.913 + 1.15) * current_a ** (0.84 * rise_c ** -0.108 + 1.159)
+    return math.ceil(area / (1.37 * oz) * 0.0254 * 1000 - 1e-9) / 1000
+
+
+class DeclaredCurrentTests(unittest.TestCase):
+    """AGENTEE-582: a declared net current sets that net's routed width through the net-constraint path."""
+
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.captures = self.root / "captures"
+        self.captures.mkdir()
+        self.design = design_fixture(self.captures)
+
+    def compile(self, name, currents=None):
+        design = copy.deepcopy(self.design)
+        if currents is not None:
+            design["currents"] = currents
+        compile_design(design, self.captures, self.root / name)
+        return self.root / name / "inputs"
+
+    def test_one_amp_gets_the_ipc2152_width_in_class_rule_record_and_final_check(self):
+        inputs = self.compile("one-amp", {"SIGNAL": {"current_ma": 1000}})
+        width = ipc2152_oracle_mm(1.0, 10, 1)
+        self.assertEqual(width, 0.288)
+        project = json.loads((inputs / "project/owned.kicad_pro").read_text())
+        classes = {c["name"]: c for c in project["net_settings"]["classes"]}
+        self.assertEqual(classes["CURRENT_SIGNAL"]["track_width"], width)
+        # The router reads this pattern; '/' stays literal for its glob matching.
+        self.assertEqual(project["net_settings"]["netclass_patterns"],
+                         [{"netclass": "CURRENT_SIGNAL", "pattern": "/SIGNAL"}])
+        self.assertEqual({k: v for k, v in classes["CURRENT_SIGNAL"].items() if k not in ("name", "priority", "track_width")},
+                         {k: v for k, v in classes["Default"].items() if k not in ("name", "track_width")})
+        self.assertIn("(rule \"agent_ee_netclass_CURRENT_SIGNAL\"\n  (condition \"A.NetClass == 'CURRENT_SIGNAL'\")\n"
+                      "  (constraint track_width (min 0.288mm)))", (inputs / "project/owned.kicad_dru").read_text())
+        record = json.loads((inputs / "net-constraints.record.json").read_text())
+        (spec,) = record["classes"]
+        self.assertEqual((record["outcome"], spec["nets"], spec["min_track_width_mm"]), ("pass", ["/SIGNAL"], width))
+        basis = spec["basis"]
+        self.assertEqual((basis["current_ma"], basis["temperature_rise_c"], basis["width_mm"]), (1000, 10, width))
+        self.assertEqual(basis["current_source"], dict(path="design.json", locator="/currents/SIGNAL/current_ma"))
+        self.assertEqual(basis["temperature_rise_source"]["selection"], "agent-selected")
+        self.assertIn("Not an owner", basis["temperature_rise_source"]["authority"])
+        self.assertEqual((basis["copper"]["copper_weight_oz"], basis["copper"]["effective_thickness_mm"]), (1, "0.034798"))
+        self.assertEqual(basis["copper"]["source"], dict(path="fab-profile.json", locator="/stackup/layers",
+                                                         sha256=digest(inputs / "fab-profile.json")))
+        self.assertNotIn("GND", record["nets"])
+        rows = {r["id"]: r for r in json.loads((inputs / "requirement-map.json").read_text())["requirements"]}
+        for rid in ("TEST-DELIV-1", "TEST-DELIV-2"):
+            geometry = next(c for c in rows[rid]["checks"] if c["id"] == "geometry")
+            self.assertEqual(geometry["params"]["net_constraints"], "net-constraints.record.json")
+        self.assertEqual(spec["requirement"], "TEST-DELIV-2")
+        self.assertIn("SIGNAL 1000 mA at least 0.288 mm", (inputs / "spec.md").read_text())
+        from agent_ee.net_constraints import net_minimums
+
+        board = inputs / "project/owned.kicad_pcb"
+        board.write_bytes(b'(kicad_pcb (net 1 "/SIGNAL") (net 2 "GND"))')
+        self.assertEqual(net_minimums(inputs / "net-constraints.record.json", inputs / "project/owned.kicad_pro"),
+                         {"/SIGNAL": width})
+
+    def test_other_currents_follow_the_fit_and_small_ones_keep_the_default_width(self):
+        for current, expected in ((2000, ipc2152_oracle_mm(2.0, 10, 1)), (500, ipc2152_oracle_mm(0.5, 10, 1))):
+            with self.subTest(current=current):
+                inputs = self.compile(f"amps-{current}", {"SIGNAL": {"current_ma": current}})
+                (spec,) = json.loads((inputs / "net-constraints.record.json").read_text())["classes"]
+                self.assertEqual(spec["min_track_width_mm"], expected)
+                project = json.loads((inputs / "project/owned.kicad_pro").read_text())
+                routed = next(c for c in project["net_settings"]["classes"] if c["name"] == "CURRENT_SIGNAL")
+                # A small current never narrows a net below the Default routing width.
+                self.assertEqual(routed["track_width"], max(expected, 0.2))
+        self.assertEqual((ipc2152_oracle_mm(2.0, 10, 1), ipc2152_oracle_mm(0.5, 10, 1)), (1.012, 0.082))
+
+    def test_nets_without_declared_current_keep_todays_bundle(self):
+        plain = self.compile("plain")
+        self.assertFalse((plain / "net-constraints.json").exists())
+        self.assertFalse((plain / "net-constraints.record.json").exists())
+        self.assertFalse((plain / "project/owned.kicad_dru").exists())
+        settings = json.loads((plain / "project/owned.kicad_pro").read_text())["net_settings"]
+        self.assertEqual([c["name"] for c in settings["classes"]], ["Default"])
+        self.assertNotIn("netclass_patterns", settings)
+        rows = json.loads((plain / "requirement-map.json").read_text())["requirements"]
+        geometry = next(c for r in rows for c in r.get("checks", []) if c["id"] == "geometry")
+        self.assertEqual(sorted(geometry["params"]), ["covered_primitives", "criterion", "exclude_nets", "min_track_width_mm"])
+        self.assertNotIn("TEST-DELIV-2", {r["id"] for r in rows})
+
+        current = self.compile("current", {"SIGNAL": {"current_ma": 1000}})
+
+        def files(root):
+            return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+        before, after = files(plain), files(current)
+        changed = {name for name in before.keys() & after.keys() if before[name] != after[name]}
+        # The spec gains the width requirement; parts.json changes only in its spec-record hash binding.
+        self.assertEqual(changed, {"design.json", "spec.md", "spec-record.json", "obligations.json",
+                                   "requirement-map.json", "parts.json", "project/owned.kicad_pro"})
+        parts = [json.loads(side["parts.json"]) for side in (before, after)]
+        for side in parts:
+            side["declaration_source"].pop("sha256")
+        self.assertEqual(parts[0], parts[1])
+        self.assertEqual(after.keys() - before.keys(), {"net-constraints.json", "net-constraints.record.json",
+                                                        "project/owned.kicad_dru"})
+        self.assertEqual(json.loads(before["project/owned.kicad_pro"])["net_settings"]["classes"][0],
+                         json.loads(after["project/owned.kicad_pro"])["net_settings"]["classes"][0])
+
+    def test_router_resolves_the_declared_width_and_leaves_other_nets_on_default(self):
+        import subprocess
+        from toolchain import require_kicad_route
+        from agent_ee import kicad_route_attempt, routing_adapter
+
+        checkout = require_kicad_route()
+        state = Path(routing_adapter.preflight(checkout)["state"])
+        generation, _ = kicad_route_attempt.state_generation(state)
+        venv = state / generation / "venv" if generation else state / ".venv-krt"
+        inputs = self.compile("router", {"SIGNAL": {"current_ma": 1000}})
+        board = inputs / "project/owned.kicad_pcb"  # absent: the router reads the sibling project
+        script = ("import json, sys; sys.path.insert(0, sys.argv[1]); "
+                  "from list_nets import read_design_rules, net_track_width_map_by_id; "
+                  "rules = read_design_rules(sys.argv[2]); "
+                  "print(json.dumps(net_track_width_map_by_id(sys.argv[2], {1: '/SIGNAL', 2: 'GND'}, rules)))")
+        done = subprocess.run(routing_adapter.router_python(
+            "-c", script, str(checkout / "src/kicad_route/router/py_router"), str(board),
+            python=str(venv / "bin/python")), capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads(done.stdout.splitlines()[-1]), {"1": 0.288})
+
+    def test_declared_currents_are_refused_with_actionable_fields(self):
+        cases = {
+            "currents.NOPE: declare a current only for a net in nets": {"NOPE": {"current_ma": 10}},
+            "currents.SIGNAL.current_ma: supply the continuous current in mA": {"SIGNAL": {"current_ma": 0}},
+            "currents.SIGNAL.current_ma: supply": {"SIGNAL": {"current_ma": 30001}},
+            "currents.GND.current_ma: supply": {"GND": {"current_ma": True}},
+            "currents.SIGNAL.amps: unknown field": {"SIGNAL": {"current_ma": 1, "amps": 1}},
+            "currents.SIGNAL.current_ma: supply this required field": {"SIGNAL": {}},
+            "currents: supply a dict": [],
+        }
+        for message, currents in cases.items():
+            with self.subTest(message=message), self.assertRaises(DesignError) as caught:
+                self.compile("refused", currents)
+            self.assertIn(message, str(caught.exception))
+            self.assertFalse((self.root / "refused").exists())
+        renamed = json.loads(json.dumps(self.design).replace('"SIGNAL"', '"SIG.A"'))
+        renamed["currents"] = {"SIG.A": {"current_ma": 100}}
+        with self.assertRaisesRegex(DesignError, r"currents\.SIG\.A: name a net .* \[tool_gap\]"):
+            compile_design(renamed, self.captures, self.root / "renamed")
+
+    def test_local_copper_narrower_than_the_derived_width_is_refused_before_placement(self):
+        from agent_ee.design import validate
+
+        self.design["decoupling"] = [dict(capacitor="R2", device="R1", supply=["R1.1", "R2.1"],
+                                          **{"return": ["R1.2", "R2.2"]}, max_distance_mm=6)]
+        self.design["currents"] = {"SIGNAL": {"current_ma": 2000}}
+        with self.assertRaises(DesignError) as caught:
+            validate(self.design, self.captures)
+        self.assertIn("decoupling[0].supply: generated local copper on SIGNAL is at most 1 mm wide (the narrower "
+                      "land of R1.1 and R2.1), below the 1.012 mm its declared 2000 mA needs", str(caught.exception))
+        self.assertNotIn("decoupling[0].return", str(caught.exception))
+        self.design["currents"] = {"SIGNAL": {"current_ma": 1000}}
+        validate(self.design, self.captures)
+
+    def test_land_the_derived_width_cannot_reach_is_refused_before_placement(self):
+        from agent_ee.design import validate
+
+        self.design["currents"] = {"SIGNAL": {"current_ma": 1000}}
+        # Holes of no net on all eight track directions leave no way into pad 1.
+        holes = "".join(f'(pad "" np_thru_hole circle (at {0.75 * dx:.4f} {0.75 * dy:.4f}) (size 0.6 0.6) '
+                        f'(drill 0.6) (layers "*.Cu" "*.Mask"))'
+                        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7071, 0.7071), (-0.7071, 0.7071),
+                                       (0.7071, -0.7071), (-0.7071, -0.7071)))
+        (self.captures / "cad/Owned.pretty/R2.kicad_mod").write_bytes(kicad_footprint(
+            "R2", '(pad "1" smd rect (at 0 0) (size 0.6 0.6) (layers "F.Cu" "F.Mask")) '
+                  '(pad "2" smd rect (at 3 0) (size 0.6 0.6) (layers "F.Cu" "F.Mask")) ' + holes,
+            extra='(fp_rect (start -2 -1) (end 4 1) (stroke (width 0.05) (type default)) (layer "F.CrtYd"))'))
+        seal_capture(self.captures)
+        with self.assertRaises(DesignError) as caught:
+            validate(self.design, self.captures)
+        self.assertIn("currents.SIGNAL: 1000 mA needs routed copper at least 0.288 mm wide (IPC-2152 generic-chart "
+                      "fit, 10 C agent-selected temperature rise", str(caught.exception))
+        self.assertIn("but no track wider than 0 mm reaches R1 pad 1 (Owned:R2) without coming within the 0.1 mm "
+                      "fabrication clearance of another land of R1", str(caught.exception))
+
+
+class TrackAccessWidthTests(unittest.TestCase):
+    """The widest track that reaches a land, against hand-computed land geometry."""
+
+    def width(self, pads, number="1", same=("1",), clearance=0.1):
+        from agent_ee.design_geometry import track_access_width
+        from agent_ee.symbol_library import parse_sexpr
+
+        return track_access_width(parse_sexpr(kicad_footprint("X", pads)), number, set(same), clearance)
+
+    def test_soic_row_allows_the_track_along_the_land(self):
+        row = "".join(f'(pad "{n}" smd roundrect (at -2.475 {y}) (size 1.95 0.6) (layers "F.Cu" "F.Mask") '
+                      f'(roundrect_rratio 0.25))' for n, y in (("1", -1.905), ("2", -0.635), ("3", 0.635)))
+        # Along the land: the neighbour's straight side is 1.27 - 0.3 mm away.
+        self.assertAlmostEqual(self.width(row, "2", ("2",)), 2 * (1.27 - 0.3 - 0.1), places=9)
+
+    def test_circular_obstacles_are_modelled_exactly(self):
+        circle = '(pad "1" smd rect (at 0 0) (size 0.2 0.2) (layers "F.Cu")) ' + "".join(
+            f'(pad "{n}" smd circle (at {x} {y}) (size 1 1) (layers "F.Cu"))'
+            for n, (x, y) in zip("2345678", ((2, 1), (2, -1), (-2, 1), (-2, -1), (0, 2), (0, -2), (3, 0))))
+        # Best ray is -x: the circles at (-2, +-1) are 1 mm from it, less their 0.5 mm radius.
+        self.assertAlmostEqual(self.width(circle), 2 * (1 - 0.5 - 0.1), places=9)
+
+    def test_other_layer_and_same_net_lands_are_not_obstacles(self):
+        walls = "".join(f'(pad "{n}" smd rect (at {x} {y}) (size 0.5 0.5) (layers "{layer}"))'
+                        for n, x, y, layer in (("2", 1, 0, "B.Cu"), ("3", -1, 0, "F.Cu"), ("4", 0, 1, "F.Cu"),
+                                               ("5", 0, -1, "F.Cu"), ("6", 0.7, 0.7, "F.Cu"), ("7", -0.7, 0.7, "F.Cu"),
+                                               ("8", 0.7, -0.7, "F.Cu"), ("9", -0.7, -0.7, "F.Cu")))
+        target = '(pad "1" smd rect (at 0 0) (size 0.4 0.4) (layers "F.Cu")) '
+        front = walls.replace('"B.Cu"', '"F.Cu"')
+        # Only +x is open, past the diagonal lands whose near sides are 0.7 - 0.25 mm away.
+        self.assertAlmostEqual(self.width(target + walls), 2 * (0.45 - 0.1), places=9)
+        self.assertAlmostEqual(self.width(target + front, same=("1", "2")), 2 * (0.45 - 0.1), places=9)
+        self.assertEqual(self.width(target + front), 0.0)
+
+    def test_footprint_with_a_custom_land_gets_no_claim(self):
+        target = '(pad "1" smd rect (at 0 0) (size 0.4 0.4) (layers "F.Cu")) '
+        self.assertIsNone(self.width(target + '(pad "2" smd custom (at 3 0) (size 1 1) (layers "F.Cu"))'))

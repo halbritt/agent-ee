@@ -173,9 +173,34 @@ Every recorded net must exist in the board, including classes with no width. Eac
 The record and the project become immutable baseline inputs in scope/2 and
 scope/3. Missing, non-passing or mismatched policy inputs, or any recorded net
 absent from the board, make the capability unsupported. Execution gives
-`unsupported/unknown` with the missing names.
+`unsupported/unknown` with the missing names. When the scope lists the board
+among its `mutable_inputs` (a generation scope, whose board is an empty scaffold
+until its schematic stage), the capability checks the record and project but
+leaves the board-membership binding to execution, which always binds it.
 `copper-width.json` stores `net_limits_mm`, each primitive's limit, and the
-record and project hashes.
+record and project hashes. The summary names each net narrower than its recorded
+minimum, with the minimum, the record's declared current when it has one, and
+the narrowest routed width.
+
+## Compiled design currents (AGENTEE-582)
+
+A design statement's [`currents`](design-compile.md#declared-currents) compile
+through `net_constraints.design_classes`, which shares this module's parser,
+copper selection, IPC-2152 fit (`ipc2152_minimum`) and literal patterns, and the
+`routing_rules` rule text. The compiled project carries only a Default class in `net_settings`
+schema 3, so the qualified-template contract of `emit` does not apply. KiCad
+10.0.8 keeps `netclass_patterns` through its schema 3 to 5 migration, which
+renumbers class priorities, converts `netclass_assignments` to lists and adds
+tuning profiles (`common/project/net_settings.cpp`, `migrateSchema3to4` and
+`migrateSchema4to5`). Each class has one net and its current.
+It copies the Default values and routes at the larger of its minimum and the
+Default track width. The generated rule and the record keep the minimum itself.
+Copper comes from the fab profile's stackup, and the rise is the recorded,
+agent-selected 10 °C of `design.CURRENT_RISE`. Each record class carries a
+`basis`: the current, rise, copper, method and width, and the sources of the
+current, rise and copper. The record
+binds no board (`unbound`); the compiled `geometry` check binds it to the saved
+board.
 
 ## Evidence and limits
 

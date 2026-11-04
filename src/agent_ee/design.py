@@ -21,6 +21,31 @@ CLASS_SYMBOLS = dict(
 )
 
 
+# The packaged fabrication profile: its stackup gives the copper for current-derived widths.
+FAB_PROFILE = Path(__file__).parent / "data/jlc-2layer-fab-profile.json"
+# The allowed temperature rise for widths derived from declared currents (AGENTEE-582). The tool
+# had no default; this value is agent-selected and recorded with every derived width.
+CURRENT_RISE = dict(
+    temperature_rise_c=10,
+    selection="agent-selected",
+    selected_by="agent-ee builder, AGENTEE-582, 2026-11-03",
+    basis="A conservative rise for continuous-current traces; the value of the tool's existing "
+    "net-constraint example (fixtures/net-constraints/rc.constraints.json, docs/net-constraints.md).",
+    authority="Not an owner, datasheet or fabricator ruling.",
+)
+
+
+def current_minimum_mm(current_ma, copper):
+    """IPC-2152 minimum width, in mm, for a continuous current on the thinnest of the copper layers.
+
+    copper is a fab profile's stackup layer list. None outside the fit's range."""
+    from .net_constraints import governing_copper, ipc2152_minimum
+
+    governing, _ = governing_copper({"stackup": {"layers": copper}})
+    _, width = ipc2152_minimum(current_ma, CURRENT_RISE["temperature_rise_c"], governing)
+    return None if width is None else width / 1000
+
+
 class DesignError(ValueError):
     """All independently actionable input problems, with design field paths."""
 
@@ -296,7 +321,7 @@ def validate(design, captures=None, *, cad_only=False):
             "functional",
             "bench",
         ),
-        ("placement", "mechanics", "markings", "diff_pairs"),
+        ("placement", "mechanics", "markings", "diff_pairs", "currents"),
         "design",
     ):
         raise DesignError(errors)
@@ -952,6 +977,7 @@ def validate(design, captures=None, *, cad_only=False):
                             "mechanics.packages." + ref + "." + key,
                             "supply finite dimensions in the footprint local frame",
                         )
+    current_problems(design, nets, footprints, decoupling, fields, fail)
     if captures is not None and not cad_only:
         from .part_record import prepare_record
 
@@ -1031,6 +1057,75 @@ def validate(design, captures=None, *, cad_only=False):
     if errors:
         raise DesignError(errors)
     return assemblies
+
+
+def current_problems(design, nets, footprints, decoupling, fields, fail):
+    """Declared continuous currents (AGENTEE-582): each names a declared net and a current in mA.
+
+    With captured footprints, a derived width must reach every land of the net and fit the
+    generated local copper of a decoupling leg on it; otherwise the design is refused here,
+    before placement, instead of failing the final copper-width check."""
+    currents = design.get("currents", {})
+    if not isinstance(currents, dict):
+        fail("currents", "supply an object mapping declared net names to {current_ma}")
+        return
+    profile = load(FAB_PROFILE)
+    copper = profile["stackup"]["layers"]
+    clearance = next(limit["value"] for limit in profile["limits"]
+                     if limit.get("key") == "min_clearance_mm" and limit.get("tier") == "minimum")
+    widths = {}
+    for net, spec in currents.items():
+        path = "currents." + net
+        if net not in nets:
+            fail(path, "declare a current only for a net in nets")
+            continue
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,55}", net):
+            fail(path, "name a net with a declared current with at most 56 letters, digits and underscores; "
+                 "the router matches netclass patterns as globs and cannot bind an escaped +, . or - [tool_gap]")
+        if fields(spec, ("current_ma",), (), path):
+            value = spec["current_ma"]
+            if not number(value) or not 0 < value <= 30000:
+                fail(path + ".current_ma", "supply the continuous current in mA as a positive number "
+                     "of at most 30000, the range of the IPC-2152 fit")
+            else:
+                widths[net] = current_minimum_mm(value, copper)
+    basis = (f"IPC-2152 generic-chart fit, {CURRENT_RISE['temperature_rise_c']} C agent-selected temperature rise, "
+             f"thinnest copper of fab profile {profile['name']}")
+    from .design_geometry import land_width, track_access_width
+
+    for net, width in sorted(widths.items()):
+        on_net = {}
+        for term in nets[net]:
+            if isinstance(term, str) and "." in term:
+                ref, pin = term.split(".", 1)
+                on_net.setdefault(ref, set()).add(pin)
+        for ref in sorted(set(on_net) & set(footprints)):
+            for pin in sorted(on_net[ref]):
+                access = track_access_width(footprints[ref], pin, on_net[ref], clearance)
+                # 1 nm absorbs floating-point error; the reported width is rounded down to 1 um.
+                if access is not None and width > access + 1e-6:
+                    fail("currents." + net,
+                         f"{currents[net]['current_ma']:g} mA needs routed copper at least {width:g} mm wide "
+                         f"({basis}), but no track wider than {math.floor(access * 1000 + 1e-6) / 1000:g} mm "
+                         f"reaches {ref} pad {pin} ({design['parts'][ref]['footprint']}) without coming within "
+                         f"the {clearance:g} mm fabrication clearance of another land of {ref}; lower the "
+                         "declared current if the requirement allows it, or select a part whose lands on this "
+                         "net have more room")
+    for i, d in enumerate(decoupling):
+        for key in ("supply", "return"):
+            leg = d.get(key) if isinstance(d, dict) else None
+            if not (isinstance(leg, list) and len(leg) == 2
+                    and all(isinstance(t, str) and "." in t and t.split(".", 1)[0] in footprints for t in leg)):
+                continue
+            net = next((n for n, terms in nets.items() if leg[0] in terms), None)
+            lands = [land_width(footprints[t.split(".", 1)[0]], t.split(".", 1)[1]) for t in leg]
+            if net in widths and None not in lands and min(lands) + 1e-6 < widths[net]:
+                # local_decoupling._leg draws each leg no wider than its narrower land.
+                fail(f"decoupling[{i}].{key}",
+                     f"generated local copper on {net} is at most {min(lands):g} mm wide (the narrower land of "
+                     f"{leg[0]} and {leg[1]}), below the {widths[net]:g} mm its declared "
+                     f"{currents[net]['current_ma']:g} mA needs ({basis}); select parts whose lands are at "
+                     "least that wide, or lower the declared current if the requirement allows it")
 
 
 def blob(root, rel):

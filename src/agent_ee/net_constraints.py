@@ -46,6 +46,18 @@ def width_um(area_mil2, thickness_mm):
     return math.ceil(area_mil2 / (thickness_mm / 0.0254) * 0.0254 * 1000)
 
 
+def ipc2152_minimum(current_ma, rise_c, governing):
+    """(ipc2152 record, width in um) for one continuous current on the governing copper.
+
+    Outside the fit's range the result is ('outside_fit_range', None); nothing is extrapolated."""
+    if not (2 <= rise_c <= 100 and current_ma <= 30000):
+        return 'outside_fit_range', None
+    area = ipc2152_area_mil2(current_ma / 1000, rise_c)
+    width = width_um(area, float(governing['effective_thickness_mm']))
+    return ({'area_mil2': round(area, 6), 'width_mm': width / 1000, 'governing_layer': governing['layer'],
+             'thickness_mm': governing['effective_thickness_mm']}, width)
+
+
 def pair_roles(nets):
     a, b = sorted(nets)
     for pos, neg in (('+', '-'), ('P', 'N')):
@@ -198,11 +210,7 @@ def emit(constraints_raw, project_raw, *, envelope_raw=None, rules_raw=None, boa
             elif governing is None:
                 findings.append({'code': 'current_without_stackup', 'class': spec['name']})
             else:
-                area = ipc2152_area_mil2(current / 1000, rise)
-                ipc = width_um(area, float(governing['effective_thickness_mm']))
-                record['ipc2152'] = {'area_mil2': round(area, 6), 'width_mm': ipc / 1000,
-                                     'governing_layer': governing['layer'],
-                                     'thickness_mm': governing['effective_thickness_mm']}
+                record['ipc2152'], ipc = ipc2152_minimum(current, rise, governing)
                 minimum_um = max(minimum_um or 0, ipc)
         if minimum_um is not None:
             record['min_track_width_mm'] = minimum_um / 1000
@@ -263,8 +271,82 @@ def emit(constraints_raw, project_raw, *, envelope_raw=None, rules_raw=None, boa
     return artifacts
 
 
-def net_minimums(record_path, project_path):
-    """Per-net copper minimums from a pass record whose classes the captured project carries."""
+DESIGN_LIMITATIONS = [
+    'Current is per net: every track and arc of the net is held to its minimum, including branches '
+    'that carry little of it, such as a sense connection.',
+    'Widths use the unmodified IPC-2152 generic-chart fit; no plane, board thickness or copper-thickness modifiers.',
+    'The temperature rise is an agent-selected basis value, not an owner, datasheet or fabricator limit.',
+    'Vias, zones, pads and copper pours are outside the width rule.',
+    'Planning output: the copper-width/1 check binds every declared net to the saved board.']
+
+
+def design_classes(constraints_raw, project_raw, *, copper, basis):
+    """Classes derived from declared currents for a compiled design project (AGENTEE-582).
+
+    The compiled project carries only a Default class (net_settings schema 3), so emit()'s
+    qualified-template contract does not apply. Each class has one net and its current. It
+    copies Default's values and routes at the larger of its IPC-2152 minimum and Default's
+    track width, so a small declared current never narrows a net; the generated rule and the
+    record keep the minimum itself. copper is the fab profile's stackup layer list. basis
+    names the sources: 'current' maps each net to its declaration, 'temperature_rise' and
+    'copper' are recorded as given. Returns (project, rules, record) bytes in the bundle's
+    JSON format; anything unresolved raises ValueError, so no partial class is emitted."""
+    from .storage import json_bytes
+    rise, classes = parse_document(constraints_raw)
+    if any(set(spec) != {'name', 'requirement', 'nets', 'current_ma'} or len(spec['nets']) != 1
+           for spec in classes):
+        raise ValueError('compiled design classes declare exactly one net and its current')
+    project = load_json_bytes(project_raw)
+    settings = project.get('net_settings') if isinstance(project, dict) else None
+    if (not isinstance(settings, dict) or not isinstance(settings.get('classes'), list)
+            or [c.get('name') for c in settings['classes']] != ['Default']
+            or settings.get('netclass_patterns') or settings.get('netclass_assignments')):
+        raise ValueError('compiled project must carry only the Default netclass')
+    default = settings['classes'][0]
+    governing, layers = governing_copper({'stackup': {'layers': copper}})
+    records, emitted, rules = [], [], []
+    for priority, spec in enumerate(classes):
+        (net,) = spec['nets']
+        ipc, width = ipc2152_minimum(spec['current_ma'], rise, governing)
+        if width is None:
+            raise ValueError(f"{net}: {spec['current_ma']} mA at a {rise} C rise is outside the IPC-2152 fit range "
+                             f"{METHOD['fit_range']}")
+        minimum = width / 1000
+        marker = RULE_PREFIX + spec['name']
+        routing = max(minimum, default['track_width'])
+        emitted.append({**copy.deepcopy({k: v for k, v in default.items() if k != 'name'}),
+                        'name': spec['name'], 'priority': priority, 'track_width': routing})
+        rules.append(rule_text(marker, f"A.NetClass == '{spec['name']}'",
+                               f'track_width (min {minimum:.12g}mm)').split('\n', 1)[1])
+        records.append({**spec, 'ipc2152': ipc, 'min_track_width_mm': minimum, 'routing_width_mm': routing,
+                        'rule': marker, 'basis': {
+                            'current_ma': spec['current_ma'], 'current_source': basis['current'][net],
+                            'temperature_rise_c': rise, 'temperature_rise_source': basis['temperature_rise'],
+                            'copper': {**governing, 'source': basis['copper']},
+                            'method': METHOD['width'], 'width_mm': minimum}})
+    settings['classes'] = [default, *emitted]
+    settings['netclass_patterns'] = [{'netclass': c['name'], 'pattern': exact_pattern(c['nets'][0])}
+                                     for c in records]
+    pro = json_bytes(project)
+    dru = ('(version 1)\n' + ''.join(rules)).encode('utf-8')
+    rule_forms(dru)
+    record = {'schema': RECORD, 'outcome': 'pass', 'acceptance_ready': False, 'findings': [],
+              'source_sha256': hashlib.sha256(constraints_raw).hexdigest(),
+              'board_binding': {'status': 'unbound', 'board_sha256': None},
+              'template_project_sha256': hashlib.sha256(project_raw).hexdigest(),
+              'template_rules_sha256': None, 'envelope_sha256': None,
+              'method': METHOD, 'temperature_rise_c': rise, 'stackup_copper': layers,
+              'classes': records, 'project_sha256': hashlib.sha256(pro).hexdigest(),
+              'rules_sha256': hashlib.sha256(dru).hexdigest(),
+              'nets': {c['nets'][0]: c['name'] for c in records}, 'limitations': DESIGN_LIMITATIONS}
+    return pro, dru, json_bytes(record)
+
+
+def net_minimums(record_path, project_path, *, bind_board=True):
+    """Per-net copper minimums from a pass record whose classes the captured project carries.
+
+    bind_board=False skips only the board-membership binding, for a board that a generation
+    scope has yet to produce; the check run on the saved board always binds it."""
     record = load_json(record_path)
     if not isinstance(record, dict) or record.get('schema') != RECORD or record.get('outcome') != 'pass':
         raise ValueError('net constraints require a passing agent-ee.net-constraint-record/1')
@@ -275,8 +357,9 @@ def net_minimums(record_path, project_path):
     patterns = settings.get('netclass_patterns')
     if not isinstance(patterns, list):
         raise ValueError('captured project has no netclass_patterns')
-    require_nets((n for c in record['classes'] for n in c['nets']),
-                 board_net_names(Path(project_path).with_suffix('.kicad_pcb').read_bytes()))
+    if bind_board:
+        require_nets((n for c in record['classes'] for n in c['nets']),
+                     board_net_names(Path(project_path).with_suffix('.kicad_pcb').read_bytes()))
     limits = {}
     for spec in record['classes']:
         expected = sorted(exact_pattern(n) for n in spec['nets'])

@@ -699,6 +699,25 @@ def copper_width_coverage(geo, params, net_limits=None):
                                             for t in tracks), "zones": len(geo["zones"])}}
 
 
+def net_minimum_defects(coverage, net_limits, record_path):
+    """Name each net whose tracks or arcs are narrower than its recorded minimum (AGENTEE-582).
+
+    The record's declared current, when it has one, says where that minimum comes from."""
+    narrow = {}
+    for primitive in coverage["offending_primitives"]:
+        if primitive["net"] in (net_limits or {}) and primitive["width_mm"] < net_limits[primitive["net"]]:
+            narrow.setdefault(primitive["net"], []).append(primitive["width_mm"])
+    if not narrow:
+        return ""
+    currents = {net: spec["current_ma"] for spec in read_json(record_path)["classes"]
+                if "current_ma" in spec for net in spec["nets"]}
+    return "; " + "; ".join(
+        f"{net}: {len(widths)} below its recorded {net_limits[net]:g} mm minimum"
+        + (f" for a declared {currents[net]:g} mA continuous current" if net in currents else "")
+        + f", narrowest {min(widths):g} mm; route it at least that wide, or with more room near its lands"
+        for net, widths in sorted(narrow.items()))
+
+
 def net_constraint_inputs(params, scope, files):
     """Captured constraint record and the board-sibling project it binds (AGENTEE-47)."""
     record = params.get("net_constraints")
@@ -755,7 +774,8 @@ def check_geometry(ctx):
         ctx.result["summary"] = (f"copper-width/1: {counts['checked']} track/arc primitive(s) checked, "
                                  f"{len(coverage['offending_primitives'])} below {ctx.params['min_track_width_mm']} mm"
                                  + (f" or their recorded netclass minimum ({len(net_limits)} net(s))"
-                                    if net_limits is not None else ""))
+                                    if net_limits is not None else "")
+                                 + net_minimum_defects(coverage, net_limits, source and ctx.inputs / source["record"]))
         return
     ctx.result["details"].update({
         "pcbnew_version": geo["pcbnew_version"],
@@ -1278,7 +1298,11 @@ def describe_geometry(ctx):
         ctx.captured(project, immutable=True)
         if ctx.inputs is not None:
             from .net_constraints import net_minimums
-            net_minimums(Path(ctx.inputs) / ctx.params['net_constraints'], Path(ctx.inputs) / project)
+            # A generation scope's board is an empty scaffold until its schematic stage; the
+            # check binds the recorded nets to the saved board when it runs (AGENTEE-582).
+            generated = ctx.scope.get('board') in ctx.scope.get('mutable_inputs', [])
+            net_minimums(Path(ctx.inputs) / ctx.params['net_constraints'], Path(ctx.inputs) / project,
+                         bind_board=not generated)
 
 
 if __name__ != '__main__':

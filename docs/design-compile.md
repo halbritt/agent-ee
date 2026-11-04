@@ -48,6 +48,85 @@ Unknown fields are refused.
 | `placement` | Optional `{budget_s, seeds, steps_per_seed}`; defaults are 600 seconds, 4 seeds, and 100000 steps per seed. |
 | `mechanics` | Optional `{access_owners, packages}`; see below. Omitted means no declared body/access model. |
 | `markings` | Optional list of visible silkscreen labels; see Board text below. |
+| `currents` | Optional object mapping a declared net to `{current_ma}`, its continuous current in mA; see Declared currents below. Omitted means every net keeps the Default width. |
+
+## Declared currents
+
+Declare the continuous current of each net that carries one. Compile derives the
+net's minimum track width and the build routes and checks the net at that width.
+
+```json
+"currents": {"SOURCE_12V": {"current_ma": 1000}, "LOAD_12V": {"current_ma": 1000}}
+```
+
+`current_ma` is a positive number of at most 30000 (the fit's range). Net names
+with a declared current use only letters, digits and underscores, at most 56
+characters. The router matches netclass patterns as globs and cannot bind an
+escaped `+`, `.` or `-`; such a name is refused with `[tool_gap]`.
+
+The width comes from the existing IPC-2152 generic-chart fit in
+[net constraints](net-constraints.md#track-width-from-current), with this basis:
+
+| Basis | Value and source |
+| --- | --- |
+| Current | The declared `current_ma` (`design.json` `/currents/<NET>/current_ma`). |
+| Copper | The thinnest copper layer of the fab profile's stackup (`fab-profile.json` `/stackup/layers`): 1 oz, 0.034798 mm for the packaged JLC profile. |
+| Temperature rise | 10 °C. The tool had no default, so this value is agent-selected (AGENTEE-582, 2026-11-03): a conservative rise for continuous-current traces, and the value of the tool's existing net-constraint example. It is not an owner, datasheet or fabricator limit. |
+| Result | The width rounded up to 0.001 mm: 1000 mA gives 0.288 mm, 2000 mA gives 1.012 mm. |
+
+Compile writes:
+
+- `net-constraints.json`: the `agent-ee.net-constraints/1` document, one class
+  `CURRENT_<NET>` per declared net.
+- `project/<name>.kicad_pro`: each class, with a literal `netclass_patterns`
+  entry for its net. The class copies the Default values and routes at the
+  larger of the derived width and the Default track width, so a small current
+  never narrows a net. The router reads this class width.
+- `project/<name>.kicad_dru`: a native `track_width (min …)` rule per class.
+  Native DRC reports a narrower track under it. The rule has no cited source
+  declaration, so constraint provenance grades that finding advisory; the final
+  check below is the gate.
+- `net-constraints.record.json`: the record, with a `basis` per class: the
+  current, rise, copper, method and width, and the sources of the current, rise
+  and copper.
+- A Manufacturing requirement (`DELIV-2`, or `DELIV-3` with `markings`) that
+  states each net's current and width. It and `DELIV-1` bind the final
+  `geometry` check (`copper-width/1`) to the record, so every routed track and
+  arc of the net is held to its derived minimum.
+
+Nets without a declared current get no class, pattern or rule, and a statement
+without `currents` compiles to the same bundle as before.
+
+The current is per net: every track and arc of the net is held to its minimum,
+including a branch that carries little of it, such as a sense connection. Vias,
+zones, pads and pours are outside the width rule.
+
+Validation refuses a current whose width cannot be built, before any placement:
+
+- **A land the track cannot reach.** A track of the derived width must reach the
+  centre of every land on the net, in one of the router's eight directions, and
+  keep the fab profile's minimum clearance (0.1 mm) from each land of the part
+  that is not on this net and shares a copper layer.
+  The message names the part, pad and footprint and gives the widest track that
+  fits. Lands are modelled exactly for rectangles, rounded rectangles, ovals and
+  circles; a chamfered or trapezoid land is taken as a containing rectangle, and
+  a footprint with a custom land gets no claim. Other parts are placed later, so
+  a narrow passage between parts is found by the final check.
+- **Local copper narrower than the width.** Generated decoupling copper is no
+  wider than the smaller dimension of its narrower land. A decoupling leg on a net whose derived width
+  exceeds that land is refused, with both terminals named.
+
+For example:
+
+```text
+Design refused:
+- currents.SIGNAL: 1000 mA needs routed copper at least 0.288 mm wide (IPC-2152 generic-chart fit, 10 C agent-selected temperature rise, thinnest copper of fab profile jlcpcb-2layer-1oz), but no track wider than 0 mm reaches R1 pad 1 (Owned:R2) without coming within the 0.1 mm fabrication clearance of another land of R1; lower the declared current if the requirement allows it, or select a part whose lands on this net have more room
+```
+
+When the router narrows a net anyway (its power neck-down near a crowded land),
+the final check fails and its summary names the net, the declared current, the
+recorded minimum and the narrowest routed width. The design loop passes each
+failed check's summary to the author.
 
 ## Differential pairs
 

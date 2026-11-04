@@ -10,8 +10,11 @@ from pathlib import Path
 
 from .design import (
     CLASS_SYMBOLS,
+    CURRENT_RISE,
+    FAB_PROFILE,
     DesignError,
     blob,
+    current_minimum_mm,
     footprint_path,
     load,
     native_net,
@@ -56,6 +59,27 @@ def loop_text(pair):
     return text
 
 
+CURRENT_RECORD = "net-constraints.record.json"
+
+
+def current_requirement(design):
+    """The Manufacturing item that states the current-derived widths: after the fab files and labels."""
+    return f"DELIV-{2 + bool(design.get('markings'))}"
+
+
+def current_text(design):
+    copper = load(FAB_PROFILE)["stackup"]["layers"]
+    widths = ", ".join(
+        f"{net} {spec['current_ma']:g} mA at least {current_minimum_mm(spec['current_ma'], copper):g} mm"
+        for net, spec in sorted(design["currents"].items())
+    )
+    return (
+        "Routed tracks and arcs of each net with a declared continuous current shall be at least the "
+        f"IPC-2152 generic-chart width for that current, with a {CURRENT_RISE['temperature_rise_c']} C "
+        f"agent-selected temperature rise and the fab profile's thinnest copper: {widths}."
+    )
+
+
 def spec(design):
     sections = {
         "Design intent": [design["intent"]],
@@ -94,6 +118,8 @@ def spec(design):
         sections["Manufacturing"].append(
             "Every declared board marking shall retain its text, side, attachment and placement, fit inside the board, and meet the sourced legend height, stroke, pad-clearance and silk-to-mask minima without silkscreen overlap."
         )
+    if design.get("currents"):
+        sections["Manufacturing"].append(current_text(design))
     return "".join(
         "# "
         + title
@@ -509,6 +535,49 @@ def envelope(design, root):
     (root / "project").mkdir()
     write_json(root / f"project/{design['name']}.kicad_pro", project)
     return project
+
+
+def current_constraints(design, root):
+    """Declared currents into the existing net-constraint path (AGENTEE-47, AGENTEE-582).
+
+    Writes the agent-ee.net-constraints/1 document, adds one class per net to the compiled
+    project (routing width and pattern the router reads), the native track_width rule beside it,
+    and the record whose per-net minimums copper-width/1 enforces. Nothing is written for a
+    design without declared currents, so its bundle is unchanged."""
+    if not design.get("currents"):
+        return
+    from .net_constraints import design_classes
+
+    name = design["name"]
+    requirement = design["requirement_prefix"] + "-" + current_requirement(design)
+    write_json(
+        root / "net-constraints.json",
+        dict(
+            schema="agent-ee.net-constraints/1",
+            temperature_rise_c=CURRENT_RISE["temperature_rise_c"],
+            classes=[
+                dict(name="CURRENT_" + net, requirement=requirement, nets=[native_net(design, net)],
+                     current_ma=spec["current_ma"])
+                for net, spec in sorted(design["currents"].items())
+            ],
+        ),
+    )
+    project = root / f"project/{name}.kicad_pro"
+    pro, rules, record = design_classes(
+        (root / "net-constraints.json").read_bytes(),
+        project.read_bytes(),
+        copper=load(root / "fab-profile.json")["stackup"]["layers"],
+        basis=dict(
+            current={native_net(design, net): dict(path="design.json", locator=f"/currents/{net}/current_ma")
+                     for net in design["currents"]},
+            temperature_rise=CURRENT_RISE,
+            copper=dict(path="fab-profile.json", sha256=digest(root / "fab-profile.json"),
+                        locator="/stackup/layers"),
+        ),
+    )
+    project.write_bytes(pro)
+    project.with_suffix(".kicad_dru").write_bytes(rules)
+    (root / CURRENT_RECORD).write_bytes(record)
 
 
 def placement(design, root):
@@ -1029,9 +1098,23 @@ def requirements(design, root, record, suppliers):
     rows += [
         req(f"FUNC-{i}", [rule_check]) for i in range(1, len(design["functional"]) + 1)
     ]
+    geometry = check(
+        "geometry",
+        "geometry",
+        covered_primitives=["PCB_TRACK", "PCB_ARC"],
+        criterion="copper-width/1",
+        exclude_nets=[],
+        min_track_width_mm=load(root / f"project/{name}.kicad_pro")["board"][
+            "design_settings"
+        ]["rules"]["min_track_width"],
+        # Each net with a declared current is held to its recorded IPC-2152 minimum.
+        **(dict(net_constraints=CURRENT_RECORD) if design.get("currents") else {}),
+    )
     if design.get("markings"):
         rows.append(req("DELIV-2", [
             check("board-text", "board_text", markings="board-text.json")]))
+    if design.get("currents"):
+        rows.append(req(current_requirement(design), [geometry]))
     rows += [
         req(
             "MECH-1",
@@ -1116,16 +1199,7 @@ def requirements(design, root, record, suppliers):
         req(
             "DELIV-1",
             [
-                check(
-                    "geometry",
-                    "geometry",
-                    covered_primitives=["PCB_TRACK", "PCB_ARC"],
-                    criterion="copper-width/1",
-                    exclude_nets=[],
-                    min_track_width_mm=load(root / f"project/{name}.kicad_pro")[
-                        "board"
-                    ]["design_settings"]["rules"]["min_track_width"],
-                ),
+                geometry,
                 check("fab-export", "fab_export", netlist_check="netlist"),
                 check(
                     "cpl",
@@ -1369,6 +1443,7 @@ def _compile_design(design, captures, out):
         selected_parts(design, root, record, members_sha)
         circuit(design, root, libraries)
         envelope(design, root)
+        current_constraints(design, root)
         board_markings(design, root)
         placement(design, root)
         mechanics(design, root)

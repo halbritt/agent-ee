@@ -394,6 +394,51 @@ print(sorted({(t.GetNetname(), t.GetNetClassName()) for t in b.GetTracks()}))'''
         self.assertEqual((drc['execution'], drc['outcome']), ('ok', 'pass'), drc['summary'])
         self.assertEqual((width['execution'], width['outcome']), ('ok', 'pass'), width['summary'])
 
+    def test_compiled_current_class_fails_a_narrow_track_and_passes_at_the_derived_width(self):
+        """AGENTEE-582: the final copper-width/1 check holds a declared 1 A net to its IPC-2152 width."""
+        from agent_ee.design import CURRENT_RISE, FAB_PROFILE
+        from agent_ee.net_constraints import design_classes
+        doc = {'schema': 'agent-ee.net-constraints/1', 'temperature_rise_c': CURRENT_RISE['temperature_rise_c'],
+               'classes': [{'name': 'CURRENT_IN', 'requirement': 'R-width', 'nets': ['/IN'], 'current_ma': 1000}]}
+        compiled = {'board': {'design_settings': {'rules': {'min_track_width': 0.1}}},
+                    'meta': {'filename': 'rc_filter.kicad_pro', 'version': 1},
+                    'net_settings': {'classes': [{'name': 'Default', 'clearance': 0.1, 'track_width': 0.2,
+                                                  'via_diameter': 0.6, 'via_drill': 0.3}], 'meta': {'version': 3}}}
+        pro, rules, record = design_classes(
+            json.dumps(doc).encode(), json.dumps(compiled).encode(), copper=read_json(FAB_PROFILE)['stackup']['layers'],
+            basis={'current': {'/IN': {'path': 'design.json', 'locator': '/currents/IN/current_ma'}},
+                   'temperature_rise': CURRENT_RISE, 'copper': {'path': 'fab-profile.json'}})
+        for width, outcome in ((None, 'defect'), (0.288, 'pass')):
+            with self.subTest(width=width):
+                if self.root.exists():
+                    shutil.rmtree(self.root)
+                self.root.mkdir()
+                source = self.project(in_width=width)
+                (source / 'rc_filter.kicad_pro').write_bytes(pro)
+                (source / 'rc_filter.kicad_dru').write_bytes(rules)
+                (source / 'net-constraints.record.json').write_bytes(record)
+                params = {'criterion': 'copper-width/1', 'covered_primitives': ['PCB_TRACK', 'PCB_ARC'],
+                          'min_track_width_mm': 0.2, 'exclude_nets': [],
+                          'net_constraints': 'project/net-constraints.record.json'}
+                scope = {'schema': 'agent-ee.scope/2', 'inputs': [{'path': str(source), 'at': 'project'}],
+                         'board': 'project/rc_filter.kicad_pcb',
+                         'checks': [{'id': 'width', 'kind': 'geometry', 'params': params}],
+                         'baseline': {'requirements': [{'id': 'R-width', 'statement': '/IN carries 1 A',
+                             'source': {'path': 'project/requirements.md', 'locator': 'R-width'}, 'checks': ['width']}],
+                             'targets': ['project/requirements.md'], 'reference_architectures': ['project/requirements.md']}}
+                (self.root / 'scope.json').write_text(json.dumps(scope))
+                run_dir = self.root / 'run'
+                run_dir.mkdir()
+                candidate.capture(self.root / 'scope.json', run_dir)
+                (result,) = checks.run_checks(run_dir, time.monotonic() + 300)
+                self.assertEqual((result['execution'], result['outcome']), ('ok', outcome), result['summary'])
+                limits = {p['net']: p['limit_mm'] for p in result['details']['primitives']}
+                self.assertEqual(limits, {'/IN': 0.288, '/OUT': 0.2, 'GND': 0.2})
+                if outcome == 'defect':
+                    self.assertEqual({p['net'] for p in result['details']['offending_primitives']}, {'/IN'})
+                    self.assertRegex(result['summary'], r'/IN: \d+ below its recorded 0\.288 mm minimum for a '
+                                     r'declared 1000 mA continuous current, narrowest 0\.25 mm')
+
     def width_descriptor(self, run_dir):
         manifest = json.loads((run_dir / 'candidate.json').read_text())
         spec = manifest['scope']['checks'][1]

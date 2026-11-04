@@ -172,7 +172,8 @@ What goes back to the author is bounded:
 - A failed engineering review leads with its blocking findings (accepted,
   deferred or unresolved), then a short excerpt of the review report. The report
   itself stays in `review/report.json`.
-- Build failures carry the failed check records and placement findings. A
+- Build failures carry the failed check records (id, kind, execution, outcome,
+  summary and findings) and placement findings. A
   placement summary comes first, before the check records: for each placement
   job, its status, `engine_feasible`, `validity`, the engine's hard violations
   by part and term (with the seeds that showed each), native error types, opens,

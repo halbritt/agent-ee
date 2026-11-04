@@ -173,6 +173,111 @@ def decoupling_reach(device, capacitor, supply, ret):
     return best
 
 
+def land_width(node, number):
+    """Smallest copper dimension, in mm, over the lands numbered ``number``; None when absent."""
+    sizes = [min(float(s[1]), float(s[2])) for pad in children(node, "pad")
+             if len(pad) > 3 and pad[1] == number for s in children(pad, "size")[:1]]
+    return min(sizes) if sizes else None
+
+
+def _land(pad):
+    """(copper layers, core polygon, radius) of one land in the footprint frame, or None.
+
+    Every centred land is a convex core grown by a disc: a rectangle (radius 0), a rounded
+    rectangle (the rectangle shrunk by its corner radius), an oval (its centre segment) or a
+    circle (its centre). A chamfered or trapezoid land is taken as its bounding rectangle, which
+    contains it; a custom land, whose primitives can reach past its size, is not modelled."""
+    at, size = children(pad, "at"), children(pad, "size")
+    if not at or not size or pad[3] == "custom":
+        return None
+    x, y = float(at[0][1]), float(at[0][2])
+    angle = math.radians(float(at[0][3])) if len(at[0]) > 3 else 0.0
+    w, h = float(size[0][1]), float(size[0][2])
+    for delta in children(pad, "rect_delta"):
+        w, h = w + abs(float(delta[1])), h + abs(float(delta[2]))
+    cosine, sine = math.cos(angle), math.sin(angle)
+
+    def place(px, py):
+        return (x + px * cosine + py * sine, y - px * sine + py * cosine)
+
+    for drill in children(pad, "drill"):
+        for offset in children(drill, "offset"):
+            x, y = place(float(offset[1]), float(offset[2]))
+    if pad[3] == "circle":
+        core, radius = [(0.0, 0.0)], w / 2
+    elif pad[3] == "oval":
+        radius = min(w, h) / 2
+        reach = (max(w, h) - min(w, h)) / 2
+        core = [(-reach, 0.0), (reach, 0.0)] if w >= h else [(0.0, -reach), (0.0, reach)]
+    else:
+        ratio = children(pad, "roundrect_rratio")
+        radius = (float(ratio[0][1]) * min(w, h) if pad[3] == "roundrect" and ratio
+                  and not children(pad, "chamfer") else 0.0)
+        hx, hy = w / 2 - radius, h / 2 - radius
+        core = [(-hx, -hy), (hx, -hy), (hx, hy), (-hx, hy)]
+    layers = set()
+    for entry in children(pad, "layers"):
+        for name in entry[1:]:
+            layers |= ({"F.Cu", "B.Cu"} if name in ("*.Cu", "F&B.Cu") else {name} & {"F.Cu", "B.Cu"})
+    return layers, [place(px, py) for px, py in core], radius
+
+
+def _point_segment(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length2 = dx * dx + dy * dy
+    t = 0.0 if not length2 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length2))
+    return math.dist(p, (a[0] + t * dx, a[1] + t * dy))
+
+
+def _segment_distance(a, b, c, d):
+    def side(o, p, q):
+        return (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0])
+    s1, s2, s3, s4 = side(c, d, a), side(c, d, b), side(a, b, c), side(a, b, d)
+    if s1 * s2 < 0 and s3 * s4 < 0:
+        return 0.0
+    return min(_point_segment(a, c, d), _point_segment(b, c, d), _point_segment(c, a, b), _point_segment(d, a, b))
+
+
+def _core_distance(a, b, core):
+    if len(core) == 1:
+        return _point_segment(core[0], a, b)
+    return min(_segment_distance(a, b, core[i], core[(i + 1) % len(core)]) for i in range(len(core)))
+
+
+# The router's eight track directions: axis-aligned and diagonal.
+TRACK_DIRECTIONS = [(math.cos(k * math.pi / 4), math.sin(k * math.pi / 4)) for k in range(8)]
+
+
+def track_access_width(node, number, net_numbers, clearance):
+    """Widest straight track, in mm, that can end at the centre of every land numbered ``number``.
+
+    A track runs from the land centre in one of the router's eight directions and keeps
+    ``clearance`` from each land of the footprint whose number is not in ``net_numbers`` and that
+    shares a copper layer with it. Only this footprint's own lands are obstacles: other parts are
+    placed later. Lands are modelled exactly for rectangles, rounded rectangles, ovals and
+    circles and by a containing rectangle for chamfered or trapezoid lands. None when a land of
+    this footprint cannot be modelled or the number names no land: the caller then makes no claim."""
+    lands = [(pad[1], _land(pad)) for pad in children(node, "pad") if len(pad) > 3]
+    if any(land is None for _, land in lands):
+        return None
+    targets = [land for name, land in lands if name == number]
+    if not targets or not all(layers for layers, _, _ in targets):
+        return None
+    width = math.inf
+    for layers, core, radius in targets:
+        centre = (sum(p[0] for p in core) / len(core), sum(p[1] for p in core) / len(core))
+        best = -math.inf
+        for layer in sorted(layers):
+            obstacles = [land for name, land in lands if name not in net_numbers and layer in land[0]]
+            for dx, dy in TRACK_DIRECTIONS:
+                end = (centre[0] + 1000 * dx, centre[1] + 1000 * dy)
+                gaps = [_core_distance(centre, end, other) - other_radius
+                        for _, other, other_radius in obstacles]
+                best = max(best, 2 * (min(gaps) - clearance) if gaps else math.inf)
+        width = min(width, best)
+    return max(width, 0.0)
+
+
 def passive_size_mismatch(part, package):
     """Compare only explicitly marked standard imperial chip sizes, without guessing IC codes."""
     native = re.search(

@@ -47,7 +47,8 @@ def problems(design):
         functional=list,
         bench=list,
     )
-    if not obj(design, required, dict(placement=dict, mechanics=dict, markings=list, diff_pairs=list), "design"):
+    if not obj(design, required, dict(placement=dict, mechanics=dict, markings=list, diff_pairs=list,
+                                      currents=dict), "design"):
         return errors
     if errors:
         return errors

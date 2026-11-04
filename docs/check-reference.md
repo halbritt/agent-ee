@@ -875,7 +875,9 @@ primitive is known narrow. Complete coverage is `ok/defect` for any below-limit
 primitive, otherwise `ok/pass`. Candidate-bound `copper-width.json` retains all
 primitive identities, values, limits, statuses and coverage counts alongside the
 raw probe report. With `net_constraints`, each primitive's limit is the larger of
-`min_track_width_mm` and its net's recorded netclass minimum. The record must
+`min_track_width_mm` and its net's recorded netclass minimum, and the summary
+names each net below its own minimum (with its declared current, when the record
+has one, and the narrowest routed width). The record must
 pass, and the captured board-sibling `.kicad_pro` must carry its classes and exact
 patterns. Every recorded net must exist in the saved board, including nets in
 classes that declare only clearance or impedance. Missing names appear in the
