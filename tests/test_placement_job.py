@@ -169,7 +169,7 @@ class CaptureTests(Fixture):
 
     def test_malformed_courtyard_is_a_hard_refusal(self):
         build_board(self.board, malformed_courtyard=True)
-        with self.assertRaisesRegex(job.EnvironmentFailure, 'malformed courtyard'):
+        with self.assertRaisesRegex(job.JobRefusal, 'malformed courtyard'):
             self.problem()
 
     def test_duplicate_uuid_alias_collision_is_refused_by_the_engine(self):
@@ -257,7 +257,7 @@ class NativeTransformTests(Fixture):
                                  expected == 'defect', evaluated)
         broken = json.loads(json.dumps(declaration))
         broken['electrical_locality']['obligations'][0]['leg']['to']['net'] = 'GND'
-        with self.assertRaisesRegex(job.EnvironmentFailure, 'locality'):
+        with self.assertRaisesRegex(job.JobRefusal, 'locality'):
             job.capture(self.board, job.normalize_intent(broken, groups()))
         from unittest.mock import patch
         with patch.object(job, '_native_read', return_value={}):

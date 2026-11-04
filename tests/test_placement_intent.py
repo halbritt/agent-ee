@@ -143,11 +143,11 @@ class NativeIntentTests(Fixture):
         for field, value in [('rot', 90), ('side', 'B')]:
             changed = intent()
             changed['fixed_poses'][0][field] = value
-            with self.subTest(field=field), self.assertRaisesRegex(job.EnvironmentFailure,
+            with self.subTest(field=field), self.assertRaisesRegex(job.JobRefusal,
                     r'intent.fixed_poses\[0\].' + field):
                 job.capture(self.board, job.normalize_intent(changed, groups()))
         changed = intent()
         changed['proximity'] = [dict(ref='R1', near='C1', max_mm=3,
                                    pads={'R1': ['99'], 'C1': ['1']})]
-        with self.assertRaisesRegex(job.EnvironmentFailure, r'intent.proximity\[0\].pads.R1'):
+        with self.assertRaisesRegex(job.JobRefusal, r'intent.proximity\[0\].pads.R1'):
             job.capture(self.board, job.normalize_intent(changed, groups()))

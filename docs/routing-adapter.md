@@ -135,13 +135,16 @@ For placement jobs, the board adapter marks runtime/tool failures with
 `failure_kind: environment` and `failing_stage`. A validated router
 `process.status: FAIL` with a command whose `killed` flag and at least one of
 `budget_reached`, `stalled` or `stop_requested` are true remains a design search
-failure. Other backend failures and invalid/missing result evidence are
-tool failures. Machine refusals use `reason_class`: `state` and `canary` are
+failure. Other backend failures and invalid results are tool failures. A missing
+result is a tool failure except for the readable exit-4 fallback below.
+Machine refusals use `reason_class`: `state` and `canary` are
 preflight failures (`runtime_refused` in the design loop), `usage` is a tool
 interface failure (`environment_failure`), and `input` and `ledger` keep the
 design path. The board adapter validates the refusal against the invocation's
 argv and retains `router_refused` with its `refusal` record; runtime/tool
 refusals additionally carry the environment class and their message in `reason`.
+A readable exit-4 reply that fails binding stays on the existing route-failure
+path; unreadable refusal output is a tool failure.
 The [design loop](design-generate.md#attempts-and-feedback)
 stops before author or seed retries for classified runtime/tool failures.
 The shared router result verdict is unchanged.

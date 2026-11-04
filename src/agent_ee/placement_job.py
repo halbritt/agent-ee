@@ -659,6 +659,14 @@ def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
                       clock=clock or Clock(300), cancel_dir=cancel_dir,
                       input_bytes=json.dumps(request).encode())
     if done.returncode:
+        if done.returncode == 2:
+            try:
+                refusal = json.loads(done.stdout)
+            except (ValueError, TypeError):
+                pass
+            else:
+                if isinstance(refusal, dict) and isinstance(refusal.get('error'), str):
+                    raise JobRefusal(refusal['error'])
         raise EnvironmentFailure('native-tool', f'native {label} failed (exit {done.returncode}): '
                                  + (done.stdout + done.stderr).decode(errors='replace')[-2000:])
     try:

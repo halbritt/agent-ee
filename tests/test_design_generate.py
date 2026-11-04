@@ -1405,6 +1405,42 @@ class EnvironmentFailureTests(ScriptedLoop):
             return dict(execution='failed', exit_code=1)
         return build
 
+    def test_native_reader_design_refusal_keeps_author_retries_and_verbatim_feedback(self):
+        from agent_ee import placement_job
+        message = 'intent.proximity[0].pads.R1: pad 99 is not on R1'
+        done = subprocess.CompletedProcess([], 2, json.dumps({'error': message}).encode(), b'')
+        with patch.object(placement_job, '_run_child', return_value=done):
+            with self.assertRaises(placement_job.JobRefusal) as caught:
+                placement_job._native_read(self.root / 'board.kicad_pcb', '_capture', {})
+        self.responses = [self.response()] * 3
+        with self.with_build(self.failed_job(dict(status='refused', reason=str(caught.exception)))):
+            report = self.generate(max_attempts=3, search_retries=2)
+        self.assertEqual(report['status'], 'attempts_exhausted')
+        self.assertEqual([row['kind'] for row in report['attempts']], ['author'] * 3)
+        self.assertNotIn('failure_kind', report)
+        self.assertIn(message, self.feedback(1))
+
+    def test_readable_unbound_refusal_keeps_seed_retry_but_unreadable_output_stops(self):
+        from agent_ee import placement_job, routing_adapter
+        argv = ['/usr/bin/python3', '/opt/kicad-route/bin/kicad-route', 'run', '--json']
+        for readable in (True, False):
+            with self.subTest(readable=readable):
+                directory = self.root / str(readable)
+                directory.mkdir()
+                (directory / 'kicad-route.stdout').write_text(json.dumps(dict(
+                    schema='kicad-route/refusal/1', kind='refusal', exit_code=4,
+                    argv=['different'], reason_class='state', message='unbound')) if readable else 'invalid JSON')
+                record = routing_adapter.bind_board_attempt(directory, argv, 4)
+                status = placement_job._completion_status(record, {'index': 0}, {})
+                job = dict(record, status=status)
+                self.responses = [self.response()] * 3
+                with self.with_build(self.failed_job(job)):
+                    report = loop.generate(self.requirements, directory / 'generate', max_attempts=3,
+                                           search_retries=1, context_root=ROOT)
+                expected = ['author', 'search_retry', 'author'] if readable else ['author']
+                self.assertEqual([row['kind'] for row in report['attempts']], expected)
+                self.assertEqual(report['status'], 'attempts_exhausted' if readable else 'environment_failure')
+
     def test_r5_preflight_refusal_stops_after_one_author_with_no_seed_retry(self):
         self.responses = [self.response()] * 4
         with self.with_build(self.failed_job(dict(status='refused', reason=self.PREFLIGHT))):

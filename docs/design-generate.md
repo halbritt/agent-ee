@@ -206,8 +206,12 @@ bounds.
 Runtime and tool failures stop the design before seed retries or author
 feedback. Jobs mark these with `failure_kind: environment` and `failing_stage`;
 build stages that catch `EnvironmentFailure` record `failed` with the same
-fields. This includes missing programs, native-reader nonzero exits or malformed
-replies, signal crashes, DRC execution/report errors and invalid router evidence.
+fields. This includes missing programs, native-reader process failures or malformed
+replies, signal crashes, DRC execution/report errors and invalid router results.
+A native reader's exit 2 with a valid `{"error": str}` object is a design refusal:
+its message goes back to the author verbatim. Other nonzero exits are tool failures.
+An exit-4 router refusal that is readable but cannot bind to the invocation keeps
+the route-failure and seed-retry path; unreadable refusal evidence is a tool failure.
 
 `process.status: FAIL` alone does not distinguish a router search stop from a
 tool failure. The board adapter reads `process.commands[]`: a command with

@@ -169,10 +169,13 @@ class BoardPairIntentTests(unittest.TestCase):
                                        (4, {'exit_code': 1}), (4, {'kind': 'route'})):
                 with self.subTest(exit_code=exit_code, changes=changes):
                     stdout.write_text(json.dumps(self.refusal(argv, **changes)))
-                    self.assertEqual(routing_adapter.bind_board_attempt(route_dir, argv, exit_code)['status'],
-                                     'missing_output')
+                    invalid = routing_adapter.bind_board_attempt(route_dir, argv, exit_code)
+                    self.assertEqual(invalid['status'], 'missing_output')
+                    if exit_code == 4:
+                        self.assertNotIn('failure_kind', invalid)
             stdout.write_text('not json')
-            self.assertEqual(routing_adapter.bind_board_attempt(route_dir, argv, 4)['status'], 'missing_output')
+            unreadable = routing_adapter.bind_board_attempt(route_dir, argv, 4)
+            self.assertEqual((unreadable['status'], unreadable['failure_kind']), ('missing_output', 'environment'))
 
 
 if __name__ == '__main__':

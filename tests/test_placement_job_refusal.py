@@ -65,6 +65,29 @@ class RefusalReportTests(fixture.Fixture):
         self.assert_report(out, report, None, 'malformed courtyard')
         self.assertEqual(set(report['phases']), {'setup', 'import'})
 
+    def test_child_design_refusal_has_no_environment_class_and_returns_author_feedback(self):
+        from agent_ee import design_generate
+        config = self.config()
+        declaration = fixture.intent()
+        declaration['proximity'] = [dict(ref='R1', near='C1', max_mm=3,
+                                        pads={'R1': ['99'], 'C1': ['1']})]
+        path = Path(config['inputs']['intent']['path'])
+        path.write_text(json.dumps(declaration))
+        config['inputs']['intent']['sha256'] = job.digest(path)
+        build = self.dir / 'build'
+        out = build / 'stages/placement-routing/placement'
+        report = job.run_job(config, out)
+        message = 'intent.proximity[0].pads.R1: pad 99 is not on R1'
+        self.assert_report(out, report, None, message)
+        self.assertEqual(report['reason'], message)
+        self.assertNotIn('failure_kind', report)
+        self.assertNotIn('failing_stage', report)
+        findings = design_generate.placement_findings(build)
+        self.assertIsNone(design_generate.environment_failure(findings))
+        feedback = design_generate.phase_feedback('placement-routing', 'placement/routing did not pass: refused',
+                                                  dict(placement_findings=findings))
+        self.assertIn(message, feedback)
+
     def test_cli_refusal_summary_and_nonzero_exit_for_capture_and_engine(self):
         for phase in ('engine', 'capture'):
             with self.subTest(phase=phase):

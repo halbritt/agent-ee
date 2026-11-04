@@ -627,8 +627,9 @@ rules, including stricter coupling limits, always remain in force.
    `router_refused`, `router_refusal` keeps the router's `reason_class`, message
    and record path, and `reason` reads `kicad-route refused (<class>): <message>`.
    State, canary and usage refusals stop as classified runtime/tool failures.
-   Exit 4 without a valid record bound to the command is `missing_output` with
-   the environment class and stops too. `routed-incumbent.json` binds a routed result to its receipt and
+   A readable exit-4 reply that cannot bind to the command stays `missing_output`
+   on the existing route-failure path. An unreadable reply has the environment
+   class and stops. `routed-incumbent.json` binds a routed result to its receipt and
    placement; `incumbent.json` continues to identify the best placement score.
 8. **Final checks, independent of the search**: reload the routed board; footprint
    UUIDs, refs, poses, sides, locks, FPIDs and pads must be unchanged by routing.
@@ -683,9 +684,13 @@ exits nonzero. Refusal never replaces the incumbent or diagnostic board.
 Runtime/tool failures also retain status `refused`, with
 `failure_kind: environment` and a `failing_stage` (`runtime-preflight`,
 `routing-preflight`, `placement-planner`, `native-tool` or `routing`). These cover
-readiness/identity refusals, missing programs, native-reader nonzero exits and
+readiness/identity refusals, missing programs, native-reader process failures and
 malformed replies, signal crashes, DRC execution/report errors, backend execution
-faults and invalid router evidence. Routing trials stop on the first such failure.
+faults and invalid router results. Routing trials stop on the first such failure.
+A native reader's exit 2 with a valid `{"error": str}` object raises `JobRefusal`
+with the message verbatim and no environment class. Capture refusals return to
+the author; per-candidate check refusals reject that candidate. Other nonzero
+reader exits, missing output and malformed replies are tool failures.
 A budget/stall kill identified by the router's structured command stop flags is
 instead `no_candidate`: it retains `route_failed` and seed retries, or
 `placement_infeasible` when no hard-feasible incumbent exists. Locality and

@@ -1034,6 +1034,14 @@ def bind_board_attempt(route_dir, argv, exit_code):
                 stage = 'routing' if refusal['reason_class'] == 'usage' else 'routing-preflight'
                 record.update(failure_kind='environment', failing_stage=stage, reason=refusal['message'])
             return record
+        if exit_code == 4 and not results:
+            try:
+                json.loads((route_dir / 'kicad-route.stdout').read_bytes())
+            except (OSError, ValueError):
+                pass  # Unreadable refusal evidence is a tool failure below.
+            else:
+                # A readable record that cannot bind keeps the existing route-failure path.
+                return {**record, 'status': 'missing_output'}
         return {**record, 'status': 'missing_output', 'failure_kind': 'environment',
                 'failing_stage': 'routing', 'reason': f'router exit {exit_code}: expected one result.json, found {len(results)}'}
     data = results[0].read_bytes()

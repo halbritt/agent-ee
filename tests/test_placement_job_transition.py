@@ -118,7 +118,7 @@ class PairTransitionTests(unittest.TestCase):
                 else:
                     getattr(zone, 'SetDoNotAllow' + constraint)(True)
                 k.SaveBoard(str(path), board)
-                with self.assertRaisesRegex(job.EnvironmentFailure, 'board-level zones'):
+                with self.assertRaisesRegex(job.JobRefusal, 'board-level zones'):
                     job.capture(path,
                                 job.normalize_intent(read_json(self.root / constraint / 'intent.json'),
                                                      read_json(self.root / constraint / 'groups.json')))
