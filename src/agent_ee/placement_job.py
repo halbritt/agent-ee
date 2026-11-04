@@ -2120,8 +2120,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             trial['generated_relation_count'] = routed.get('generated_relation_count', 0)
             report['router_identity'] = {k: routed['preflight'][k] for k in ROUTER_IDENTITY}
             if routed['status'] == 'router_refused':
-                # kicad-route refused the command or its input before any backend ran. That does
-                # not depend on the placement, so no other candidate or seed is tried.
+                # kicad-route refused before any backend ran. Its causes (the command, the router's
+                # state, the project's nets and rules) are the same for every placement, so no
+                # other candidate or seed is tried.
                 refusal = routed['refusal']
                 status = 'router_refused'
                 trial.update(status=status, route=report['route'], router_refusal=refusal)
