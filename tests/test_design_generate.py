@@ -1788,6 +1788,26 @@ class RouterRefusalFeedbackTests(ScriptedLoop):
 
     MESSAGE = "unpaired differential net '/LOAD_P': expected '/LOAD_N'"
 
+    def test_bound_runtime_refusals_stop_without_author_feedback(self):
+        from agent_ee import routing_adapter
+        argv = ['/usr/bin/python3', '-I', '/opt/kicad-route/bin/kicad-route', 'run', '--json']
+        for reason_class in ('state', 'canary', 'usage'):
+            with self.subTest(reason_class=reason_class):
+                directory = self.root / reason_class
+                directory.mkdir()
+                write_json(directory / 'kicad-route.stdout', dict(schema='kicad-route/refusal/1',
+                    kind='refusal', exit_code=4, argv=['run', '--json'],
+                    reason_class=reason_class, message='router runtime refused'))
+                record = routing_adapter.bind_board_attempt(directory, argv, 4)
+                self.responses = [self.response()] * 3
+                with self.with_build(EnvironmentFailureTests.failed_job(self, record)):
+                    report = loop.generate(self.requirements, directory / 'generate', max_attempts=3,
+                                           search_retries=2, context_root=ROOT)
+                expected = 'environment_failure' if reason_class == 'usage' else 'runtime_refused'
+                self.assertEqual(report['status'], expected)
+                self.assertEqual(len(report['attempts']), 1)
+                self.assertEqual(report['reason'], 'router runtime refused')
+
     def refused_build(self, attempt):
         self.build_report(attempt, accepted=False, stage='placement-routing',
                           reason='ValueError: placement/routing did not pass: router_refused')

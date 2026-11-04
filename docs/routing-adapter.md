@@ -139,8 +139,10 @@ failure. Other backend failures and invalid/missing result evidence are
 tool failures. Machine refusals use `reason_class`: `state` and `canary` are
 preflight failures (`runtime_refused` in the design loop), `usage` is a tool
 interface failure (`environment_failure`), and `input` and `ledger` keep the
-design path.
-The message remains in `reason`. The [design loop](design-generate.md#attempts-and-feedback)
+design path. The board adapter validates the refusal against the invocation's
+argv and retains `router_refused` with its `refusal` record; runtime/tool
+refusals additionally carry the environment class and their message in `reason`.
+The [design loop](design-generate.md#attempts-and-feedback)
 stops before author or seed retries for classified runtime/tool failures.
 The shared router result verdict is unchanged.
 

@@ -621,13 +621,14 @@ rules, including stricter coupling limits, always remain in force.
    copper length or via count. `routing_trials` retains failures as well as the
    selected result. A kicad-route refusal (exit 4 with its `kicad-route/refusal/1`
    record on stdout, naming this command line) is raised before any backend runs.
-   Its causes, such as the command, the router's state or the project's nets and
-   rules, are the same for every placement, so the queue stops after that trial.
-   The job status is
+   For `input` and `ledger` refusals, the project's nets and rules are the same
+   for every placement, so the queue stops after that trial and returns the
+   message to the author. The job status is
    `router_refused`, `router_refusal` keeps the router's `reason_class`, message
    and record path, and `reason` reads `kicad-route refused (<class>): <message>`.
-   Exit 4 without a valid record bound to the command stays `missing_output`, and
-   the queue goes on. `routed-incumbent.json` binds that result to its receipt and
+   State, canary and usage refusals stop as classified runtime/tool failures.
+   Exit 4 without a valid record bound to the command is `missing_output` with
+   the environment class and stops too. `routed-incumbent.json` binds a routed result to its receipt and
    placement; `incumbent.json` continues to identify the best placement score.
 8. **Final checks, independent of the search**: reload the routed board; footprint
    UUIDs, refs, poses, sides, locks, FPIDs and pads must be unchanged by routing.

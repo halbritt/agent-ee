@@ -259,18 +259,21 @@ class AdapterPolicyTest(unittest.TestCase):
 
     def test_board_refusal_uses_reason_class_to_separate_environment_from_design(self):
         root = Path(self.tmp.name)
+        argv = ['/usr/bin/python3', '-I', '/opt/kicad-route/bin/kicad-route', 'run', '--json']
         for reason_class in ('state', 'canary', 'usage', 'input', 'ledger'):
             with self.subTest(reason_class=reason_class):
                 refusal = dict(schema='kicad-route/refusal/1', kind='refusal', command='run',
-                               exit_code=4, reason_class=reason_class, message='retained refusal cause')
+                               exit_code=4, argv=['run', '--json'], reason_class=reason_class,
+                               message='retained refusal cause')
                 (root / 'kicad-route.stdout').write_text(json.dumps(refusal))
-                record = routing_adapter.bind_board_attempt(root, ['kicad-route', 'run'], 4)
-                self.assertEqual((record['status'], record['reason_class'], record['reason']),
-                                 ('refused', reason_class, refusal['message']))
+                record = routing_adapter.bind_board_attempt(root, argv, 4)
+                self.assertEqual((record['status'], record['refusal']['reason_class'], record['refusal']['message']),
+                                 ('router_refused', reason_class, refusal['message']))
                 if reason_class in ('state', 'canary', 'usage'):
                     stage = 'routing' if reason_class == 'usage' else 'routing-preflight'
                     self.assertEqual((record['failure_kind'], record['failing_stage']),
                                      ('environment', stage))
+                    self.assertEqual(record['reason'], refusal['message'])
                 else:
                     self.assertNotIn('failure_kind', record)
 
