@@ -446,3 +446,14 @@ class CaptureHttpTests(unittest.TestCase):
         self.assertIn('measure 0.1500 mm against the 0.2500 mm limit of board setup constraints hole clearance',
                       message)
         self.assertEqual(self.requests, [])
+
+    def test_native_capture_of_clean_footprints_passes_and_its_files_compile(self):
+        # The scratch boards, KiCad's own home and config files and the DRC records stay in the
+        # capture; compile's inventory check must accept them.
+        require_toolchain(native=True)
+        with native_run.using(None):
+            captured = self.capture()
+        report = json.loads((captured / 'footprint-rules/report.json').read_bytes())
+        self.assertEqual([(p['reference'], p['status'], p['errors']) for p in report['parts']],
+                         [('R1', 'pass', []), ('R2', 'pass', [])])
+        compile_design(self.design, captured, self.root / 'bundle')
