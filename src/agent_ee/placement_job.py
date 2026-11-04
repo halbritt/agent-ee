@@ -56,6 +56,14 @@ COPPER = ('F.Cu', 'B.Cu')
 NM = 1_000_000
 
 
+class EnvironmentFailure(Exception):
+    """A runtime/tool failure whose recovery does not belong to the design author."""
+
+    def __init__(self, stage, reason):
+        self.stage = stage
+        super().__init__(reason)
+
+
 class JobStopped(Exception):
     def __init__(self, status):
         self.status = status
@@ -98,15 +106,21 @@ def _run_child(argv, *, clock, cancel_dir=None, input_bytes=b'', on_line=None,
     intent = native_run.Intent('placement_child', argv, timeout=clock.remaining(), isolation='host',
                                stdin=input_bytes or None, env=env, cwd=None if cwd is None else str(cwd))
     sink = stdout if stdout is not None else _Discard() if on_line is not None else None
-    done = native_run.run(intent, work=None, on_tick=lambda: _check_stop(clock, cancel_dir), on_line=on_line,
-                          sink=sink, stderr_sink=stderr)
-    if done['execution'] == 'unavailable':
-        native_run.completed(done)   # raises Popen's own launch error (errno, strerror, filename)
+    try:
+        done = native_run.run(intent, work=None, on_tick=lambda: _check_stop(clock, cancel_dir), on_line=on_line,
+                              sink=sink, stderr_sink=stderr)
+        if done['execution'] == 'unavailable':
+            native_run.completed(done)   # raises Popen's own launch error (errno, strerror, filename)
+    except OSError as exc:
+        raise EnvironmentFailure('native-tool', f'{argv[0]}: {exc}') from exc
     # The job clock and CANCEL decide, not the child's own limit (which started counting later):
     # a run that ends after the deadline or a cancel is stopped, never a completion.
     _check_stop(clock, cancel_dir)
     if done['execution'] == 'timeout':
         raise JobStopped('deadline')
+    if done.returncode < 0:
+        raise EnvironmentFailure('native-tool', f'{argv[0]} crashed (exit {done.returncode}): '
+                                 + done.stderr.decode(errors='replace')[-2000:])
     output = b'' if sink is not None else done.stdout
     return subprocess.CompletedProcess(argv, done.returncode, output, done.stderr)
 
@@ -907,6 +921,9 @@ def _pose_solver(checkout, request, *, clock, cancel_dir=None, evidence=None):
         (evidence / 'solver.stdout').write_bytes(done.stdout)
         (evidence / 'solver.stderr').write_bytes(done.stderr)
     if done.returncode:
+        if request.get('operation') == 'identity':
+            raise EnvironmentFailure('placement-planner', 'planner identity failed: '
+                                     + done.stderr.decode(errors='replace')[-2000:])
         raise JobRefusal('proposal process failed: ' + done.stderr.decode(errors='replace')[-2000:])
     return json.loads(done.stdout)
 
@@ -959,7 +976,7 @@ def _repair_shortlist(problem, shortlist, diagnostics, *, checkout, runtime, clo
             clock=bounded, cancel_dir=job_dir, evidence=directory)
         write_json(directory / 'proposal.json', proposal)
         if proposal.get('runtime') != runtime:
-            raise JobRefusal('proposal omitted its bound numerical runtime')
+            raise EnvironmentFailure('placement-planner', 'proposal omitted its bound numerical runtime')
         if proposal.get('status') == 'no_incumbent':
             record['status'] = 'no_incumbent'
             return unchanged
@@ -967,13 +984,13 @@ def _repair_shortlist(problem, shortlist, diagnostics, *, checkout, runtime, clo
         payload = dict(problem, evaluate=[proposal['poses']])
         engine = Path(executable or rust_executable())
         if digest(engine) != engine_sha256:
-            raise JobRefusal('exact repair evaluator changed after job identity capture')
+            raise EnvironmentFailure('placement-planner', 'exact repair evaluator changed after job identity capture')
         done = _run_child([str(engine)], clock=bounded, cancel_dir=job_dir,
                           input_bytes=canonical(payload))
         (directory / 'evaluation.stdout').write_bytes(done.stdout)
         (directory / 'evaluation.stderr').write_bytes(done.stderr)
         if digest(engine) != engine_sha256:
-            raise JobRefusal('exact repair evaluator changed during regrade')
+            raise EnvironmentFailure('placement-planner', 'exact repair evaluator changed during regrade')
         output = json.loads(done.stdout)
         placement_problem.check_output(output, payload, code=done.returncode,
                                        detail=done.stderr.decode(errors='replace')[-2000:])
@@ -1464,7 +1481,7 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             raise JobRefusal('local decoupling contract: ' + str(exc)) from exc
     check = routing_adapter.preflight(checkout)
     if check['problems']:
-        raise JobRefusal('router preflight: ' + '; '.join(check['problems']))
+        raise EnvironmentFailure('routing-preflight', 'router preflight: ' + '; '.join(check['problems']))
     route_dir = Path(route_dir)
     if not isinstance(design_name, str) or not design_name or Path(design_name).name != design_name or design_name in ('.', '..'):
         raise JobRefusal('design name must be one nonempty path component')
@@ -1683,11 +1700,13 @@ def run_job(config, job_dir, *, resume=False, executable=None):
     try:
         return _execute_job(config, job_dir, resume=resume, executable=executable, clock=clock,
                             report=report, ownership=ownership)
-    except JobRefusal as exc:
+    except (JobRefusal, EnvironmentFailure) as exc:
         if not ownership['established']:
             raise
         report.update(status='refused', reason=str(exc), phases=clock.phases,
                       elapsed_s=round(time.monotonic() - clock.start, 3))
+        if isinstance(exc, EnvironmentFailure):
+            report.update(failure_kind='environment', failing_stage=exc.stage)
         report.setdefault('attempt', None)
         if report['attempt'] is not None:
             write_json(Path(job_dir) / f'job-report-a{report["attempt"]}.json', report)
@@ -2117,6 +2136,10 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            defer_local_fallback=len(queue) > 1,
                            local_fallback_reason=selected.get('local_fallback_reason'), diff_pairs=diff_pairs)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
+            if routed.get('failure_kind') == 'environment':
+                trial.update(status=routed['status'], route=report['route'])
+                retain_routing_trial(trial, suffix)
+                raise EnvironmentFailure(routed['failing_stage'], routed['reason'])
             trial['generated_relation_count'] = routed.get('generated_relation_count', 0)
             report['router_identity'] = {k: routed['preflight'][k] for k in ROUTER_IDENTITY}
             if routed['status'] == 'router_refused':
@@ -2602,6 +2625,14 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
 
 def preflight(config, executable=None, *, clock=None, cancel_dir=None, identities=None):
     """Runtime readiness before the budgeted work: imports, toolchain, engine and router."""
+    from .placement_runtime import PlanningProcessError
+    try:
+        return _preflight(config, executable, clock=clock, cancel_dir=cancel_dir, identities=identities)
+    except (ImportError, OSError, PlanningProcessError) as exc:
+        raise EnvironmentFailure('runtime-preflight', f'runtime preflight failed: {exc}') from exc
+
+
+def _preflight(config, executable=None, *, clock=None, cancel_dir=None, identities=None):
     import pcbnew
     from . import routing_adapter
     identities = {} if identities is None else identities
@@ -2618,7 +2649,7 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None, identitie
     if cli.returncode != 0:
         problems.append('kicad-cli unavailable')
     if problems:
-        raise JobRefusal('runtime preflight failed: ' + '; '.join(problems))
+        raise EnvironmentFailure('runtime-preflight', 'runtime preflight failed: ' + '; '.join(problems))
     return identities
 
 

@@ -573,11 +573,12 @@ class ChildCancellationTests(Fixture):
         self.assertEqual((len(lines), set(lines), done.stdout), (8192, {1023}, b''))
         self.assertLess(peak, 2 * 1024 * 1024, '8 MiB of on_line output must not be kept')
 
-    def test_missing_program_raises_its_own_launch_error(self):
-        # Review c#3 (e9370fb1): errno and filename survive, as subprocess.Popen reports them.
-        with self.assertRaises(FileNotFoundError) as caught:
+    def test_missing_program_is_an_environment_failure_with_its_launch_error(self):
+        # Defect #30 adds recovery ownership; errno and filename still survive in the cause.
+        with self.assertRaises(job.EnvironmentFailure) as caught:
             job._run_child([str(self.dir / 'no-such-program')], clock=job.Clock(5))
-        self.assertEqual((caught.exception.errno, caught.exception.filename),
+        self.assertEqual(caught.exception.stage, 'native-tool')
+        self.assertEqual((caught.exception.__cause__.errno, caught.exception.__cause__.filename),
                          (2, str(self.dir / 'no-such-program')))
 
     def test_watchdog_kills_descendants_even_after_leader_closes_streams(self):

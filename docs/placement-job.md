@@ -679,6 +679,16 @@ false. When an attempt has been allocated, its `job-report-aN.json` is also
 written; before then, the attempt is null. The CLI prints the refused status and
 exits nonzero. Refusal never replaces the incumbent or diagnostic board.
 
+Runtime/tool failures also retain status `refused`, with
+`failure_kind: environment` and a `failing_stage` (`runtime-preflight`,
+`routing-preflight`, `placement-planner`, `native-tool` or `routing`). These cover runtime readiness
+and identity refusals, missing native programs, native signal crashes, router
+process failures and invalid/missing router output. Routing trials stop at the
+first such failure. Design input refusals, placement infeasibility, locality
+defects and verification findings do not receive this classification.
+The [design loop](design-generate.md#attempts-and-feedback) turns it into terminal
+`environment_failure` without another author turn or seed retry.
+
 A nonempty directory without `--resume` is refused without writes. Resume captures
 the input in memory and checks the checkpoint identity before writing capture,
 problem or report files. A failed identity check, or cancellation/deadline before

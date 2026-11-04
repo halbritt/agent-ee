@@ -201,6 +201,26 @@ search that more seeds would complete. A retry attempt writes
 count; it writes no prompt and no response. It uses the same attempt and time
 bounds.
 
+Environment and tool failures stop the design immediately, before seed retries
+or author feedback. Placement job reports mark these with
+`failure_kind: environment` and `failing_stage`: runtime/router preflight
+refusals (including install-record, toolchain, state-manifest and planner
+identity failures), missing native executables, native processes killed by a
+signal, and router output/protocol failures. The routing adapter uses the
+validated `process.status: FAIL` to identify backend execution failures; routing
+incompleteness and validation failures keep their normal design retry policy.
+The job keeps status `refused` and its exact reason. For older job reports
+without `failure_kind`, only a `refused` reason starting `runtime preflight failed:`
+or `router preflight:` is recognized as a preflight environment failure.
+
+The attempt and `generate-report.json` end `environment_failure`, with the exact
+`reason`, `failing_stage`, `failure_kind` and `job_report` path. No design change
+is requested. Repair the runtime or tool and start a new run. The benchmark row
+keeps this status, reason and failing stage, and its placement findings retain
+the job's classification. The benchmark stops, listing later designs `not_run`.
+`placement_infeasible`, locality defects, native verification findings and other
+design failures keep the existing author/seed retry rules above.
+
 ## Acceptance and claims
 
 `accepted` requires the build's `accepted` flag and typed qualification with
@@ -239,10 +259,11 @@ one of these final states:
 | `error` | An unexpected error; it is retained and propagated. | continues with an `error` row |
 | `seat_failed` | The author seat or a review seat failed (login, quota, transport or stream). | stops; later designs are `not_run` |
 | `runtime_refused` | The build refused the native runtime or the router checkout (dirty tree or unreadable commit). | stops; later designs are `not_run` |
+| `environment_failure` | A placement/routing job reported a runtime or tool failure. | stops; later designs are `not_run` |
 | `interrupted` | SIGINT or SIGTERM stopped the run. | stops; see below |
 
 Attempt rows use `refused`, `failed`, `author_timeout`, `seat_failed`,
-`unsupported`, `review_incomplete`, `time_exhausted`, `accepted`, `accepted_partial`, `interrupted`
+`unsupported`, `review_incomplete`, `environment_failure`, `time_exhausted`, `accepted`, `accepted_partial`, `interrupted`
 and `error`.
 
 ## Benchmark
@@ -265,7 +286,7 @@ and `outline_utilisation`. A row's status is the design's final state, or
 (a design not started).
 
 The benchmark ends `complete` (every design has a row from its own run, which
-can be a failure), `stopped_seat_failed`, `stopped_runtime_refused`,
+can be a failure), `stopped_seat_failed`, `stopped_runtime_refused`, `stopped_environment_failure`,
 `interrupted` or `error`.
 
 ## Exit codes

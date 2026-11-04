@@ -513,6 +513,7 @@ def placement_findings(root):
     for path in sorted(root.glob('stages/*/placement/job-report.json')):
         job = design.load(path)
         result.append(dict(path=str(path), status=job['status'], reason=job.get('reason'),
+            failure_kind=job.get('failure_kind'), failing_stage=job.get('failing_stage'),
             **({'router_refusal': job['router_refusal']} if job.get('router_refusal') else {}),
             engine_feasible=job.get('engine_feasible'), validity=job.get('validity'),
             routed_candidate=job.get('routed_candidate'), best_diagnostic=job.get('best_diagnostic'),
@@ -697,6 +698,18 @@ def search_failure(build, run):
     jobs = list(run.glob('stages/*/placement/job-report.json'))
     return bool(jobs) and any(design.load(p).get('status') in
         ('route_failed', 'placement_failed', 'no_checked_candidate', 'verification_failed') for p in jobs)
+
+
+def environment_failure(findings):
+    """Prefer the job's typed failure; recognize pre-field preflight reports too."""
+    for job in findings:
+        kind, reason = job.get('failure_kind'), job.get('reason') or ''
+        legacy_preflight = (kind is None and job['status'] == 'refused'
+            and reason.startswith(('runtime preflight failed:', 'router preflight:')))
+        if kind == 'environment' or legacy_preflight:
+            return dict(reason=reason, failing_stage=job.get('failing_stage') or 'runtime-preflight',
+                        job_report=job['path'])
+    return None
 
 
 def outline_utilisation(run, statement):
@@ -961,6 +974,11 @@ def _generate(requirements_path, out, options, identity=None):
                     and qualification.get('mode') == 'typed'
                     and qualification.get('dimensions', {}).get('file_release', {}).get('status') == 'pass')
                 row['file_release'] = file_pass
+                environment = environment_failure(row['placement_findings'])
+                if environment:
+                    row.update(status='environment_failure', failure_kind='environment', **environment)
+                    report.update(status='environment_failure', failure_kind='environment', **environment)
+                    break  # No seed retry, author feedback, or additional seat can repair the runtime.
                 if record['execution'] != 'ok' or record.get('exit_code') != 0 or not file_pass:
                     row['failing_stage'] = build['attempts'][-1]['stage'] if build and build.get('attempts') else 'build'
                     if search_failure(build, run) and retries_used < search_retries:
@@ -1175,7 +1193,7 @@ def _benchmark(directory, out, options):
             report['designs'].append(row)
             in_flight = None
             save()
-            if row['status'] in ('seat_failed', 'runtime_refused'):
+            if row['status'] in ('seat_failed', 'runtime_refused', 'environment_failure'):
                 report['status'] = 'stopped_' + row['status']
                 list_rest(report['status'], None, None)
                 break

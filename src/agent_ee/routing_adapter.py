@@ -1029,24 +1029,36 @@ def bind_board_attempt(route_dir, argv, exit_code):
     if len(results) != 1:
         refusal = board_refusal(route_dir, argv, exit_code) if not results else None
         if refusal is not None:
-            return {**record, 'status': 'router_refused', 'refusal': refusal}
-        return {**record, 'status': 'missing_output'}
+            record.update(status='router_refused', refusal=refusal)
+            if refusal['reason_class'] in ('state', 'canary', 'usage'):
+                stage = 'routing' if refusal['reason_class'] == 'usage' else 'routing-preflight'
+                record.update(failure_kind='environment', failing_stage=stage, reason=refusal['message'])
+            return record
+        return {**record, 'status': 'missing_output', 'failure_kind': 'environment',
+                'failing_stage': 'routing', 'reason': f'router exit {exit_code}: expected one result.json, found {len(results)}'}
     data = results[0].read_bytes()
     # The same result rule as the sandboxed route: schema, keys and statuses first.
     outcome, reasons = attempt.classify(data, exit_code, paired='--diff-pairs' in argv)
     record.update(result_path=str(results[0]), result_sha256=digest(results[0]),
                   classification={'outcome': outcome, 'reasons': reasons})
     if outcome == 'refused':
-        return {**record, 'status': 'refused_result'}
+        return {**record, 'status': 'refused_result', 'failure_kind': 'environment',
+                'failing_stage': 'routing', 'reason': '; '.join(reasons)}
     result = json.loads(data)
     record.update(router_exit=result.get('exit_code'), router_status=result.get('status') or result.get('outcome'))
+    # classify has checked the process/routing/validation status combination.
+    # A process FAIL means the backend did not hand back a board, not an open net.
+    if result['process']['status'] == 'FAIL':
+        return {**record, 'status': 'backend_failure', 'failure_kind': 'environment',
+                'failing_stage': 'routing', 'reason': '; '.join(reasons)}
     candidate = result.get('candidate')
     if not candidate:
         return {**record, 'status': 'no_candidate'}
     board = route_dir / candidate['board']
     sha = digest(board)
     if sha != result.get('validation', {}).get('candidate_board_sha256'):
-        return {**record, 'status': 'stale_candidate'}
+        return {**record, 'status': 'stale_candidate', 'failure_kind': 'environment',
+                'failing_stage': 'routing', 'reason': 'router candidate digest differs from validation'}
     return {**record, 'status': 'routed', 'board': str(board), 'board_sha256': sha,
             'router_accepted': outcome == 'accepted',
             **({'impedance_plan': result['settings']['pair_impedance']}

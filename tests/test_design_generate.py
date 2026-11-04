@@ -1393,6 +1393,70 @@ class BenchmarkTests(ScriptedLoop):
         self.assertEqual(self.saved('benchmark/b/attempt-001/attempt.json')['status'], 'interrupted')
 
 
+class EnvironmentFailureTests(ScriptedLoop):
+    # Tool defect #30: r5 spent four author turns on a router state-manifest drift.
+    PREFLIGHT = 'runtime preflight failed: state manifest drift: kicad.kicad_cli.sha256'
+
+    def failed_job(self, job):
+        def build(attempt):
+            self.build_report(attempt, accepted=False, stage='placement-routing',
+                              reason='placement/routing did not pass: ' + job['status'])
+            write_json(attempt / 'build/stages/05-placement/placement/job-report.json', job)
+            return dict(execution='failed', exit_code=1)
+        return build
+
+    def test_r5_preflight_refusal_stops_after_one_author_with_no_seed_retry(self):
+        self.responses = [self.response()] * 4
+        with self.with_build(self.failed_job(dict(status='refused', reason=self.PREFLIGHT))):
+            report = self.generate(max_attempts=4, search_retries=3)
+        self.assertEqual(report['status'], 'environment_failure')
+        self.assertEqual(report['reason'], self.PREFLIGHT)
+        self.assertEqual(report['failing_stage'], 'runtime-preflight')
+        self.assertEqual(len(report['attempts']), 1)
+        self.assertEqual(len(self.prompts), 1)
+        self.assertEqual(report['attempts'][0]['status'], 'environment_failure')
+        self.assertFalse((self.root / 'run/attempt-002').exists())
+        self.assertFalse(report['claims']['file_release'])
+        self.assertEqual(self.saved()['status'], 'environment_failure')
+
+    def test_structured_environment_failure_takes_precedence_over_retryable_status(self):
+        for stage in ('runtime-preflight', 'routing', 'native-tool'):
+            with self.subTest(stage=stage):
+                self.responses = [self.response()] * 4
+                job = dict(status='verification_failed', failure_kind='environment',
+                           failing_stage=stage, reason='a tool failure without preflight keywords')
+                with self.with_build(self.failed_job(job)):
+                    report = loop.generate(self.requirements, self.root / stage, max_attempts=4, search_retries=3)
+                self.assertEqual((report['status'], report['failing_stage'], report['reason']),
+                                 ('environment_failure', stage, job['reason']))
+                self.assertEqual(len(report['attempts']), 1)
+
+    def test_design_verification_failure_keeps_seed_and_author_retries(self):
+        self.responses = [self.response()] * 2
+        job = dict(status='verification_failed', reason='locality exceeds declared limit')
+        with self.with_build(self.failed_job(job)):
+            report = self.generate(max_attempts=3, search_retries=1)
+        self.assertEqual(report['status'], 'attempts_exhausted')
+        self.assertEqual([r['kind'] for r in report['attempts']], ['author', 'search_retry', 'author'])
+        self.assertEqual(len(self.prompts), 2)
+        self.assertIn(job['reason'], self.feedback(1))
+
+    def test_benchmark_retains_environment_status_cause_and_stage_and_stops(self):
+        directory = self.make_dir([('a', REQUIREMENTS), ('b', REQUIREMENTS)])
+        self.responses = [self.response()] * 4
+        job = dict(status='refused', failure_kind='environment', failing_stage='runtime-preflight',
+                   reason=self.PREFLIGHT)
+        with self.with_build(self.failed_job(job)):
+            report = loop.benchmark(directory, self.root / 'benchmark', max_attempts=4)
+        self.assertEqual(report['status'], 'stopped_environment_failure')
+        self.assertEqual([r['status'] for r in report['designs']], ['environment_failure', 'not_run'])
+        row = report['designs'][0]
+        self.assertEqual((row['attempts'], row['reason'], row['failing_stages']),
+                         (1, self.PREFLIGHT, ['runtime-preflight']))
+        self.assertEqual(row['placement_findings'][0]['findings'][0]['failure_kind'], 'environment')
+        self.assertEqual(len(self.prompts), 1)
+
+
 class StopTests(ScriptedLoop):
     def test_sigterm_takes_the_interrupt_path_and_finalizes_the_report(self):
         def untranslated(signum, frame):

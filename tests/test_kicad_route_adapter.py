@@ -197,6 +197,35 @@ class AdapterPolicyTest(unittest.TestCase):
         self.assertEqual(seen['complete'], ('complete', 'accepted'))
         self.assertEqual(seen['unknown_key'], ('contradiction', 'refused'))
 
+    def test_board_backend_failure_is_infrastructure_but_incomplete_routes_are_design_failures(self):
+        for scenario, exit_code in (('backend_failure', 1), ('incomplete', 2), ('validation_failed', 3)):
+            with self.subTest(scenario=scenario):
+                case = self.case(scenario).run()
+                route_dir = case.work / 'board-route'
+                result = json.loads((case.work / 'routing/attempt/result.json').read_text())
+                out = route_dir / 'out/run'
+                out.mkdir(parents=True)
+                (out / 'result.json').write_text(json.dumps(result))
+                if result['candidate']:
+                    board = route_dir / result['candidate']['board']
+                    board.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(case.work / 'routing' / result['candidate']['board'], board)
+                record = routing_adapter.bind_board_attempt(route_dir, ['kicad-route', 'run'], exit_code)
+                if scenario == 'backend_failure':
+                    self.assertEqual((record['status'], record['failure_kind'], record['failing_stage']),
+                                     ('backend_failure', 'environment', 'routing'))
+                    self.assertEqual(record['reason'], 'KRT exited 1')
+                else:
+                    self.assertEqual(record['status'], 'routed')
+                    self.assertFalse(record['router_accepted'])
+                    self.assertNotIn('failure_kind', record)
+
+    def test_board_router_crash_without_result_is_an_environment_failure(self):
+        record = routing_adapter.bind_board_attempt(Path(self.tmp.name), ['kicad-route', 'run'], -11)
+        self.assertEqual((record['status'], record['failure_kind'], record['failing_stage']),
+                         ('missing_output', 'environment', 'routing'))
+        self.assertIn('exit -11', record['reason'])
+
     def test_complete_with_unconnected_is_a_verified_rejection_with_and_without_a_layer_policy(self):
         # The board the router validated is bound and rejected like a failed layer policy: diagnostics
         # only, never delivered, and the production verifier re-derives it from the retained reports.

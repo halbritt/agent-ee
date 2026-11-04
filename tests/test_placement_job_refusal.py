@@ -90,7 +90,28 @@ class RefusalReportTests(fixture.Fixture):
         out = self.dir / 'job'
         report = job.run_job(config, out)
         self.assert_report(out, report, None, 'runtime preflight failed')
+        self.assertEqual((report['failure_kind'], report['failing_stage']), ('environment', 'runtime-preflight'))
         self.assertEqual(set(report['phases']), {'setup'})
+
+    def test_missing_planner_is_a_runtime_failure_with_a_retained_report(self):
+        out = self.dir / 'job'
+        report = job.run_job(self.config(), out, executable=self.dir / 'missing-planner')
+        self.assertEqual((report['status'], report['failure_kind'], report['failing_stage']),
+                         ('refused', 'environment', 'runtime-preflight'))
+        self.assertIn('missing-planner', report['reason'])
+        self.assertEqual(json.loads((out / 'job-report.json').read_text()), report)
+
+    def test_native_planner_crash_is_an_environment_failure_without_more_search(self):
+        executable = self.dir / 'crashing-planner'
+        executable.write_text('#!/usr/bin/python3\nimport os,signal\nos.kill(os.getpid(), signal.SIGKILL)\n')
+        executable.chmod(0o755)
+        out = self.dir / 'job'
+        report = job.run_job(self.config(), out, executable=executable)
+        self.assertEqual((report['status'], report['failure_kind'], report['failing_stage']),
+                         ('refused', 'environment', 'native-tool'))
+        self.assertIn('crashed (exit -9)', report['reason'])
+        self.assertEqual(json.loads((out / 'job-report.json').read_text()), report)
+        self.assertFalse((out / 'candidates').exists())
 
     def test_setup_refusal_after_ownership_has_null_attempt(self):
         config = self.config()
