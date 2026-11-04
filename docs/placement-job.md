@@ -697,6 +697,8 @@ ownership is established, environment failures return the classified report in
 memory and leave the foreign output directory untouched. Build stages propagate
 that class into their failed attempt and build report. Other pre-ownership input
 refusals still raise `JobRefusal` without writes.
+A resumed build clears the prior run's top-level environment fields; failed
+attempts keep their original classification.
 
 A nonempty directory without `--resume` is refused without writes. Resume captures
 the input in memory and checks the checkpoint identity before writing capture,

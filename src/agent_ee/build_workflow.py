@@ -187,6 +187,9 @@ def run(plan_path, out, *, resume=False, through='package'):
                 _refuse_resume(out, report, str(exc), pin, kind='verification_unavailable')
             return _assess_report(out, report, typed=plan['schema'] == TYPED_SCHEMA)
         previous = out / report['candidate'] if report['candidate'] else out / 'source'
+        # These describe the current run; failed attempts retain their own class.
+        report.pop('failure_kind', None)
+        report.pop('failing_stage', None)
         try:
             for stage in STAGES[len(report['completed']):STAGES.index(through) + 1]:
                 if (out / 'CANCEL').exists():

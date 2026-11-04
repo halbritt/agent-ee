@@ -148,6 +148,25 @@ class BlockSourceTests(unittest.TestCase):
             self.assertEqual(saved['attempts'][-1]['failure_kind'], 'environment')
             self.assertIn('EnvironmentFailure: native reader crashed', saved['attempts'][-1]['reason'])
 
+    def test_resumed_design_failure_does_not_inherit_environment_class(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path, _ = self._plan_files(root)
+            out = root / 'run'
+            with patch.object(build_workflow, '_runtime', return_value={}), \
+                 patch.object(retained_run.StageAttempt, 'execute', side_effect=[
+                     job.EnvironmentFailure('native-tool', 'native reader crashed'),
+                     ValueError('design constraint failed')]):
+                build_workflow.run(path, out, through='requirements')
+                report = build_workflow.run(path, out, resume=True, through='requirements')
+            self.assertEqual(read_json(out / 'build-report.json'), report)
+            self.assertEqual(report['status'], 'failed')
+            self.assertNotIn('failure_kind', report)
+            self.assertNotIn('failing_stage', report)
+            self.assertEqual(report['attempts'][-2]['failure_kind'], 'environment')
+            self.assertNotIn('failure_kind', report['attempts'][-1])
+            self.assertIn('design constraint failed', report['attempts'][-1]['reason'])
+
     def test_role_locality_subset_selects_existing_complete_document(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
@@ -240,7 +259,9 @@ class ProducerTests(unittest.TestCase):
                         with patch.object(stage,'policy_files',side_effect=policies),self.assertRaisesRegex(ValueError,'policy changed'):
                             stage.produce(self.candidate,out,self.names,clock=job.Clock(10))
                     else:
-                        with self.assertRaises((job.JobRefusal,job.JobStopped,ValueError)):
+                        expected = (job.EnvironmentFailure if failure == 'exit' else
+                                    job.JobStopped if failure == 'deadline' else job.JobRefusal)
+                        with self.assertRaises(expected):
                             stage.produce(self.candidate,out,self.names,clock=job.Clock(0 if failure=='deadline' else 10))
                 self.assertFalse(out.exists())
                 (self.candidate/'board.kicad_pcb').write_bytes(original)
