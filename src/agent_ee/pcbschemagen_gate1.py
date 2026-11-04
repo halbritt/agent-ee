@@ -123,7 +123,7 @@ def _source_copy(checkout: VerifierCheckout) -> Path:
     if archive.returncode:
         raise PCBSchemaGenInputError(f"PCBSchemaGen commit {checkout.commit} cannot be exported from "
                                      f"{checkout.root}: {archive.stderr.decode(errors='replace').strip()}")
-    copy = Path(tempfile.mkdtemp(prefix='agent-ee-pcbschemagen-'))
+    copy = Path(tempfile.mkdtemp(prefix='agent-ee-pcbschemagen-')).resolve()
     atexit.register(shutil.rmtree, copy, True)
     with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tree:
         tree.extractall(copy, filter='data')
@@ -135,18 +135,43 @@ def _source_copy(checkout: VerifierCheckout) -> Path:
     return copy
 
 
+# The verifier's top-level package; every module of it must come from the private copy.
+VERIFIER_PACKAGE = 'framework'
+
+
+def _verifier_modules() -> list[tuple[str, Path]]:
+    """(name, file) of each loaded module of the verifier's package that has a file.
+
+    Namespace packages have none: their portions follow sys.path, where the copy comes first."""
+    return [(name, Path(module.__file__).resolve()) for name, module in tuple(sys.modules.items())
+            if (name == VERIFIER_PACKAGE or name.startswith(VERIFIER_PACKAGE + '.'))
+            and getattr(module, '__file__', None)]
+
+
+def _require_private_origins(source: Path) -> None:
+    """Refuse a verifier module loaded from anywhere but the private copy, e.g. a module that
+    exists only in the checkout, imported through a package portion outside the copy."""
+    stray = [f'{name} ({path})' for name, path in _verifier_modules() if not path.is_relative_to(source)]
+    if stray:
+        raise PCBSchemaGenInputError(f"PCBSchemaGen module imported from outside Gate 1's private copy "
+                                     f"{source}: {stray[0]}")
+
+
 def _ensure_topo_imports(pcbschemagen_root: Union[str, Path] = DEFAULT_PCBSCHEMAGEN_ROOT) -> tuple[VerifierCheckout, Path]:
     """Check the checkout; return it and the private copy that framework.topo is imported from."""
     checkout = check_pcbschemagen_checkout(pcbschemagen_root)
     root = checkout.root
-    loaded = [(name, Path(module.__file__).resolve()) for name, module in tuple(sys.modules.items())
-              if name.startswith('framework.topo') and getattr(module, '__file__', None)]
+    loaded = _verifier_modules()
     if loaded:
         imported = _IMPORTED_AT.get(root)
         source = _COPIES.get((root, imported))
-        stray = [name for name, path in loaded if source is None or not path.is_relative_to(source)]
+        stray = [f'{name} ({path})' for name, path in loaded if source is None or not path.is_relative_to(source)]
         if stray:
-            raise PCBSchemaGenInputError(f"PCBSchemaGen module already loaded from another checkout: {stray[0]}")
+            # A regular package already imported from elsewhere (the checkout, another checkout)
+            # would route framework.topo imports past the private copy.
+            raise PCBSchemaGenInputError(
+                f"PCBSchemaGen module already imported from outside Gate 1's private copy: {stray[0]}; "
+                "verify in a process that has not imported the verifier")
         if imported != checkout.commit:
             raise PCBSchemaGenInputError(
                 f"PCBSchemaGen code in this process was imported at commit {imported}, but the checkout "
@@ -187,6 +212,7 @@ class Gate1KGStore:
         # base_dir is the checkout; the store reads the private copy of its accepted commit.
         self.checkout, source = _ensure_topo_imports(base_dir)
         from framework.topo.kg_loader import KGStore
+        _require_private_origins(source)
 
         self.base_dir = str(source)
         self._upstream_store = KGStore(self.base_dir)
@@ -591,6 +617,7 @@ def verify_gate1(
     from framework.topo.match_skeleton import check_graph_similarity
     from framework.topo.phase2_checks import run_phase2_checks
     from framework.topo.rule_checker import check_rules
+    _require_private_origins(Path(kg_store.base_dir))
 
     # 1. Translate input to snapshot
     if netlist_xml is not None:
@@ -711,6 +738,9 @@ def verify_gate1(
         llm_lines.append("\n### Warnings:")
         for w in warning_errors:
             llm_lines.append(f"- [WARNING] {w}")
+
+    # Modules the verifier imported lazily during the run must have come from the copy too.
+    _require_private_origins(Path(kg_store.base_dir))
 
     report = {
         "schema": SCHEMA,

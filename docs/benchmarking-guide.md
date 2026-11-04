@@ -207,9 +207,12 @@ upstream project and `commit` is that accepted commit, so the record identifies
 every verifier input of the run even if the checkout changes while it runs.
 The dual-gate benchmark keeps that record in each task's `gate1` result. It is
 `null` for a missing candidate or a Gate 1 execution error, which produce no
-verifier result. Imported verifier code stays loaded in a process, so a process
-that imported the code at one commit refuses a checkout at another and asks for
-a new process. The adapter never fetches a checkout or falls back to another
+verifier result. Gate 1 refuses to run in a process that already imported a
+module of the verifier's `framework` package from anywhere but its copy, and
+refuses a result if any `framework` module loaded during the run came from
+outside the copy (for example an untracked module found only in the checkout).
+Imported verifier code stays loaded in a process, so a process that imported the
+code at one commit refuses a checkout at another and asks for a new process. The adapter never fetches a checkout or falls back to another
 one. A missing or invalid verifier produces a CLI input error (exit 2),
 without classifying the circuit as a topology failure or a semantic bypass.
 Results from different verifier commits are not directly comparable, because

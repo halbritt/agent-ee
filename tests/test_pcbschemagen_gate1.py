@@ -33,7 +33,8 @@ from toolchain import require_pcbschemagen
 # and records, never PCBSchemaGen's verdicts. With OWNED_VERIFIER_MOVE set to the checkout,
 # Phase 2 commits version B there while Gate 1 runs, records which component.json version its
 # own code directory and the knowledge-graph store see, and with OWNED_VERIFIER_RETURN set
-# moves the checkout back (A to B to A).
+# moves the checkout back (A to B to A). With OWNED_VERIFIER_EXTRA set, Phase 2 imports
+# framework.topo.extra, which the tests provide only as an untracked file in the checkout.
 OWNED_VERIFIER = {
     'framework/topo/kg_loader.py': (
         'class KGStore:\n'
@@ -63,6 +64,8 @@ OWNED_VERIFIER = {
         '                                "store": version(kg_store.base_dir)}\n'
         '        if os.environ.get("OWNED_VERIFIER_RETURN"):\n'
         '            git("reset", "-q", "--hard", start)\n'
+        '    if os.environ.get("OWNED_VERIFIER_EXTRA"):\n'
+        '        __import__("framework.topo.extra")\n'
         '    return []\n'),
     'framework/topo/rule_checker.py': 'def check_rules(snapshot, rules, task_id=None):\n    return []\n',
     'framework/task_config.yaml': '{}',
@@ -543,6 +546,46 @@ class TestVerifierBoundary(unittest.TestCase):
                     'verifier': {'repository': PCBSCHEMAGEN_REPOSITORY, 'commit': first},
                     'observed': {'code': 'A', 'store': 'A'}})
                 self.assertEqual(fixture_git(root, 'rev-parse', 'HEAD') == first, returns)
+
+    def test_verifier_package_imported_before_gate1_is_refused(self):
+        # Review of 5704964d: a checkout with a regular framework package, imported before Gate 1,
+        # routed framework.topo imports to the checkout and the run read B while recording A.
+        root = self.temp / 'verifier'
+        owned_verifier(root)
+        (root / 'framework/__init__.py').write_text('')
+        fixture_git(root, 'add', 'framework/__init__.py')
+        fixture_git(root, 'commit', '-q', '-m', 'Owned regular framework package')
+        script = """
+            import json
+            import sys
+            sys.path.insert(0, sys.argv[1])
+            import framework
+            from agent_ee import pcbschemagen_gate1 as gate1
+            try:
+                gate1.verify_gate1(json.loads(sys.argv[2]), task_id=6, pcbschemagen_root=sys.argv[1])
+            except gate1.PCBSchemaGenInputError as exc:
+                print('refused:', exc)
+            print('topo loaded:', any(name.startswith('framework.topo') for name in sys.modules))
+        """
+        env = dict(os.environ, OWNED_VERIFIER_MOVE=str(root), OWNED_VERIFIER_RETURN='1')
+        result = run_isolated(script, root, json.dumps(_make_valid_tps54302_design()), env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("refused: PCBSchemaGen module already imported from outside Gate 1's private copy: "
+                      f"framework ({root / 'framework/__init__.py'})", result.stdout)
+        self.assertIn('topo loaded: False', result.stdout)
+
+    def test_verifier_module_found_only_in_the_checkout_is_refused(self):
+        # An untracked module (allowed in a clean checkout) is not in the copy; imported during the
+        # run through the checkout's package portion, it must not reach a result.
+        root = self.temp / 'verifier'
+        owned_verifier(root)
+        (root / 'framework/topo/extra.py').write_text('# Owned untracked module, not in any commit.\n')
+        env = dict(os.environ, OWNED_VERIFIER_EXTRA='1')
+        result = run_isolated(RECORD_SCRIPT, root, json.dumps(_make_valid_tps54302_design()), env=env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PCBSchemaGen module imported from outside Gate 1's private copy", result.stderr)
+        self.assertIn(f"framework.topo.extra ({root / 'framework/topo/extra.py'})", result.stderr)
+        self.assertEqual(result.stdout, '')
 
     def test_bytecode_imports_allow_repeat_loads_but_tracked_edits_are_refused(self):
         root = self.temp / 'verifier'
