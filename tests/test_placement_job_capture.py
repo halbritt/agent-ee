@@ -155,7 +155,7 @@ class FreshRuleTests(Fixture):
                 project = self.project_rules(0.2)
                 project['board']['design_settings']['rules'][field] = value
                 self.project.write_text(json.dumps(project))
-                with self.assertRaises(job.JobRefusal):
+                with self.assertRaises(job.EnvironmentFailure):
                     job.capture(self.board, job.normalize_intent(intent(), groups()))
 
 
@@ -200,12 +200,12 @@ class CaptureBoundaryTests(Fixture):
             job.capture(self.board, job.normalize_intent(intent(), groups()), cancel_dir=self.dir)
 
     def test_failed_or_missing_child_output_never_returns_a_problem(self):
-        for code, output, error in ((1, b'', job.JobRefusal),
+        for code, output, error in ((1, b'', job.EnvironmentFailure),
                                    (0, b'', job.EnvironmentFailure),
-                                   (0, b'{}', job.JobRefusal),
+                                   (0, b'{}', job.EnvironmentFailure),
                                    (0, b'null', job.EnvironmentFailure),
-                                   (0, b'{"problem":null,"record":null}', job.JobRefusal),
-                                   (0, b'{"problem":{},"record":{}}', job.JobRefusal)):
+                                   (0, b'{"problem":null,"record":null}', job.EnvironmentFailure),
+                                   (0, b'{"problem":{},"record":{}}', job.EnvironmentFailure)):
             with self.subTest(code=code, output=output):
                 with patch.object(job, '_run_child', return_value=subprocess.CompletedProcess(
                         [], code, output, b'native diagnostic')):
@@ -264,7 +264,7 @@ class BoardZoneTests(Fixture):
             result = evaluate(problem, [{}])[0]
             self.assertTrue(result['feasible'], result)
             print('OLD_KEEPOUT_FALSE_FEASIBLE ' + json.dumps(result), flush=True)
-        with self.assertRaisesRegex(job.JobRefusal, 'board-level zones'):
+        with self.assertRaisesRegex(job.EnvironmentFailure, 'board-level zones'):
             job.capture(path, job.normalize_intent({}, {'groups': []}))
         print('KEEPOUT_CONTROL ' + json.dumps({'native': violations, 'exit': execution['exit_code'],
                                              'new': 'refused before solve'}), flush=True)
@@ -274,12 +274,12 @@ class BoardZoneTests(Fixture):
             with self.subTest(kind=kind):
                 build_board(self.board)
                 self.zone_board(kind)
-                with self.assertRaisesRegex(job.JobRefusal, 'board-level zones'):
+                with self.assertRaisesRegex(job.EnvironmentFailure, 'board-level zones'):
                     job.capture(self.board, job.normalize_intent({}, {'groups': []}))
 
     def test_footprint_zone_refusal_is_preserved(self):
         self.zone_board('keepout', footprint=True)
-        with self.assertRaisesRegex(job.JobRefusal, 'footprint rule areas/zones'):
+        with self.assertRaisesRegex(job.EnvironmentFailure, 'footprint rule areas/zones'):
             job.capture(self.board, job.normalize_intent({}, {'groups': []}))
 
     def test_zero_zone_positive(self):

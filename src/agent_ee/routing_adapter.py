@@ -1046,9 +1046,15 @@ def bind_board_attempt(route_dir, argv, exit_code):
                 'failing_stage': 'routing', 'reason': '; '.join(reasons)}
     result = json.loads(data)
     record.update(router_exit=result.get('exit_code'), router_status=result.get('status') or result.get('outcome'))
-    # classify has checked the process/routing/validation status combination.
-    # A process FAIL means the backend did not hand back a board, not an open net.
+    # A board-dependent search stop also reports process FAIL without a board.
     if result['process']['status'] == 'FAIL':
+        commands = result['process'].get('commands')
+        if any(command.get('killed') is True and
+               (command.get('budget_reached') is True or command.get('stalled') is True
+                or command.get('stop_requested') is True)
+               for command in (commands if isinstance(commands, list) else [])
+               if isinstance(command, dict)):
+            return {**record, 'status': 'no_candidate'}
         return {**record, 'status': 'backend_failure', 'failure_kind': 'environment',
                 'failing_stage': 'routing', 'reason': '; '.join(reasons)}
     candidate = result.get('candidate')

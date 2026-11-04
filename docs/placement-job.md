@@ -681,13 +681,22 @@ exits nonzero. Refusal never replaces the incumbent or diagnostic board.
 
 Runtime/tool failures also retain status `refused`, with
 `failure_kind: environment` and a `failing_stage` (`runtime-preflight`,
-`routing-preflight`, `placement-planner`, `native-tool` or `routing`). These cover runtime readiness
-and identity refusals, missing native programs, native signal crashes, DRC execution/report failures, router
-process failures and invalid/missing router output. Routing trials stop at the
-first such failure. Design input refusals, placement infeasibility, locality
-defects and verification findings do not receive this classification.
-The [design loop](design-generate.md#attempts-and-feedback) turns it into terminal
-`environment_failure` without another author turn or seed retry.
+`routing-preflight`, `placement-planner`, `native-tool` or `routing`). These cover
+readiness/identity refusals, missing programs, native-reader nonzero exits and
+malformed replies, signal crashes, DRC execution/report errors, backend execution
+faults and invalid router evidence. Routing trials stop on the first such failure.
+A budget/stall kill identified by the router's structured command stop flags is
+instead `no_candidate`: it retains `route_failed` and seed retries, or
+`placement_infeasible` when no hard-feasible incumbent exists. Locality and
+verification findings also keep their design path.
+
+The [design loop](design-generate.md#attempts-and-feedback) reports preflight
+refusals as `runtime_refused`, and other tool/process faults as
+`environment_failure`, without another author turn or seed retry. Before job
+ownership is established, environment failures return the classified report in
+memory and leave the foreign output directory untouched. Build stages propagate
+that class into their failed attempt and build report. Other pre-ownership input
+refusals still raise `JobRefusal` without writes.
 
 A nonempty directory without `--resume` is refused without writes. Resume captures
 the input in memory and checks the checkpoint identity before writing capture,

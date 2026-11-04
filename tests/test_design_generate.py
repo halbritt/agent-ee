@@ -1409,15 +1409,15 @@ class EnvironmentFailureTests(ScriptedLoop):
         self.responses = [self.response()] * 4
         with self.with_build(self.failed_job(dict(status='refused', reason=self.PREFLIGHT))):
             report = self.generate(max_attempts=4, search_retries=3)
-        self.assertEqual(report['status'], 'environment_failure')
+        self.assertEqual(report['status'], 'runtime_refused')
         self.assertEqual(report['reason'], self.PREFLIGHT)
         self.assertEqual(report['failing_stage'], 'runtime-preflight')
         self.assertEqual(len(report['attempts']), 1)
         self.assertEqual(len(self.prompts), 1)
-        self.assertEqual(report['attempts'][0]['status'], 'environment_failure')
+        self.assertEqual(report['attempts'][0]['status'], 'runtime_refused')
         self.assertFalse((self.root / 'run/attempt-002').exists())
         self.assertFalse(report['claims']['file_release'])
-        self.assertEqual(self.saved()['status'], 'environment_failure')
+        self.assertEqual(self.saved()['status'], 'runtime_refused')
 
     def test_structured_environment_failure_takes_precedence_over_retryable_status(self):
         for stage in ('runtime-preflight', 'routing', 'native-tool'):
@@ -1427,8 +1427,9 @@ class EnvironmentFailureTests(ScriptedLoop):
                            failing_stage=stage, reason='a tool failure without preflight keywords')
                 with self.with_build(self.failed_job(job)):
                     report = loop.generate(self.requirements, self.root / stage, max_attempts=4, search_retries=3)
+                expected = 'runtime_refused' if stage == 'runtime-preflight' else 'environment_failure'
                 self.assertEqual((report['status'], report['failing_stage'], report['reason']),
-                                 ('environment_failure', stage, job['reason']))
+                                 (expected, stage, job['reason']))
                 self.assertEqual(len(report['attempts']), 1)
 
     def test_design_verification_failure_keeps_seed_and_author_retries(self):
@@ -1448,13 +1449,81 @@ class EnvironmentFailureTests(ScriptedLoop):
                    reason=self.PREFLIGHT)
         with self.with_build(self.failed_job(job)):
             report = loop.benchmark(directory, self.root / 'benchmark', max_attempts=4)
-        self.assertEqual(report['status'], 'stopped_environment_failure')
-        self.assertEqual([r['status'] for r in report['designs']], ['environment_failure', 'not_run'])
+        self.assertEqual(report['status'], 'stopped_runtime_refused')
+        self.assertEqual([r['status'] for r in report['designs']], ['runtime_refused', 'not_run'])
         row = report['designs'][0]
         self.assertEqual((row['attempts'], row['reason'], row['failing_stages']),
                          (1, self.PREFLIGHT, ['runtime-preflight']))
         self.assertEqual(row['placement_findings'][0]['findings'][0]['failure_kind'], 'environment')
         self.assertEqual(len(self.prompts), 1)
+
+    def test_design_refusal_preserves_every_author_attempt(self):
+        # Reviewer mutant any-refused-is-environment survived until this regression.
+        self.responses = [self.response()] * 3
+        job = dict(status='refused', reason='invalid local decoupling contract: relation R1 names no capacitor')
+        with self.with_build(self.failed_job(job)):
+            report = self.generate(max_attempts=3, search_retries=1)
+        self.assertEqual(report['status'], 'attempts_exhausted')
+        self.assertEqual([r['kind'] for r in report['attempts']], ['author'] * 3)
+        self.assertIn(job['reason'], self.feedback(1))
+
+    def test_tool_process_failure_stops_benchmark_with_environment_status(self):
+        directory = self.make_dir([('a', REQUIREMENTS), ('b', REQUIREMENTS)])
+        self.responses = [self.response()] * 3
+        job = dict(status='refused', failure_kind='environment', failing_stage='routing',
+                   reason='KRT could not start')
+        with self.with_build(self.failed_job(job)):
+            report = loop.benchmark(directory, self.root / 'benchmark', max_attempts=3)
+        self.assertEqual(report['status'], 'stopped_environment_failure')
+        self.assertEqual([r['status'] for r in report['designs']], ['environment_failure', 'not_run'])
+        self.assertEqual(len(self.prompts), 1)
+
+    def test_budget_and_stall_keep_seed_retry_and_infeasible_author_feedback(self):
+        from test_kicad_route_adapter import backend_failure_record
+        from agent_ee import placement_job
+        for cause in ('budget_reached', 'stalled'):
+            for incumbent in (True, False):
+                with self.subTest(cause=cause, incumbent=incumbent):
+                    name = cause + str(incumbent)
+                    routed = backend_failure_record(self.root / ('router-' + name),
+                        [dict(killed=True, stop_requested=True, **{cause: True})], 'KRT was killed')
+                    status = placement_job._completion_status(routed, {} if incumbent else None, {},
+                                                              engine_feasible=incumbent)
+                    self.assertEqual(status, 'route_failed' if incumbent else 'placement_infeasible')
+                    self.responses = [self.response()] * 3
+                    job = dict(status=status, reason='bounded routing search')
+                    job.update({key: routed[key] for key in ('failure_kind', 'failing_stage', 'reason')
+                                if key in routed})
+                    with self.with_build(self.failed_job(job)):
+                        report = loop.generate(self.requirements, self.root / name, max_attempts=3, search_retries=1)
+                    kinds = ['author', 'search_retry', 'author'] if incumbent else ['author'] * 3
+                    self.assertEqual([r['kind'] for r in report['attempts']], kinds)
+                    self.assertEqual(report['status'], 'attempts_exhausted')
+
+    def test_build_environment_class_stops_without_a_job_report(self):
+        self.responses = [self.response()] * 3
+        def build(attempt):
+            self.build_report(attempt, accepted=False, stage='artwork', reason='EnvironmentFailure: native crash')
+            path = attempt / 'build/build-report.json'
+            record = loop.read_optional(path)
+            record.update(failure_kind='environment', failing_stage='native-tool')
+            write_json(path, record)
+            return dict(execution='failed', exit_code=1)
+        with self.with_build(build):
+            report = self.generate(max_attempts=3)
+        self.assertEqual((report['status'], len(report['attempts'])), ('environment_failure', 1))
+        self.assertEqual(report['failing_stage'], 'native-tool')
+
+    def test_checkout_install_and_manifest_refusals_keep_runtime_status(self):
+        for reason in ('checkout HEAD abc is not the pinned def', 'install record mismatch',
+                       'state manifest drift: kicad.kicad_cli.sha256'):
+            with self.subTest(reason=reason):
+                self.responses = [self.response()] * 3
+                job = dict(status='refused', reason='runtime preflight failed: ' + reason)
+                with self.with_build(self.failed_job(job)):
+                    report = loop.generate(self.requirements, self.root / ('run-' + str(len(self.prompts))),
+                                           max_attempts=3)
+                self.assertEqual((report['status'], len(report['attempts'])), ('runtime_refused', 1))
 
 
 class StopTests(ScriptedLoop):
@@ -1645,6 +1714,16 @@ class SignalTests(ScriptedLoop):
 
 
 class DocsTests(unittest.TestCase):
+    def test_documented_budget_kill_outcome_matches_the_adapter(self):
+        from test_kicad_route_adapter import backend_failure_record
+        with tempfile.TemporaryDirectory() as tmp:
+            record = backend_failure_record(Path(tmp),
+                [dict(killed=True, budget_reached=True, stop_requested=True)], 'KRT was killed')
+        text = (ROOT / 'docs/design-generate.md').read_text()
+        row = next(line for line in text.splitlines() if line.startswith('| Budget/stall kill |'))
+        documented = row.split('|')[2].strip().strip('`')
+        self.assertEqual(record['status'], documented)
+
     def test_doc_names_every_option_with_its_default_and_every_final_state(self):
         text = (ROOT / 'docs/design-generate.md').read_text()
         parser = argparse.ArgumentParser()

@@ -129,6 +129,25 @@ class BlockSourceTests(unittest.TestCase):
         scope['checks'].append({'kind':'placement','params':{'criterion':'electrical-locality/1','locality':'other.json'}})
         with self.assertRaisesRegex(ValueError,'one shared'):stage.locality_path(scope)
 
+    def test_native_producer_environment_failure_finalizes_build_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path, _ = self._plan_files(root)
+            out = root / 'run'
+            # The stage producer is the effect boundary; real retained records and
+            # qualification still run around its actual typed failure.
+            with patch.object(build_workflow, '_runtime', return_value={}), \
+                 patch.object(retained_run.StageAttempt, 'execute',
+                              side_effect=job.EnvironmentFailure('native-tool', 'native reader crashed')):
+                report = build_workflow.run(path, out, through='requirements')
+            saved = read_json(out / 'build-report.json')
+            self.assertEqual(saved, report)
+            self.assertEqual((saved['status'], saved['failure_kind'], saved['failing_stage']),
+                             ('failed', 'environment', 'native-tool'))
+            self.assertEqual(saved['attempts'][-1]['status'], 'failed')
+            self.assertEqual(saved['attempts'][-1]['failure_kind'], 'environment')
+            self.assertIn('EnvironmentFailure: native reader crashed', saved['attempts'][-1]['reason'])
+
     def test_role_locality_subset_selects_existing_complete_document(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

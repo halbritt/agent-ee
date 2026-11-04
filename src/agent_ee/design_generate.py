@@ -700,7 +700,7 @@ def search_failure(build, run):
         ('route_failed', 'placement_failed', 'no_checked_candidate', 'verification_failed') for p in jobs)
 
 
-def environment_failure(findings):
+def environment_failure(findings, build=None):
     """Prefer the job's typed failure; recognize pre-field preflight reports too."""
     for job in findings:
         kind, reason = job.get('failure_kind'), job.get('reason') or ''
@@ -709,6 +709,8 @@ def environment_failure(findings):
         if kind == 'environment' or legacy_preflight:
             return dict(reason=reason, failing_stage=job.get('failing_stage') or 'runtime-preflight',
                         job_report=job['path'])
+    if build and build.get('failure_kind') == 'environment':
+        return dict(reason=build['reason'], failing_stage=build['failing_stage'], job_report=None)
     return None
 
 
@@ -974,10 +976,12 @@ def _generate(requirements_path, out, options, identity=None):
                     and qualification.get('mode') == 'typed'
                     and qualification.get('dimensions', {}).get('file_release', {}).get('status') == 'pass')
                 row['file_release'] = file_pass
-                environment = environment_failure(row['placement_findings'])
+                environment = environment_failure(row['placement_findings'], build)
                 if environment:
-                    row.update(status='environment_failure', failure_kind='environment', **environment)
-                    report.update(status='environment_failure', failure_kind='environment', **environment)
+                    status = ('runtime_refused' if environment['failing_stage'] in
+                              ('runtime-preflight', 'routing-preflight') else 'environment_failure')
+                    row.update(status=status, failure_kind='environment', **environment)
+                    report.update(status=status, failure_kind='environment', **environment)
                     break  # No seed retry, author feedback, or additional seat can repair the runtime.
                 if record['execution'] != 'ok' or record.get('exit_code') != 0 or not file_pass:
                     row['failing_stage'] = build['attempts'][-1]['stage'] if build and build.get('attempts') else 'build'

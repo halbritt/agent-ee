@@ -18,6 +18,19 @@ import test_placement_job as fixtures
 from test_placement_job import Fixture, intent, groups, MM
 
 
+def process_finished(pid):
+    try:
+        return Path(f'/proc/{pid}/stat').read_text().split()[2] == 'Z'
+    except (FileNotFoundError, ProcessLookupError):
+        return True
+
+
+class ProcessObservationTests(unittest.TestCase):
+    def test_process_disappearing_during_stat_read_is_already_finished(self):
+        with patch.object(Path, 'read_text', side_effect=ProcessLookupError('process exited during read')):
+            self.assertTrue(process_finished(123456))
+
+
 def materialize(source, poses, destination):
     # Allows the identical negative to exercise the immutable pre-repair source.
     parameters = inspect.signature(job.materialize).parameters
@@ -591,8 +604,7 @@ class ChildCancellationTests(Fixture):
         pid = int(marker.read_text())
         limit = time.monotonic() + 1
         while time.monotonic() < limit:
-            stat = Path(f'/proc/{pid}/stat')
-            if not stat.exists() or stat.read_text().split()[2] == 'Z':
+            if process_finished(pid):
                 break
             time.sleep(0.01)
         else:

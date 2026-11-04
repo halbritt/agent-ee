@@ -141,6 +141,18 @@ class RefusalReportTests(fixture.Fixture):
         report = job.run_job(config, out)
         self.assert_report(out, report, None, 'does not match its declared sha256')
 
+    def test_preownership_environment_failure_is_reported_without_touching_foreign_files(self):
+        out = self.dir / 'foreign-runtime'
+        out.mkdir()
+        (out / 'sentinel').write_bytes(b'foreign input')
+        before = snapshot(out)
+        config = self.config()
+        config['router']['checkout'] = str(self.dir / 'missing-router')
+        report = job.run_job(config, out, resume=True)
+        self.assertEqual((report['status'], report['failure_kind'], report['failing_stage']),
+                         ('refused', 'environment', 'runtime-preflight'))
+        self.assertEqual(snapshot(out), before)
+
     def test_nonempty_directory_is_byte_identical_without_resume(self):
         out = self.dir / 'foreign'
         out.mkdir()

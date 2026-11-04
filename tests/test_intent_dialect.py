@@ -642,7 +642,7 @@ class CaptureDeclarationModeTests(unittest.TestCase):
         neither = job.capture(self.board, job.normalize_intent(self.dialect({}), self.groups()))[0]['proximity'][0]
         self.assertEqual((neither['subject_declared'], neither['partner_declared']), (False, False))
         self.assertEqual((len(neither['ref_pads']), len(neither['near_pads'])), (2, 2))
-        with self.assertRaises(job.JobRefusal) as caught:
+        with self.assertRaises(job.EnvironmentFailure) as caught:
             job.capture(self.board, job.normalize_intent(self.dialect({'C1': ['9'], 'R1': ['1']}), self.groups()))
         self.assertIn('intent.proximity[0].pads.C1', str(caught.exception))
 

@@ -302,6 +302,8 @@ def execute(attempt, plan, previous, *, diagnostic=False):
             config['inputs']['block_contract'] = dict(path=str(path), sha256=digest(path))
             write_json(directory / 'placement-config.json', config)
         report = placement_job.run_job(config, directory / 'placement')
+        if report.get('failure_kind') == 'environment':
+            raise placement_job.EnvironmentFailure(report['failing_stage'], report['reason'])
         if report['status'] != 'completed' or report.get('final', {}).get('eligibility') != 'eligible':
             raise ValueError('placement/routing did not pass: ' + report['status'])
         if 'block_source' in placement:

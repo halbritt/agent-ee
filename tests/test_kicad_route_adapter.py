@@ -63,6 +63,18 @@ class Case:
                                       layout=self.layout, **kwargs)
 
 
+def backend_failure_record(root, commands, reason):
+    """Reviewer budget/stall probe, retaining the router's structured command record."""
+    case = Case(root / 'fixture', 'backend_failure').run()
+    route = root / 'board-route'
+    result = json.loads((case.work / 'routing/attempt/result.json').read_text())
+    result['process'].update(commands=commands, reasons=[reason])
+    out = route / 'out/run'
+    out.mkdir(parents=True)
+    (out / 'result.json').write_text(json.dumps(result))
+    return routing_adapter.bind_board_attempt(route, ['kicad-route', 'run'], 1)
+
+
 class AdapterPolicyTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-route-')
@@ -226,6 +238,25 @@ class AdapterPolicyTest(unittest.TestCase):
                          ('missing_output', 'environment', 'routing'))
         self.assertIn('exit -11', record['reason'])
 
+    def test_backend_budget_and_stall_kills_are_search_failures(self):
+        for cause in ('budget_reached', 'stalled', 'stop_requested'):
+            with self.subTest(cause=cause):
+                command = dict(killed=True, stop_requested=True, **({cause: True} if cause != 'stop_requested' else {}))
+                record = backend_failure_record(Path(self.tmp.name) / cause, [command], 'KRT was killed')
+                self.assertEqual(record['status'], 'no_candidate')
+                self.assertNotIn('failure_kind', record)
+
+    def test_backend_start_exit_and_output_faults_are_environment_failures(self):
+        for name, command, reason in (
+                ('start', dict(error='executable_not_found'), 'KRT could not start'),
+                ('exit', dict(exit_code=7), 'KRT exited 7'),
+                ('output', dict(exit_code=0), 'KRT wrote no output board'),
+                ('install', dict(error='not_installed'), 'KRT is not installed')):
+            with self.subTest(name=name):
+                record = backend_failure_record(Path(self.tmp.name) / name, [command], reason)
+                self.assertEqual((record['failure_kind'], record['failing_stage'], record['reason']),
+                                 ('environment', 'routing', reason))
+
     def test_board_refusal_uses_reason_class_to_separate_environment_from_design(self):
         root = Path(self.tmp.name)
         for reason_class in ('state', 'canary', 'usage', 'input', 'ledger'):
@@ -237,8 +268,9 @@ class AdapterPolicyTest(unittest.TestCase):
                 self.assertEqual((record['status'], record['reason_class'], record['reason']),
                                  ('refused', reason_class, refusal['message']))
                 if reason_class in ('state', 'canary', 'usage'):
+                    stage = 'routing' if reason_class == 'usage' else 'routing-preflight'
                     self.assertEqual((record['failure_kind'], record['failing_stage']),
-                                     ('environment', 'routing-preflight'))
+                                     ('environment', stage))
                 else:
                     self.assertNotIn('failure_kind', record)
 

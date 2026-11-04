@@ -201,28 +201,42 @@ search that more seeds would complete. A retry attempt writes
 count; it writes no prompt and no response. It uses the same attempt and time
 bounds.
 
-Environment and tool failures stop the design immediately, before seed retries
-or author feedback. Placement job reports mark these with
-`failure_kind: environment` and `failing_stage`: runtime/router preflight
-refusals (including install-record, toolchain, state-manifest and planner
-identity failures), missing native executables, native processes killed by a
-signal, DRC execution/report failures, and router output/protocol failures. The routing adapter uses the
-validated `process.status: FAIL` to identify backend execution failures; routing
-incompleteness and validation failures keep their normal design retry policy.
-Machine router refusals use `reason_class`: `state`, `canary` and adapter
-`usage` errors are environment/tool failures; `input` and `ledger` remain
-ordinary design failures.
-The job keeps status `refused` and its exact reason. For older job reports
-without `failure_kind`, only a `refused` reason starting `runtime preflight failed:`
-or `router preflight:` is recognized as a preflight environment failure.
+Runtime and tool failures stop the design before seed retries or author
+feedback. Jobs mark these with `failure_kind: environment` and `failing_stage`;
+build stages that catch `EnvironmentFailure` record `failed` with the same
+fields. This includes missing programs, native-reader nonzero exits or malformed
+replies, signal crashes, DRC execution/report errors and invalid router evidence.
 
-The attempt and `generate-report.json` end `environment_failure`, with the exact
-`reason`, `failing_stage`, `failure_kind` and `job_report` path. No design change
-is requested. Repair the runtime or tool and start a new run. The benchmark row
-keeps this status, reason and failing stage, and its placement findings retain
-the job's classification. The benchmark stops, listing later designs `not_run`.
-`placement_infeasible`, locality defects, native verification findings and other
-design failures keep the existing author/seed retry rules above.
+`process.status: FAIL` alone does not distinguish a router search stop from a
+tool failure. The board adapter reads `process.commands[]`: a command with
+`killed: true` and `budget_reached`, `stalled` or `stop_requested` true is a
+bounded search failure. Without those stop flags, backend failures such as
+"could not start", "exited N", "wrote no output board" or "not installed" are
+tool failures. Routing incompleteness and native verification findings retain
+the design retry policy.
+
+| Router outcome | Board adapter status | Job/loop path |
+|---|---|---|
+| Budget/stall kill | `no_candidate` | `route_failed` with an incumbent, allowing seed retries; `placement_infeasible` without a feasible incumbent, returning to the author. |
+| Backend execution fault | `backend_failure` | `environment_failure`; no further author or seed attempt. |
+
+Machine refusals use `reason_class`: `state` and `canary` are runtime preflight
+failures; adapter `usage` errors are tool interface failures. All three stop;
+`input` and `ledger` stay on the design path.
+Ordinary job `refused` statuses without the environment class also stay on the
+design path. For old reports without `failure_kind`, only a refused reason
+starting `runtime preflight failed:` or `router preflight:` is recognized.
+
+The attempt and `generate-report.json` end `runtime_refused` for runtime/router
+preflight refusals, including checkout identity, install-record and state-manifest
+drift. Tool and process failures end `environment_failure`. Both carry the exact
+`reason`, `failing_stage`, `failure_kind` and `job_report` path (null when no
+owned job report exists, using the build's failure record instead). Neither asks
+the author to change the design. Repair the runtime/tool and start a new run.
+The benchmark retains the status, cause and stage, stops as
+`stopped_runtime_refused` or `stopped_environment_failure`, and lists later
+designs `not_run`. Placement infeasibility, locality defects and verification
+findings keep the existing author/seed retry rules above.
 
 ## Acceptance and claims
 
@@ -261,12 +275,12 @@ one of these final states:
 | `attempts_exhausted` | `--max-attempts` ran out without acceptance. | continues |
 | `error` | An unexpected error; it is retained and propagated. | continues with an `error` row |
 | `seat_failed` | The author seat or a review seat failed (login, quota, transport or stream). | stops; later designs are `not_run` |
-| `runtime_refused` | The build refused the native runtime or the router checkout (dirty tree or unreadable commit). | stops; later designs are `not_run` |
-| `environment_failure` | A placement/routing job reported a runtime or tool failure. | stops; later designs are `not_run` |
+| `runtime_refused` | Runtime/router preflight refused the checkout, install record, toolchain or state manifest. | stops; later designs are `not_run` |
+| `environment_failure` | A native tool or backend process failed outside a bounded search stop. | stops; later designs are `not_run` |
 | `interrupted` | SIGINT or SIGTERM stopped the run. | stops; see below |
 
 Attempt rows use `refused`, `failed`, `author_timeout`, `seat_failed`,
-`unsupported`, `review_incomplete`, `environment_failure`, `time_exhausted`, `accepted`, `accepted_partial`, `interrupted`
+`unsupported`, `review_incomplete`, `runtime_refused`, `environment_failure`, `time_exhausted`, `accepted`, `accepted_partial`, `interrupted`
 and `error`.
 
 ## Benchmark

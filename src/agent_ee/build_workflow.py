@@ -20,6 +20,7 @@ from .stage_receipts import tree_identity
 from .storage import digest, identity, read_json, write_json
 from .run_record import policy_files
 from . import run_record
+from .placement_job import EnvironmentFailure
 
 SCHEMA = build_plan.SCHEMA
 TYPED_SCHEMA = build_plan.TYPED_SCHEMA
@@ -221,11 +222,15 @@ def run(plan_path, out, *, resume=False, through='package'):
             report['accepted'] = False
             report['status'] = 'assessing' if len(report['completed']) == len(STAGES) else 'checkpoint'
             report.pop('reason', None)
-        except (ValueError, OSError, subprocess.SubprocessError, KeyboardInterrupt) as exc:
+        except (ValueError, OSError, subprocess.SubprocessError, KeyboardInterrupt, EnvironmentFailure) as exc:
             report['status'] = 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed'
             report['reason'] = f'{type(exc).__name__}: {exc}'
             if report['attempts'] and report['attempts'][-1]['status'] == 'running':
                 report['attempts'][-1].update(status=report['status'], reason=report['reason'])
+            if isinstance(exc, EnvironmentFailure):
+                failure = dict(failure_kind='environment', failing_stage=exc.stage)
+                report.update(failure)
+                report['attempts'][-1].update(failure)
         return _assess_report(out, report, typed=plan['schema'] == TYPED_SCHEMA)
 
 

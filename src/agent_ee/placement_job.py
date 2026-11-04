@@ -659,8 +659,8 @@ def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
                       clock=clock or Clock(300), cancel_dir=cancel_dir,
                       input_bytes=json.dumps(request).encode())
     if done.returncode:
-        raise JobRefusal(f'native {label} failed (exit {done.returncode}): '
-                         + (done.stdout + done.stderr).decode(errors='replace')[-2000:])
+        raise EnvironmentFailure('native-tool', f'native {label} failed (exit {done.returncode}): '
+                                 + (done.stdout + done.stderr).decode(errors='replace')[-2000:])
     try:
         captured = json.loads(done.stdout)
     except (ValueError, TypeError) as exc:
@@ -683,10 +683,10 @@ def capture(board_path, normalized, *, clock=None, cancel_dir=None):
     try:
         problem, record = captured['problem'], captured['record']
     except KeyError as exc:
-        raise JobRefusal('native capture returned missing or invalid output') from exc
+        raise EnvironmentFailure('native-tool', 'native capture returned missing or invalid output') from exc
     if (not isinstance(problem, dict) or problem.get('schema') != INPUT_SCHEMA
             or not isinstance(record, dict) or record.get('schema') != 'agent-ee.placement-job-capture/1'):
-        raise JobRefusal('native capture returned missing or invalid output')
+        raise EnvironmentFailure('native-tool', 'native capture returned missing or invalid output')
     return problem, record
 
 
@@ -1708,13 +1708,15 @@ def run_job(config, job_dir, *, resume=False, executable=None):
         return _execute_job(config, job_dir, resume=resume, executable=executable, clock=clock,
                             report=report, ownership=ownership)
     except (JobRefusal, EnvironmentFailure) as exc:
-        if not ownership['established']:
+        if not ownership['established'] and not isinstance(exc, EnvironmentFailure):
             raise
         report.update(status='refused', reason=str(exc), phases=clock.phases,
                       elapsed_s=round(time.monotonic() - clock.start, 3))
         if isinstance(exc, EnvironmentFailure):
             report.update(failure_kind='environment', failing_stage=exc.stage)
         report.setdefault('attempt', None)
+        if not ownership['established']:
+            return report  # A foreign resume directory must remain byte-identical.
         if report['attempt'] is not None:
             write_json(Path(job_dir) / f'job-report-a{report["attempt"]}.json', report)
         write_json(Path(job_dir) / 'job-report.json', report)
@@ -2634,6 +2636,10 @@ def preflight(config, executable=None, *, clock=None, cancel_dir=None, identitie
     from .placement_runtime import PlanningProcessError
     try:
         return _preflight(config, executable, clock=clock, cancel_dir=cancel_dir, identities=identities)
+    except EnvironmentFailure as exc:
+        if exc.stage == 'runtime-preflight':
+            raise
+        raise EnvironmentFailure('runtime-preflight', f'runtime preflight failed: {exc}') from exc
     except (ImportError, OSError, PlanningProcessError) as exc:
         raise EnvironmentFailure('runtime-preflight', f'runtime preflight failed: {exc}') from exc
 
