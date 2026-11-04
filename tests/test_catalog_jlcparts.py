@@ -16,12 +16,13 @@ import threading
 import time
 import unittest
 import zipfile
+import zlib
 
 from agent_ee.catalog import capture_catalog, load_catalog, validate_source
 from agent_ee.catalog_feed import acquire_catalog, refresh_catalog, run_owned_fetch, source_manifests
 from agent_ee.catalog_identity import FORMAT as IDENTITY_FORMAT, SOURCE_SCHEMA as IDENTITY_SOURCE_SCHEMA
 from agent_ee.catalog_identity import capture_identity, validate_source as validate_identity_source
-from agent_ee.catalog_jlcparts import COMPONENT_COLUMNS, attributes, price1
+from agent_ee.catalog_jlcparts import COMPONENT_COLUMNS, attributes, check_archive, price1
 from agent_ee.part_selection import select_parts
 from agent_ee.storage import digest
 
@@ -288,6 +289,30 @@ class NativeCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unsupported split ZIP trailer'):
             capture_catalog(source, self.root, self.root / 'refused')
 
+    def test_member_that_expands_past_its_declared_size_is_refused(self):
+        # Review of 5704964d: the member declares 16,384 bytes with the CRC-32 of those bytes, but its
+        # stream expands further; zipfile's reader stopped at the declared size and capture kept rows.
+        source = self.source(layout='zip32')
+        database = (self.root / 'native.sqlite3').read_bytes()
+        self.split_archive(database + b'UNDECLARED TRAILING DATA' * 2000, member='cache.sqlite3', layout='zip32')
+        paths = [self.root / 'cache.z01', self.root / 'cache.zip']
+        whole = bytearray(b''.join(path.read_bytes() for path in paths))
+        central, local = whole.index(b'PK\x01\x02'), whole.index(b'PK\x03\x04')
+        for offset in (central + 16, local + 14):
+            struct.pack_into('<I', whole, offset, zlib.crc32(database))
+        for offset in (central + 24, local + 22):
+            struct.pack_into('<I', whole, offset, len(database))
+        split = paths[0].stat().st_size
+        paths[0].write_bytes(whole[:split])
+        paths[1].write_bytes(whole[split:])
+        for volume, path in zip(source['volumes'], paths):
+            volume.update(sha256=digest(path), size_bytes=path.stat().st_size)
+        with self.assertRaisesRegex(ValueError, 'native ZIP member expands past its declared size'):
+            check_archive(source['volumes'], self.root, self.root)
+        with self.assertRaisesRegex(ValueError, 'native ZIP member expands past its declared size'):
+            capture_catalog(source, self.root, self.root / 'captured')
+        self.assertFalse((self.root / 'captured').exists())
+
     def test_fetch_helper_runs_only_its_own_fetch_child(self):
         marker = self.root / 'launched'
         command = [sys.executable, '-c', f'open({str(marker)!r}, "w")']
@@ -417,13 +442,19 @@ class NativeCatalogTests(unittest.TestCase):
         tampered = bytes([files['cache.zip'][0] ^ 1]) + files['cache.zip'][1:]
         self.source(member='other.sqlite3', layout='zip32')
         renamed = {name: (self.root / name).read_bytes() for name in ('cache.z01', 'cache.zip')}
+        # Review of 5704964d: a wrong CRC-32 passed the refresh probe, which read only 16 bytes.
+        bad_crc = bytearray(files['cache.zip'])
+        central = bad_crc.index(b'PK\x01\x02')
+        struct.pack_into('<I', bad_crc, central + 16, struct.unpack_from('<I', bad_crc, central + 16)[0] ^ 1)
         for case, commit, error in (
                 ('bytes differ from the listed Git blob', {'files': files, 'served': {'cache.zip': tampered}},
                  (RuntimeError, 'catalog download failed')),
                 ('no final cache.zip volume', {'files': {'cache.z01': files['cache.z01']}},
                  (RuntimeError, 'catalog download failed')),
                 ('an archive capture cannot read', {'files': renamed},
-                 (ValueError, 'cannot be imported: unsupported or oversized native ZIP member'))):
+                 (ValueError, 'cannot be imported: unsupported or oversized native ZIP member')),
+                ('a member whose CRC-32 differs', {'files': {'cache.z01': files['cache.z01'], 'cache.zip': bytes(bad_crc)}},
+                 (ValueError, 'cannot be imported: native ZIP member CRC-32 differs from the central directory'))):
             with self.subTest(case), self.upstream() as (base, state):
                 state['commits']['c3' * 20] = dict(commit, date='2026-11-02T00:00:00Z')
                 state['head'] = 'c3' * 20
@@ -460,13 +491,16 @@ class NativeCatalogTests(unittest.TestCase):
                     ('manifests', {'source-manifest.json': cutoff, 'identity-source-manifest.json': cutoff},
                      'differs from its snapshot.json')):
                 with self.subTest(case):
-                    for name, edit in edits.items():
-                        self.assertNotEqual(edit(saved[name]), saved[name])
-                        (later / name).write_bytes(edit(saved[name]))
-                    with self.assertRaisesRegex(ValueError, message):
-                        self.refresh(base)
-                    for name in edits:
-                        (later / name).write_bytes(saved[name])
+                    try:
+                        for name, edit in edits.items():
+                            self.assertNotEqual(edit(saved[name]), saved[name])
+                            (later / name).write_bytes(edit(saved[name]))
+                        with self.assertRaisesRegex(ValueError, message):
+                            self.refresh(base)
+                    finally:
+                        # Restore even when the case fails, so one case cannot change the next.
+                        for name in edits:
+                            (later / name).write_bytes(saved[name])
 
     @contextmanager
     def server(self, source, mode='ok'):

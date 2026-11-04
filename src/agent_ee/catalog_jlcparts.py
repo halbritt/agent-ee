@@ -8,6 +8,7 @@ import sqlite3
 import struct
 import tempfile
 import zipfile
+import zlib
 
 from .catalog import normalize_row, strict_json
 from .storage import canonical, identity
@@ -110,35 +111,99 @@ def _member(archive):
     return entry
 
 
-def check_archive(volumes, root, work, profile=FORMAT):
-    """Refuse volumes capture cannot read, without expanding the member.
+def _expand(archive_path, entry, sink):
+    """Decode the member's raw compressed span through sink.
 
-    Joins and rewrites the volumes as capture does (sizes and SHA-256 checked first), then
-    requires the single cache.sqlite3 member and an SQLite header at its start. The
-    database's tables and columns are checked by capture itself."""
+    zipfile's reader stops at the declared size, so it cannot see a stream that expands past it
+    (review of 5704964d). This reads exactly the compressed span after the local header and
+    requires the DEFLATE stream to end there, the output to be exactly the declared size and its
+    CRC-32 to be the declared one; STORED data must be exactly that size."""
+    if entry.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+        raise ValueError('unsupported native ZIP compression')
+    size, crc = 0, 0
+
+    def take(out):
+        nonlocal size, crc
+        size += len(out)
+        if size > entry.file_size:
+            raise ValueError('native ZIP member expands past its declared size')
+        if size > MAX_EXPANDED_BYTES:
+            raise ValueError('expanded catalog exceeds capture limit')
+        crc = zlib.crc32(out, crc)
+        sink(out)
+
+    with open(archive_path, 'rb') as joined:
+        joined.seek(entry.header_offset)
+        header = joined.read(30)
+        if len(header) != 30 or header[:4] != b'PK\x03\x04':
+            raise ValueError('native ZIP member has no local header')
+        method, = struct.unpack_from('<H', header, 8)
+        name_length, extra_length = struct.unpack_from('<HH', header, 26)
+        if method != entry.compress_type or joined.read(name_length) != entry.orig_filename.encode():
+            raise ValueError('native ZIP local header differs from the central directory')
+        joined.seek(entry.header_offset + 30 + name_length + extra_length)
+        decoder = zlib.decompressobj(-15) if entry.compress_type == zipfile.ZIP_DEFLATED else None
+        remaining = entry.compress_size
+        try:
+            while remaining:
+                block = joined.read(min(1024**2, remaining))
+                if not block:
+                    raise ValueError('native ZIP member runs past the end of the archive')
+                remaining -= len(block)
+                if decoder is None:
+                    take(block)
+                    continue
+                while block:
+                    if decoder.eof:
+                        raise ValueError('native ZIP member has data after its end of stream')
+                    out = decoder.decompress(block, 1024**2)
+                    if not out and len(decoder.unconsumed_tail) >= len(block):
+                        raise ValueError('native ZIP member stream makes no progress')
+                    take(out)
+                    block = decoder.unconsumed_tail
+                if decoder.unused_data:
+                    raise ValueError('native ZIP member has data after its end of stream')
+            while decoder is not None and not decoder.eof and (out := decoder.decompress(b'', 1024**2)):
+                take(out)
+        except zlib.error as exc:
+            raise ValueError(f'native ZIP member stream is corrupt: {exc}') from exc
+    if decoder is not None and not decoder.eof:
+        raise ValueError('native ZIP member stream has no end')
+    if size != entry.file_size:
+        raise ValueError('truncated native ZIP member')
+    if crc != entry.CRC:
+        raise ValueError('native ZIP member CRC-32 differs from the central directory')
+
+
+def check_archive(volumes, root, work, profile=FORMAT):
+    """Refuse volumes capture cannot read: everything capture checks before the database.
+
+    Joins and rewrites the volumes as capture does (sizes and SHA-256 checked first), requires
+    the single cache.sqlite3 member, decodes its whole stream (exact end, size and CRC-32)
+    without keeping it, and requires an SQLite header at its start. The database's tables,
+    columns and rows, and any derived index size, are checked by capture itself."""
+    head = bytearray()
+
+    def sink(out):
+        if len(head) < 16:
+            head.extend(out[:16 - len(head)])
+
     with tempfile.TemporaryDirectory(prefix='.catalog-layout-', dir=work) as stage:
         joined = Path(stage) / 'joined.zip'
         reassemble(volumes, Path(root), joined, profile)
         with zipfile.ZipFile(joined) as archive:
             entry = _member(archive)
-            with archive.open(entry) as source:
-                if source.read(16) != b'SQLite format 3\x00':
-                    raise ValueError('native ZIP member is not an SQLite database')
+        _expand(joined, entry, sink)
+    if bytes(head) != b'SQLite format 3\x00':
+        raise ValueError('native ZIP member is not an SQLite database')
     return {'member': entry.filename, 'member_bytes': entry.file_size}
 
 
 def extract_database(archive_path, destination):
     with zipfile.ZipFile(archive_path) as archive:
         entry = _member(archive)
-        size = 0
-        with archive.open(entry) as source, destination.open('xb') as output:
-            while block := source.read(1024**2):
-                size += len(block)
-                if size > entry.file_size or size > MAX_EXPANDED_BYTES:
-                    raise ValueError('expanded catalog exceeds capture limit')
-                output.write(block)
-        if size != entry.file_size:
-            raise ValueError('truncated native ZIP member')
+    with destination.open('xb') as output:
+        _expand(archive_path, entry, output.write)
 
 
 def check_table(connection, table, required):

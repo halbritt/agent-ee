@@ -203,10 +203,13 @@ It resolves the `gh-pages` head through the GitHub API and reads that commit's
 `raw.githubusercontent.com` at that commit, so all volumes come from one commit
 even if the branch moves during the download. Each volume must have the size
 and Git blob ID that the commit's listing gives. Before publishing, the refresh
-joins the volumes as capture does and requires one `cache.sqlite3` member that
-starts as an SQLite database. An archive layout that capture cannot read is
-refused, and nothing is published; the database's tables and columns are
-checked by capture itself. The snapshot goes to
+runs capture's archive checks without keeping the database: it joins the
+volumes as capture does, requires one `cache.sqlite3` member, decodes its whole
+compressed stream to exactly the declared size with the declared CRC-32, and
+requires an SQLite header at its start. An archive that fails any of these is
+refused, and nothing is published. The probe does not check the database's
+tables, columns or rows, or the size of an index derived from it; capture
+does. The snapshot goes to
 `<cache>/jlcparts/<snapshot date>-<commit[:12]>/`. The cache is `--cache DIR`,
 else `$AGENT_EE_CATALOG_CACHE` (an absolute path), else
 `~/.cache/agent-ee/catalog`. The snapshot date is the UTC date of the commit.
@@ -296,8 +299,12 @@ record are on the last piece, and a single regular `cache.sqlite3` member
 beginning on disk zero. It reads both trailers jlcparts has produced: a ZIP64
 trailer, as in the 2026-09-14 snapshot, and a plain ZIP trailer, as in the
 2026-11-03 snapshot, whose 2,157,514,752-byte member fits ZIP's 32-bit fields.
-It translates split disk offsets, then delegates directory/decompression/CRC
-validation to Python's standard `zipfile` reader. No 7-Zip dependency, shell
+It translates split disk offsets and reads the central directory with Python's
+standard `zipfile` module. It then decodes the member's raw compressed span
+itself: the local header must match the central directory's method and name,
+the DEFLATE stream must end exactly at the end of the span, and the output must
+be exactly the declared size with the declared CRC-32. `zipfile`'s own reader
+stops at the declared size, so it cannot see a stream that expands past it. No 7-Zip dependency, shell
 extraction or archive repair is used. Alternate layouts, encrypted members,
 unsafe names, oversized expansion and CRC errors fail capture. Extraction files
 are removed on success and failure.
