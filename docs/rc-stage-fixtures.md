@@ -124,7 +124,9 @@ done
 ```
 
 The test regenerates every fixture byte and the generation receipt's sources
-and edits, checks the identity and geometry against the control, runs the six
+and edits. When the installed KiCad is not the release that receipt records, it
+fails with the steps to re-derive and record the fixtures. It also checks the
+identity and geometry against the control, runs the six
 checks per variant with sealed evidence, and routes a read-only capture of
 placed-unrouted through `routing_adapter.step`. The ticket's historical `krt`
 backend name is now the alias of the canonical `builtin` backend (AGENTEE-343).

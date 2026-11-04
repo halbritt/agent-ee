@@ -26,6 +26,26 @@ generator = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(generator)
 
 CONTROL_MM = {'J1': (100, 100), 'R1': (105, 100), 'C1': (110, 100)}
+# The KiCad release that derived the committed fixtures, as the generation receipt records it.
+VERSION_KEYS = ('kicad_cli_version', 'pcbnew_version')
+REDERIVE = (
+    'The installed KiCad ({installed}) is not the release recorded in '
+    'fixtures/rc/derived/receipts/generation/sources.json ({recorded}). Re-derive the fixtures with '
+    'the installed release and record it: in the image, run `PYTHONPATH=src python3 '
+    'fixtures/rc/derived/generate.py --out build/rc-derived`; compare build/rc-derived/fixtures/<variant> '
+    'with fixtures/rc/derived/<variant> and explain every changed byte as a KiCad release difference '
+    '(an unexplained change is a defect: stop); then commit the boards that changed and the top-level '
+    'files of build/rc-derived/generation as receipts/generation, and refresh every committed SHA-256 of '
+    'a changed file (git grep the old digests; fixtures/rc/PROVENANCE.md lists the boards).')
+
+
+def rederive_hint(recorded, derived):
+    """The re-derivation instruction when the installed KiCad differs from the recorded one, else None."""
+    moved = [key for key in VERSION_KEYS if recorded.get(key) != derived.get(key)]
+    if not moved:
+        return None
+    return REDERIVE.format(installed=', '.join(f'{key} {derived.get(key)}' for key in moved),
+                           recorded=', '.join(f'{key} {recorded.get(key)}' for key in moved))
 
 
 def positions_mm(variant):
@@ -78,14 +98,18 @@ class NativeDerivedFixtures(unittest.TestCase):
 
     def test_sandbox_derivation_reproduces_every_committed_fixture_byte(self):
         generated = generator.generate(self.root / 'generated')
+        work = generated.parent / 'generation'
+        recorded = json.loads((RECEIPT / 'sources.json').read_text())
+        derived = json.loads((work / 'sources.json').read_text())
+        # A KiCad release other than the recorded one always fails below (the sources differ),
+        # and each comparison's failure then says how to re-derive and record the fixtures.
+        hint = rederive_hint(recorded, derived)
         expected = json.loads((RECEIPT / 'fixture-hashes.json').read_text())
         actual = {str(p.relative_to(generated)): digest(p) for p in generated.rglob('*') if p.is_file()}
-        self.assertEqual(actual, expected)
-        work = generated.parent / 'generation'
+        self.assertEqual(actual, expected, hint)
         self.assertEqual(json.loads((work / 'edits.json').read_text()),
-                         json.loads((RECEIPT / 'edits.json').read_text()))
-        self.assertEqual(json.loads((work / 'sources.json').read_text()),
-                         json.loads((RECEIPT / 'sources.json').read_text()))
+                         json.loads((RECEIPT / 'edits.json').read_text()), hint)
+        self.assertEqual(derived, recorded, hint)
         record = json.loads((work / 'execution.json').read_text())
         self.assertEqual((record['execution'], record['exit_code']), ('ok', 0))
         self.assertIn('--unshare-net', record['sandbox_argv'])

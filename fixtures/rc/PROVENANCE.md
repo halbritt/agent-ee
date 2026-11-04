@@ -93,8 +93,11 @@ recorded by the AGENTEE-14 lane, not here; `docs/file-origins.json` classifies
 `derived/` as T1 + T6 like `control/`, so publication of the embedded stock
 footprint data (T6) is still governed by that origin.
 
-`derived/generate.py` runs pcbnew 10.0.7 in the existing networkless executor
-with `control/` mounted read-only. For each variant it loads
+`derived/generate.py` runs the installed pcbnew in the existing networkless
+executor with `control/` mounted read-only, and the generation receipt records
+its release. The boards were first derived with KiCad 10.0.7. KiCad 10.0.8 in
+the image reproduced every derived file byte for byte, and the receipt records
+that run. For each variant it loads
 `control/rc_filter.kicad_pcb`, applies one edit set and saves the board with
 `SaveBoard(..., skip settings)`; the schematic, project and both library tables
 are byte copies of the control. Footprint, pad and zone UUIDs, values, nets and
@@ -112,7 +115,9 @@ records the executor argv (including `--unshare-net`), exit, tool versions, the
 SHA-256 of the generator and of every control file read (`sources.json`), the
 removed track/via and zone UUIDs and moves (`edits.json`) and every generated
 file's SHA-256 (`fixture-hashes.json`). `tests/test_rc_derived.py` regenerates
-every byte. Scopes, requirements and expectations were authored before any
+every byte. When the installed KiCad is not the recorded release, the test
+fails and says how to re-derive and record the fixtures.
+Scopes, requirements and expectations were authored before any
 check ran on these boards. See
 [stage fixture qualification](../../docs/rc-stage-fixtures.md#control-derived-variants).
 

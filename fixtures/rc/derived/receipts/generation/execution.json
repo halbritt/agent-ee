@@ -6,8 +6,8 @@
     "--native"
   ],
   "console": "console.log",
-  "console_sha256": "6d130a17e38b06bb5685ce232e72da0a8ba6da1eb8efbe9fdbea2c5778fac3a9",
-  "duration_s": 0.992,
+  "console_sha256": "5c39192afccbedd8ffb9813385cb68217692b7cbd0f5cf29850e28f2b44da649",
+  "duration_s": 0.434,
   "execution": "ok",
   "exit_code": 0,
   "sandbox_argv": [
@@ -46,13 +46,13 @@
     "--dir",
     "/run",
     "--ro-bind",
-    "/home/halbritt/.cache/agent-worktrees/agent-ee/ee103c-rc-derivatives/fixtures/rc/derived",
+    "/opt/agent-ee/fixtures/rc/derived",
     "/candidate",
     "--ro-bind",
-    "/home/halbritt/.cache/agent-worktrees/agent-ee/ee103c-rc-derivatives/src",
+    "/opt/agent-ee/src",
     "/app",
     "--bind",
-    "/tmp/agent-ee-burndown-20261017/workers/ee103c-rc-derivatives/scratch/gen1/generation",
+    "/opt/agent-ee/build/rc-derived/generation",
     "/work",
     "--chdir",
     "/work",
@@ -83,7 +83,7 @@
     "/candidate/stock/template",
     "--unshare-net",
     "--ro-bind",
-    "/home/halbritt/.cache/agent-worktrees/agent-ee/ee103c-rc-derivatives/fixtures/rc/control",
+    "/opt/agent-ee/fixtures/rc/control",
     "/control",
     "--",
     "/usr/bin/python3",
@@ -91,7 +91,7 @@
     "/candidate/generate.py",
     "--native"
   ],
-  "stderr_sha256": "6d130a17e38b06bb5685ce232e72da0a8ba6da1eb8efbe9fdbea2c5778fac3a9",
+  "stderr_sha256": "5c39192afccbedd8ffb9813385cb68217692b7cbd0f5cf29850e28f2b44da649",
   "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "timeout_s": 120
 }

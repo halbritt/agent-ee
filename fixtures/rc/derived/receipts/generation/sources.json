@@ -1,6 +1,6 @@
 {
-  "kicad_cli_version": "10.0.7",
-  "pcbnew_version": "10.0.7",
+  "kicad_cli_version": "10.0.8",
+  "pcbnew_version": "10.0.8",
   "purpose": "AGENTEE-103 stage-boundary derivatives of fixtures/rc/control (origin T1).",
   "sources": {
     "control/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
