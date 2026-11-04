@@ -100,8 +100,11 @@ def transform(name, payload, transforms):
 
 REGEX_BEFORE = set('(,=:[!&|?{};+-*%<>~^')
 # Keywords after which an expression starts, so a slash begins a regular expression (review of
-# 5704964d: `return /this.enableDamping = gone/` was kept as code).
-KEYWORDS_BEFORE_REGEX = frozenset(('return', 'typeof', 'case', 'do', 'else', 'in', 'of', 'new', 'delete',
+# 5704964d: `return /this.enableDamping = gone/` was kept as code). Only reserved words: `of` is
+# left out because it is also an ordinary identifier (`of / 2` divides; review of 2ac5c4f4), and
+# a regular expression right after `for (x of` is not worth that error. `yield` and `await` are
+# reserved in module code, which the vendored files are.
+KEYWORDS_BEFORE_REGEX = frozenset(('return', 'typeof', 'case', 'do', 'else', 'in', 'new', 'delete',
                                    'void', 'throw', 'instanceof', 'yield', 'await'))
 
 
@@ -112,7 +115,8 @@ def code(text, strings=True):
     A slash starts a regular expression after an operator, an opening bracket, a keyword that
     starts an expression (return, typeof, ...; not a property of that name such as x.return) or
     the start of the text, as in JavaScript's own grammar for the common cases; after an
-    identifier, a literal or a closing bracket it divides. Template substitutions are treated as
+    identifier, a literal or a closing bracket it divides. Known limit: a regular expression
+    right after a closing parenthesis, as in `if (x) /re/.test(y)`, is read as division. Template substitutions are treated as
     part of the literal."""
     out, i, n, previous, word, dotted = [], 0, len(text), '', '', False
     while i < n:

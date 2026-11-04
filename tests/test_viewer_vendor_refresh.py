@@ -120,8 +120,17 @@ class RefreshTests(unittest.TestCase):
             with self.subTest(keyword):
                 text = f'function f() {{ {keyword} /this.enableDamping = gone/; }}'
                 self.assertNotIn('enableDamping', refresh_viewer_vendor.code(text, strings=False))
-        division = 'a = b / c / d; e = (f) / g; h = i[0] / 2; j = x.return / 2; k = returned / 3;'
+        division = 'a = b / c / d; e = (f) / g; h = i[0] / 2; j = x.return / 2; k = returned / 3; l = of / 2;'
         self.assertEqual(refresh_viewer_vendor.code(division, strings=False), division)
+
+    def test_identifier_named_of_still_divides(self):
+        # Review of 2ac5c4f4: `of` is an identifier outside for...of, and `of / 2` was read as a
+        # regex that swallowed the assignment after it, so unchanged files were refused.
+        self.edit('OrbitControls.js', 'this.enableDamping = false;',
+                  'const of = 4; const ratio = of / 2; this.enableDamping = false;')
+        report, status = self.refresh()
+        self.assertEqual((status, report['problems']), ('written', []))
+        self.assertEqual(report['api']['controls_members']['enableDamping'], 'module')
 
     def test_missing_source_is_refused_with_its_url(self):
         root = Path(tempfile.mkdtemp())

@@ -149,7 +149,12 @@ transforms. It refuses (exit 1) and writes nothing in these cases:
 These checks read code only: comments, string literals and regular-expression
 literals are removed first. They are lexical checks, not a JavaScript parser, and
 they show that the definitions are still there, not that they behave the same;
-the viewer tests and a browser check cover behaviour.
+the viewer tests and a browser check cover behaviour. A slash starts a
+regular expression after an operator, an opening bracket or one of the reserved
+words `return`, `typeof`, `case`, `do`, `else`, `in`, `new`, `delete`, `void`,
+`throw`, `instanceof`, `yield` and `await`. One known limit remains: a regular
+expression right after a closing parenthesis, as in `if (x) /re/.test(y)`, is
+read as division, so its text counts as code.
 
 After a refresh, run the viewer tests and commit the files and manifest
 together.
