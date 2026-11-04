@@ -382,7 +382,7 @@ class FinalArtworkBlockProofTests(unittest.TestCase):
     def test_fresh_native_child_failure_never_seals_a_final_group_proof(self):
         from agent_ee import block_package, native_run
         with native_run.using(native_run.Recorded(lambda call:native_run.Outcome(exit_code=2,stderr=b'CPU failure control'))):
-            with self.assertRaisesRegex(placement_job.JobRefusal,'native block contract check failed'):
+            with self.assertRaisesRegex(placement_job.EnvironmentFailure,'native block contract check failed'):
                 block_package.produce(self.root,self.candidate,self.artwork.directory,self.scope,self.plan)
         self.assertFalse((self.artwork.directory/block_package.PROOF).exists())
 
