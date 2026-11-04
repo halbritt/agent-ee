@@ -20,6 +20,7 @@ import contextlib
 import importlib._bootstrap_external
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -286,10 +287,179 @@ class BoardRouteCacheTest(unittest.TestCase):
             done = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=120)
             self.assertNotIn('UNRECORDED_CACHE_EXECUTED', done.stderr)
             self.assertTrue(cache.is_file())
-            # The same command without the private prefix runs the cached code: the hazard guarded.
+            # Either guard alone keeps the cache out: the interpreter flags without the private prefix,
+            # and the private prefix without the flags.
             exposed = {k: v for k, v in env.items() if k != 'PYTHONPYCACHEPREFIX'}
-            done = subprocess.run(argv, env=exposed, capture_output=True, text=True, timeout=120)
+            bare = [arg for arg in argv if arg not in attempt.ROUTER_PYTHON_FLAGS[1:]]
+            for run_argv, run_env in ((argv, exposed), (bare, env)):
+                done = subprocess.run(run_argv, env=run_env, capture_output=True, text=True, timeout=120)
+                self.assertNotIn('UNRECORDED_CACHE_EXECUTED', done.stderr)
+                shutil.rmtree(root / 'out', ignore_errors=True)
+            # The same command without either runs the cached code: the hazard guarded.
+            done = subprocess.run(bare, env=exposed, capture_output=True, text=True, timeout=120)
             self.assertIn('UNRECORDED_CACHE_EXECUTED', done.stderr)
+
+
+class RouterCommandCacheTest(unittest.TestCase):
+    """Every command that runs Python from the router checkout carries attempt.ROUTER_PYTHON_FLAGS, so
+    bytecode cached in the checkout never runs (review of fbcc5eee, finding 1: the stackup, delay and
+    post-route checker helpers ran it while preflight reported the same clean commit and digest)."""
+
+    FLAGS = list(attempt.ROUTER_PYTHON_FLAGS)
+    # Every router command builder of routing_adapter, called with stand-in arguments. A new *_argv
+    # builder fails test_every_router_command_carries_the_flags until it is listed here.
+    BUILDERS = {
+        'board_route_argv': lambda: routing_adapter.board_route_argv('/k', '/staged', '/out', budget_s=5),
+        'board_retry_argv': lambda: routing_adapter.board_retry_argv(
+            routing_adapter.board_route_argv('/k', '/staged', '/out', budget_s=5), '/retry', 5,
+            {'kind': 'thermal_corridors', 'pads': []}, [], '/b.kicad_pcb')[0],
+        'spokes_argv': lambda: routing_adapter.spokes_argv('/k', '/run'),
+        'preflight_stackup_argv': lambda: routing_adapter.preflight_stackup_argv('/k', '/b.kicad_pcb', 'F.Cu'),
+        'preflight_delay_argv': lambda: routing_adapter.preflight_delay_argv('/k', '/b.kicad_pcb', ['N']),
+        **{f'post_route_checker_argv[{kind}]': (lambda kind=kind: routing_adapter.post_route_checker_argv(
+            '/k', kind, '/b.kicad_pcb', '/request.json', '/result.json'))
+           for kind in ('pair_impedance', 'length_groups', 'ac_matching')},
+    }
+
+    def commands(self):
+        from agent_ee import pose_milp
+        return {**{name: build() for name, build in self.BUILDERS.items()},
+                'pose_milp.child_argv': pose_milp.child_argv('/k')}
+
+    def test_every_router_command_carries_the_flags(self):
+        builders = {name for name, value in vars(routing_adapter).items()
+                    if name.endswith('_argv') and not name.startswith('_') and callable(value)}
+        self.assertEqual(builders, {name.split('[')[0] for name in self.BUILDERS})
+        for name, argv in self.commands().items():
+            with self.subTest(name):
+                # The pose solver runs agent-ee's module with the router's own venv interpreter, isolated.
+                self.assertEqual(argv[1:5] if name.startswith('pose_milp') else argv[1:4],
+                                 ['-I', *self.FLAGS] if name.startswith('pose_milp') else self.FLAGS)
+                self.assertTrue(routing_adapter.is_router_command(argv))
+        for argv in (['kicad-cli', 'version'], [sys.executable, '-B', '-m', 'agent_ee.final_planes'],
+                     [sys.executable, '-I', '-B', routing_adapter.ADAPTER_AT]):
+            self.assertFalse(routing_adapter.is_router_command(argv), argv)
+
+    def test_no_router_command_is_written_without_router_python(self):
+        """A list that passes -B to an interpreter in these modules is the flags themselves, a command
+        that starts from them, the sandboxed attempt's router run under its own private prefix, the
+        adapter step (the attempt script, which isolates the router it runs), the attempt's own KiCad
+        measurement script or an agent-ee module. A hand-written router command fails here; router
+        commands come from the builders above."""
+        import ast
+        allowed = ('ROUTER_PYTHON_FLAGS', 'pycache_prefix=', 'ADAPTER_AT', 'MEASURE_REFERENCE', 'agent_ee.')
+        for module in ('routing_adapter', 'pose_milp', 'placement_job', 'kicad_route_attempt'):
+            path = ROOT / f'src/agent_ee/{module}.py'
+            for node in ast.walk(ast.parse(path.read_text())):
+                if not isinstance(node, (ast.List, ast.Tuple)):
+                    continue
+                if any(isinstance(e, ast.Constant) and e.value == '-B' for e in node.elts):
+                    words = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+                    words |= {n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+                    with self.subTest(module=module, line=node.lineno):
+                        self.assertTrue(any(word.startswith(allowed) for word in words),
+                                        f'{module}.py:{node.lineno} passes -B without ROUTER_PYTHON_FLAGS')
+
+    def test_the_job_runs_every_router_command_with_a_private_prefix(self):
+        """placement_job._run_child gives each router command routing_adapter.router_env, whoever
+        builds the command and whatever environment the caller passes or inherits."""
+        from agent_ee import native_run
+        from agent_ee import placement_job as job
+        seen = []
+
+        def run(intent, **_):
+            seen.append(intent.env)
+            return native_run.Execution({'execution': 'completed'}, returncode=0)
+
+        home = Path(tempfile.mkdtemp(prefix='agent-ee-router-env-'))
+        self.addCleanup(shutil.rmtree, home, True)
+        board_env = routing_adapter.board_route_env('/k', home)
+        with patch.object(native_run, 'run', run), \
+                patch.dict('os.environ', {'PYTHONPYCACHEPREFIX': str(home / 'shared'), 'AGENT_EE_PROBE': '1'}):
+            for name, argv in self.commands().items():
+                with self.subTest(name):
+                    job._run_child(argv, clock=job.Clock(60))
+                    self.assertEqual(seen[-1]['PYTHONPYCACHEPREFIX'], attempt.NO_PYCACHE)
+                    self.assertEqual(seen[-1]['AGENT_EE_PROBE'], '1')
+                    job._run_child(argv, clock=job.Clock(60), env={'PATH': '/usr/bin:/bin'})
+                    self.assertEqual(seen[-1], {'PATH': '/usr/bin:/bin', 'PYTHONPYCACHEPREFIX': attempt.NO_PYCACHE})
+                    job._run_child(argv, clock=job.Clock(60), env=board_env)
+                    self.assertEqual(seen[-1], board_env)
+            job._run_child(['kicad-cli', 'version'], clock=job.Clock(60))
+            self.assertIsNone(seen[-1])
+
+    def test_python_processes_a_router_command_starts_never_run_cached_bytecode(self):
+        """The delay helper starts KiCad's interpreter on native_delay.py, and -X options do not pass to
+        child processes: the job's environment for router commands is what keeps them off the cache."""
+        from agent_ee import placement_job as job
+        with tempfile.TemporaryDirectory(prefix='agent-ee-router-child-') as temp:
+            root = Path(temp)
+            package = root / 'src/probe_pkg'
+            package.mkdir(parents=True)
+            (package / '__init__.py').write_text('')
+            cache = package / '__pycache__' / f'__init__.{sys.implementation.cache_tag}.pyc'
+            cache.parent.mkdir()
+            code = compile("import sys; print('UNRECORDED_CHILD_CACHE_EXECUTED', file=sys.stderr)",
+                           str(package / '__init__.py'), 'exec')
+            cache.write_bytes(importlib._bootstrap_external._code_to_hash_pyc(code, b'\0' * 8, checked=False))
+            parent = root / 'src/start_child.py'
+            parent.write_text('import subprocess, sys\n'
+                              "subprocess.run([sys.executable, '-c', 'import probe_pkg'], cwd=sys.argv[1], check=True)\n")
+            argv = routing_adapter.router_python(str(parent), str(root / 'src'), python=sys.executable)
+            with patch.dict('os.environ'):
+                os.environ.pop('PYTHONPYCACHEPREFIX', None)
+                os.environ.pop('PYTHONDONTWRITEBYTECODE', None)
+                done = job._run_child(argv, clock=job.Clock(60))
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertNotIn(b'UNRECORDED_CHILD_CACHE_EXECUTED', done.stderr)
+                # The same command run with the caller's environment: its flags do not reach the child.
+                done = subprocess.run(argv, capture_output=True, timeout=60)
+                self.assertIn(b'UNRECORDED_CHILD_CACHE_EXECUTED', done.stderr)
+
+    def test_router_helper_commands_never_run_cached_bytecode(self):
+        """The reviewer's probe (kicad-route-review/r2/probes-export/review_helpers_clean.py) on a clean
+        copy of the configured router: stackup, delay and the three post-route checkers, run as the
+        placement job runs them (_run_child, no environment of their own)."""
+        from agent_ee import placement_job as job
+        from tests.test_kicad_route_generations import copy_tool
+        from tests.toolchain import require_kicad_route
+        configured = require_kicad_route()
+        with tempfile.TemporaryDirectory(prefix='agent-ee-route-helper-cache-') as temp:
+            root = Path(temp)
+            checkout = copy_tool(configured, root / 'router')
+            shutil.copytree(configured / '.venv-krt', checkout / '.venv-krt', symlinks=True)
+            shutil.copyfile(configured / 'manifest.json', checkout / 'manifest.json')
+            before = routing_adapter.preflight(checkout)
+
+            def poison(source):
+                cache = source.parent / '__pycache__' / f'{source.stem}.{sys.implementation.cache_tag}.pyc'
+                cache.parent.mkdir(exist_ok=True)
+                code = compile("import sys; print('UNRECORDED_HELPER_CACHE_EXECUTED', file=sys.stderr); "
+                               "raise SystemExit(0)", str(source), 'exec')
+                cache.write_bytes(importlib._bootstrap_external._code_to_hash_pyc(code, b'\0' * 8, checked=False))
+            poison(checkout / 'src/kicad_route/__init__.py')
+            poison(checkout / 'src/kicad_route/router/py_router/native_delay.py')
+            after = routing_adapter.preflight(checkout)
+            self.assertEqual((before['problems'], after['problems']), ([], []))
+            self.assertEqual({k: after[k] for k in attempt.CHECKOUT_KEYS}, {k: before[k] for k in attempt.CHECKOUT_KEYS})
+            board = ROOT / 'fixtures/rc/control/rc_filter.kicad_pcb'
+            request = root / 'request.json'
+            request.write_text('{}')
+            commands = [('stackup', routing_adapter.preflight_stackup_argv(checkout, board, 'F.Cu')),
+                        ('delay', routing_adapter.preflight_delay_argv(checkout, board, ['GND']))]
+            commands += [(kind, routing_adapter.post_route_checker_argv(checkout, kind, board, request,
+                                                                        root / f'{kind}.json'))
+                         for kind in ('pair_impedance', 'length_groups', 'ac_matching')]
+            with patch.dict('os.environ'):
+                os.environ.pop('PYTHONPYCACHEPREFIX', None)
+                for name, argv in commands:
+                    with self.subTest(name):
+                        done = job._run_child(argv, clock=job.Clock(60))
+                        self.assertNotIn('UNRECORDED_HELPER_CACHE_EXECUTED', done.stderr.decode(errors='replace'))
+                        # Without the flags the same command runs the planted cache: the hazard guarded.
+                        exposed = [arg for arg in argv if arg not in ('-X', 'pycache_prefix=/dev/null')]
+                        done = job._run_child(exposed, clock=job.Clock(60))
+                        self.assertIn('UNRECORDED_HELPER_CACHE_EXECUTED', done.stderr.decode(errors='replace'))
 
 
 class CampaignContinuationTest(unittest.TestCase):

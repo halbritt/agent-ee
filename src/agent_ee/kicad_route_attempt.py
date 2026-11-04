@@ -51,6 +51,16 @@ GIT_ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'LC_ALL': 'C', 'GIT_
            'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
 # The checkout record every report holds in `tool` (checkout_record).
 CHECKOUT_KEYS = ('commit', 'clean', 'code_sha256', 'code_files')
+# A bytecode cache prefix that can hold no bytecode: nothing can be created under a device file.
+NO_PYCACHE = '/dev/null'
+# The interpreter flags of every command that runs Python from a kicad-route checkout or its
+# environment outside the sandboxed attempt (routing_adapter.router_python, pose_milp.child_argv):
+# -B stops writing bytecode, and a cache prefix that can hold none stops Python from reading bytecode
+# cached beside the checkout's sources, which the recorded code digest (code_files) excludes. An
+# -X option overrides any inherited PYTHONPYCACHEPREFIX, so no caller's environment can undo it.
+# Python processes such a command starts inherit the environment but not -X options, so the
+# command's environment carries a private prefix as well (routing_adapter.router_env).
+ROUTER_PYTHON_FLAGS = ('-B', '-X', f'pycache_prefix={NO_PYCACHE}')
 
 REPORT_SCHEMA = 'agent-ee.kicad-route-attempt/1'
 # Every report has exactly these keys, whatever the outcome.
@@ -1427,10 +1437,11 @@ print(json.dumps(problems))
 '''
     try:
         # -B still reads caches. /dev/null cannot hold ignored bytecode.
-        result = subprocess.run([PYTHON, '-I', '-B', '-X', 'pycache_prefix=/dev/null',
+        result = subprocess.run([PYTHON, '-I', *ROUTER_PYTHON_FLAGS,
                                  '-c', script, str(checkout), str(state), mounted_at, GENERATION.pattern],
                                 capture_output=True, text=True, timeout=60,
-                                env={'PATH': '/usr/bin:/bin', 'PYTHONDONTWRITEBYTECODE': '1'})
+                                env={'PATH': '/usr/bin:/bin', 'PYTHONDONTWRITEBYTECODE': '1',
+                                     'PYTHONPYCACHEPREFIX': NO_PYCACHE})
         if result.returncode:
             return ['installed engine verification failed: ' + result.stderr.strip()[-2000:]]
         problems = json.loads(result.stdout)

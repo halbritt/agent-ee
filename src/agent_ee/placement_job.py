@@ -88,8 +88,12 @@ def _run_child(argv, *, clock, cancel_dir=None, input_bytes=b'', on_line=None,
     stops and reaps the group before JobStopped('deadline'|'cancelled') propagates. stdout/stderr,
     when given, receive the streams live; stdout consumed by on_line is not kept. Returns what
     subprocess.run would: stdout is empty when it went to a file or to on_line, and stderr is
-    always kept.
+    always kept. A command that runs Python from the router checkout (routing_adapter.is_router_command)
+    runs with routing_adapter.router_env, whoever builds it.
     """
+    from . import routing_adapter
+    if routing_adapter.is_router_command(argv):
+        env = routing_adapter.router_env(env)
     _check_stop(clock, cancel_dir)
     intent = native_run.Intent('placement_child', argv, timeout=clock.remaining(), isolation='host',
                                stdin=input_bytes or None, env=env, cwd=None if cwd is None else str(cwd))

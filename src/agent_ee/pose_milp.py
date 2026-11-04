@@ -141,8 +141,9 @@ def child_argv(checkout):
     legacy = sys.modules.get('agent_ee.acquisition.placement') or sys.modules.get('agent_ee.acquisition_placement')
     if legacy is not None and getattr(legacy, 'child_argv', None) != child_argv and hasattr(legacy, 'child_argv'):
         return legacy.child_argv(checkout)
+    from .kicad_route_attempt import ROUTER_PYTHON_FLAGS
     interpreter = Path(checkout) / '.venv-krt/bin/python'
-    return [str(interpreter), '-I', '-B', '-c',
+    return [str(interpreter), '-I', *ROUTER_PYTHON_FLAGS, '-c',
             'import sys; sys.path.insert(0, sys.argv[1]); '
             'from agent_ee.pose_milp import main; main()',
             str(Path(__file__).resolve().parent.parent)]

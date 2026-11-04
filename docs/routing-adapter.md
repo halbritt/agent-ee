@@ -48,12 +48,22 @@ The adapter checks the tool as well as its reports:
   read-only checkout is never written, and with the repository's file-system
   monitor and hooks disabled. A modified, staged or untracked file that is not
   ignored, such as a `sitecustomize.py`, makes the tree dirty. Ignored files
-  (installed state, `__pycache__`) do not, and are never executed: both the
-  sandboxed attempt (`PYTHONPYCACHEPREFIX` under `/work`) and the placement
-  job's board route and spokes diagnostic (`PYTHONPYCACHEPREFIX` under the
-  route's private home, `board_route_env`) run kicad-route with `-B` and a
-  private, empty cache prefix, so bytecode cached in the checkout, which the
-  code digest excludes, is never read or written.
+  do not: the installed state, which the installed-engine check verifies
+  against the state manifest, and bytecode caches (`__pycache__`), which no
+  command reads. Every command that runs Python from the checkout passes `-B`
+  and a cache prefix that holds none of them, and its environment names such a
+  prefix too, for the Python processes the command starts, so bytecode cached
+  in the checkout, which the code digest excludes, is never read or written:
+  - the attempt script runs kicad-route in the sandbox with
+    `PYTHONPYCACHEPREFIX` and `-X pycache_prefix` under `/work`, and its
+    installed-engine check, on the host and in the sandbox, with `/dev/null`;
+  - every other router command, the board route and its retries, the spokes
+    diagnostic, the stackup and delay preflights, the three post-route
+    checkers and the pose solver, starts with `-B -X pycache_prefix=/dev/null`
+    (`routing_adapter.router_python`). The placement job's child runner gives
+    each such command `PYTHONPYCACHEPREFIX=/dev/null`, unless the command's own
+    environment names a private, empty directory (`board_route_env`, under the
+    route's private home).
 - A link or special file under `bin/` or `src/` is refused.
 - Any refusal stops the step before the router runs. Nothing updates or
   repairs the external checkout.

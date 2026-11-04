@@ -870,15 +870,43 @@ def validate_router_options(router_config):
             'pair_layers': pair_layers, 'pair_impedance': impedance, 'intra_pair_match': matching}
 
 
+def router_python(*args, python=None):
+    """The command for Python code from a kicad-route checkout: the interpreter (attempt.PYTHON unless
+    python is given), attempt.ROUTER_PYTHON_FLAGS, then args. Every router command this module builds
+    starts here, so bytecode cached in the checkout never runs whatever environment runs the command."""
+    return [python or attempt.PYTHON, *attempt.ROUTER_PYTHON_FLAGS, *args]
+
+
+def is_router_command(argv):
+    """Whether argv runs Python with attempt.ROUTER_PYTHON_FLAGS: a router_python command, or one that
+    puts -I before the flags (pose_milp.child_argv)."""
+    flags = list(attempt.ROUTER_PYTHON_FLAGS)
+    head = [str(arg) for arg in argv[1:2 + len(flags)]]
+    return head[:len(flags)] == flags or head == ['-I', *flags]
+
+
+def router_env(env=None):
+    """The environment of a router command. The flags keep the interpreter the command starts off
+    cached bytecode; the Python processes it starts in turn (the delay helper starts KiCad's
+    interpreter on native_delay.py, the board route its workers) inherit the environment but not -X
+    options, so the environment names a private prefix too. With env None the result is os.environ with
+    PYTHONPYCACHEPREFIX replaced by one that holds no bytecode, since the caller's own prefix may be
+    shared; an explicit env keeps the private prefix it names (board_route_env) and gets that one
+    otherwise. placement_job._run_child applies this to every command is_router_command accepts."""
+    if env is None:
+        return {**os.environ, 'PYTHONPYCACHEPREFIX': attempt.NO_PYCACHE}
+    return dict(env) if env.get('PYTHONPYCACHEPREFIX') else {**env, 'PYTHONPYCACHEPREFIX': attempt.NO_PYCACHE}
+
+
 def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owned_copper=False, budget_s,
                      grid_step_mm=None, pair_layers=None, pair_impedance=None, intra_pair_match=None,
                      bus=None, length_match=None, ac_match=None):
     """Build the kicad-route CLI command for board-only / schematic-optional invocations."""
-    argv = [attempt.PYTHON, '-B', str(Path(checkout) / 'bin' / 'kicad-route'), 'run', '--out', str(out_dir),
-            '--json', '--backend', attempt.CLI_BACKEND_NAMES['builtin'], '--dir', str(staged_dir),
-            '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', design_name,
-            '--label', 'placement-job', '--protect', 'locked' if owned_copper else 'existing',
-            '--budget', str(int(budget_s)), '--diff-pairs', 'auto']
+    argv = router_python(str(Path(checkout) / 'bin' / 'kicad-route'), 'run', '--out', str(out_dir),
+                         '--json', '--backend', attempt.CLI_BACKEND_NAMES['builtin'], '--dir', str(staged_dir),
+                         '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', design_name,
+                         '--label', 'placement-job', '--protect', 'locked' if owned_copper else 'existing',
+                         '--budget', str(int(budget_s)), '--diff-pairs', 'auto')
     if grid_step_mm is not None:
         argv += ['--grid-step', str(grid_step_mm)]
     if pair_layers is not None:
@@ -943,7 +971,7 @@ def board_retry_argv(argv, retry_dir, budget_s, feedback, pads, board_path):
 
 def spokes_argv(checkout, run_dir):
     """Build the kicad-route spokes diagnostic command."""
-    return [attempt.PYTHON, '-B', str(Path(checkout) / 'bin/kicad-route'), 'spokes', str(run_dir)]
+    return router_python(str(Path(checkout) / 'bin/kicad-route'), 'spokes', str(run_dir))
 
 
 def bind_board_attempt(route_dir, argv, exit_code):
@@ -978,21 +1006,21 @@ def bind_board_attempt(route_dir, argv, exit_code):
 def preflight_stackup_argv(checkout, board_path, layer, *, python=None):
     """Build the kicad-route pair-impedance stackup preflight command."""
     import sys
-    return [python or sys.executable, '-B', '-c',
-            'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); '
-            'from kicad_route.pair_impedance import model; model(Path(sys.argv[2]), sys.argv[3])',
-            str(Path(checkout) / 'src'), str(board_path), layer]
+    return router_python('-c',
+                         'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); '
+                         'from kicad_route.pair_impedance import model; model(Path(sys.argv[2]), sys.argv[3])',
+                         str(Path(checkout) / 'src'), str(board_path), layer, python=python or sys.executable)
 
 
 def preflight_delay_argv(checkout, board_path, nets, *, python=None):
     """Build the kicad-route native delay model preflight command."""
     import sys
-    return [python or sys.executable, '-B', '-c',
-            'import json,sys; sys.path.insert(0, sys.argv[1]); '
-            'from native_delay import profiles; '
-            'profiles(sys.argv[2], json.loads(sys.argv[3]), required=True)',
-            str(Path(checkout) / 'src/kicad_route/router/py_router'),
-            str(board_path), json.dumps(sorted(nets))]
+    return router_python('-c',
+                         'import json,sys; sys.path.insert(0, sys.argv[1]); '
+                         'from native_delay import profiles; '
+                         'profiles(sys.argv[2], json.loads(sys.argv[3]), required=True)',
+                         str(Path(checkout) / 'src/kicad_route/router/py_router'),
+                         str(board_path), json.dumps(sorted(nets)), python=python or sys.executable)
 
 
 def post_route_checker_argv(checkout, kind, board_path, request_path, result_path, *, python=None):
@@ -1001,7 +1029,8 @@ def post_route_checker_argv(checkout, kind, board_path, request_path, result_pat
     scripts = {'pair_impedance': 'pair_impedance.py', 'length_groups': 'length_groups.py',
                'ac_matching': 'ac_matching.py'}
     checker = Path(checkout) / 'src/kicad_route' / scripts[kind]
-    argv = [python or sys.executable, '-B', str(checker), str(board_path), str(request_path), str(result_path)]
+    argv = router_python(str(checker), str(board_path), str(request_path), str(result_path),
+                         python=python or sys.executable)
     if kind == 'pair_impedance':
         argv.append('--check')
     return argv
