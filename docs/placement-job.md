@@ -682,7 +682,7 @@ exits nonzero. Refusal never replaces the incumbent or diagnostic board.
 Runtime/tool failures also retain status `refused`, with
 `failure_kind: environment` and a `failing_stage` (`runtime-preflight`,
 `routing-preflight`, `placement-planner`, `native-tool` or `routing`). These cover runtime readiness
-and identity refusals, missing native programs, native signal crashes, router
+and identity refusals, missing native programs, native signal crashes, DRC execution/report failures, router
 process failures and invalid/missing router output. Routing trials stop at the
 first such failure. Design input refusals, placement infeasibility, locality
 defects and verification findings do not receive this classification.

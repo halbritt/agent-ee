@@ -664,9 +664,9 @@ def _native_read(board_path, command, request, *, clock=None, cancel_dir=None):
     try:
         captured = json.loads(done.stdout)
     except (ValueError, TypeError) as exc:
-        raise JobRefusal(f'native {label} returned missing or invalid output') from exc
+        raise EnvironmentFailure('native-tool', f'native {label} returned missing or invalid output') from exc
     if not isinstance(captured, dict):
-        raise JobRefusal(f'native {label} returned missing or invalid output')
+        raise EnvironmentFailure('native-tool', f'native {label} returned missing or invalid output')
     if [p.read_bytes() if p.exists() else None for p in sources] != before:
         raise JobRefusal(f'input board/project/rules changed during {label}')
     return captured
@@ -999,6 +999,9 @@ def _repair_shortlist(problem, shortlist, diagnostics, *, checkout, runtime, clo
         candidate = repair.candidate(problem, diagnostic, proposal, output['evaluations'][0])
         record['status'] = 'exact_feasible' if candidate is not None else 'exact_rejected'
         return [candidate] if candidate is not None else unchanged
+    except EnvironmentFailure as exc:
+        record.update(status='environment_failure', error=str(exc))
+        raise
     except JobStopped as exc:
         record['status'] = exc.status
         if exc.status != 'deadline' or clock.remaining() <= 0:
@@ -1022,10 +1025,14 @@ def drc(board, out_dir, *, refill=False, label='drc', clock=None, cancel_dir=Non
     (out_dir / f'{label}.log').write_bytes(done.stdout + done.stderr)
     # kicad-cli exits 0 when it writes a report; a missing or malformed report is never a pass.
     if done.returncode != 0 or not report.is_file():
-        raise JobRefusal(f'native DRC did not complete (exit {done.returncode})')
-    data = read_json(report)
-    if not isinstance(data.get('violations'), list) or not isinstance(data.get('unconnected_items'), list):
-        raise JobRefusal('native DRC report lacks counted evaluations')
+        raise EnvironmentFailure('native-tool', f'native DRC did not complete (exit {done.returncode})')
+    try:
+        data = read_json(report)
+    except ValueError as exc:
+        raise EnvironmentFailure('native-tool', f'native DRC returned invalid JSON: {exc}') from exc
+    if (not isinstance(data, dict) or not isinstance(data.get('violations'), list)
+            or not isinstance(data.get('unconnected_items'), list)):
+        raise EnvironmentFailure('native-tool', 'native DRC report lacks counted evaluations')
     return data, {'argv': argv, 'exit_code': done.returncode, 'report_sha256': digest(report)}
 
 
@@ -1828,7 +1835,6 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 local_contract = validate_local(strict_json(raw))
             except ValueError as exc:
                 raise JobRefusal('invalid local decoupling contract: ' + str(exc)) from exc
-            import pcbnew
             if local_contract['planes'] and (plane_bytes is None or any(
                     not any(z['net'] == p['net'] and z['layer'] == p['layer'] for z in plane_plan['zones'])
                     for p in local_contract['planes'])):

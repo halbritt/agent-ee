@@ -1659,8 +1659,8 @@ class DocsTests(unittest.TestCase):
                                 ('--kicad-root', '/usr/share/kicad')):
             self.assertRegex(text, rf'\| `{option}[^`]*` \| `{default}` \|', option)
         for state in ('accepted', 'accepted_partial', 'unsupported', 'seat_failed', 'author_timeout', 'review_incomplete',
-                      'runtime_refused', 'time_exhausted', 'attempts_exhausted', 'interrupted', 'error',
-                      'complete', 'stopped_seat_failed', 'stopped_runtime_refused', 'not_run'):
+                      'runtime_refused', 'environment_failure', 'time_exhausted', 'attempts_exhausted', 'interrupted', 'error',
+                      'complete', 'stopped_seat_failed', 'stopped_runtime_refused', 'stopped_environment_failure', 'not_run'):
             self.assertIn(f'`{state}`', text, state)
         for code in ('0', '1', '2', '130'):
             self.assertRegex(text, rf'\n\| `{code}` \| ', code)

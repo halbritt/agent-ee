@@ -131,6 +131,16 @@ as `pin` and its step mounts the table) is stale for continuation even when the
 checkout still holds that commit: its frozen step cannot be rebuilt without the
 table, so such a campaign restarts on the current checkout.
 
+For placement jobs, the board adapter marks runtime/tool failures with
+`failure_kind: environment` and `failing_stage`. A validated router
+`process.status: FAIL` with structured budget/stall stop flags remains a design
+search failure. Other backend failures and invalid/missing result evidence are
+tool failures. Machine refusals use `reason_class`: `state`, `canary` and
+`usage` stop as runtime/tool failures; `input` and `ledger` keep the design path.
+The message remains in `reason`. The [design loop](design-generate.md#attempts-and-feedback)
+stops before author or seed retries for classified runtime/tool failures.
+The shared router result verdict is unchanged.
+
 The reported tool version is recorded as `unknown`: kicad-route has no version
 flag, and `doctor` is not used because it looks up upstream releases. The
 backend identity (`result.json` `backend`: KRT version, build, commit, Rust

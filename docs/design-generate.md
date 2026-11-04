@@ -206,9 +206,12 @@ or author feedback. Placement job reports mark these with
 `failure_kind: environment` and `failing_stage`: runtime/router preflight
 refusals (including install-record, toolchain, state-manifest and planner
 identity failures), missing native executables, native processes killed by a
-signal, and router output/protocol failures. The routing adapter uses the
+signal, DRC execution/report failures, and router output/protocol failures. The routing adapter uses the
 validated `process.status: FAIL` to identify backend execution failures; routing
 incompleteness and validation failures keep their normal design retry policy.
+Machine router refusals use `reason_class`: `state`, `canary` and adapter
+`usage` errors are environment/tool failures; `input` and `ledger` remain
+ordinary design failures.
 The job keeps status `refused` and its exact reason. For older job reports
 without `failure_kind`, only a `refused` reason starting `runtime preflight failed:`
 or `router preflight:` is recognized as a preflight environment failure.

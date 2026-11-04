@@ -226,6 +226,22 @@ class AdapterPolicyTest(unittest.TestCase):
                          ('missing_output', 'environment', 'routing'))
         self.assertIn('exit -11', record['reason'])
 
+    def test_board_refusal_uses_reason_class_to_separate_environment_from_design(self):
+        root = Path(self.tmp.name)
+        for reason_class in ('state', 'canary', 'usage', 'input', 'ledger'):
+            with self.subTest(reason_class=reason_class):
+                refusal = dict(schema='kicad-route/refusal/1', kind='refusal', command='run',
+                               exit_code=4, reason_class=reason_class, message='retained refusal cause')
+                (root / 'kicad-route.stdout').write_text(json.dumps(refusal))
+                record = routing_adapter.bind_board_attempt(root, ['kicad-route', 'run'], 4)
+                self.assertEqual((record['status'], record['reason_class'], record['reason']),
+                                 ('refused', reason_class, refusal['message']))
+                if reason_class in ('state', 'canary', 'usage'):
+                    self.assertEqual((record['failure_kind'], record['failing_stage']),
+                                     ('environment', 'routing-preflight'))
+                else:
+                    self.assertNotIn('failure_kind', record)
+
     def test_complete_with_unconnected_is_a_verified_rejection_with_and_without_a_layer_policy(self):
         # The board the router validated is bound and rejected like a failed layer policy: diagnostics
         # only, never delivered, and the production verifier re-derives it from the retained reports.

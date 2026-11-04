@@ -113,6 +113,27 @@ class RefusalReportTests(fixture.Fixture):
         self.assertEqual(json.loads((out / 'job-report.json').read_text()), report)
         self.assertFalse((out / 'candidates').exists())
 
+    def test_drc_execution_and_report_errors_are_tool_failures(self):
+        binary_dir = self.dir / 'bin'
+        binary_dir.mkdir()
+        executable = binary_dir / 'kicad-cli'
+        for name, code in (
+                ('failed', 'import sys; sys.exit(1)'),
+                ('missing', ''),
+                ('invalid', 'from pathlib import Path; import sys; Path(sys.argv[-2]).write_text("invalid")'),
+                ('uncounted', 'from pathlib import Path; import sys; Path(sys.argv[-2]).write_text("{}")')):
+            with self.subTest(name=name):
+                executable.write_text('#!/usr/bin/python3\n' + code + '\n')
+                executable.chmod(0o755)
+                out = self.dir / name
+                out.mkdir()
+                with patch.dict(os.environ, PATH=str(binary_dir) + os.pathsep + os.environ['PATH']):
+                    with self.assertRaises(job.EnvironmentFailure) as caught:
+                        job.drc(self.board, out)
+                self.assertEqual(caught.exception.stage, 'native-tool')
+                self.assertIn('native DRC', str(caught.exception))
+                self.assertTrue((out / 'drc.log').is_file())
+
     def test_setup_refusal_after_ownership_has_null_attempt(self):
         config = self.config()
         config['inputs']['board']['sha256'] = '0' * 64

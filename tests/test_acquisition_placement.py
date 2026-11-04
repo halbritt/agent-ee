@@ -222,7 +222,10 @@ class ControllerTests(unittest.TestCase):
         self.engine.write_text('changed evaluator bytes at the same path')
         with patch.object(job, '_acquisition_solver', return_value=proposal), patch.object(
                 job, '_run_child', side_effect=AssertionError('changed engine must not execute')):
-            self.assertEqual(self.run_repair(), [])
+            with self.assertRaises(job.EnvironmentFailure) as caught:
+                self.run_repair()
+        self.assertEqual(caught.exception.stage, 'placement-planner')
+        self.assertEqual(self.report['placement_repair']['status'], 'environment_failure')
         self.assertIn('evaluator changed', self.report['placement_repair']['error'])
 
     def test_stalled_numerical_child_is_bounded_and_leaves_routing_time(self):
