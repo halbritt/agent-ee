@@ -1703,7 +1703,8 @@ class DeclaredCurrentTests(unittest.TestCase):
         plain = self.compile("plain")
         self.assertFalse((plain / "net-constraints.json").exists())
         self.assertFalse((plain / "net-constraints.record.json").exists())
-        self.assertFalse((plain / "project/owned.kicad_dru").exists())
+        # The fab profile's plated-hole rule is a plain bundle's only custom rule.
+        self.assertNotIn("agent_ee_netclass_", (plain / "project/owned.kicad_dru").read_text())
         settings = json.loads((plain / "project/owned.kicad_pro").read_text())["net_settings"]
         self.assertEqual([c["name"] for c in settings["classes"]], ["Default"])
         self.assertNotIn("netclass_patterns", settings)
@@ -1721,13 +1722,18 @@ class DeclaredCurrentTests(unittest.TestCase):
         changed = {name for name in before.keys() & after.keys() if before[name] != after[name]}
         # The spec gains the width requirement; parts.json changes only in its spec-record hash binding.
         self.assertEqual(changed, {"design.json", "spec.md", "spec-record.json", "obligations.json",
-                                   "requirement-map.json", "parts.json", "project/owned.kicad_pro"})
+                                   "requirement-map.json", "parts.json", "project/owned.kicad_pro",
+                                   "project/owned.kicad_dru"})
+        # The width rule is added after the fab profile's custom rule, which stays unchanged.
+        self.assertTrue(after["project/owned.kicad_dru"].startswith(before["project/owned.kicad_dru"]))
         parts = [json.loads(side["parts.json"]) for side in (before, after)]
         for side in parts:
             side["declaration_source"].pop("sha256")
         self.assertEqual(parts[0], parts[1])
-        self.assertEqual(after.keys() - before.keys(), {"net-constraints.json", "net-constraints.record.json",
-                                                        "project/owned.kicad_dru"})
+        self.assertEqual(after.keys() - before.keys(), {"net-constraints.json", "net-constraints.record.json"})
+        record = json.loads(after["net-constraints.record.json"])
+        self.assertEqual((record["template_rules_sha256"], record["rules_sha256"]),
+                         tuple(hashlib.sha256(side["project/owned.kicad_dru"]).hexdigest() for side in (before, after)))
         self.assertEqual(json.loads(before["project/owned.kicad_pro"])["net_settings"]["classes"][0],
                          json.loads(after["project/owned.kicad_pro"])["net_settings"]["classes"][0])
 

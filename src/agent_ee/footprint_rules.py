@@ -33,12 +33,16 @@ MEASURED = re.compile(r'\(([^()]*?) (-?[0-9]+(?:\.[0-9]+)?) mm; actual (-?[0-9]+
 
 
 def rule_files(design):
-    """The rule files compile emits for this board, by file name, and compile's derivation record."""
-    from .design_compile import envelope
+    """The rule files compile emits for this board, by file name, and compile's derivation record.
+
+    The same compile steps write them: the fab profile's project and rules (envelope), then
+    the net classes and width rules of declared currents (current_constraints)."""
+    from .design_compile import current_constraints, envelope
 
     with tempfile.TemporaryDirectory(prefix='agent-ee-footprint-rules-') as tmp:
         root = Path(tmp)
         envelope(design, root)
+        current_constraints(design, root)
         files = {p.name: p.read_bytes() for p in sorted((root / 'project').iterdir())}
         derivation = read_json(root / 'project-rule-derivation.json')
     if [Path(name).suffix for name in files] not in (['.kicad_pro'], ['.kicad_dru', '.kicad_pro']):

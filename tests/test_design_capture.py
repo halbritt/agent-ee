@@ -435,6 +435,16 @@ class CaptureHttpTests(unittest.TestCase):
                              (self.root / 'bundle/inputs/project' / name).read_bytes())
         self.assertEqual(json.loads((captured / 'footprint-rules/report.json').read_bytes())['status'], 'pass')
 
+    def test_a_design_with_declared_currents_is_checked_under_its_composed_rule_files(self):
+        self.design["currents"] = {"SIGNAL": {"current_ma": 1000}}
+        captured = self.capture()
+        compile_design(self.design, captured, self.root / 'bundle')
+        for name in ('owned.kicad_pro', 'owned.kicad_dru'):
+            self.assertEqual((captured / 'footprint-rules/inputs' / name).read_bytes(),
+                             (self.root / 'bundle/inputs/project' / name).read_bytes())
+        rules = (captured / 'footprint-rules/inputs/owned.kicad_dru').read_text()
+        self.assertLess(rules.index('fab_pth-copper'), rules.index('agent_ee_netclass_CURRENT_SIGNAL'))
+
     def test_native_capture_refuses_a_footprint_whose_hole_is_too_close_to_its_pad(self):
         require_toolchain(native=True)
         (self.kicad / 'footprints/Owned.pretty/R2.kicad_mod').write_bytes(owned_footprint('R2', 0.15))

@@ -280,7 +280,7 @@ DESIGN_LIMITATIONS = [
     'Planning output: the copper-width/1 check binds every declared net to the saved board.']
 
 
-def design_classes(constraints_raw, project_raw, *, copper, basis):
+def design_classes(constraints_raw, project_raw, *, copper, basis, rules_raw=None):
     """Classes derived from declared currents for a compiled design project (AGENTEE-582).
 
     The compiled project carries only a Default class (net_settings schema 3), so emit()'s
@@ -289,8 +289,10 @@ def design_classes(constraints_raw, project_raw, *, copper, basis):
     track width, so a small declared current never narrows a net; the generated rule and the
     record keep the minimum itself. copper is the fab profile's stackup layer list. basis
     names the sources: 'current' maps each net to its declaration, 'temperature_rise' and
-    'copper' are recorded as given. Returns (project, rules, record) bytes in the bundle's
-    JSON format; anything unresolved raises ValueError, so no partial class is emitted."""
+    'copper' are recorded as given. rules_raw, the project's existing custom rules (the fab
+    profile's), stays first and the generated rules follow, as emit() composes a template; the
+    record keeps both hashes. Returns (project, rules, record) bytes in the bundle's JSON
+    format; anything unresolved raises ValueError, so no partial class is emitted."""
     from .storage import json_bytes
     rise, classes = parse_document(constraints_raw)
     if any(set(spec) != {'name', 'requirement', 'nets', 'current_ma'} or len(spec['nets']) != 1
@@ -328,13 +330,15 @@ def design_classes(constraints_raw, project_raw, *, copper, basis):
     settings['netclass_patterns'] = [{'netclass': c['name'], 'pattern': exact_pattern(c['nets'][0])}
                                      for c in records]
     pro = json_bytes(project)
-    dru = ('(version 1)\n' + ''.join(rules)).encode('utf-8')
+    base = template_rules(rules_raw) if rules_raw is not None else '(version 1)\n'
+    dru = (base + ''.join(rules)).encode('utf-8')
     rule_forms(dru)
     record = {'schema': RECORD, 'outcome': 'pass', 'acceptance_ready': False, 'findings': [],
               'source_sha256': hashlib.sha256(constraints_raw).hexdigest(),
               'board_binding': {'status': 'unbound', 'board_sha256': None},
               'template_project_sha256': hashlib.sha256(project_raw).hexdigest(),
-              'template_rules_sha256': None, 'envelope_sha256': None,
+              'template_rules_sha256': hashlib.sha256(rules_raw).hexdigest() if rules_raw is not None else None,
+              'envelope_sha256': None,
               'method': METHOD, 'temperature_rise_c': rise, 'stackup_copper': layers,
               'classes': records, 'project_sha256': hashlib.sha256(pro).hexdigest(),
               'rules_sha256': hashlib.sha256(dru).hexdigest(),

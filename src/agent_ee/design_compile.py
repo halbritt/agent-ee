@@ -585,9 +585,12 @@ def current_constraints(design, root):
         ),
     )
     project = root / f"project/{name}.kicad_pro"
+    # The fab profile's custom rules (envelope) stay first; the current rules are added after them.
+    existing = project.with_suffix(".kicad_dru")
     pro, rules, record = design_classes(
         (root / "net-constraints.json").read_bytes(),
         project.read_bytes(),
+        rules_raw=existing.read_bytes() if existing.is_file() else None,
         copper=load(root / "fab-profile.json")["stackup"]["layers"],
         basis=dict(
             current={native_net(design, net): dict(path="design.json", locator=f"/currents/{net}/current_ma")

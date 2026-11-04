@@ -87,8 +87,10 @@ Compile writes:
   entry for its net. The class copies the Default values and routes at the
   larger of the derived width and the Default track width, so a small current
   never narrows a net. The router reads this class width.
-- `project/<name>.kicad_dru`: a native `track_width (min …)` rule per class.
-  Native DRC reports a narrower track under it. The rule has no cited source
+- `project/<name>.kicad_dru`: a native `track_width (min …)` rule per class,
+  after the fab profile's plated-hole rule, which stays first and unchanged. The
+  record keeps both the profile rules' hash (`template_rules_sha256`) and the
+  composed file's. Native DRC reports a narrower track under it. The rule has no cited source
   declaration, so constraint provenance grades that finding advisory; the final
   check below is the gate.
 - `net-constraints.record.json`: the record, with a `basis` per class: the
