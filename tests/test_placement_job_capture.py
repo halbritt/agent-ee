@@ -200,14 +200,19 @@ class CaptureBoundaryTests(Fixture):
             job.capture(self.board, job.normalize_intent(intent(), groups()), cancel_dir=self.dir)
 
     def test_failed_or_missing_child_output_never_returns_a_problem(self):
-        for code, output in ((1, b''), (0, b''), (0, b'{}'), (0, b'null'),
-                             (0, b'{"problem":null,"record":null}'),
-                             (0, b'{"problem":{},"record":{}}')):
+        for code, output, error in ((1, b'', job.JobRefusal),
+                                   (0, b'', job.EnvironmentFailure),
+                                   (0, b'{}', job.JobRefusal),
+                                   (0, b'null', job.EnvironmentFailure),
+                                   (0, b'{"problem":null,"record":null}', job.JobRefusal),
+                                   (0, b'{"problem":{},"record":{}}', job.JobRefusal)):
             with self.subTest(code=code, output=output):
                 with patch.object(job, '_run_child', return_value=subprocess.CompletedProcess(
                         [], code, output, b'native diagnostic')):
-                    with self.assertRaises(job.JobRefusal):
+                    with self.assertRaises(error) as caught:
                         job.capture(self.board, job.normalize_intent(intent(), groups()))
+                if error is job.EnvironmentFailure:
+                    self.assertEqual(caught.exception.stage, 'native-tool')
 
     def test_project_change_during_capture_refuses(self):
         def changed(*args, **kwargs):
