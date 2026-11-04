@@ -105,6 +105,24 @@ class RefreshTests(unittest.TestCase):
                 self.assertTrue(any(problem in line for line in report['problems']), report['problems'])
                 self.assertEqual({p.name: p.read_bytes() for p in self.vendor.iterdir()}, self.before)
 
+    def test_regular_expression_after_return_is_not_a_definition(self):
+        # Review of 5704964d: executable this.enableDamping renamed, the old text left in a regex.
+        self.edit('OrbitControls.js', 'this.enableDamping', 'this.enableSmoothing')
+        url = self.manifest['files']['OrbitControls.js']['source'].replace('/r180/', '/r999/')
+        self.release[url] += b'\nfunction removedFeature() { return /this.enableDamping = gone/; }\n'
+        report, status = self.refresh()
+        self.assertEqual(status, 'refused')
+        self.assertTrue(any('controls_members enableDamping' in line for line in report['problems']), report['problems'])
+        self.assertEqual({p.name: p.read_bytes() for p in self.vendor.iterdir()}, self.before)
+
+    def test_code_drops_regular_expressions_after_expression_keywords_but_keeps_division(self):
+        for keyword in sorted(refresh_viewer_vendor.KEYWORDS_BEFORE_REGEX):
+            with self.subTest(keyword):
+                text = f'function f() {{ {keyword} /this.enableDamping = gone/; }}'
+                self.assertNotIn('enableDamping', refresh_viewer_vendor.code(text, strings=False))
+        division = 'a = b / c / d; e = (f) / g; h = i[0] / 2; j = x.return / 2; k = returned / 3;'
+        self.assertEqual(refresh_viewer_vendor.code(division, strings=False), division)
+
     def test_missing_source_is_refused_with_its_url(self):
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root)
