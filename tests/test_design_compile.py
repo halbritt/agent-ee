@@ -1739,6 +1739,12 @@ class DeclaredCurrentTests(unittest.TestCase):
                 self.compile("refused", currents)
             self.assertIn(message, str(caught.exception))
             self.assertFalse((self.root / "refused").exists())
+        paired = DiffPairIntentTests.nets(self, "D_P", "D_N", [{"positive": "D_P", "negative": "D_N"}])
+        paired["currents"] = {"D_P": {"current_ma": 100}}
+        with self.assertRaisesRegex(DesignError, r"currents\.D_P: D_P is in diff_pairs\[0\], which the router "
+                                                 r"draws at the pair's diff-pair width.*\[tool_gap\]"):
+            compile_design(paired, self.captures, self.root / "paired")
+        self.design = design_fixture(self.captures)
         renamed = json.loads(json.dumps(self.design).replace('"SIGNAL"', '"SIG.A"'))
         renamed["currents"] = {"SIG.A": {"current_ma": 100}}
         with self.assertRaisesRegex(DesignError, r"currents\.SIG\.A: name a net .* \[tool_gap\]"):

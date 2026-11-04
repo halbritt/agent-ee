@@ -1072,12 +1072,20 @@ def current_problems(design, nets, footprints, decoupling, fields, fail):
         return
     profile = load(FAB_PROFILE)
     copper = profile["stackup"]["layers"]
+    pairs = design.get("diff_pairs") if isinstance(design.get("diff_pairs"), list) else []
+    members = {pair[key]: i for i, pair in enumerate(pairs) if isinstance(pair, dict)
+               for key in ("positive", "negative") if isinstance(pair.get(key), str)}
     widths = {}
     for net, spec in currents.items():
         path = "currents." + net
         if net not in nets:
             fail(path, "declare a current only for a net in nets")
             continue
+        if net in members:
+            # The router draws a declared pair at its class diff-pair width (design_compile.envelope).
+            fail(path, f"{net} is in diff_pairs[{members[net]}], which the router draws at the pair's "
+                 "diff-pair width; a current-derived width is not applied to a pair yet, so declare the "
+                 "current on a net outside the pair or remove it [tool_gap]")
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,55}", net):
             fail(path, "name a net with a declared current with at most 56 letters, digits and underscores; "
                  "the router matches netclass patterns as globs and cannot bind an escaped +, . or - [tool_gap]")

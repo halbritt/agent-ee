@@ -62,7 +62,10 @@ net's minimum track width and the build routes and checks the net at that width.
 `current_ma` is a positive number of at most 30000 (the fit's range). Net names
 with a declared current use only letters, digits and underscores, at most 56
 characters. The router matches netclass patterns as globs and cannot bind an
-escaped `+`, `.` or `-`; such a name is refused with `[tool_gap]`.
+escaped `+`, `.` or `-`; such a name is refused with `[tool_gap]`. A current on a
+member of a declared [differential pair](#differential-pairs) is also refused
+with `[tool_gap]`: the router draws a pair at its diff-pair width, which a
+current-derived width does not set yet.
 
 The width comes from the existing IPC-2152 generic-chart fit in
 [net constraints](net-constraints.md#track-width-from-current), with this basis:
