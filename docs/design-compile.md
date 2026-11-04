@@ -101,27 +101,27 @@ The current is per net: every track and arc of the net is held to its minimum,
 including a branch that carries little of it, such as a sense connection. Vias,
 zones, pads and pours are outside the width rule.
 
-Validation refuses a current whose width cannot be built, before any placement:
-
-- **A land the track cannot reach.** A track of the derived width must reach the
-  centre of every land on the net, in one of the router's eight directions, and
-  keep the fab profile's minimum clearance (0.1 mm) from each land of the part
-  that is not on this net and shares a copper layer.
-  The message names the part, pad and footprint and gives the widest track that
-  fits. Lands are modelled exactly for rectangles, rounded rectangles, ovals and
-  circles; a chamfered or trapezoid land is taken as a containing rectangle, and
-  a footprint with a custom land gets no claim. Other parts are placed later, so
-  a narrow passage between parts is found by the final check.
-- **Local copper narrower than the width.** Generated decoupling copper is no
-  wider than the smaller dimension of its narrower land. A decoupling leg on a net whose derived width
-  exceeds that land is refused, with both terminals named.
-
-For example:
+Validation refuses one case, before any placement: **local copper narrower than
+the width.** Generated decoupling copper is no wider than the smaller dimension
+of its narrower land, so a decoupling leg on a net whose derived width exceeds
+that land is refused, with both terminals named:
 
 ```text
 Design refused:
-- currents.SIGNAL: 1000 mA needs routed copper at least 0.288 mm wide (IPC-2152 generic-chart fit, 10 C agent-selected temperature rise, thinnest copper of fab profile jlcpcb-2layer-1oz), but no track wider than 0 mm reaches R1 pad 1 (Owned:R2) without coming within the 0.1 mm fabrication clearance of another land of R1; lower the declared current if the requirement allows it, or select a part whose lands on this net have more room
+- decoupling[0].supply: generated local copper on SIGNAL is at most 1 mm wide (the narrower land of R1.1 and R2.1), below the 1.012 mm its declared 2000 mA needs (IPC-2152 generic-chart fit, 10 C agent-selected temperature rise, thinnest copper of fab profile jlcpcb-2layer-1oz); select parts whose lands are at least that wide, or lower the declared current if the requirement allows it
 ```
+
+Whether a routed track of the derived width reaches each land is decided only by
+the final check on the routed board. Compile adds an advisory, never a refusal,
+for a land that no straight track of that width reaches from its centre along
+the router's eight directions while keeping the fab profile's minimum clearance
+(0.1 mm) from the part's lands on other nets. A route with bends can still reach
+such a land. Advisories go to the `warnings` of `design-compile-report.json` and
+to standard error. Lands are modelled exactly for rectangles, rounded
+rectangles, ovals and circles; a chamfered or trapezoid land is taken as a
+containing rectangle, and a footprint with a custom land gets no advisory.
+Other parts are placed later, so a narrow passage between parts is found by the
+final check only.
 
 When the router narrows a net anyway (its power neck-down near a crowded land),
 the final check fails and its summary names the net, the declared current, the

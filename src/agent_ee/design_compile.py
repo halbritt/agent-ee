@@ -15,6 +15,7 @@ from .design import (
     DesignError,
     blob,
     current_minimum_mm,
+    current_reach_advisories,
     footprint_path,
     load,
     native_net,
@@ -909,7 +910,12 @@ def cpl_policy(design, root):
         for d in diagnostics for layer, metric in d["copper"].items()
         if Decimal(str(metric["presented"]["lower"])) < Decimal("0.5")
     ]
-    for warning in overlap_warnings:
+    # Declared currents add advisories only; the final copper-width/1 check decides (AGENTEE-582).
+    current_warnings = current_reach_advisories(design, {
+        ref: parse_sexpr((root / footprint_path(part)).read_bytes())
+        for ref, part in design["parts"].items()
+    }) if design.get("currents") else []
+    for warning in overlap_warnings + current_warnings:
         import warnings
         warnings.warn(warning, UserWarning, stacklevel=2)
     write_json(
@@ -923,7 +929,7 @@ def cpl_policy(design, root):
                 if not children(
                     parse_sexpr((root / footprint_path(part)).read_bytes()), "model"
                 )
-            ],
+            ] + current_warnings,
         ),
     )
     policy = dict(

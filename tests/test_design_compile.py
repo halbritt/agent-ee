@@ -1758,26 +1758,46 @@ class DeclaredCurrentTests(unittest.TestCase):
         self.design["currents"] = {"SIGNAL": {"current_ma": 1000}}
         validate(self.design, self.captures)
 
-    def test_land_the_derived_width_cannot_reach_is_refused_before_placement(self):
+    def test_lands_only_bent_routes_reach_compile_with_an_advisory_not_a_refusal(self):
+        """Sol review of 91688717, P1: eight blocked straight rays refused a design the router completes.
+
+        The reviewer's reproducer: 0.6 mm lands, eight 0.6 mm holes at radius 3 mm, SIGNAL at 1 A. kicad-route
+        routed that geometry at 0.288 mm and native validation passed, so no reach claim may refuse it."""
+        import math
+        import warnings
         from agent_ee.design import validate
 
+        def ring(cx):
+            return "".join(f'(pad "" np_thru_hole circle (at {cx + 3 * math.cos(k * math.pi / 4):.6f} '
+                           f'{3 * math.sin(k * math.pi / 4):.6f}) (size 0.6 0.6) (drill 0.6) (layers "*.Cu" "*.Mask"))'
+                           for k in range(8))
+
+        path = self.captures / "cad/Owned.pretty/R2.kicad_mod"
+        self.design["board"].update(width_mm=50, height_mm=30)
         self.design["currents"] = {"SIGNAL": {"current_ma": 1000}}
-        # Holes of no net on all eight track directions leave no way into pad 1.
-        holes = "".join(f'(pad "" np_thru_hole circle (at {0.75 * dx:.4f} {0.75 * dy:.4f}) (size 0.6 0.6) '
-                        f'(drill 0.6) (layers "*.Cu" "*.Mask"))'
-                        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7071, 0.7071), (-0.7071, 0.7071),
-                                       (0.7071, -0.7071), (-0.7071, -0.7071)))
-        (self.captures / "cad/Owned.pretty/R2.kicad_mod").write_bytes(kicad_footprint(
+        path.write_bytes(kicad_footprint(
             "R2", '(pad "1" smd rect (at 0 0) (size 0.6 0.6) (layers "F.Cu" "F.Mask")) '
-                  '(pad "2" smd rect (at 3 0) (size 0.6 0.6) (layers "F.Cu" "F.Mask")) ' + holes,
-            extra='(fp_rect (start -2 -1) (end 4 1) (stroke (width 0.05) (type default)) (layer "F.CrtYd"))'))
+                  '(pad "2" smd rect (at 5 3) (size 0.6 0.6) (layers "F.Cu" "F.Mask")) ' + ring(0),
+            extra='(fp_rect (start -4 -4) (end 6 4) (stroke (width 0.05) (type default)) (layer "F.CrtYd"))'))
         seal_capture(self.captures)
-        with self.assertRaises(DesignError) as caught:
-            validate(self.design, self.captures)
-        self.assertIn("currents.SIGNAL: 1000 mA needs routed copper at least 0.288 mm wide (IPC-2152 generic-chart "
-                      "fit, 10 C agent-selected temperature rise", str(caught.exception))
-        self.assertIn("but no track wider than 0 mm reaches R1 pad 1 (Owned:R2) without coming within the 0.1 mm "
-                      "fabrication clearance of another land of R1", str(caught.exception))
+        validate(self.design, self.captures)
+        # The same ring around the fixture's registrable chip land: the full compile completes.
+        path.write_bytes(kicad_footprint("R2", chip_kicad(1, 1, 1) + " " + ring(-1),
+            extra='(fp_rect (start -4.5 -3.5) (end 2.5 3.5) (stroke (width 0.05) (type default)) (layer "F.CrtYd"))'))
+        seal_capture(self.captures)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            inputs = self.compile("ring", self.design["currents"])
+        advisories = [w for w in json.loads((inputs / "design-compile-report.json").read_text())["warnings"]
+                      if w.startswith("currents.")]
+        self.assertEqual(len(advisories), 2)
+        self.assertIn("currents.SIGNAL: advisory: no straight 0.288 mm track", advisories[0])
+        self.assertIn("reaches R1 pad 1 (Owned:R2)", advisories[0])
+        self.assertIn("widest straight approach 0 mm); a route with bends may still fit, and the final "
+                      "copper-width/1 check decides", advisories[0])
+        self.assertEqual(advisories, [str(w.message) for w in caught if str(w.message).startswith("currents.")])
+        (spec,) = json.loads((inputs / "net-constraints.record.json").read_text())["classes"]
+        self.assertEqual(spec["min_track_width_mm"], 0.288)
 
 
 class TrackAccessWidthTests(unittest.TestCase):

@@ -1062,17 +1062,16 @@ def validate(design, captures=None, *, cad_only=False):
 def current_problems(design, nets, footprints, decoupling, fields, fail):
     """Declared continuous currents (AGENTEE-582): each names a declared net and a current in mA.
 
-    With captured footprints, a derived width must reach every land of the net and fit the
-    generated local copper of a decoupling leg on it; otherwise the design is refused here,
-    before placement, instead of failing the final copper-width check."""
+    With captured footprints, a derived width must fit the generated local copper of a
+    decoupling leg on its net, which is never wider than its narrower land; otherwise the design
+    is refused here, before placement. Whether a routed track reaches each land is not decided
+    here: current_reach_advisories only advises, and the final copper-width/1 check decides."""
     currents = design.get("currents", {})
     if not isinstance(currents, dict):
         fail("currents", "supply an object mapping declared net names to {current_ma}")
         return
     profile = load(FAB_PROFILE)
     copper = profile["stackup"]["layers"]
-    clearance = next(limit["value"] for limit in profile["limits"]
-                     if limit.get("key") == "min_clearance_mm" and limit.get("tier") == "minimum")
     widths = {}
     for net, spec in currents.items():
         path = "currents." + net
@@ -1089,28 +1088,9 @@ def current_problems(design, nets, footprints, decoupling, fields, fail):
                      "of at most 30000, the range of the IPC-2152 fit")
             else:
                 widths[net] = current_minimum_mm(value, copper)
-    basis = (f"IPC-2152 generic-chart fit, {CURRENT_RISE['temperature_rise_c']} C agent-selected temperature rise, "
-             f"thinnest copper of fab profile {profile['name']}")
-    from .design_geometry import land_width, track_access_width
+    basis = current_basis(profile)
+    from .design_geometry import land_width
 
-    for net, width in sorted(widths.items()):
-        on_net = {}
-        for term in nets[net]:
-            if isinstance(term, str) and "." in term:
-                ref, pin = term.split(".", 1)
-                on_net.setdefault(ref, set()).add(pin)
-        for ref in sorted(set(on_net) & set(footprints)):
-            for pin in sorted(on_net[ref]):
-                access = track_access_width(footprints[ref], pin, on_net[ref], clearance)
-                # 1 nm absorbs floating-point error; the reported width is rounded down to 1 um.
-                if access is not None and width > access + 1e-6:
-                    fail("currents." + net,
-                         f"{currents[net]['current_ma']:g} mA needs routed copper at least {width:g} mm wide "
-                         f"({basis}), but no track wider than {math.floor(access * 1000 + 1e-6) / 1000:g} mm "
-                         f"reaches {ref} pad {pin} ({design['parts'][ref]['footprint']}) without coming within "
-                         f"the {clearance:g} mm fabrication clearance of another land of {ref}; lower the "
-                         "declared current if the requirement allows it, or select a part whose lands on this "
-                         "net have more room")
     for i, d in enumerate(decoupling):
         for key in ("supply", "return"):
             leg = d.get(key) if isinstance(d, dict) else None
@@ -1126,6 +1106,46 @@ def current_problems(design, nets, footprints, decoupling, fields, fail):
                      f"{leg[0]} and {leg[1]}), below the {widths[net]:g} mm its declared "
                      f"{currents[net]['current_ma']:g} mA needs ({basis}); select parts whose lands are at "
                      "least that wide, or lower the declared current if the requirement allows it")
+
+
+def current_basis(profile):
+    return (f"IPC-2152 generic-chart fit, {CURRENT_RISE['temperature_rise_c']} C agent-selected temperature rise, "
+            f"thinnest copper of fab profile {profile['name']}")
+
+
+def current_reach_advisories(design, footprints):
+    """Advisories, never refusals: lands that no straight track of a net's derived width reaches.
+
+    A straight track from the land centre along each of the router's eight directions must keep
+    the fab profile's minimum clearance from the part's lands on other nets. A route with bends
+    can still reach a land that every straight track misses, so this names a likely difficulty
+    only; the final copper-width/1 check on the routed board decides. footprints maps a
+    reference to its parsed footprint; design is a validated statement."""
+    from .design_geometry import track_access_width
+
+    profile = load(FAB_PROFILE)
+    clearance = next(limit["value"] for limit in profile["limits"]
+                     if limit.get("key") == "min_clearance_mm" and limit.get("tier") == "minimum")
+    advisories = []
+    for net, spec in sorted(design.get("currents", {}).items()):
+        width = current_minimum_mm(spec["current_ma"], profile["stackup"]["layers"])
+        on_net = {}
+        for term in design["nets"][net]:
+            ref, pin = term.split(".", 1)
+            on_net.setdefault(ref, set()).add(pin)
+        for ref in sorted(set(on_net) & set(footprints)):
+            for pin in sorted(on_net[ref]):
+                access = track_access_width(footprints[ref], pin, on_net[ref], clearance)
+                # 1 nm absorbs floating-point error; the reported width is rounded down to 1 um.
+                if access is not None and width > access + 1e-6:
+                    advisories.append(
+                        f"currents.{net}: advisory: no straight {width:g} mm track ({current_basis(profile)}) "
+                        f"along the router's eight directions reaches {ref} pad {pin} "
+                        f"({design['parts'][ref]['footprint']}) and keeps the {clearance:g} mm fabrication "
+                        f"clearance from the part's lands on other nets (widest straight approach "
+                        f"{math.floor(access * 1000 + 1e-6) / 1000:g} mm); a route with bends may still fit, and "
+                        "the final copper-width/1 check decides")
+    return advisories
 
 
 def blob(root, rel):
