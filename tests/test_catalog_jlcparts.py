@@ -313,6 +313,41 @@ class NativeCatalogTests(unittest.TestCase):
             capture_catalog(source, self.root, self.root / 'captured')
         self.assertFalse((self.root / 'captured').exists())
 
+    def test_member_flagged_encrypted_or_patched_is_refused_before_decoding(self):
+        # Review of 2ac5c4f4: with bit 5 (compressed patch) or 6 (strong encryption) set in both
+        # headers, the raw-span decoder accepted an otherwise valid member that zipfile refused.
+        for case, central_flags, local_flags, refused in (
+                ('unflagged control', 0, 0, None),
+                ('compressed patch, both headers', 32, 32, 'central flags 0x0020'),
+                ('strong encryption, both headers', 64, 64, 'central flags 0x0040'),
+                ('strong encryption, central header only', 64, 0, 'central flags 0x0040'),
+                ('encrypted, local header only', 0, 1, 'local flags 0x0001'),
+                ('compressed patch, local header only', 0, 32, 'local flags 0x0020')):
+            with self.subTest(case):
+                for name in ('cache.z01', 'cache.zip'):
+                    (self.root / name).unlink(missing_ok=True)
+                source = self.source(layout='zip32')
+                last, first = self.root / 'cache.zip', self.root / 'cache.z01'
+                data = bytearray(last.read_bytes())
+                struct.pack_into('<H', data, data.index(b'PK\x01\x02') + 8, central_flags)
+                last.write_bytes(data)
+                data = bytearray(first.read_bytes())
+                struct.pack_into('<H', data, 4 + 6, local_flags)   # after the split marker
+                first.write_bytes(data)
+                for volume in source['volumes']:
+                    volume['sha256'] = digest(self.root / volume['path'])
+                out = self.root / f'captured-{central_flags}-{local_flags}'
+                if refused is None:
+                    self.assertEqual(check_archive(source['volumes'], self.root, self.root)['member'], 'cache.sqlite3')
+                    self.assertEqual(capture_catalog(source, self.root, out)['row_counts']['resistor'], 3)
+                    continue
+                for action in (lambda: check_archive(source['volumes'], self.root, self.root),
+                               lambda: capture_catalog(source, self.root, out)):
+                    with self.assertRaisesRegex(ValueError, 'native ZIP member uses an unsupported feature '
+                                                            rf'\({refused}\)'):
+                        action()
+                self.assertFalse(out.exists())
+
     def test_fetch_helper_runs_only_its_own_fetch_child(self):
         marker = self.root / 'launched'
         command = [sys.executable, '-c', f'open({str(marker)!r}, "w")']

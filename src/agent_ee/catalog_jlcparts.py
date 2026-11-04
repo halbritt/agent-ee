@@ -15,6 +15,9 @@ from .storage import canonical, identity
 
 FORMAT = 'jlcparts-v2-stocked-split-zip'
 MAX_EXPANDED_BYTES = 8 * 1024**3
+# General-purpose flag bits this importer cannot decode: 0 encrypted, 5 compressed patch data,
+# 6 strong encryption. zipfile's reader refused them; the raw-span decoder must too.
+UNSUPPORTED_FLAGS = 0x0001 | 0x0020 | 0x0040
 # Category names are upstream claims. Unsupported families are outside this adapter.
 CATEGORY_MAP = {
     'Resistors': 'resistor', 'Capacitors': 'capacitor', 'Inductors': 'inductor', 'Inductors, Coils, Chokes': 'inductor',
@@ -103,9 +106,11 @@ def _member(archive):
     if len(entries) != 1:
         raise ValueError('expected one cache.sqlite3 member')
     entry = entries[0]
+    if entry.flag_bits & UNSUPPORTED_FLAGS:
+        raise ValueError(f'native ZIP member uses an unsupported feature (central flags {entry.flag_bits:#06x})')
     mode = (entry.external_attr >> 16) & 0o170000
     if (entry.filename != 'cache.sqlite3' or entry.volume != 0 or entry.header_offset != 4
-            or entry.flag_bits & 1 or mode not in (0, 0o100000)
+            or mode not in (0, 0o100000)
             or not 0 < entry.file_size <= MAX_EXPANDED_BYTES):
         raise ValueError('unsupported or oversized native ZIP member')
     return entry
@@ -137,7 +142,9 @@ def _expand(archive_path, entry, sink):
         header = joined.read(30)
         if len(header) != 30 or header[:4] != b'PK\x03\x04':
             raise ValueError('native ZIP member has no local header')
-        method, = struct.unpack_from('<H', header, 8)
+        flags, method = struct.unpack_from('<HH', header, 6)
+        if flags & UNSUPPORTED_FLAGS:
+            raise ValueError(f'native ZIP member uses an unsupported feature (local flags {flags:#06x})')
         name_length, extra_length = struct.unpack_from('<HH', header, 26)
         if method != entry.compress_type or joined.read(name_length) != entry.orig_filename.encode():
             raise ValueError('native ZIP local header differs from the central directory')

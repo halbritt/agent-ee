@@ -300,7 +300,9 @@ beginning on disk zero. It reads both trailers jlcparts has produced: a ZIP64
 trailer, as in the 2026-09-14 snapshot, and a plain ZIP trailer, as in the
 2026-11-03 snapshot, whose 2,157,514,752-byte member fits ZIP's 32-bit fields.
 It translates split disk offsets and reads the central directory with Python's
-standard `zipfile` module. It then decodes the member's raw compressed span
+standard `zipfile` module. A member flagged as encrypted (general-purpose bit 0
+or 6) or as compressed patch data (bit 5), in its central or local header, is
+refused before decoding. It then decodes the member's raw compressed span
 itself: the local header must match the central directory's method and name,
 the DEFLATE stream must end exactly at the end of the span, and the output must
 be exactly the declared size with the declared CRC-32. `zipfile`'s own reader
