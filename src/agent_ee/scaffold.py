@@ -43,6 +43,9 @@ NET_PLAN_FIELDS = frozenset({'net_constraints', 'netclass_qualification'})
 # Every fab-profile key with a native KiCad project rule; each is required.
 RULE_KEYS = ('min_clearance_mm', 'min_trace_mm', 'min_via_pad_mm', 'min_via_drill_mm',
              'min_edge_clearance_mm', 'min_hole_to_hole_mm')
+# Fab-profile keys with a native project rule that a profile may omit: the project then keeps
+# its template value (KiCad's own, for a compiled design). They are applied when present.
+OPTIONAL_RULE_KEYS = ('min_npth_hole_clearance_mm',)
 NETCLASS_FIELDS = {'min_clearance_mm': 'clearance', 'min_trace_mm': 'track_width',
                    'min_via_pad_mm': 'via_diameter', 'min_via_drill_mm': 'via_drill'}
 # Default class fields KiCad DRC enforces as a hard floor. The class track width and
@@ -691,6 +694,10 @@ def produced_rules(plan, files, inputs):
             applied = key not in DRC_ENFORCED
             targets.append(cite(preferred, field if applied else None, preferred['expected']['value'],
                                 consumer='Default class routing default' if applied else UNCONSUMED_TARGET))
+    for key in OPTIONAL_RULE_KEYS:
+        if (key, 'minimum') in ready:
+            (setting, value), = ready[key, 'minimum']['project_rules'].items()
+            rules.append(cite(ready[key, 'minimum'], 'board.design_settings.rules.' + setting, value))
     values = {item['setting'].rsplit('.', 1)[1]: item['value'] for item in netclass}
     for rule in joint:
         # A Default via strictly under every term bound is surcharged; KiCad's native min

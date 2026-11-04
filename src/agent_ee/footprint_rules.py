@@ -73,6 +73,11 @@ def _source(finding, files, derivation):
         return None
     custom = re.match(r"rule '(.*?)'", rule)
     if custom:
+        derived = {item['rule']: item for item in derivation.get('custom_rules', [])}
+        if custom[1] in derived:
+            item = derived[custom[1]]
+            return (f"custom rule '{custom[1]}' from fab profile limit '{item['limit_id']}' ({item['key']}), "
+                    "in the board's .kicad_dru")
         return f"custom rule '{custom[1]}' in the board's .kicad_dru"
     netclass = re.match(r"netclass '(.*?)'", rule)
     if netclass:

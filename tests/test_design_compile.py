@@ -605,6 +605,33 @@ class DesignCompileTests(unittest.TestCase):
             derivation["selected_routing"]["via_diameter"], routing["via_diameter"]
         )
 
+    def test_hole_clearances_come_from_the_published_limits_not_the_kicad_default(self):
+        # Tool defect #32 review: KiCad's 0.25 mm min_hole_clearance default had no source.
+        # JLCPCB publishes NPTH to track 0.2 mm and PTH to track 0.28 mm.
+        self.compile()
+        inputs = self.root / "bundle/inputs"
+        project = json.loads((inputs / "project/owned.kicad_pro").read_text())
+        self.assertEqual(project["board"]["design_settings"]["rules"]["min_hole_clearance"], 0.2)
+        derivation = json.loads((inputs / "project-rule-derivation.json").read_text())
+        hole = next(item for item in derivation["enforced"]
+                    if item["setting"] == "board.design_settings.rules.min_hole_clearance")
+        self.assertEqual((hole["limit_id"], hole["key"], hole["value"]),
+                         ("npth-copper", "min_npth_hole_clearance_mm", 0.2))
+        (plated,) = derivation["custom_rules"]
+        self.assertEqual((plated["rule"], plated["limit_id"], plated["value"]), ("fab_pth-copper", "pth-copper", 0.28))
+        self.assertEqual(
+            (inputs / "project/owned.kicad_dru").read_text(),
+            '(version 1)\n(rule "fab_pth-copper"\n'
+            "  (condition \"A.Pad_Type == 'Through-hole' && B.Type != 'Via' && B.Pad_Type != 'NPTH, mechanical'\")\n"
+            "  (constraint hole_clearance (min 0.28mm)))\n")
+        profile = json.loads((inputs / "fab-profile.json").read_text())
+        facts = (inputs / "fab-sources/selected-facts.txt").read_text(encoding="utf-8")
+        quotes = {limit["id"]: limit["source"]["quote"] for limit in profile["limits"]}
+        self.assertEqual((quotes["npth-copper"], quotes["pth-copper"]),
+                         ("NPTH hole / track: 0.2 mm", "PTH hole / track: minimum 0.28 mm"))
+        self.assertIn("PCB capabilities: fetched 2026-11-04T05:08:38Z; SHA-256 "
+                      "ee6b34a71cb17a0adebd0be27491a52585570ff7a3c81a5e9d23dd28cf929c1e", facts)
+
     def test_supplier_response_span_is_replayed_and_remains_bound_after_relocation(
         self,
     ):

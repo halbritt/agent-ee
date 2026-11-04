@@ -19,7 +19,7 @@ from agent_ee.design_compile import compile_design
 from agent_ee.design_generate import refusal_classes
 from agent_ee.kicad_install import RECORD_ENV
 from tests.test_design_compile import design_fixture
-from tests.test_footprint_rules import hole_finding, owned_footprint, recorded
+from tests.test_footprint_rules import NPTH_LIMIT, hole_finding, owned_footprint, recorded
 from tests.test_kicad_install import record as install_record
 from tests.test_jlc_stock_capture import row, search
 from tests.land_pattern_fixtures import chip, component, pad
@@ -419,10 +419,8 @@ class CaptureHttpTests(unittest.TestCase):
         for text in ("parts.R1.footprint: Owned:R2 breaks this board's fabrication rules on its own, before "
                      'placement or routing: 1 native DRC error inside the footprint, which final verification '
                      'fails as pre-existing whatever the placement.',
-                     'hole_clearance: Pad 1 [/SIGNAL] of R1 on F.Cu and NPTH pad of R1 measure 0.1944 mm against '
-                     'the 0.2500 mm limit of board setup constraints hole clearance '
-                     "(board.design_settings.rules.min_hole_clearance, KiCad's default: the compiled project "
-                     'and the fab profile do not set it)',
+                     'hole_clearance: Pad 1 [/SIGNAL] of R1 on F.Cu and NPTH pad of R1 measure 0.1944 mm '
+                     + NPTH_LIMIT,
                      'Choose another footprint for R1 whose holes and pads meet these rules'):
             self.assertIn(text, line)
         self.assertEqual(self.requests, [])  # before the stock, datasheet and supplier downloads
@@ -432,8 +430,9 @@ class CaptureHttpTests(unittest.TestCase):
     def test_footprints_are_checked_under_the_rule_file_that_compile_emits(self):
         captured = self.capture()
         compile_design(self.design, captured, self.root / 'bundle')
-        self.assertEqual((captured / 'footprint-rules/inputs/owned.kicad_pro').read_bytes(),
-                         (self.root / 'bundle/inputs/project/owned.kicad_pro').read_bytes())
+        for name in ('owned.kicad_pro', 'owned.kicad_dru'):
+            self.assertEqual((captured / 'footprint-rules/inputs' / name).read_bytes(),
+                             (self.root / 'bundle/inputs/project' / name).read_bytes())
         self.assertEqual(json.loads((captured / 'footprint-rules/report.json').read_bytes())['status'], 'pass')
 
     def test_native_capture_refuses_a_footprint_whose_hole_is_too_close_to_its_pad(self):
@@ -443,8 +442,7 @@ class CaptureHttpTests(unittest.TestCase):
             self.capture()
         message = str(caught.exception)
         self.assertEqual(refusal_classes(message), ['parts.R1.footprint', 'parts.R2.footprint'])
-        self.assertIn('measure 0.1500 mm against the 0.2500 mm limit of board setup constraints hole clearance',
-                      message)
+        self.assertIn('measure 0.1500 mm ' + NPTH_LIMIT, message)
         self.assertEqual(self.requests, [])
 
     def test_native_capture_of_clean_footprints_passes_and_its_files_compile(self):

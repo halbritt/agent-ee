@@ -27,11 +27,30 @@ def owned_footprint(name, hole_gap_mm):
             ')\n').encode()
 
 
+def pth_footprint(name, hole_gap_mm):
+    """Original footprint: plated pad 1 (0.8 mm drill, 0.15 mm ring) and SMD pad 2 hole_gap_mm from its hole.
+
+    The two copper lands stay 0.1 mm or more apart, so only the plated-hole rule can fire."""
+    x = -1 + 0.4 + hole_gap_mm + 0.5
+    return (f'(footprint "{name}" (version 20241229) (generator "agent-ee-test") (layer "F.Cu")\n'
+            '  (attr through_hole)\n'
+            '  (fp_rect (start -2 -1.5) (end 2 2) (stroke (width 0.05) (type default)) (layer "F.CrtYd"))\n'
+            '  (pad "1" thru_hole circle (at -1 0) (size 1.1 1.1) (drill 0.8) (layers "*.Cu" "*.Mask"))\n'
+            f'  (pad "2" smd rect (at {x:.4f} 0) (size 1 1) (layers "F.Cu" "F.Mask" "F.Paste"))\n'
+            ')\n').encode()
+
+
+# The board's NPTH limit as compile now cites it in the refusal (fab profile limit npth-copper).
+NPTH_LIMIT = ("against the 0.2000 mm limit of board setup constraints hole clearance "
+              "(board.design_settings.rules.min_hole_clearance from fab profile limit 'npth-copper' "
+              "(min_npth_hole_clearance_mm))")
+
+
 def hole_finding(ref, actual='0.1944', uuids=('11111111-1111-4111-8111-111111111111',
                                                '22222222-2222-4222-8222-222222222222')):
     """A native hole_clearance finding in KiCad 10's report form, as in benchmark r5b."""
     return dict(type='hole_clearance', severity='error',
-                description=('Hole clearance violation (board setup constraints hole clearance 0.2500 mm; '
+                description=('Hole clearance violation (board setup constraints hole clearance 0.2000 mm; '
                              f'actual {actual} mm)'),
                 items=[dict(description=f'Pad 1 [/SIGNAL] of {ref} on F.Cu', uuid=uuids[0], pos=dict(x=1, y=1)),
                        dict(description=f'NPTH pad of {ref}', uuid=uuids[1], pos=dict(x=1, y=2))])
@@ -87,8 +106,7 @@ class NativeFootprintRulesTest(unittest.TestCase):
             self.assertIn('hole_clearance: ', line)
             self.assertIn(f'Pad 1 [/SIGNAL] of {ref} on F.Cu', line)
             self.assertIn(f'NPTH pad of {ref}', line)
-            self.assertIn('measure 0.1500 mm against the 0.2500 mm limit of board setup constraints hole '
-                          'clearance (board.design_settings.rules.min_hole_clearance, KiCad\'s default', line)
+            self.assertIn('measure 0.1500 mm ' + NPTH_LIMIT, line)
             self.assertIn(f'Choose another footprint for {ref}', line)
         report = json.loads((self.root / 'near/report.json').read_bytes())
         self.assertEqual(report['status'], 'refused')
@@ -98,8 +116,9 @@ class NativeFootprintRulesTest(unittest.TestCase):
             self.assertEqual([e['type'] for e in part['other_errors']], ['invalid_outline'])
             self.assertTrue(part['kicad_version'])
 
-    def test_a_footprint_whose_hole_clears_the_rule_passes(self):
-        report = self.run_check(0.30, 'clear')
+    def test_an_npth_hole_that_meets_the_sourced_limit_passes(self):
+        # 0.22 mm is above JLCPCB's published 0.20 mm and below KiCad's unsourced 0.25 mm default.
+        report = self.run_check(0.22, 'clear')
         self.assertEqual(report['status'], 'pass')
         self.assertEqual([(p['reference'], p['status'], p['errors']) for p in report['parts']],
                          [('R1', 'pass', []), ('R2', 'pass', [])])
@@ -112,8 +131,42 @@ class NativeFootprintRulesTest(unittest.TestCase):
         project['board']['design_settings']['rules']['min_hole_clearance'] = 0.1
         (self.cad / 'Owned.pretty/R2.kicad_mod').write_bytes(owned_footprint('R2', 0.15))
         report = footprint_rules.check_under(self.design, self.cad, self.root / 'allowed',
-                                             {'owned.kicad_pro': json.dumps(project).encode()}, derivation)
+                                             {**files, 'owned.kicad_pro': json.dumps(project).encode()},
+                                             derivation)
         self.assertEqual(report['status'], 'pass')
+
+    def test_the_plated_hole_rule_fires_below_its_sourced_limit_and_passes_at_it(self):
+        (self.cad / 'Owned.pretty/R2.kicad_mod').write_bytes(pth_footprint('R2', 0.27))
+        with self.assertRaises(DesignError) as caught:
+            footprint_rules.check(self.design, self.cad, self.root / 'pth-near')
+        line = caught.exception.problems[0]
+        self.assertTrue(line.startswith('parts.R1.footprint: '), line)
+        self.assertIn("measure 0.2700 mm against the 0.2800 mm limit of rule 'fab_pth-copper' hole clearance "
+                      "(custom rule 'fab_pth-copper' from fab profile limit 'pth-copper' "
+                      "(min_pth_hole_clearance_mm), in the board's .kicad_dru)", line)
+        (self.cad / 'Owned.pretty/R2.kicad_mod').write_bytes(pth_footprint('R2', 0.28))
+        report = footprint_rules.check(self.design, self.cad, self.root / 'pth-at')
+        self.assertEqual([(p['reference'], p['status']) for p in report['parts']], [('R1', 'pass'), ('R2', 'pass')])
+
+    def test_the_stock_usb_c_receptacle_of_benchmark_r5b_is_still_refused(self):
+        # J1 of r5b usb-regulator attempt 2, the KiCad library footprint read in place: its four
+        # 0.1944 mm NPTH-to-pad gaps are below the sourced 0.20 mm limit as well.
+        name = 'USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal'
+        stock = Path('/usr/share/kicad/footprints/Connector_USB.pretty') / (name + '.kicad_mod')
+        self.assertTrue(stock.is_file(), stock)
+        (self.cad / 'Connector_USB.pretty').mkdir()
+        (self.cad / 'Connector_USB.pretty' / stock.name).write_bytes(stock.read_bytes())
+        self.design['parts'] = {'J1': dict(lcsc='C3025063', value='USB4105-GF-A-060',
+                                           lib_id='Connector:USB_C_Receptacle_USB2.0_16P',
+                                           footprint='Connector_USB:' + name, group='divider')}
+        pins = {'GND': ['A1', 'A12', 'B1', 'B12', 'SH'], 'VBUS': ['A4', 'A9', 'B4', 'B9'], 'CC1': ['A5'], 'CC2': ['B5']}
+        self.design['nets'] = {net: ['J1.' + pin for pin in group] for net, group in pins.items()}
+        self.design['no_connects'] = ['J1.' + pin for pin in ('A6', 'A7', 'A8', 'B6', 'B7', 'B8')]
+        with self.assertRaises(DesignError) as caught:
+            footprint_rules.check(self.design, self.cad, self.root / 'j1')
+        (line,) = caught.exception.problems
+        self.assertIn('4 native DRC errors inside the footprint', line)
+        self.assertEqual(line.count('measure 0.1944 mm ' + NPTH_LIMIT), 4)
 
 
 class RecordedFootprintRulesTest(unittest.TestCase):
@@ -132,7 +185,7 @@ class RecordedFootprintRulesTest(unittest.TestCase):
         request = json.loads((self.root / 'out/inputs/request.json').read_bytes())
         self.assertEqual({p['reference']: p['nets'] for p in request['parts']},
                          {'R1': {'1': '/SIGNAL', '2': 'GND'}, 'R2': {'1': '/SIGNAL', '2': 'GND'}})
-        self.assertEqual(request['rule_files'], ['owned.kicad_pro'])
+        self.assertEqual(request['rule_files'], ['owned.kicad_dru', 'owned.kicad_pro'])
         # Every scratch board is judged by the placement job's own DRC command.
         self.assertEqual({c.intent.argv for c in adapter.calls if c.intent.tool == 'drc'},
                          {tuple(native_run.drc_argv('/candidate/board.kicad_pcb', '/work/native-drc.json',

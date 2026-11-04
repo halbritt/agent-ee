@@ -63,6 +63,8 @@ Supported minimum/preferred keys:
 | `min_via_pad_mm` | mm | Native via diameter |
 | `min_edge_clearance_mm` | mm | Native board edge clearance, only against a qualified outline |
 | `min_hole_to_hole_mm` | mm | Native drilled-hole clearance |
+| `min_npth_hole_clearance_mm` | mm | Native hole-to-copper clearance of NPTH holes; also staged as the board-wide `min_hole_clearance` |
+| `min_pth_hole_clearance_mm` | mm | Native hole-to-copper clearance of plated pad holes, as a conditioned custom rule only, with no board-wide setting. Pairs with an NPTH pad or a via are left out because KiCad tests a condition both ways |
 | `max_layers` | integer count | Saved board copper layer count |
 | `max_board_mm` | `[x,y]` mm | Saved-axis extents of one simple closed straight-segment outline, x to x and y to y |
 | `supports_smt` | boolean | Presence of saved SMD pads |

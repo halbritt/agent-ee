@@ -26,12 +26,24 @@ NATIVE = {
     'min_via_pad_mm': ('via_diameter', 'via_diameter', "A.Type == 'Via'"),
     'min_edge_clearance_mm': ('edge_clearance', 'copper_edge_clearance', None),
     'min_hole_to_hole_mm': ('hole_to_hole', 'hole_to_hole', None),
+    # Hole edge to copper. KiCad tests a rule condition with A and B both ways and cannot
+    # name which item holds the hole, so the plated-hole condition leaves out pairs with an
+    # NPTH pad or a via: those holes keep the board-wide hole clearance (the NPTH limit).
+    'min_npth_hole_clearance_mm': ('hole_clearance', 'hole_clearance', "A.Pad_Type == 'NPTH, mechanical'"),
+    'min_pth_hole_clearance_mm': ('hole_clearance', 'hole_clearance',
+                                  "A.Pad_Type == 'Through-hole' && B.Type != 'Via' && "
+                                  "B.Pad_Type != 'NPTH, mechanical'"),
 }
 GEOMETRY = {'max_layers', 'max_board_mm', 'supports_smt'}
 PROJECT_RULES = {'min_trace_mm': 'min_track_width', 'min_clearance_mm': 'min_clearance',
                  'min_via_drill_mm': 'min_through_hole_diameter', 'min_via_pad_mm': 'min_via_diameter',
                  'min_edge_clearance_mm': 'min_copper_edge_clearance',
-                 'min_hole_to_hole_mm': 'min_hole_to_hole'}
+                 'min_hole_to_hole_mm': 'min_hole_to_hole',
+                 # KiCad's one board-wide hole clearance: it applies to every drilled hole.
+                 'min_npth_hole_clearance_mm': 'min_hole_clearance'}
+# Limits with no board-wide project setting: only their conditioned custom rule grades, so
+# the plated-hole limit never becomes the board-wide value that NPTH holes and vias use.
+RULE_ONLY = frozenset({'min_pth_hole_clearance_mm'})
 # fab-profile/2 conjunctive surcharge terms: each native finding cites only the via,
 # so the joint condition is the intersection of per-term via offender UUIDs.
 CONJUNCTIVE = {'min_via_drill_mm', 'min_via_pad_mm'}
@@ -346,7 +358,7 @@ def native_rule(record, key, value):
         project = {}
     else:
         constraint, violation, condition = NATIVE[key]
-        types, project = [violation], {PROJECT_RULES[key]: value}
+        types, project = [violation], {} if key in RULE_ONLY else {PROJECT_RULES[key]: value}
     rules = rule_text(record['marker'], condition, f'{constraint} (min {value:.12g}mm)')
     record.update(rules=rules, rules_sha256=sha_text(rules), native_types=list(types),
                   project_rules=project)

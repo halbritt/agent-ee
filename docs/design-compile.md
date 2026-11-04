@@ -459,8 +459,16 @@ and other pads get none. Next to the scratch board are the rule files that
 compile emits for this board, today one project file
 ([`footprint_rules.rule_files`](../src/agent_ee/footprint_rules.py) calls the
 compiler's own derivation). Every setting that the project leaves out
-takes KiCad's default, as on the built board. For example, the JLC profile sets
-no hole-to-copper limit, so KiCad's 0.25 mm `min_hole_clearance` default applies.
+takes KiCad's default, as on the built board. Hole clearances come from the JLC
+profile, not from KiCad's unsourced 0.25 mm default. JLCPCB publishes NPTH to
+track 0.2 mm, PTH to track 0.28 mm and via hole to track 0.2 mm. Compile writes
+the NPTH limit into the project's board-wide `min_hole_clearance`, which KiCad
+applies to every drilled hole. The plated-hole limit is the custom rule
+`fab_pth-copper` in `project/<name>.kicad_dru`; it never becomes the board-wide
+value. KiCad tests a rule condition with A and B both ways and cannot tell which
+item holds the hole. So the rule leaves out pairs with an NPTH pad or a via, and
+those holes keep the board-wide 0.2 mm. KiCad itself exempts a pad's own hole
+from its own copper, and copper of the same net.
 Native DRC runs in the sandbox with the same `kicad-cli pcb drc` command as the
 placement job's input DRC. Grading follows the placement job's pre-existing
 rule: an error-severity finding is refused only when every item it names
@@ -478,7 +486,7 @@ whose holes and pads meet the rules. For example:
 
 ```text
 Design refused:
-- parts.J1.footprint: Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal breaks this board's fabrication rules on its own, before placement or routing: 4 native DRC errors inside the footprint, which final verification fails as pre-existing whatever the placement. hole_clearance: Pad B12 [GND] of J1 on F.Cu and NPTH pad of J1 measure 0.1944 mm against the 0.2500 mm limit of board setup constraints hole clearance (board.design_settings.rules.min_hole_clearance, KiCad's default: the compiled project and the fab profile do not set it); ... Choose another footprint for J1 whose holes and pads meet these rules, for example one whose holes are farther from its pads; footprint-rules/report.json in the capture directory lists every finding
+- parts.J1.footprint: Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal breaks this board's fabrication rules on its own, before placement or routing: 4 native DRC errors inside the footprint, which final verification fails as pre-existing whatever the placement. hole_clearance: Pad A1 [GND] of J1 on F.Cu and NPTH pad of J1 measure 0.1944 mm against the 0.2000 mm limit of board setup constraints hole clearance (board.design_settings.rules.min_hole_clearance from fab profile limit 'npth-copper' (min_npth_hole_clearance_mm)); ... Choose another footprint for J1 whose holes and pads meet these rules, for example one whose holes are farther from its pads; footprint-rules/report.json in the capture directory lists every finding
 ```
 
 The line names a design field and no tool gap. The generate loop therefore

@@ -455,10 +455,26 @@ def envelope(design, root):
     files = {
         str(p.relative_to(root)): digest(p) for p in root.rglob("*") if p.is_file()
     }
-    _, _, rules, netclass, _ = produced_rules(
+    compiled, _, rules, netclass, _ = produced_rules(
         dict(fab_profile="fab-profile.json"), files, root
     )
     from . import native_geometry_defaults
+    from .fab_profile import NATIVE, RULE_ONLY
+    from .routing_rules import rule_text
+
+    # A sourced limit with no board-wide project setting (the plated-hole clearance) becomes
+    # one conditioned custom rule beside the project, so it never replaces the board-wide value.
+    locators = {limit["id"]: f"/limits/{index}" for index, limit in enumerate(profile["limits"])}
+    custom_rules = []
+    for constraint in compiled["constraints"]:
+        key = constraint["expected"].get("key")
+        if key in RULE_ONLY and constraint["expected"]["tier"] == "minimum":
+            kind, _, condition = NATIVE[key]
+            value = constraint["expected"]["value"]
+            custom_rules.append(dict(
+                rule="fab_" + constraint["id"], key=key, limit_id=constraint["id"],
+                locator=locators[constraint["id"]], tier="minimum", value=value, condition=condition,
+                constraint=f"{kind} (min {value:.12g}mm)"))
 
     # Default clearance stays at the sourced fab floor (owner decision).
     # Preserve native routing track width and raise via dimensions to meet the unchanged native hole and
@@ -511,6 +527,7 @@ def envelope(design, root):
                 citation=annular_citation,
             ),
             selected_routing=routing,
+            custom_rules=custom_rules,
         ),
     )
     project = dict(
@@ -535,6 +552,10 @@ def envelope(design, root):
     )
     (root / "project").mkdir()
     write_json(root / f"project/{design['name']}.kicad_pro", project)
+    if custom_rules:
+        (root / f"project/{design['name']}.kicad_dru").write_text("(version 1)\n" + "".join(
+            rule_text(r["rule"], r["condition"], r["constraint"]).split("\n", 1)[1] for r in custom_rules),
+            encoding="utf-8")
     return project
 
 

@@ -464,7 +464,7 @@ The producer refuses, naming the cause, and publishes nothing when:
 If a required selector is on a child sheet, the staged presence checker cannot
 observe it. The producer then emits no stage policy and records why in the
 receipt. Per-net classes require the optional captured constraints described above.
-KiCad rule settings outside the six keys keep the template values. The producer
+KiCad rule settings outside the six keys keep the template values, except that an optional minimum-tier `min_npth_hole_clearance_mm` limit sets `min_hole_clearance`. The producer
 derives no `fab_package` done gate and no scope/3 envelope acceptance.
 
 ## fome-mc severity template
