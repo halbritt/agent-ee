@@ -109,6 +109,71 @@ class LocalCopperTests(unittest.TestCase):
         self.assertFalse(result['banks'][0]['return']['pin_bypasses_bank'])
         self.assertTrue(result['banks'][0]['device_return_reaches_plane_only_through_bank_capacitors'])
 
+    def test_router_trace_below_floor_next_to_generated_copper_is_caught_as_defect(self):
+        receipt = self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        dev_pad = local.pad(board, contract()['relations'][0]['return'][0])
+        pos = local.position(dev_pad)
+        y_track = pos[1] + 500_000
+        net = dev_pad.GetNetCode()
+        track = local._track(board, [(pos[0] - 1_000_000, y_track), (pos[0] + 1_000_000, y_track)],
+                             net, self.k.F_Cu, 200_000)[0]
+        track.SetLocked(False)
+        via = self.k.PCB_VIA(board)
+        via.SetPosition(self.k.VECTOR2I(pos[0] - 1_000_000, y_track))
+        via.SetWidth(600_000); via.SetDrill(300_000); via.SetLayerPair(self.k.F_Cu, self.k.B_Cu)
+        via.SetNetCode(net); board.Add(via)
+        self.k.ZONE_FILLER(board).Fill(board.Zones())
+        self.k.SaveBoard(str(self.path), board)
+        result = measure(self.path, contract(), generation=receipt)
+        self.assertEqual(result['outcome'], 'defect')
+        self.assertTrue(result['banks'][0]['return']['pin_bypasses_bank'])
+        self.assertTrue(any('sub-floor gap at' in r for r in result['records'][0]['reasons']))
+
+    def test_router_trace_at_or_above_floor_does_not_bridge(self):
+        receipt = self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        dev_pad = local.pad(board, contract()['relations'][0]['return'][0])
+        pos = local.position(dev_pad)
+        y_track = pos[1] + 600_000
+        net = dev_pad.GetNetCode()
+        track = local._track(board, [(pos[0] - 1_000_000, y_track), (pos[0] + 1_000_000, y_track)],
+                             net, self.k.F_Cu, 200_000)[0]
+        track.SetLocked(False)
+        via = self.k.PCB_VIA(board)
+        via.SetPosition(self.k.VECTOR2I(pos[0] - 1_000_000, y_track))
+        via.SetWidth(600_000); via.SetDrill(300_000); via.SetLayerPair(self.k.F_Cu, self.k.B_Cu)
+        via.SetNetCode(net); board.Add(via)
+        self.k.ZONE_FILLER(board).Fill(board.Zones())
+        self.k.SaveBoard(str(self.path), board)
+        result = measure(self.path, contract(), generation=receipt)
+        self.assertEqual(result['outcome'], 'info')
+        self.assertFalse(result['banks'][0]['return']['pin_bypasses_bank'])
+
+    def test_router_sub_floor_bridge_on_fallback_emits_warning(self):
+        receipt = self.seed()
+        board = self.k.LoadBoard(str(self.path))
+        dev_pad = local.pad(board, contract()['relations'][0]['return'][0])
+        pos = local.position(dev_pad)
+        y_track = pos[1] + 500_000
+        net = dev_pad.GetNetCode()
+        track = local._track(board, [(pos[0] - 1_000_000, y_track), (pos[0] + 1_000_000, y_track)],
+                             net, self.k.F_Cu, 200_000)[0]
+        track.SetLocked(False)
+        via = self.k.PCB_VIA(board)
+        via.SetPosition(self.k.VECTOR2I(pos[0] - 1_000_000, y_track))
+        via.SetWidth(600_000); via.SetDrill(300_000); via.SetLayerPair(self.k.F_Cu, self.k.B_Cu)
+        via.SetNetCode(net); board.Add(via)
+        self.k.ZONE_FILLER(board).Fill(board.Zones())
+        self.k.SaveBoard(str(self.path), board)
+        fallback = local.fallback_receipt(self.path, contract(), 'routed fallback')
+        result = measure(self.path, contract(), generation=fallback)
+        self.assertEqual(result['outcome'], 'info')
+        self.assertTrue(result['banks'][0]['return']['pin_bypasses_bank'])
+        warning = next((w for w in result['warnings'] if w['kind'] == 'bank_bypass'), None)
+        self.assertIsNotNone(warning)
+        self.assertIn('sub-floor gap at', warning['reason'])
+
     def two_capacitors(self):
         from copy import deepcopy
         doc = contract()
@@ -285,8 +350,7 @@ class LocalCopperTests(unittest.TestCase):
         self.assertEqual(measured['outcome'],'info',measured)
         warnings={w['kind']:w for w in measured['warnings']}
         self.assertIn('generation_fallback',warnings);self.assertIn('bank_bypass',warnings)
-        self.assertIn('router_copper_floor_unverified',warnings)
-        self.assertIn('floor not verified for router copper',warnings['router_copper_floor_unverified']['reason'])
+        self.assertNotIn('router_copper_floor_unverified',warnings)
         self.assertEqual(warnings['bank_bypass']['search_refusal'],reason)
         self.assertTrue(all(measured['records'][0][side]['path'] for side in ('supply','return')))
         self.path=Path(result['board'])
@@ -323,7 +387,7 @@ class LocalCopperTests(unittest.TestCase):
         fallen = measure(self.path, contract(), generation=local.fallback_receipt(self.path,contract(),'test refusal'))
         self.assertEqual(fallen['outcome'], 'info', fallen)
         self.assertIn('capacitor_plane_access', {w['kind'] for w in fallen['warnings']})
-        self.assertIn('router_copper_floor_unverified', {w['kind'] for w in fallen['warnings']})
+        self.assertNotIn('router_copper_floor_unverified', {w['kind'] for w in fallen['warnings']})
 
     def test_failed_final_loop_measurement_stays_unknown_and_ineligible(self):
         from unittest.mock import patch
@@ -933,23 +997,90 @@ class ReviewRegressionTests(unittest.TestCase):
         print(dict(junction_opening_upper_bound=dict(floor_um=100,at_floor_gap_um=at_floor,
                     enlarged_opening_um=120,enlarged_gap_um=enlarged,status='refused')))
 
-    def test_documented_junction_ring_cross_terms_remain_accepted(self):
-        # Integrator round-10 decision: characterize this bounded limit, not repair it.
-        cases=[(1_200_000,135,20,110.411,86.143),(1_200_000,165,22,107.393,88.794),
-               (700_000,135,35,125.750,90.290)]
-        for land,alpha,theta,remainder_expected,cross_expected in cases:
-            with self.subTest(land=land,alpha=alpha,theta=theta):
-                self.setUp();pad,a,b,receipt=self.junction_fixture(land,alpha,theta)
-                self.assertEqual(local.verify_geometry(self.board,receipt)['status'],'pass')
-                remainder=self.junction_gap_um(a,b,pad,(100_000,100_000))
-                cross=min(self.junction_gap_um(a,b,pad,(100_000,0)),
-                          self.junction_gap_um(a,b,pad,(0,100_000)))
-                self.assertGreaterEqual(remainder,100);self.assertLess(cross,100)
-                self.assertAlmostEqual(remainder,remainder_expected,places=2)
-                self.assertAlmostEqual(cross,cross_expected,places=2)
-                print(dict(documented_junction_limit=dict(land_mm=land/1e6,alpha=alpha,theta=theta,
-                            remainder_gap_um=remainder,cross_gap_um=cross,status='pass')))
+    def test_shallow_junction_cross_terms_below_floor_are_refused(self):
+        cases = [(1_200_000, 135, 20, 110.411, 86.143),
+                 (1_200_000, 165, 22, 107.393, 88.794),
+                 (700_000, 135, 35, 125.750, 90.290)]
+        for land, alpha, theta, remainder_expected, cross_expected in cases:
+            with self.subTest(land=land, alpha=alpha, theta=theta):
+                self.setUp()
+                pad, a, b, receipt = self.junction_fixture(land, alpha, theta)
+                self.assertRaisesRegex(JobRefusal, 'outside a declared shared pad',
+                                       local.verify_geometry, self.board, receipt)
+                remainder = self.junction_gap_um(a, b, pad, (100_000, 100_000))
+                cross = min(self.junction_gap_um(a, b, pad, (100_000, 0)),
+                            self.junction_gap_um(a, b, pad, (0, 100_000)))
+                self.assertGreaterEqual(remainder, 100)
+                self.assertLess(cross, 100)
+                self.assertAlmostEqual(remainder, remainder_expected, places=2)
+                self.assertAlmostEqual(cross, cross_expected, places=2)
+                self.save()
+                report = local.separation_report(self.path, receipt)
+                row = report['pairs'][0]
+                self.assertEqual(row['status'], 'defect')
+                self.assertEqual(report['outcome'], 'defect')
+                self.assertAlmostEqual(row['minimum_gap_mm_lower_bound'] * 1000, remainder_expected, places=2)
                 self.doCleanups()
+
+    def test_junction_cross_terms_at_or_above_floor_pass(self):
+        cases = [(1_200_000, 135, 40), (1_200_000, 180, 50), (700_000, 180, 90), (700_000, 135, 135)]
+        for land, alpha, theta in cases:
+            with self.subTest(land=land, alpha=alpha, theta=theta):
+                self.setUp()
+                pad, a, b, receipt = self.junction_fixture(land, alpha, theta)
+                self.assertEqual(local.verify_geometry(self.board, receipt)['status'], 'pass')
+                self.save()
+                report = local.separation_report(self.path, receipt)
+                row = report['pairs'][0]
+                self.assertEqual(row['status'], 'pass')
+                self.assertEqual(report['outcome'], 'pass')
+                self.assertGreaterEqual(row['minimum_gap_mm_lower_bound'], 0.1)
+                self.doCleanups()
+
+    def test_split_escape_inside_ring_is_refused(self):
+        import math
+        self.setUp()
+        land = 1_200_000
+        fp = self.add_fp('JX', [])
+        pad = self.add_pad(fp, '1', 36, 25, '/return', land)
+        c = local.position(pad)
+        t = math.radians(180 - 25)
+        end = (c[0] + round(1_500_000 * math.cos(t)), c[1] - round(1_500_000 * math.sin(t)))
+        mid = (c[0] + round(700_000 * math.cos(t)), c[1] - round(700_000 * math.sin(t)))
+        a = local._track(self.board, [(c[0] - 1_500_000, c[1]), c], pad.GetNetCode(), self.k.F_Cu, 200_000)[0]
+        s1 = local._track(self.board, [c, mid], pad.GetNetCode(), self.k.F_Cu, 200_000)[0]
+        s2 = local._track(self.board, [mid, end], pad.GetNetCode(), self.k.F_Cu, 200_000)[0]
+        copper = [a, s1, s2]
+        ids = [t.m_Uuid.AsString() for t in copper]
+        receipt = dict(contract=contract(), relations=[dict(id='cell', copper=ids, legs=[
+            dict(kind='return', tracks=[ids[0]], pads=[pad.m_Uuid.AsString()]),
+            dict(kind='plane_tie', tracks=[ids[1], ids[2]], pads=[pad.m_Uuid.AsString()]),
+        ])], protected=[local.copper_identity(t) for t in copper], other_pads=[])
+        self.assertRaisesRegex(JobRefusal, 'escape track splits or has intermediate vertex within 1-floor junction opening',
+                               local.verify_geometry, self.board, receipt)
+        self.doCleanups()
+
+    def test_split_escape_outside_ring_passes(self):
+        import math
+        self.setUp()
+        land = 1_200_000
+        fp = self.add_fp('JX', [])
+        pad = self.add_pad(fp, '1', 36, 25, '/return', land)
+        c = local.position(pad)
+        t = math.radians(180 - 25)
+        end = (c[0] + round(1_500_000 * math.cos(t)), c[1] - round(1_500_000 * math.sin(t)))
+        mid = (c[0] + round(850_000 * math.cos(t)), c[1] - round(850_000 * math.sin(t)))
+        a = local._track(self.board, [(c[0] - 1_500_000, c[1]), c], pad.GetNetCode(), self.k.F_Cu, 200_000)[0]
+        s1 = local._track(self.board, [c, mid], pad.GetNetCode(), self.k.F_Cu, 200_000)[0]
+        s2 = local._track(self.board, [mid, end], pad.GetNetCode(), self.k.F_Cu, 200_000)[0]
+        copper = [a, s1, s2]
+        ids = [t.m_Uuid.AsString() for t in copper]
+        receipt = dict(contract=contract(), relations=[dict(id='cell', copper=ids, legs=[
+            dict(kind='return', tracks=[ids[0]], pads=[pad.m_Uuid.AsString()]),
+            dict(kind='plane_tie', tracks=[ids[1], ids[2]], pads=[pad.m_Uuid.AsString()]),
+        ])], protected=[local.copper_identity(t) for t in copper], other_pads=[])
+        self.assertEqual(local.verify_geometry(self.board, receipt)['status'], 'pass')
+        self.doCleanups()
 
     def test_junction_opening_keeps_the_floor_beyond_one_floor_of_the_pad(self):
         # Reviewer C1Narrow: a shallow in-pad junction cannot exempt its whole pair.

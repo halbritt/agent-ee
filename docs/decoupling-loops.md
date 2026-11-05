@@ -87,11 +87,12 @@ for generated relations, and a warning for fallen-back relations. Open declared
 legs, unknown measurements, changed generated copper and exceeded declared loop
 limits remain blocking. Reports and author feedback carry the warnings.
 
-Router copper is not yet included in the fabrication-floor connectivity model.
-Every fallen-back relation therefore warns "fabrication floor not verified for
-router copper". The typed graph still measures geometric contact; it does not
-prove that a noncontacting sub-floor gap cannot bridge during fabrication.
-The existing native floor check remains mandatory for generated copper.
+Same-net copper closer than the fabrication floor (0.1 mm) is treated as joined
+in the bank decoupling topology check, whether placed by the generator or the
+router. Sub-floor bridges that allow return current to bypass bank capacitors to
+the plane are detected: as a defect for generated relations, and as a warning
+naming the measured gap and coordinates for fallen-back relations. The floor check
+actively verifies router copper alongside generated copper.
 
 Custom rules, board edges and rule areas remain subject to native DRC.
 
@@ -260,28 +261,29 @@ Independent copper uses conservative outside polygons and the full floor. The ju
 localization uses inscribed native copper polygons at 1 nm resolution, avoiding
 outward arc-rounding slivers at land edges. Both generation verification and the
 typed connectivity graph use this same polygon-overlap decision.
-The known junction bound, alongside the polygon junction note above (N5), is
-that the region is the declared pad grown by one native floor: copper may
-physically merge inside this region, while beyond it the floor is enforced
-between the arms' remainders only. At shallow junction angles of about 20–35°,
-a remainder can be below the floor from the other arm's copper inside the ring.
-The reviewer measured about 86–90 µm at a 0.1 mm floor; a bridge across this
-bounded gap stays within one floor of the pad edge. This is an accepted limit
-of the current rule, not a fabrication qualification. Geometric overlap
-outside the declared pad is still separately refused.
+The junction opening region is the declared pad grown by one native floor: copper
+may physically merge inside this region, while beyond it the floor is enforced
+between the arms' remainders and against bare-pad cross terms. At shallow junction
+angles (about 20–35°), an arm's remainder outside the ring can fall below the
+0.1 mm floor from the other arm's copper outside the bare pad. These cross terms
+are evaluated against the fabrication floor, refusing shallow junctions below the
+floor (such as 86–90 µm gaps). Legitimate junctions (≥ 40°) and production layouts
+keep the floor and pass.
 
-The measured accepted cases use square lands, 0.2 mm tracks and 1.5 mm arms.
+The measured junction cases use square lands, 0.2 mm tracks and 1.5 mm arms.
 The incoming arm follows approach ray α toward the pad centre; the escape
 follows α−θ away, with rays `(cos α, −sin α)` in board coordinates:
 
-| Land mm | Approach α | Junction θ | Remainder gap µm | Remainder-to-ring cross gap µm |
-|---|---:|---:|---:|---:|
-| 1.2 | 135° | 20° | 110.411 | 86.143 |
-| 1.2 | 165° | 22° | 107.393 | 88.794 |
-| 0.7 | 135° | 35° | 125.750 | 90.290 |
+| Land mm | Approach α | Junction θ | Remainder gap µm | Remainder-to-ring cross gap µm | Status |
+|---|---:|---:|---:|---:|---|
+| 1.2 | 135° | 20° | 110.411 | 86.143 | Refused (sub-floor cross term) |
+| 1.2 | 165° | 22° | 107.393 | 88.794 | Refused (sub-floor cross term) |
+| 0.7 | 135° | 35° | 125.750 | 90.290 | Refused (sub-floor cross term) |
 
-An escape vertex inside the ring can conservatively turn a legal escape into
-a refusal; this split-escape limitation never creates a false pass.
+Additionally, escape tracks leaving a pad junction are verified not to split or
+contain intermediate vertices within the 1-floor junction opening. An intermediate
+vertex within the opening conservatively raises a verification refusal, ensuring
+every escape leaves the junction as an unbroken direct segment past the 1-floor ring.
 
 Near misses below the floor count as meetings even without geometric contact.
 The saved-board separation report lists every non-exempt generated pair/layer

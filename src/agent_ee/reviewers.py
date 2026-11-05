@@ -501,6 +501,25 @@ def build_packet(run_dir, checks, run_id):
         carried = packet.get("block_provenance", {}).get("record", {}).get("reserved_area")
         if carried is not None and carried != packet["reserved_area"]["record"]:
             raise ValueError("reserved_area differs from the block provenance reserved area")
+    outline_util = None
+    if (run_dir / "generate-report.json").is_file():
+        gen = read_json(run_dir / "generate-report.json")
+        outline_util = gen.get("claims", {}).get("outline_utilisation")
+        if not outline_util and gen.get("attempts"):
+            outline_util = gen["attempts"][-1].get("outline_utilisation")
+    if outline_util is None and (run_dir / "outline-utilisation.json").is_file():
+        outline_util = read_json(run_dir / "outline-utilisation.json")
+    if outline_util is None:
+        statement_path = run_dir / "inputs" / "statement.json"
+        board_file = run_dir / "inputs" / scope.get("board", "")
+        if statement_path.is_file() and board_file.is_file():
+            from .courtyard import board_outline_utilisation
+            try:
+                outline_util = board_outline_utilisation(board_file, read_json(statement_path))
+            except Exception:
+                outline_util = None
+    if outline_util is not None:
+        packet["outline_utilisation"] = outline_util
     packet["evidence_access"] = {"candidate": "/candidate/<path>",
         "checks": "/evidence/checks/<id>.json", "artifacts": "/evidence/work/<check>/<path>",
         "navigation": "/evidence/work/.navigation/index.json",

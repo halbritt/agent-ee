@@ -94,6 +94,52 @@ class ToolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tools.inspect_symbol('../Owned:R', self.root)
 
+    def test_inspect_courtyard_extracts_dimensions_and_sums_area(self):
+        footprints = self.root / 'footprints/Owned.pretty'
+        footprints.mkdir(parents=True)
+        (footprints / 'R1.kicad_mod').write_text(
+            '(footprint "R1" (layer "F.Cu")\n'
+            '  (fp_line (start -1.5 -1.0) (end 1.5 -1.0) (layer "F.CrtYd"))\n'
+            '  (fp_line (start 1.5 -1.0) (end 1.5 1.0) (layer "F.CrtYd"))\n'
+            '  (fp_line (start 1.5 1.0) (end -1.5 1.0) (layer "F.CrtYd"))\n'
+            '  (fp_line (start -1.5 1.0) (end -1.5 -1.0) (layer "F.CrtYd"))\n'
+            '  (pad "1" smd rect (at -1 0) (size 1 1) (layers "F.Cu"))\n'
+            '  (pad "2" smd rect (at 1 0) (size 1 1) (layers "F.Cu")))'
+        )
+        (footprints / 'R2.kicad_mod').write_text(
+            '(footprint "R2" (layer "F.Cu")\n'
+            '  (fp_rect (start -2.0 -0.5) (end 2.0 0.5) (layer "F.CrtYd"))\n'
+            '  (pad "1" smd rect (at -1 0) (size 1 1) (layers "F.Cu")))'
+        )
+        result = tools.inspect_courtyard(['Owned:R1', 'Owned:R2'], self.root)
+        self.assertEqual(result['schema'], 'agent-ee.design-courtyard/1')
+        self.assertEqual(len(result['footprints']), 2)
+        r1_c = result['footprints'][0]['courtyard']
+        self.assertEqual(r1_c['status'], 'linear_courtyard')
+        self.assertEqual(r1_c['bbox_mm'], [-1.5, -1.0, 1.5, 1.0])
+        self.assertEqual(r1_c['width_mm'], 3.0)
+        self.assertEqual(r1_c['height_mm'], 2.0)
+        self.assertEqual(r1_c['area_mm2'], 6.0)
+        r2_c = result['footprints'][1]['courtyard']
+        self.assertEqual(r2_c['status'], 'linear_courtyard')
+        self.assertEqual(r2_c['bbox_mm'], [-2.0, -0.5, 2.0, 0.5])
+        self.assertEqual(r2_c['width_mm'], 4.0)
+        self.assertEqual(r2_c['height_mm'], 1.0)
+        self.assertEqual(r2_c['area_mm2'], 4.0)
+        self.assertEqual(result['courtyard_area_sum_mm2'], 10.0)
+
+    def test_inspect_courtyard_handles_missing_courtyard(self):
+        footprints = self.root / 'footprints/Owned.pretty'
+        footprints.mkdir(parents=True)
+        (footprints / 'NoCrt.kicad_mod').write_text(
+            '(footprint "NoCrt" (layer "F.Cu")\n'
+            '  (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu")))'
+        )
+        result = tools.inspect_courtyard(['Owned:NoCrt'], self.root)
+        self.assertEqual(result['footprints'][0]['courtyard']['status'], 'none')
+        self.assertIsNone(result['footprints'][0]['courtyard']['area_mm2'])
+        self.assertEqual(result['courtyard_area_sum_mm2'], 0.0)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -40,7 +40,7 @@ from .storage import canonical
 INPUT_SCHEMA = 'agent-ee.placement-job-input/2'
 OUTPUT_SCHEMA = 'agent-ee.placement-job-output/1'
 NM = 1_000_000
-WEIGHTS = {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20}
+WEIGHTS = {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20, 'decoupling': 4}
 SILK_ONLY = {'status': 'none', 'reason': 'silk-only non-electrical graphic'}
 COPPER_MARK = {'status': 'none', 'reason': 'fixed copper mark: copper obstacle, not a body'}
 
@@ -321,6 +321,8 @@ def capture(board, normalized, *, dialect_checks=(), locality_footprints=None):
                                  edges=intent.get('edge_connectors', []), groups=groups['groups'],
                                  rails=normalized['rails'])
     problem['proximity'] = _proximity(intent, problem['footprints'])
+    if 'decoupling' in intent:
+        problem['decoupling'] = intent['decoupling']
     if dialect:
         problem['compatibility'] = {'schema': dialect['schema'], 'dialect': dialect['dialect'],
                                     'unresolved_claims': dialect['unresolved_claims'], 'withheld': dialect['withheld'],

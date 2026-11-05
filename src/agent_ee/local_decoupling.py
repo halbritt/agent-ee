@@ -180,7 +180,7 @@ def junction_in_pad(first, second, layer, shared_pads):
 
 def _separation_shapes(first, second, layer, shared_pads):
     if not shared_pads:
-        return first.GetEffectiveShape(layer), second.GetEffectiveShape(layer)
+        return [first.GetEffectiveShape(layer), second.GetEffectiveShape(layer)], None
     # Junction arms need room to separate at the land edge. Bound that opening
     # to one fabrication floor; distant portions must still keep the floor.
     margin = _separation_floor(first.GetBoard()) if junction_in_pad(first, second, layer, shared_pads) else 0
@@ -190,17 +190,35 @@ def _separation_shapes(first, second, layer, shared_pads):
         outside.BooleanSubtract(inside)
         outside.Simplify()
         if outside.IsEmpty():
-            return None
+            return None, None
         shapes.append(outside)
-    return shapes
+    cross = None
+    if margin > 0:
+        bare_inside, bare_copper = _junction_polygons(first, second, layer, shared_pads, pad_margin=0)
+        cross = []
+        for outside in bare_copper:
+            outside.BooleanSubtract(bare_inside)
+            outside.Simplify()
+            cross.append(outside)
+    return shapes, cross
 
 
 def _too_close(first, second, layer, shared_pads, gap):
     gap = max(1, gap)  # A zero native floor still cannot permit contact.
     if not first.GetEffectiveShape(layer).Collide(second.GetEffectiveShape(layer), gap):
         return False
-    shapes = _separation_shapes(first, second, layer, shared_pads)
-    return shapes is not None and shapes[0].Collide(shapes[1], gap)
+    shapes, cross = _separation_shapes(first, second, layer, shared_pads)
+    if shapes is None:
+        return False
+    if shapes[0].Collide(shapes[1], gap):
+        return True
+    if cross is not None:
+        cross_gap = min(gap, _separation_floor(first.GetBoard()) - 500)
+        if not cross[1].IsEmpty() and shapes[0].Collide(cross[1], cross_gap):
+            return True
+        if not cross[0].IsEmpty() and shapes[1].Collide(cross[0], cross_gap):
+            return True
+    return False
 
 
 def _copper_boxes(item, margin):
@@ -730,6 +748,35 @@ def verify_geometry(board, receipt):
     from .placement_job import JobRefusal
     pads, tracks, allowed, ties, groups, owners = _geometry_groups(board, receipt)
     required_gap = _separation_floor(board)
+    for relation in receipt.get('relations', []):
+        for leg in relation.get('legs', []):
+            if leg.get('kind') == 'plane_tie':
+                for pid in leg.get('pads', []):
+                    is_junction = any(pid in other_leg.get('pads', [])
+                                      for other_leg in relation.get('legs', [])
+                                      if other_leg.get('kind') in ('supply', 'return'))
+                    if not is_junction:
+                        continue
+                    terminal = next((p for p in pads if p.m_Uuid.AsString() == pid), None)
+                    if terminal is None:
+                        continue
+                    tie_tracks = [tracks[uid] for uid in leg.get('tracks', [])
+                                  if uid in tracks and tracks[uid].GetClass() == 'PCB_TRACK']
+                    if len(tie_tracks) > 1:
+                        endpoints = {}
+                        for t in tie_tracks:
+                            for pt in ((t.GetStart().x, t.GetStart().y), (t.GetEnd().x, t.GetEnd().y)):
+                                endpoints[pt] = endpoints.get(pt, 0) + 1
+                        import pcbnew as k
+                        for pt, count in endpoints.items():
+                            if count >= 2:
+                                for layer in board.GetEnabledLayers().CuStack():
+                                    if terminal.IsOnLayer(layer):
+                                        if terminal.GetEffectiveShape(layer).Collide(k.VECTOR2I(pt[0], pt[1]), required_gap):
+                                            raise JobRefusal(
+                                                f"local decoupling {relation['id']} geometry: "
+                                                "escape track splits or has intermediate vertex within 1-floor junction opening"
+                                            )
     for uid, item in tracks.items():
         via = item.GetClass() == 'PCB_VIA'
         clearance = _rules(board, item)['clearance']
@@ -806,7 +853,7 @@ def separation_report(board_path, receipt):
             shared = allowed.get(uid, set()) & allowed.get(other_uid, set())
             terminals = [p for p in pads if p.m_Uuid.AsString() in shared]
             for layer in sorted(layers):
-                shapes = _separation_shapes(item, other, layer, terminals)
+                shapes, cross = _separation_shapes(item, other, layer, terminals)
                 low = _gap_lower_bound(item, other, shapes)
                 failed = _too_close(item, other, layer, terminals, floor)
                 rows.append(dict(items=[uid, other_uid], layer=board.GetLayerName(layer), shared_pads=sorted(shared),

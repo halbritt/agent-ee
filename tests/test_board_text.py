@@ -24,15 +24,9 @@ class StatementTests(unittest.TestCase):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.design = design_fixture(self.root / 'capture')
 
-    def test_free_text_with_declared_mechanics_is_an_actionable_validation_refusal(self):
+    def test_free_text_with_declared_mechanics_is_accepted(self):
         self.design['mechanics'] = dict(access_owners=[])
         self.design['markings'] = [label(), label(id='name', text='NAME', anchor=dict(at_mm=[20, 15]))]
-        with self.assertRaises(DesignError) as refused:
-            validate(self.design, self.root / 'capture')
-        self.assertIn('markings[1].anchor', str(refused.exception))
-        self.assertIn('free board text cannot be combined with declared mechanics yet; '
-                      'attach the label to a part instead', str(refused.exception))
-        self.design.pop('mechanics')
         validate(self.design, self.root / 'capture')
 
     def test_free_part_and_pin_labels_validate_and_compile(self):

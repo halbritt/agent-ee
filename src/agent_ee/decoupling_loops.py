@@ -10,7 +10,10 @@ import math
 from pathlib import Path
 
 from . import local_loop_geometry as geo
-from .local_decoupling import banks, endpoint_key, junction_in_pad, pad, position, validate
+from .local_decoupling import (
+    banks, endpoint_key, junction_in_pad, pad, position, validate,
+    _separation_floor, _too_close, _separation_shapes, _gap_lower_bound
+)
 from .storage import digest, read_json, write_json
 
 
@@ -23,6 +26,33 @@ class CopperGraph:
                       [p for fp in board.GetFootprints() for p in fp.Pads()] + list(board.GetTracks())
                       if i.GetNetname() == net}
         conn = board.GetConnectivity()
+        floor = _separation_floor(board)
+        sub_floor_pairs = []
+        touching_all = {key: {p.m_Uuid.AsString() for p in conn.GetConnectedPads(i)} for key, i in inventory.items()}
+        inv_items = list(inventory.items())
+        for idx, (key, item) in enumerate(inv_items):
+            box_a = item.GetBoundingBox()
+            box_a.Inflate(floor)
+            for other_key, other in inv_items[idx + 1:]:
+                if not box_a.Intersects(other.GetBoundingBox()):
+                    continue
+                layers = set(item.GetLayerSet().CuStack()) & set(other.GetLayerSet().CuStack())
+                if not layers:
+                    continue
+                shared = [inventory[p] for p in touching_all.get(key, set()) & touching_all.get(other_key, set()) if p in inventory]
+                for layer in layers:
+                    if _too_close(item, other, layer, shared, floor):
+                        is_native_conn = (other in conn.GetConnectedTracks(item) or other in conn.GetConnectedPads(item))
+                        if item.GetClass() != 'PAD' and other.GetClass() != 'PAD' and junction_in_pad(item, other, layer, shared):
+                            sub_floor_pairs.append((key, other_key, layer, shared))
+                        elif not is_native_conn:
+                            sub_floor_pairs.append((key, other_key, layer, shared))
+
+        sub_floor_adj = {}
+        for k1, k2, _, _ in sub_floor_pairs:
+            sub_floor_adj.setdefault(k1, set()).add(k2)
+            sub_floor_adj.setdefault(k2, set()).add(k1)
+
         if roots is None:
             self.items = inventory
         else:
@@ -35,6 +65,9 @@ class CopperGraph:
                     continue
                 reachable[key] = inventory[key]
                 pending.extend(list(conn.GetConnectedTracks(item)) + list(conn.GetConnectedPads(item)))
+                for neighbor_key in sub_floor_adj.get(key, ()):
+                    if neighbor_key not in reachable and neighbor_key in inventory:
+                        pending.append(inventory[neighbor_key])
             self.items = reachable
         if any(i.GetClass() == 'PCB_ARC' for i in self.items.values()):
             raise ValueError('arc centreline measurement is not supported')
@@ -58,6 +91,27 @@ class CopperGraph:
                             item, other, layer, [self.items[p] for p in touching[key] & touching[target]]):
                         continue
                     self.edge(self.port(key, layer, a), self.port(target, layer, b), math.dist(a, b))
+        self.sub_floor_bridges = {}
+        for key, target, layer, shared in sub_floor_pairs:
+            if key not in self.items or target not in self.items:
+                continue
+            item = self.items[key]
+            other = self.items[target]
+            a, b = geo.closest(self.line(item), self.line(other))
+            dist = math.dist(a, b)
+            node_a = self.port(key, layer, a)
+            node_b = self.port(target, layer, b)
+            self.edge(node_a, node_b, dist)
+            shapes, cross = _separation_shapes(item, other, layer, shared)
+            gap_mm = _gap_lower_bound(item, other, shapes)
+            bridge_record = dict(
+                items=(key, target),
+                gap_mm=gap_mm if gap_mm is not None else dist / 1e6,
+                loc=((a[0] + b[0]) / 2, (a[1] + b[1]) / 2),
+                layer=layer,
+            )
+            self.sub_floor_bridges[(node_a, node_b)] = bridge_record
+            self.sub_floor_bridges[(node_b, node_a)] = bridge_record
         self.islands = []
         for zone in board.Zones():
             if zone.GetNetname() != net or zone.GetIsRuleArea() or zone.IsTeardropArea():
@@ -191,6 +245,18 @@ class CopperGraph:
         return [dict(plane_entry=key, copper_path=self.describe_path(path[1]))
                 for path, key in sorted(paths, key=lambda row: (row[0][0], row[1]))]
 
+    def bypass_bridges(self, first, second):
+        blocked = {node for tag, node in self.tags.items() if tag[0] in self.pad_ids(second)}
+        start = self.terminal(first)
+        found = []
+        for entry, _, _, _ in self.entries:
+            path = geo.shortest(self.adj, start, entry, blocked)
+            if path is not None:
+                for a, b in zip(path[1], path[1][1:]):
+                    if (a, b) in self.sub_floor_bridges:
+                        found.append(self.sub_floor_bridges[(a, b)])
+        return found
+
     def plane_access(self, terminal, layer, blocked):
         start = self.terminal(terminal)
         blocked_nodes = {node for tag, node in self.tags.items() if tag[0] in self.pad_ids(blocked)}
@@ -219,10 +285,13 @@ def measure_bank(board, bank, relations, graphs):
                 graph = graphs[net]
                 first = pad(board, endpoint)
                 capacitors = bank_terminals(board, relations, leg, 1, net)
+                bridges = graph.bypass_bridges(first, capacitors)
                 devices.append(dict(endpoint=endpoint, pin_bypasses_bank=graph.bypass(first, capacitors),
                                     reaches_plane=graph.bypass(first, []),
-                                    bypass_paths=graph.bypass_evidence(first, capacitors)))
-            row[leg] = dict(devices=devices, pin_bypasses_bank=any(d['pin_bypasses_bank'] for d in devices))
+                                    bypass_paths=graph.bypass_evidence(first, capacitors),
+                                    bypass_bridges=bridges))
+            row[leg] = dict(devices=devices, pin_bypasses_bank=any(d['pin_bypasses_bank'] for d in devices),
+                            bypass_bridges=[b for d in devices for b in d.get('bypass_bridges', [])])
         row['device_returns_without_plane'] = [d['endpoint'] for d in row['return']['devices'] if not d['reaches_plane']]
         row['positive_statement_status'] = 'not_applicable' if row['device_returns_without_plane'] else 'measured'
         row['device_return_reaches_plane_only_through_bank_capacitors'] = (
@@ -269,8 +338,6 @@ def measure(board_path, document, *, generation=None):
         if relation['id'] not in generated:
             reason = refusals.get(relation['id'], 'no generation receipt was supplied')
             warn(relation['id'], bank['id'], 'generation_fallback', reason)
-            warn(relation['id'], bank['id'], 'router_copper_floor_unverified',
-                 'fabrication floor not verified for router copper; geometric contact alone does not exclude sub-floor bridges')
         try:
             for leg in ('supply', 'return'):
                 first, second = [pad(board, endpoint) for endpoint in relation[leg]]
@@ -314,11 +381,26 @@ def measure(board_path, document, *, generation=None):
     for bank in bank_records:
         for leg in ('supply', 'return'):
             if bank.get(leg, {}).get('pin_bypasses_bank'):
+                bridges = bank.get(leg, {}).get('bypass_bridges', [])
+                if bridges:
+                    bridge = min(bridges, key=lambda b: b['gap_mm'])
+                    gap_um = bridge['gap_mm'] * 1000
+                    loc_mm = (bridge['loc'][0] / 1e6, bridge['loc'][1] / 1e6)
+                    base_reason = (f"{leg}: device pin reaches plane without bank capacitors via "
+                                   f"{gap_um:.1f} µm sub-floor gap at ({loc_mm[0]:.3f}, {loc_mm[1]:.3f}) mm")
+                else:
+                    base_reason = leg + ': device pin reaches plane without bank capacitors'
                 for rid in bank['relations']:
-                    reason = leg + ': device pin reaches plane without bank capacitors'
-                    if rid in refusals:
-                        reason += '; generation search refused: ' + refusals[rid]
-                    warn(rid, bank['id'], 'bank_bypass', reason)
+                    if rid in generated:
+                        rec = next((r for r in records if r['id'] == rid), None)
+                        if rec is not None:
+                            rec['reasons'].append(base_reason)
+                            rec['outcome'] = 'defect'
+                    else:
+                        reason = base_reason
+                        if rid in refusals:
+                            reason += '; generation search refused: ' + refusals[rid]
+                        warn(rid, bank['id'], 'bank_bypass', reason)
     if digest(board_path) != before:
         raise ValueError('board changed during loop measurement')
     tracks = list(board.GetTracks())

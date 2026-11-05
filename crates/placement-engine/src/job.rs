@@ -442,6 +442,18 @@ pub struct Locality {
 }
 
 #[derive(Clone, Debug)]
+pub struct DecouplingLoop {
+    pub id: String,
+    pub ic: usize,
+    pub cap: usize,
+    pub ic_supply_pad: usize,
+    pub cap_supply_pad: usize,
+    pub ic_return_pad: usize,
+    pub cap_return_pad: usize,
+    pub max_loop_nm: Option<i64>,
+}
+
+#[derive(Clone, Debug)]
 pub struct Weights {
     pub wire: i64,
     pub group: i64,
@@ -453,6 +465,7 @@ pub struct Weights {
     pub hard: i64,
     /// Penalty per square micrometre of copper in a terminal escape region.
     pub escape: i64,
+    pub decoupling: i64,
 }
 
 /// Immutable, validated problem. Built once per job input.
@@ -473,6 +486,7 @@ pub struct Prepared {
     pub proximity: Vec<Proximity>,
     pub links: Vec<Link>,
     pub locality: Vec<Locality>,
+    pub decoupling: Vec<DecouplingLoop>,
     pub weights: Weights,
     pub movable: Vec<usize>,
     /// LEGACY_INPUT_SCHEMA replay: pad-centre proximity, no group links, no link weight.
@@ -734,7 +748,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
                 "duplicate physical reference {native_ref}");
             named.push(i);
         }
-        let source_body = if mechanics.is_some() {
+        let source_body = if mechanics.is_some() && !native_ref.starts_with("board-text:") {
             ensure!(matches!(role, Role::Movable | Role::FixedBody), "unsupported mechanics owner role");
             let body = Rect::parse(&row["source_body_local_nm"], "source body")?;
             let model = &source_model["packages"][native_ref.as_str()];
@@ -754,7 +768,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         let access = match row.get("access_local_nm").filter(|v| !v.is_null()) {
             Some(v) => Some(Rect::parse(v, "source access")?), None => None
         };
-        if mechanics.is_some() {
+        if mechanics.is_some() && !native_ref.starts_with("board-text:") {
             let connector = access_owners.contains(&native_ref);
             ensure!(access == if connector { source_body.map(|r| r.grown(500_000)) } else { None },
                     "source access differs from exact connector body expansion");
@@ -929,6 +943,32 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
             }
         }
     }
+    let mut decoupling = Vec::new();
+    if let Some(loops) = input.get("decoupling").and_then(Value::as_array) {
+        for row in loops {
+            let id = text(row, "id")?.to_string();
+            let ic_ref = text(row, "ic_ref")?;
+            let cap_ref = text(row, "cap_ref")?;
+            let ic = physical_reference(ic_ref, "decoupling ic")?;
+            let cap = physical_reference(cap_ref, "decoupling cap")?;
+            let ic_supply_num = text(&row["supply"], "ic_pad")?;
+            let cap_supply_num = text(&row["supply"], "cap_pad")?;
+            let ic_return_num = text(&row["return"], "ic_pad")?;
+            let cap_return_num = text(&row["return"], "cap_pad")?;
+            let find_pad = |f: usize, num: &str| -> Result<usize> {
+                footprints[f].pads.iter().position(|p| p.number == num || p.uuid == num)
+                    .with_context(|| format!("decoupling {id}: unknown pad {num} on {}", footprints[f].native_ref))
+            };
+            let ic_supply_pad = find_pad(ic, ic_supply_num)?;
+            let cap_supply_pad = find_pad(cap, cap_supply_num)?;
+            let ic_return_pad = find_pad(ic, ic_return_num)?;
+            let cap_return_pad = find_pad(cap, cap_return_num)?;
+            let max_loop_nm = row.get("max_loop_nm").and_then(Value::as_i64);
+            decoupling.push(DecouplingLoop {
+                id, ic, cap, ic_supply_pad, cap_supply_pad, ic_return_pad, cap_return_pad, max_loop_nm
+            });
+        }
+    }
     let w = &input["weights"];
     let weights = Weights {
         wire: w.get("wire").and_then(Value::as_i64).unwrap_or(1),
@@ -938,10 +978,11 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         edge: w.get("edge").and_then(Value::as_i64).unwrap_or(4),
         hard: w.get("hard").and_then(Value::as_i64).unwrap_or(50),
         escape: w.get("escape").and_then(Value::as_i64).unwrap_or(20),
+        decoupling: w.get("decoupling").and_then(Value::as_i64).unwrap_or(4),
     };
     let movable = (0..footprints.len()).filter(|&i| footprints[i].role == Role::Movable).collect();
     let rails_raw = input.get("rails").cloned().unwrap_or(Value::Null);
-    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, groups_raw, rails_raw, proximity, links, locality, weights, movable, legacy })
+    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, groups_raw, rails_raw, proximity, links, locality, decoupling, weights, movable, legacy })
 }
 
 /// Integer cost breakdown. `hard` is the exact infeasibility measure: the sum
@@ -957,6 +998,7 @@ pub struct Terms {
     pub link: i128,
     pub edge: i128,
     pub escape: i128,
+    pub decoupling_loop: i128,
 }
 
 impl Terms {
@@ -969,6 +1011,7 @@ impl Terms {
         self.link += sign * o.link;
         self.edge += sign * o.edge;
         self.escape += sign * o.escape;
+        self.decoupling_loop += sign * o.decoupling_loop;
     }
     pub fn cost(&self, w: &Weights) -> i128 {
         // hard overlap in nm^2 is scaled to um^2 so the penalty stays commensurate with nm lengths.
@@ -979,12 +1022,14 @@ impl Terms {
             + w.link as i128 * self.link
             + w.edge as i128 * self.edge
             + w.escape as i128 * (self.escape / 1_000_000)
+            + w.decoupling as i128 * self.decoupling_loop
     }
     fn value(&self) -> Value {
         json!({"hard": self.hard.to_string(), "hard_count": self.hard_count, "wire_nm": self.wire.to_string(),
                "group_nm": self.group.to_string(), "proximity_excess_nm": self.proximity.to_string(),
                "link_gap_nm": self.link.to_string(),
-               "edge_setback_nm": self.edge.to_string(), "escape_overlap_nm2": self.escape.to_string()})
+               "edge_setback_nm": self.edge.to_string(), "escape_overlap_nm2": self.escape.to_string(),
+               "decoupling_loop_nm": self.decoupling_loop.to_string()})
     }
 }
 
@@ -1023,42 +1068,43 @@ fn body_mechanics(p: &Prepared, poses: &[Pose], mut defects: Option<&mut Vec<Val
     if !p.footprints.iter().any(|f| f.source_body.is_some()) { return t; }
     let mut access_total = 0_i128;
     let mut columns = Vec::new();
-    let bodies: Vec<Rect> = p.footprints.iter().zip(poses).map(|(f, pose)|
-        place_rect(&f.source_body.expect("validated mechanics coverage"), pose)).collect();
+    let bodies: Vec<(usize, Rect)> = p.footprints.iter().zip(poses).enumerate()
+        .filter_map(|(i, (f, pose))| f.source_body.map(|body| (i, place_rect(&body, pose))))
+        .collect();
     for a in 0..bodies.len() {
-        let x = bodies[a];
+        let (idx_a, x) = bodies[a];
         let outside = x.outside(&p.outline);
         if outside > 0 {
             t.hard += outside; t.hard_count += 1;
             if let Some(out) = defects.as_deref_mut() {
-                out.push(json!({"kind":"source_body_outside", "ref":p.footprints[a].native_ref,
+                out.push(json!({"kind":"source_body_outside", "ref":p.footprints[idx_a].native_ref,
                     "outside_nm2":outside.to_string()}));
             }
         }
         for b in a+1..bodies.len() {
-            let y = bodies[b];
+            let (idx_b, y) = bodies[b];
             let dx = (x.x0 as i128-y.x1 as i128).max(y.x0 as i128-x.x1 as i128).max(0);
             let dy = (x.y0 as i128-y.y1 as i128).max(y.y0 as i128-x.y1 as i128).max(0);
             let squared = dx*dx + dy*dy;
             if squared < 200_000_i128.pow(2) {
                 t.hard += 200_000_i128.pow(2)-squared; t.hard_count += 1;
                 if let Some(out) = defects.as_deref_mut() {
-                    out.push(json!({"kind":"source_body_gap", "ref":p.footprints[a].native_ref,
-                        "with":p.footprints[b].native_ref,"gap_squared_nm2":squared.to_string(),
+                    out.push(json!({"kind":"source_body_gap", "ref":p.footprints[idx_a].native_ref,
+                        "with":p.footprints[idx_b].native_ref,"gap_squared_nm2":squared.to_string(),
                         "minimum_nm":200000,"overlap_nm2":x.overlap(&y).to_string()}));
                 }
             }
         }
-        if let Some(local) = p.footprints[a].access {
-            let access = place_rect(&local, &poses[a]);
-            let overlap: i128 = bodies.iter().enumerate().filter(|(b,_)| *b != a)
-                .map(|(_,body)| access.overlap(body)).sum();
+        if let Some(local) = p.footprints[idx_a].access {
+            let access = place_rect(&local, &poses[idx_a]);
+            let overlap: i128 = bodies.iter().filter(|(b, _)| *b != idx_a)
+                .map(|(_, body)| access.overlap(body)).sum();
             access_total += overlap;
             if overlap > 0 && defects.is_some() {
-                let intruders: Vec<Value> = bodies.iter().enumerate().filter(|(b,body)|
-                    *b != a && access.overlap(body)>0).map(|(b,body)| json!({
-                        "ref":p.footprints[b].native_ref,"overlap_nm2":access.overlap(body).to_string()})).collect();
-                columns.push(json!({"ref":p.footprints[a].native_ref,"overlap_nm2":overlap.to_string(),"intruders":intruders}));
+                let intruders: Vec<Value> = bodies.iter().filter(|(b, body)|
+                    *b != idx_a && access.overlap(body) > 0).map(|(b, body)| json!({
+                        "ref":p.footprints[*b].native_ref,"overlap_nm2":access.overlap(body).to_string()})).collect();
+                columns.push(json!({"ref":p.footprints[idx_a].native_ref,"overlap_nm2":overlap.to_string(),"intruders":intruders}));
             }
         }
     }
@@ -1494,6 +1540,30 @@ fn rotate_rational([x, y]: [Rat; 2], q: i64) -> [Rat; 2] {
     match q.rem_euclid(4) { 0 => [x, y], 1 => [y, -x], 2 => [-x, -y], _ => [-y, x] }
 }
 
+fn pad_dist(p: &Prepared, fa: usize, pa: usize, fb: usize, pb: usize, poses: &[Pose]) -> i64 {
+    let (ax, ay) = pad_at(p, fa, pa, &poses[fa]);
+    let (bx, by) = pad_at(p, fb, pb, &poses[fb]);
+    let dx = ax as f64 - bx as f64;
+    let dy = ay as f64 - by as f64;
+    dx.hypot(dy).round() as i64
+}
+
+fn decoupling_terms(p: &Prepared, k: usize, poses: &[Pose]) -> Terms {
+    let d = &p.decoupling[k];
+    let ds = pad_dist(p, d.ic, d.ic_supply_pad, d.cap, d.cap_supply_pad, poses);
+    let dr = pad_dist(p, d.ic, d.ic_return_pad, d.cap, d.cap_return_pad, poses);
+    let loop_len = ds as i128 + dr as i128;
+    let mut t = Terms { decoupling_loop: loop_len, ..Terms::default() };
+    if let Some(max_loop) = d.max_loop_nm {
+        let excess = (loop_len - max_loop as i128).max(0);
+        if excess > 0 {
+            t.hard += excess;
+            t.hard_count += 1;
+        }
+    }
+    t
+}
+
 fn locality_terms(p: &Prepared, k: usize, poses: &[Pose]) -> Terms {
     let r = &p.locality[k];
     let at = |offset: &[Rat; 2], f: usize| {
@@ -1564,6 +1634,22 @@ pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
                 "with": p.footprints[r.b].native_ref, "obligation": r.obligation, "role": r.role}));
         }
     }
+    for d in &p.decoupling {
+        let ds = pad_dist(p, d.ic, d.ic_supply_pad, d.cap, d.cap_supply_pad, poses);
+        let dr = pad_dist(p, d.ic, d.ic_return_pad, d.cap, d.cap_return_pad, poses);
+        let loop_len = ds + dr;
+        if let Some(max_loop) = d.max_loop_nm {
+            if loop_len > max_loop {
+                out.push(json!({
+                    "kind": "decoupling_loop_length",
+                    "ref": p.footprints[d.cap].native_ref,
+                    "with": p.footprints[d.ic].native_ref,
+                    "loop_nm": loop_len,
+                    "max_loop_nm": max_loop,
+                }));
+            }
+        }
+    }
     out
 }
 
@@ -1593,6 +1679,7 @@ pub fn full_evaluate(p: &Prepared, poses: &[Pose]) -> Terms {
         t.link += link_terms(p, k, poses);
     }
     for k in 0..p.locality.len() { t.add(&locality_terms(p, k, poses), 1); }
+    for k in 0..p.decoupling.len() { t.add(&decoupling_terms(p, k, poses), 1); }
     t
 }
 
@@ -1607,6 +1694,7 @@ pub struct SearchState {
     prox_cost: Vec<i128>,
     link_cost: Vec<i128>,
     locality_cost: Vec<Terms>,
+    decoupling_cost: Vec<Terms>,
     cells: HashMap<(i64, i64), BTreeSet<usize>>,
     cell_of: Vec<Vec<(i64, i64)>>,
     pub counters: Counters,
@@ -1632,6 +1720,7 @@ pub struct Trial {
     after_prox: Vec<(usize, i128)>,
     after_links: Vec<(usize, i128)>,
     after_locality: Vec<(usize, Terms)>,
+    after_decoupling: Vec<(usize, Terms)>,
 }
 
 fn cells_for(r: &Rect) -> Vec<(i64, i64)> {
@@ -1660,6 +1749,7 @@ impl SearchState {
             prox_cost: (0..p.proximity.len()).map(|k| proximity_terms(p, k, &poses)).collect(),
             link_cost: (0..p.links.len()).map(|k| link_terms(p, k, &poses)).collect(),
             locality_cost: (0..p.locality.len()).map(|k| locality_terms(p, k, &poses)).collect(),
+            decoupling_cost: (0..p.decoupling.len()).map(|k| decoupling_terms(p, k, &poses)).collect(),
             totals: full_evaluate(p, &poses),
             poses,
             generation: 0,
@@ -1789,7 +1879,16 @@ impl SearchState {
                 after_locality.push((k, value));
             }
         }
-        Ok(Trial { generation: self.generation, moves: moves.to_vec(), delta, after_nets, after_groups, after_prox, after_links, after_locality })
+        let mut after_decoupling = Vec::new();
+        for (k, d) in p.decoupling.iter().enumerate() {
+            if movers.contains(&d.ic) || movers.contains(&d.cap) {
+                let value = decoupling_terms(p, k, &after);
+                delta.add(&value, 1);
+                delta.add(&self.decoupling_cost[k], -1);
+                after_decoupling.push((k, value));
+            }
+        }
+        Ok(Trial { generation: self.generation, moves: moves.to_vec(), delta, after_nets, after_groups, after_prox, after_links, after_locality, after_decoupling })
     }
 
     /// Apply a trial atomically. A trial evaluated against another generation is refused.
@@ -1817,6 +1916,7 @@ impl SearchState {
             self.link_cost[k] = v;
         }
         for (k, value) in trial.after_locality { self.locality_cost[k] = value; }
+        for (k, value) in trial.after_decoupling { self.decoupling_cost[k] = value; }
         self.totals.add(&trial.delta, 1);
         self.generation += 1;
         self.counters.commits += 1;
@@ -3667,4 +3767,83 @@ mod tests {
         assert_eq!(mechanics_report(&old, &placed)["status"], "pass");
     }
 
+    #[test]
+    fn board_text_with_declared_mechanics_is_accepted_without_source_body() {
+        let mut raw = source_mechanics_fixture(true, false);
+        declare_mechanics(&mut raw, &source_model_json([1.0, 0.55], [2.2, 1.45]));
+        raw["footprints"][0]["source_body_local_nm"] = json!([-1950000,-1700000,3950000,2800000]);
+        raw["footprints"][0]["access_local_nm"] = json!([-2450000,-2200000,4450000,3300000]);
+        raw["footprints"][1]["source_body_local_nm"] = json!([-1100000,-725000,1100000,725000]);
+        // Add a board-text obstacle adjacent to connector (0.3 mm away)
+        let text_fp = json!({
+            "uuid": "00000000-0000-0000-0000-000000000099",
+            "native_ref": "board-text:00000000-0000-0000-0000-000000000099",
+            "role": "fixed_body",
+            "pose": {"x_nm": 6_000_000, "y_nm": 6_000_000, "quarter_turns": 0},
+            "rotations": [0],
+            "occupancy": {
+                "status": "derived", "label": "derived_occupancy", "rung": "silk+pads",
+                "local_rect_nm": [-500_000, -200_000, 500_000, 200_000]
+            },
+            "copper_local_nm": [], "holes_local_nm": [], "mask_local_nm": [], "escape_local_nm": [],
+            "pads": []
+        });
+        raw["footprints"].as_array_mut().unwrap().push(text_fp);
+        let p = prepare(&raw).expect("board-text obstacle with mechanics must prepare without error");
+        let poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+        let report = mechanics_report(&p, &poses);
+        assert_eq!(report["status"], "pass", "board-text must not trigger false mechanics defects: {:?}", report);
+    }
+
+    #[test]
+    fn decoupling_loop_length_objective_and_violations() {
+        let mut raw = input(Vec::new());
+        raw["groups"] = json!([]);
+        let mut ic = fp(&uuid(1), "U1", "fixed_body", 5_000_000, 5_000_000, "");
+        let mut cap = fp(&uuid(2), "C1", "movable", 8_000_000, 5_000_000, "");
+        // IC pads: 1 at (0, 0), 2 at (2.5mm, 0)
+        ic["pads"] = json!([
+            {"uuid": "00000000-0000-0000-0000-000000000001-1", "number": "1", "net": "VCC", "local_nm": [0, 0], "half_nm": [500_000, 500_000]},
+            {"uuid": "00000000-0000-0000-0000-000000000001-2", "number": "2", "net": "GND", "local_nm": [2_500_000, 0], "half_nm": [500_000, 500_000]}
+        ]);
+        // Cap pads: 1 at (-1mm, 0), 2 at (1mm, 0)
+        cap["pads"] = json!([
+            {"uuid": "00000000-0000-0000-0000-000000000002-1", "number": "1", "net": "VCC", "local_nm": [-1_000_000, 0], "half_nm": [400_000, 400_000]},
+            {"uuid": "00000000-0000-0000-0000-000000000002-2", "number": "2", "net": "GND", "local_nm": [1_000_000, 0], "half_nm": [400_000, 400_000]}
+        ]);
+        raw["footprints"] = json!([ic, cap]);
+        raw["nets"] = json!(["VCC", "GND"]);
+        raw["decoupling"] = json!([{
+            "id": "loop-1",
+            "ic_ref": "U1",
+            "cap_ref": "C1",
+            "supply": {"ic_pad": "1", "cap_pad": "1"},
+            "return": {"ic_pad": "2", "cap_pad": "2"},
+            "max_loop_nm": 10_000_000
+        }]);
+        let p = prepare(&raw).expect("decoupling loop must prepare");
+        assert_eq!(p.decoupling.len(), 1);
+        let mut poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+        // At initial poses: U1 at (5mm, 5mm), C1 at (8mm, 5mm)
+        // U1.1 at (5mm, 5mm), C1.1 at (7mm, 5mm) -> ds = 2mm = 2_000_000 nm
+        // U1.2 at (7.5mm, 5mm), C1.2 at (9mm, 5mm) -> dr = 1.5mm = 1_500_000 nm
+        // total = 3.5mm = 3_500_000 nm
+        let t = full_evaluate(&p, &poses);
+        assert_eq!(t.decoupling_loop, 3_500_000);
+        assert!(violations(&p, &poses).is_empty());
+
+        // Rotate C1 by 180° (q = 2):
+        // C1.1 moves to (9mm, 5mm) -> ds = 4mm = 4_000_000 nm
+        // C1.2 moves to (7mm, 5mm) -> dr = |7.5 - 7| = 0.5mm = 500_000 nm
+        // total = 4.0mm + 0.5mm = 4.5mm = 4_500_000 nm
+        poses[1].q = 2;
+        let t_rot = full_evaluate(&p, &poses);
+        assert_eq!(t_rot.decoupling_loop, 4_500_000);
+        assert!(t_rot.decoupling_loop > t.decoupling_loop);
+
+        // Move C1 far away to trigger max_loop_nm violation
+        poses[1].x = 25_000_000;
+        let viols = violations(&p, &poses);
+        assert!(viols.iter().any(|v| v["kind"] == "decoupling_loop_length" && v["ref"] == "C1" && v["with"] == "U1"));
+    }
 }

@@ -1266,7 +1266,13 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
 # ---------------------------------------------------------------- incumbent
 
 def _rank(entry):
-    return (entry['placement_introduced_errors'], len(entry.get('engine_violations', [])), int(entry['engine_cost']))
+    return (
+        entry.get('placement_introduced_errors', 0),
+        len(entry.get('engine_violations', [])),
+        entry.get('decoupling_loop_excess_nm', 0),
+        entry.get('decoupling_loop_nm', 0),
+        int(entry.get('engine_cost', 0)),
+    )
 
 
 def _placement_eligible(entry):
@@ -2020,8 +2026,15 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         base_keys = {_key(v) for v in base_report['violations'] if v.get('severity') == 'error'}
         def judge_candidate(cand, index):
             _check_stop(clock, job_dir)
+            decoupling_loop_nm = int(cand.get('terms', {}).get('decoupling_loop', 0))
+            decoupling_excess_nm = sum(
+                max(0, int(v.get('loop_nm', 0)) - int(v.get('max_loop_nm', 0)))
+                for v in cand.get('violations', []) if v.get('kind') == 'decoupling_loop_length'
+            )
             entry = {'index': index, 'seed': cand['seed'], 'engine_cost': cand['cost'], 'status': 'failed',
-                     'engine_feasible': bool(cand.get('feasible')), 'engine_violations': cand.get('violations', [])}
+                     'engine_feasible': bool(cand.get('feasible')), 'engine_violations': cand.get('violations', []),
+                     'decoupling_loop_nm': decoupling_loop_nm,
+                     'decoupling_loop_excess_nm': decoupling_excess_nm}
             directory = job_dir / 'candidates' / f'a{attempt}-{index:02d}-seed{cand["seed"]}'
             try:
                 check = materialize(board_path, cand['poses'], directory, project_bytes,

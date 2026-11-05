@@ -259,10 +259,11 @@ def propose(problem, diagnostic, *, max_seconds):
             turns[uuid] = {original[uuid][2]: {-1: 1.0}}
         for q in turns[uuid]:
             shapes = [_rect(f['occupancy']['local_rect_nm'], q)]
-            for rectangle, grow in [(f['source_body_local_nm'], body_growth), *[
+            body_growth_shapes = [(f['source_body_local_nm'], body_growth)] if f.get('source_body_local_nm') else []
+            for rectangle, grow in [*body_growth_shapes, *[
                     (item['rect_nm'], copper_growth) for item in f['copper_local_nm']]]:
-                box = _rect(rectangle, q)
-                shapes.append([v+(-grow if axis < 2 else grow) for axis, v in enumerate(box)])
+                box_ = _rect(rectangle, q)
+                shapes.append([v+(-grow if axis < 2 else grow) for axis, v in enumerate(box_)])
             local_boxes[uuid, q] = [min(s[0] for s in shapes), min(s[1] for s in shapes),
                                     max(s[2] for s in shapes), max(s[3] for s in shapes)]
 
@@ -272,7 +273,7 @@ def propose(problem, diagnostic, *, max_seconds):
     def box(f, kind='packing'):
         uuid = f['uuid']
         rectangles = {q: local_boxes[uuid, q] if kind == 'packing' else _rect(
-            f['source_body_local_nm'] if kind == 'body' else f['access_local_nm'], q) for q in turns[uuid]}
+            f.get('source_body_local_nm') if kind == 'body' else f.get('access_local_nm'), q) for q in turns[uuid]}
         return [_sum((1, positions[uuid][axis % 2]),
                      (1, offset(uuid, {q: r[axis] for q, r in rectangles.items()}))) for axis in range(4)]
 
@@ -281,7 +282,7 @@ def propose(problem, diagnostic, *, max_seconds):
     # and captured local extents. An inactive inequality must impose no restriction.
     local_extent = max(abs(v) for rectangle in local_boxes.values() for v in rectangle)
     local_extent = max(local_extent, max((abs(v)/MM for f in footprints
-        for v in (f['access_local_nm'] or [])), default=0))
+        for v in (f.get('access_local_nm') or [])), default=0))
     fixed_extent = max(abs(original[u][axis]/MM-origin[axis]) for u in original for axis in range(2))
     big_m = 2*(max(*size, fixed_extent)+2*local_extent+margin)
 
@@ -304,9 +305,9 @@ def propose(problem, diagnostic, *, max_seconds):
         for peer in footprints[i+1:]:
             if uuid in active or peer['uuid'] in active:
                 separate(boxes[uuid], boxes[peer['uuid']])
-        if f['access_local_nm'] is not None:
+        if f.get('access_local_nm') is not None:
             for peer in footprints:
-                if peer['uuid'] != uuid and (uuid in active or peer['uuid'] in active):
+                if peer['uuid'] != uuid and peer.get('source_body_local_nm') is not None and (uuid in active or peer['uuid'] in active):
                     separate(box(f, 'access'), box(peer, 'body'))
 
     def pad(endpoint):

@@ -148,7 +148,7 @@ def validate(intent, groups):
             if isinstance(row, dict) and 'side' in row:
                 raise ValueError(f'{path}.side: block side selection is unsupported')
     _object(intent, 'intent', optional=('schema', 'fixed_poses', 'edge_connectors',
-                                      'proximity', 'electrical_locality'))
+                                      'proximity', 'electrical_locality', 'decoupling'))
     if 'schema' in intent and intent['schema'] != SCHEMA:
         raise ValueError(f'intent.schema: expected {SCHEMA}; KRT floorplan intent needs explicit migration')
     for path, row in _rows(intent.get('fixed_poses', []), 'intent.fixed_poses'):
@@ -165,7 +165,7 @@ def validate(intent, groups):
     for path, row in _rows(intent.get('edge_connectors', []), 'intent.edge_connectors'):
         validate_edge_connector(row, path)
     for path, row in _rows(intent.get('proximity', []), 'intent.proximity'):
-        _object(row, path, ('ref', 'near', 'max_mm', 'pads'), ('basis', 'context'))
+        _object(row, path, ('ref', 'near', 'max_mm', 'pads'), ('basis', 'context', 'max_loop_nm'))
         if row.get('basis') == 'pad_edge' and not isinstance(row.get('context'), dict) or (
                 row.get('basis') == 'pad_edge' and 'limit' not in row['context']):
             raise ValueError(path + '.basis: pad_edge needs context.limit naming its authority; '
@@ -176,6 +176,15 @@ def validate(intent, groups):
             for key, value in row['context'].items():
                 _text(value, path + '.context.' + key)
         _notes(row, path)
+    for path, row in _rows(intent.get('decoupling', []), 'intent.decoupling'):
+        _object(row, path, ('id', 'ic_ref', 'cap_ref', 'supply', 'return'), ('max_loop_nm',))
+        _text(row['id'], path + '.id')
+        _text(row['ic_ref'], path + '.ic_ref')
+        _text(row['cap_ref'], path + '.cap_ref')
+        _object(row['supply'], path + '.supply', ('ic_pad', 'cap_pad'))
+        _object(row['return'], path + '.return', ('ic_pad', 'cap_pad'))
+        if 'max_loop_nm' in row:
+            _number(row['max_loop_nm'], path + '.max_loop_nm')
     if 'electrical_locality' in intent:
         from .electrical_locality import validate as validate_locality
         _locality_fields(intent['electrical_locality'], 'intent.electrical_locality')
@@ -598,6 +607,8 @@ def normalize_intent(intent, groups, *, rails=None, locality=None, board_sha256=
         norm_intent = dict(intent)
         if 'proximity' in norm_intent:
             norm_intent['proximity'] = [dict(r) for r in norm_intent['proximity']]
+        if 'decoupling' in norm_intent:
+            norm_intent['decoupling'] = [dict(r) for r in norm_intent['decoupling']]
         norm_groups = dict(groups, groups=[dict(g, **({'near': list(g['near'])} if 'near' in g else {}))
                                            for g in groups['groups']])
         compatibility = None

@@ -101,6 +101,26 @@ def inspect_footprint(lib_id, root=Path('/usr/share/kicad')):
     return index_footprints(manifest, {rel: raw})
 
 
+def inspect_courtyard(lib_ids, root=Path('/usr/share/kicad')):
+    from .courtyard import footprint_courtyard
+    from .symbol_library import parse_sexpr
+    if isinstance(lib_ids, str):
+        lib_ids = [lib_ids]
+    results = []
+    total_area = 0.0
+    for lib_id in lib_ids:
+        library, name = member(lib_id)
+        rel = f'{library}.pretty/{name}.kicad_mod'
+        raw = (Path(root) / 'footprints' / rel).read_bytes()
+        node = parse_sexpr(raw)
+        info = footprint_courtyard(node)
+        results.append(dict(lib_id=lib_id, courtyard=info))
+        if info.get('area_mm2') is not None:
+            total_area += info['area_mm2']
+    return dict(schema='agent-ee.design-courtyard/1', footprints=results,
+                courtyard_area_sum_mm2=total_area)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -111,10 +131,19 @@ def main(argv=None):
         p = sub.add_parser(command)
         p.add_argument('lib_id')
         p.add_argument('--kicad-root', type=Path, default=Path('/usr/share/kicad'))
+    p = sub.add_parser('courtyard')
+    p.add_argument('lib_ids', nargs='+')
+    p.add_argument('--kicad-root', type=Path, default=Path('/usr/share/kicad'))
     args = parser.parse_args(argv)
     try:
-        result = (search_parts(args.keyword, args.out) if args.command == 'search' else
-            (inspect_symbol if args.command == 'symbol' else inspect_footprint)(args.lib_id, args.kicad_root))
+        if args.command == 'search':
+            result = search_parts(args.keyword, args.out)
+        elif args.command == 'courtyard':
+            result = inspect_courtyard(args.lib_ids, args.kicad_root)
+        elif args.command == 'symbol':
+            result = inspect_symbol(args.lib_id, args.kicad_root)
+        else:
+            result = inspect_footprint(args.lib_id, args.kicad_root)
     except (OSError, ValueError) as exc:
         parser.exit(2, str(exc) + '\n')
     print(json.dumps(result, indent=2))

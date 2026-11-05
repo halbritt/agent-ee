@@ -246,9 +246,10 @@ its original native body bounds. Attached text retains its declared offset;
 the artwork mover does not relocate it. Final checks also refuse a label covered
 by another part's same-side courtyard (or native bounds when no courtyard exists).
 When a statement declares `mechanics`, free board text (`anchor.at_mm`) is
-refused at validation: free board text cannot be combined with declared
-mechanics yet; attach the label to a part instead. Part and pin labels remain
-supported with mechanics and retain the original mechanics model and sources.
+supported alongside declared mechanics: free text participates in placement as a
+fixed-body obstacle without requiring physical 3D package models or access
+corridors. Part and component-terminal labels remain supported with mechanics
+and retain the original mechanics model and sources.
 
 The final `board_text` file check verifies content, visibility, attachment, side,
 position, angle, font and size on the saved board. It requires the full native
@@ -792,7 +793,11 @@ against pose; physical mouth geometry and mating access remain unverified.
 Older envelope records may omit the axis without changing their identity or
 meaning; their generated statements do not claim a mating axis.
 Board width/height follow the profile's 670/600 mm maxima and must be exact to
-one nanometre. The compiler supports height envelopes up to 1000 mm; that bound
+one nanometre. Sizing `board.width_mm` and `board.height_mm` can use the sum of
+component courtyard bounding areas from `agent_ee.design_tools courtyard` as a
+rough lower bound, allowing room for routing and clearance; board dimensions
+remain discretionary choices and must be recorded in `agent_selected`.
+The compiler supports height envelopes up to 1000 mm; that bound
 is a compiler support limit, not a manufacturer allowance. Intent must parse as a single paragraph in the generated spec. Markdown structure
 is refused with the `intent` field name; plain text such as `1.5 V board` is valid.
 Producer or native-stage failures retain their own evidence; a successful compile

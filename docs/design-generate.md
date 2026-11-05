@@ -132,6 +132,7 @@ response, and carried into benchmark rows.
 python3 -m agent_ee.design_tools search 'NE555' --out /work/experiments/search-1
 python3 -m agent_ee.design_tools symbol Timer:NE555D
 python3 -m agent_ee.design_tools footprint Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
+python3 -m agent_ee.design_tools courtyard Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
 ```
 
 Search takes a keyword of 1 to 120 characters, retains one bounded JLC response
@@ -140,7 +141,9 @@ package, unit price and candidate datasheet URLs. Requests sharing a parent
 output directory are spaced five seconds apart. Stocked parts sort before
 out-of-stock parts, then parts with datasheet URLs, then Basic, Preferred and
 Extended tiers, then price. A URL is not proof of a usable PDF: capture verifies
-that later. Pin and pad helpers use the existing shared readers; custom pads
+that later. The `courtyard` helper returns the declared courtyard boundary
+polygon points, bounding box dimensions and area for footprint choices.
+Pin, pad and courtyard helpers use the existing shared readers; custom pads
 refuse before any native helper is invoked. Downloads and library bytes stay in
 the retained run, outside the public repository. The seat has network access;
 "downloads only" is an instruction to the author, not an enforced boundary.

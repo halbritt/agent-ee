@@ -688,7 +688,7 @@ def placement(design, root):
             ]
         ),
     )
-    obligations, proximity = [], []
+    obligations, proximity, decoupling_loops = [], [], []
     text = (root / "spec.md").read_text(encoding="utf-8")
     for i, d in enumerate(design["decoupling"]):
 
@@ -698,7 +698,8 @@ def placement(design, root):
             return dict(reference=ref, pad=pin, net=native_net(design, net))
 
         quote = decoupling_text(d)
-        row = dict(id="decoupling-" + str(i + 1), metric="pad-centre-to-centre")
+        max_loop_nm = round(d["max_loop_mm"] * 1000000) if "max_loop_mm" in d else round(d["max_distance_mm"] * 2 * 1000000)
+        row = dict(id="decoupling-" + str(i + 1), metric="pad-centre-to-centre", max_loop_nm=max_loop_nm)
         for key in ("supply", "return"):
             row[key] = dict(
                 citation=quote,
@@ -722,11 +723,30 @@ def placement(design, root):
                 ref=d["capacitor"],
                 near=d["device"],
                 max_mm=d["max_distance_mm"],
+                max_loop_nm=max_loop_nm,
                 pads={
-                    d["device"]: [d["supply"][0].split(".", 1)[1]],
-                    d["capacitor"]: [d["supply"][1].split(".", 1)[1]],
+                    d["device"]: sorted(set([d["supply"][0].split(".", 1)[1], d["return"][0].split(".", 1)[1]])),
+                    d["capacitor"]: sorted(set([d["supply"][1].split(".", 1)[1], d["return"][1].split(".", 1)[1]])),
                 },
                 basis="Agent-selected measurement requirement; not an owner or datasheet ruling; final acceptance required",
+            )
+        )
+        decoupling_loops.append(
+            dict(
+                id=row["id"],
+                ic_ref=d["device"],
+                cap_ref=d["capacitor"],
+                supply=dict(
+                    ic_pad=d["supply"][0].split(".", 1)[1],
+                    cap_pad=d["supply"][1].split(".", 1)[1],
+                ),
+                **{
+                    "return": dict(
+                        ic_pad=d["return"][0].split(".", 1)[1],
+                        cap_pad=d["return"][1].split(".", 1)[1],
+                    )
+                },
+                max_loop_nm=max_loop_nm,
             )
         )
     locality = dict(
@@ -764,6 +784,7 @@ def placement(design, root):
             ],
             fixed_poses=[],
             proximity=proximity,
+            decoupling=decoupling_loops,
             **({"electrical_locality": locality} if obligations else {}),
         ),
     )

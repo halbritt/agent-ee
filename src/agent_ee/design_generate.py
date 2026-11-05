@@ -392,6 +392,7 @@ Tools available in this seat (downloads only; no project uploads, orders or purc
   python3 -m agent_ee.design_tools search 'KEYWORDS' --out /work/experiments/search-N
   python3 -m agent_ee.design_tools symbol 'Library:Symbol' --kicad-root {kicad_root}
   python3 -m agent_ee.design_tools footprint 'Library:Footprint' --kicad-root {kicad_root}
+  python3 -m agent_ee.design_tools courtyard 'Library:Footprint' ['Library:Footprint'...] --kicad-root {kicad_root}
 Use retained live JLC search evidence for every selected identity; prefer stocked Basic or Preferred
 parts with datasheet URLs. The search retains responses, stock, package, MPN, tier,
 price and candidate datasheet URLs; URLs are not verified PDFs until capture.
@@ -400,6 +401,7 @@ author turn: reuse its searches and CAD inventories for unchanged selections; ca
 will refresh the stock and verify downloads. /candidate/current-statement.txt, when
 present, is the complete current statement.
 Inspect real symbol pins and footprint pads instead of guessing pin numbers.
+Query footprint courtyard dimensions using courtyard to size board.width_mm and board.height_mm realistically without guessing.
 You may list local libraries under {kicad_root}/symbols and /footprints. Retain any
 additional downloaded references under /work/experiments. Do not run native KiCad,
 builds or routing yourself. Subscription route only; never use API-key fallbacks.
@@ -716,7 +718,6 @@ def environment_failure(findings, build=None):
 
 def outline_utilisation(run, statement):
     """Final-coordinate courtyard bounding-box union / outline area; explicitly a proxy."""
-    from .symbol_library import children, parse_sexpr, field
     report = read_optional(run / 'build-report.json')
     if not report or not report.get('candidate'):
         return dict(status='unavailable', reason='No completed native candidate')
@@ -725,40 +726,8 @@ def outline_utilisation(run, statement):
     boards = sorted((run / report['candidate']).rglob('*.kicad_pcb'))
     if len(boards) != 1:
         return dict(status='unavailable', reason='No unique native board in selected candidate')
-    node = parse_sexpr(boards[0].read_bytes())
-    boxes = []
-    footprints = children(node, 'footprint')
-    for fp in footprints:
-        at = children(fp, 'at')[0][1:]
-        x, y = map(float, at[:2])
-        angle = math.radians(float(at[2]) if len(at) > 2 else 0)
-        points = []
-        for shape in children(fp, 'fp_line') + children(fp, 'fp_rect'):
-            if field(shape, 'layer', 1)[0] not in ('F.CrtYd', 'B.CrtYd'):
-                continue
-            for key in ('start', 'end'):
-                a, b = map(float, field(shape, key, 2)[:2])
-                points.append((x + a * math.cos(angle) + b * math.sin(angle),
-                               y - a * math.sin(angle) + b * math.cos(angle)))
-        if points:
-            boxes.append((min(p[0] for p in points), min(p[1] for p in points),
-                          max(p[0] for p in points), max(p[1] for p in points)))
-    xs = sorted({p for box in boxes for p in (box[0], box[2])})
-    area = 0
-    for left, right in zip(xs, xs[1:]):
-        intervals = sorted((b[1], b[3]) for b in boxes if b[0] < right and b[2] > left)
-        end, height = -math.inf, 0
-        for low, high in intervals:
-            height += max(0, high - max(end, low))
-            end = max(end, high)
-        area += (right - left) * height
-    outline = statement['board']['width_mm'] * statement['board']['height_mm']
-    return dict(status='measured_proxy' if len(boxes) == len(footprints) else 'partial_proxy',
-        method='union of final-coordinate linear courtyard bounding boxes; sides projected together',
-        courtyard_bbox_union_mm2=area, outline_mm2=outline, fraction=area / outline,
-        footprints=len(footprints), footprints_with_linear_courtyard=len(boxes),
-        board_path=str(boards[0]), board_sha256=digest(boards[0]),
-        limitations=['Not exact polygon area, routing density, thermal utilisation, or proof the outline can shrink.'])
+    from .courtyard import board_outline_utilisation
+    return board_outline_utilisation(boards[0], statement)
 
 
 def utc_now():
@@ -1035,6 +1004,13 @@ def _generate(requirements_path, out, options, identity=None):
                                      + (response['reason'] if response['status'] == 'unsupported' else '')).strip()
                 report.update(status=row['status'], accepted=not partial, selected_attempt=number)
                 report['claims'].update(file_release=True, engineering_review=row['engineering_review'])
+                if row.get('outline_utilisation', {}).get('status') in ('measured_proxy', 'partial_proxy'):
+                    u = row['outline_utilisation']
+                    report['claims']['outline_utilisation'] = u
+                    report.setdefault('limitations', []).append(
+                        f"Outline utilisation proxy: {u['fraction']:.1%} "
+                        f"({u['courtyard_bbox_union_mm2']:.1f} mm² of {u['outline_mm2']:.1f} mm² courtyard bounding box union)."
+                    )
                 break
             except native_run.DeadlineExhausted as exc:
                 row.update(status='time_exhausted', reason=str(exc))

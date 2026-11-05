@@ -142,6 +142,19 @@ class BuilderTests(unittest.TestCase):
         changed['weights']['edge'] += 1
         self.assertNotEqual(problem_builder.identity(changed), measured['problem_sha256'])
 
+    def test_decoupling_loop_intent_is_ingested_and_carries_weights(self):
+        normalized = bundle(decoupling=[{
+            'id': 'loop-1', 'ic_ref': 'R1', 'cap_ref': 'C1',
+            'supply': {'ic_pad': '1', 'cap_pad': '1'},
+            'return': {'ic_pad': '2', 'cap_pad': '2'},
+            'max_loop_nm': 6_000_000,
+        }])
+        captured, _ = problem_builder.capture(board(), normalized)
+        self.assertIn('decoupling', captured)
+        self.assertEqual(len(captured['decoupling']), 1)
+        self.assertEqual(captured['decoupling'][0]['id'], 'loop-1')
+        self.assertEqual(captured['weights']['decoupling'], 4)
+
     def test_edges_are_checked_on_authored_values_before_conversion(self):
         """One authored-value check (the intent validator's), also on the direct board_metrics edges."""
         description = board()
