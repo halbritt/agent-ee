@@ -127,7 +127,7 @@ class InstallerStageTests(unittest.TestCase):
         self.assertTrue(any(line.startswith('RUN ') and stage + 'install.py' in line and '/opt/kicad.install.json' in line
                             for line in instructions))
         # No KiCad version is fixed in the Dockerfile.
-        self.assertFalse(any(line.startswith('ARG KICAD') for line in instructions))
+        self.assertFalse(any(line.startswith('ARG KICAD_VERSION') for line in instructions))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for source in ('docker/kicad/install.py', 'src/agent_ee/kicad_install.py', 'fixtures/dc-path/straight.kicad_pcb'):

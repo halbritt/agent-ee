@@ -419,8 +419,8 @@ prune(older_than_days=0)
     def test_repository_wide_step_builders_mount_only_snapshots(self):
         """Discover source-mount constructors; every discovered builder must be exercised."""
         import ast
-        from agent_ee import (add_planes, binding_fill, block_source_stage, block_variant_stage, parts_stage,
-                              placement_adapter, pod_driver, rung1_stages, scaffold,
+        from agent_ee import (add_planes, binding_fill, block_source_stage, block_variant_stage, board_text,
+                              parts_stage, placement_adapter, pod_driver, rung1_stages, scaffold,
                               schematic_stage)
         route = require_kicad_route()
         repo = self.root / 'repo'
@@ -442,6 +442,7 @@ prune(older_than_days=0)
                        'timeout_s': 300, 'blocks': section}
         cases.update({
             'add_planes.step': [add_planes.step(self.source, board='b.kicad_pcb', plan='planes.json')],
+            'board_text.step': [board_text.step(repo, 'b.kicad_pcb', 'markings.json')],
             'binding_fill.configuration': [binding_fill.configuration(self.source, intent='intent.json',
                 manifest='parts.json', part_refs='refs.json', deviations='deviations.json',
                 captures='.', dependencies=[])],

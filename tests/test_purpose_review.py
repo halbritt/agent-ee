@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from agent_ee.candidate import capture
 from agent_ee.findings import adjudicate, collect_findings, validate_review
+from agent_ee.review_run import RESUBMISSION_NOTICE
 from agent_ee.reviewers import adjudicator_call, build_packet, initial_reviews
 from agent_ee.storage import digest, identity, read_json, write_json
 from tests import test_findings as fixture
@@ -97,7 +98,8 @@ class PurposeReviewTests(unittest.TestCase):
             reviews, records = initial_reviews(self.run_dir, packet, time.monotonic() + 30)
         self.assertEqual(len(reviews), 2, records)
         for prompt in prompts.values():
-            instructions, packet_json = prompt.split('PACKET:\n', 1)
+            self.assertTrue(prompt.endswith(RESUBMISSION_NOTICE))
+            instructions, packet_json = prompt.removesuffix(RESUBMISSION_NOTICE).split('PACKET:\n', 1)
             self.assertEqual(json.loads(packet_json), packet)
             self.assertIn('Only a custom emphasis.', instructions)
             for phrase in ('EVERY declared obstacle', 'EVERY empty field', 'EVERY part',

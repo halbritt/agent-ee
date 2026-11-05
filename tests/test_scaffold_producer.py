@@ -253,7 +253,7 @@ class ProducerTests(ProducerFixture, unittest.TestCase):
                 self.plan[key] = path
         write_json(self.source / 'templates/qualification.json', {})
         self.write()
-        self.refused('expected fields: schema profile native_writer fixture_sha256 sources')
+        self.refused('unsupported netclass qualification')
 
     def test_generated_net_constraint_record_cannot_overwrite_a_capture(self):
         self.use_net_constraints()

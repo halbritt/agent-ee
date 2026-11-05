@@ -27,7 +27,7 @@
     },
     "second_conversion": "byte-identical"
   },
-  "kicad_version": "10.0.7",
+  "kicad_version": "10.0.8",
   "library": "ampseal",
   "limitations": [
     "Conversion and identity only: no land-pattern dimension, datasheet or mechanical-fit qualification; 3D model references are kept unresolved."

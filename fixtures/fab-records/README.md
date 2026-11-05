@@ -26,4 +26,4 @@ The fixture excludes home/font caches and tool configuration. The synthetic
 board and symbols originate in `fixtures/fab-export/generate.py`; KiCad-generated
 netlist, geometry, Gerber/drill and DRC records are retained tool outputs.
 
-Retained archive SHA256: `c35d56b60dfdb173074bd387992de7aa9f80886c160a6338ee69890f187d5f5a`.
+Retained archive SHA256: `6791357ecc2f710dfdd367ef6d8385e9dad0eed0f4533eca7200bb0f8b482d93`.

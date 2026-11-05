@@ -73,7 +73,7 @@ class CapturedFootprintTests(unittest.TestCase):
         self.assertEqual((source['repository'], source['commit'], source['path']),
                          ('fome-mc', request['commit'], request['members'][0]))
         self.assertEqual(source['blob'], '2f09e3a5c9bd66421dee3223cb12596307f8181a')
-        self.assertEqual(record['kicad_version'], '10.0.7')
+        self.assertEqual(record['kicad_version'], '10.0.8')
         self.assertEqual(record['conversion']['second_conversion'], 'byte-identical')
         # Without an object store the bytes still verify, but the source is not credited.
         self.assertEqual(verify_capture(CAPTURE)['status'], 'unverified')
@@ -139,7 +139,7 @@ class OfflineGitCaptureTests(unittest.TestCase):
         git(self.repo, 'commit', '-q', '-m', 'owned legacy footprint')
         self.commit = git(self.repo, 'rev-parse', 'HEAD')
         self.request = dict(schema='agent-ee.footprint-capture-request/1', library='owned', repository='owned-repo',
-                            commit=self.commit, kicad_version='10.0.7', members=['lib.pretty/owned-pair.kicad_mod'])
+                            commit=self.commit, kicad_version='10.0.8', members=['lib.pretty/owned-pair.kicad_mod'])
         self.count = 0
 
     def capture(self, **changes):

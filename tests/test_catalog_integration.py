@@ -109,7 +109,7 @@ class CatalogIntegrationTests(unittest.TestCase):
         normalizer = next(path for path in changed if path == 'catalog.py')
         changed[normalizer] = '0' * 64
         with self.assertRaises(ValueError):
-            verify(run, host={'policy_files': changed})
+            verify(run, host={'policy_files': changed}, current_host=True)
         report = run / 'work/select/catalog.json'
         report.write_text('{}')
         with self.assertRaises(ValueError):

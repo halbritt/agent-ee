@@ -74,7 +74,7 @@ class AdapterTests(unittest.TestCase):
         self.assertIn('dnp', c['R2']['properties'])
         self.assertIsNone(c['R2']['properties']['dnp'])
         self.assertNotIn('#PWR01', c)
-        self.assertTrue(graph['exporter'].startswith('Eeschema 10.0.7'), graph['exporter'])
+        self.assertTrue(graph['exporter'].startswith('Eeschema 10.0.8'), graph['exporter'])
 
     def test_complete_library_part_inventory_includes_unplaced_units(self):
         graph = native_graph()

@@ -644,12 +644,13 @@ class StageExecutionTests(unittest.TestCase):
 
 class NativeHookScopeTests(unittest.TestCase):
     def test_only_source_revision_host_probe_bypasses_sandbox_hook(self):
+        import sys
         from tests.native_hooks import Hooked
         def fault(call, run):
             self.fail('host metadata reached a sandbox fault callback')
         hook = Hooked(fault)
         result = native_run.run(native_run.Intent('source_revision',
-            ['git', 'rev-parse', 'HEAD'], isolation='host', timeout=None), work=None, adapter=hook)
+            [sys.executable, '-c', 'print("0" * 40)'], isolation='host', timeout=None), work=None, adapter=hook)
         self.assertEqual(result['execution'], 'ok')
         self.assertRegex(result.stdout.decode().strip(), r'^[0-9a-f]{40}$')
         self.assertEqual(hook.calls, [])

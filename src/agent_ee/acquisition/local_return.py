@@ -181,64 +181,7 @@ def _mm(nm):
     return f'{sign}{whole}.{part:06d}'
 
 
-def _obstacle_path(a, b, boxes, *, clock, cancel_dir):
-    """Shortest visibility path around expanded copper rectangles, at most 12 mm.
-
-    This proposes one front-copper seed. Only the subsequent full native DRC
-    can establish clearance; the rectangles are a conservative search model.
-    """
-    a, b = tuple(a), tuple(b)
-    if len(boxes)>1024:
-        raise JobRefusal('local return: local obstacle population exceeds 1024')
-    limit = 12_000_000
-    def inside(p, box):
-        x, y, u, v = box
-        return x < p[0] < u and y < p[1] < v
-    def crosses(p, q, box):
-        low, high = 0.0, 1.0
-        for origin, end, left, right in zip(p, q, box[:2], box[2:]):
-            delta = end - origin
-            if not delta:
-                if not left < origin < right:
-                    return False
-            else:
-                start, stop = sorted(((left-origin)/delta, (right-origin)/delta))
-                low, high = max(low, start), min(high, stop)
-        return low < high
-    _check_stop(clock, cancel_dir)
-    if any(inside(p, box) for p in (a, b) for box in boxes):
-        return None
-    nodes = {a, b}
-    for x, y, u, v in boxes:
-        _check_stop(clock, cancel_dir)
-        for point in ((x,y), (u,y), (u,v), (x,v)):
-            _check_stop(clock,cancel_dir)
-            if math.dist(a,point)+math.dist(point,b) <= limit and not any(inside(point,r) for r in boxes):
-                nodes.add(point)
-            if len(nodes)>512:
-                raise JobRefusal('local return: local obstacle search exceeds 512 vertices')
-    nodes = sorted(nodes)
-    queue, best, previous = [(0.0,a)], {a:0.0}, {}
-    while queue:
-        _check_stop(clock,cancel_dir)
-        length, point = heapq.heappop(queue)
-        if length != best[point]:
-            continue
-        if point == b:
-            path = [b]
-            while path[-1] != a:
-                path.append(previous[path[-1]])
-            return list(reversed(path))
-        for other in nodes:
-            _check_stop(clock,cancel_dir)
-            distance = length + math.dist(point,other)
-            if (other == point or distance >= best.get(other,math.inf)
-                    or distance+math.dist(other,b) > limit
-                    or any(crosses(point,other,box) for box in boxes)):
-                continue
-            best[other], previous[other] = distance, point
-            heapq.heappush(queue,(distance,other))
-    return None
+from ..local_decoupling import _obstacle_path
 
 
 def _candidate_paths(source, endpoints, *, obstacle_search, clock, cancel_dir):

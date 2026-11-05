@@ -142,7 +142,7 @@ class Esp32FootprintKeepoutTests(unittest.TestCase):
             self.assertEqual((failed['execution'], failed['outcome'], failed['coverage']), ('failed', 'unknown', 'missing'))
             self.assertEqual(len(failed['findings']), 1)
             self.assertEqual(failed['findings'][0]['code'], 'coverage')
-            self.assertIn('mixed assembly semantics are not qualified', failed['findings'][0]['message'])
+            self.assertIn('mixed assembly on shared terminal numbers needs a thermal-via declaration', failed['findings'][0]['message'])
 
             # Criterion 1(c): Sandboxed footprint_assignment check passes with declaration and fails without
             overlay = root / 'app'

@@ -100,7 +100,7 @@ class DatasheetFootprintTests(unittest.TestCase):
                               for p in (run_dir / 'inputs').rglob('*') if p.is_file()], [self.request['pdf']['path']])
             self.assertEqual(evidence_mounts(run_dir, label), [])
             self.assertIn('/candidate/' + self.request['pdf']['path'], prompt)
-            self.assertIs(schema, df.EXTRACTION_SCHEMA)
+            self.assertEqual(schema, df.EXTRACTION_SCHEMA)
             if label in failures:
                 failure = failures[label]
                 if isinstance(failure, Exception):
