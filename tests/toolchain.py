@@ -28,8 +28,25 @@ def native_board_render_test(test):
     return test
 
 
+def is_container_environment():
+    """Positive evidence that execution is confined inside the container image."""
+    if os.environ.get('AE_CONTAINER') == '1' or os.environ.get('AE_CI_CONTAINER') == '1':
+        return True
+    for path in (
+        '/etc/ae-ci-container',
+        '/.dockerenv',
+        '/usr/local/share/agent-ee/image-context.json',
+        '/opt/kicad.install.json',
+    ):
+        if Path(path).exists():
+            return True
+    return False
+
+
 @functools.lru_cache(maxsize=None)
 def prerequisite_problem(native=False, tools=()):
+    if native and not is_container_environment():
+        return 'native execution refused on host: native work runs only inside the container image; run via ae-ci-exec'
     if shutil.which('bwrap') is None:
         return 'bwrap not found on PATH'
     with tempfile.TemporaryDirectory(prefix='agent-ee-prerequisites-') as tmp:

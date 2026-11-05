@@ -220,6 +220,8 @@ RUN --network=none set -eu; \
 RUN set -eu; \
     ln -s /opt/agent-ee/bin/agent-ee /usr/local/bin/agent-ee; \
     useradd --create-home --uid 10001 --shell /bin/bash agentee
+ENV AE_CONTAINER=1
+RUN touch /etc/ae-ci-container
 
 LABEL org.opencontainers.image.title="agent-ee" \
       org.opencontainers.image.description="agent-ee with the newest KiCad 10.0 release at build time (recorded in /opt/kicad.install.json), corrected ngspice 47, Bubblewrap 0.9.0, Python 3.12 and kicad-route main at build time (recorded in /opt/kicad-route.install.json)"

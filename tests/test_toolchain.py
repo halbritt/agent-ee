@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 
 class ToolchainPolicyTests(unittest.TestCase):
     def discover(self, strict=False):
@@ -220,7 +222,7 @@ class GateBoundaryTests(unittest.TestCase):
                     self.addCleanup(prerequisite_problem.cache_clear)
                     results = [subprocess.CompletedProcess([], 0, '', ''),
                                subprocess.CompletedProcess([], code, '', stderr)]
-                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}), \
+                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict, 'AE_CONTAINER': '1'}), \
                             patch('toolchain.shutil.which', return_value='/usr/bin/bwrap'), \
                             patch('toolchain.subprocess.run', side_effect=results):
                         try:
@@ -242,7 +244,7 @@ class GateBoundaryTests(unittest.TestCase):
                     prerequisite_problem.cache_clear()
                     self.addCleanup(prerequisite_problem.cache_clear)
                     results = [subprocess.CompletedProcess([], code, '', '') for code in responses]
-                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}), \
+                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict, 'AE_CONTAINER': '1'}), \
                             patch('toolchain.shutil.which', return_value='/usr/bin/bwrap'), \
                             patch('toolchain.subprocess.run', side_effect=results):
                         expected = AssertionError if strict == '1' else unittest.SkipTest
@@ -263,3 +265,104 @@ class GateBoundaryTests(unittest.TestCase):
                     self.assertEqual(record['execution'], 'unavailable')
                     self.assertIsNone(record['exit_code'])
                     self.assertIn('bwrap', (root / strict / 'console.log').read_text())
+
+
+class NativeRunHostGuardTests(unittest.TestCase):
+    def setUp(self):
+        from toolchain import prerequisite_problem
+        prerequisite_problem.cache_clear()
+        self.addCleanup(prerequisite_problem.cache_clear)
+
+    def tearDown(self):
+        from toolchain import prerequisite_problem
+        prerequisite_problem.cache_clear()
+
+    def test_native_probe_refuses_on_host_even_with_pcbnew_installed(self):
+        """Host environment without container markers must refuse native execution."""
+        from unittest.mock import patch
+        import toolchain
+        clean_env = {k: v for k, v in os.environ.items()
+                     if k not in ('AE_CONTAINER', 'AE_CI_CONTAINER')}
+        with patch.dict(os.environ, clean_env, clear=True), \
+             patch('toolchain.is_container_environment', return_value=False):
+            toolchain.prerequisite_problem.cache_clear()
+            problem = toolchain.prerequisite_problem(native=True)
+            self.assertEqual(
+                problem,
+                'native execution refused on host: native work runs only inside the container image; run via ae-ci-exec'
+            )
+
+    def test_require_toolchain_native_refuses_on_host_in_both_modes(self):
+        """require_toolchain(native=True) raises SkipTest normally and AssertionError in strict mode."""
+        from unittest.mock import patch
+        import toolchain
+        clean_env = {k: v for k, v in os.environ.items()
+                     if k not in ('AE_CONTAINER', 'AE_CI_CONTAINER')}
+        for strict in ('0', '1'):
+            with self.subTest(strict=strict):
+                toolchain.prerequisite_problem.cache_clear()
+                env = dict(clean_env, AGENT_EE_REQUIRE_TOOLCHAIN=strict)
+                with patch.dict(os.environ, env, clear=True), \
+                     patch('toolchain.is_container_environment', return_value=False):
+                    expected = AssertionError if strict == '1' else unittest.SkipTest
+                    with self.assertRaises(expected) as ctx:
+                        toolchain.require_toolchain(native=True)
+                    msg = str(ctx.exception)
+                    self.assertIn('native execution refused on host', msg)
+                    self.assertIn('ae-ci-exec', msg)
+
+    def test_native_probe_accepts_when_container_marker_present(self):
+        """When container marker is present, native execution is admitted."""
+        from unittest.mock import patch
+        import toolchain
+        for env_var in ('AE_CONTAINER', 'AE_CI_CONTAINER'):
+            with self.subTest(env_var=env_var):
+                toolchain.prerequisite_problem.cache_clear()
+                with patch.dict(os.environ, {env_var: '1'}):
+                    problem = toolchain.prerequisite_problem(native=True)
+                    if problem is not None:
+                        self.assertNotIn('native execution refused on host', problem)
+
+    def test_non_native_toolchain_accepts_on_host_without_marker(self):
+        """Pure / non-native tests bypass container check on host."""
+        from unittest.mock import patch
+        import toolchain
+        clean_env = {k: v for k, v in os.environ.items()
+                     if k not in ('AE_CONTAINER', 'AE_CI_CONTAINER')}
+        with patch.dict(os.environ, clean_env, clear=True), \
+             patch('toolchain.is_container_environment', return_value=False):
+            toolchain.prerequisite_problem.cache_clear()
+            problem = toolchain.prerequisite_problem(native=False)
+            if problem is not None:
+                self.assertNotIn('native execution refused on host', problem)
+
+    def test_is_container_environment_markers(self):
+        """is_container_environment returns True for each individual marker and False when none exist."""
+        from unittest.mock import patch
+        from pathlib import Path
+        import toolchain
+
+        # Test environment variables
+        for var in ('AE_CONTAINER', 'AE_CI_CONTAINER'):
+            with self.subTest(var=var), patch.dict(os.environ, {var: '1'}, clear=False):
+                self.assertTrue(toolchain.is_container_environment())
+
+        # Test filesystem markers
+        markers = (
+            '/etc/ae-ci-container',
+            '/.dockerenv',
+            '/usr/local/share/agent-ee/image-context.json',
+            '/opt/kicad.install.json',
+        )
+        clean_env = {k: v for k, v in os.environ.items()
+                     if k not in ('AE_CONTAINER', 'AE_CI_CONTAINER')}
+        for marker in markers:
+            with self.subTest(marker=marker), patch.dict(os.environ, clean_env, clear=True):
+                with patch.object(Path, 'exists', autospec=True) as mock_exists:
+                    mock_exists.side_effect = lambda self_path: str(self_path) == marker
+                    self.assertTrue(toolchain.is_container_environment())
+
+        # Test negative case (no markers)
+        with patch.dict(os.environ, clean_env, clear=True):
+            with patch.object(Path, 'exists', return_value=False):
+                self.assertFalse(toolchain.is_container_environment())
