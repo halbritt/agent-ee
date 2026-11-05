@@ -695,6 +695,7 @@ def extract_board_via_in_pad(board_bytes):
                             'drill_mm': round(v['drill'], 4),
                             'capping': v['capping'],
                             'filling': v['filling'],
+                            'protected': prot_ok,
                             'effective_protection': 'IPC-4761 Type VII' if prot_ok else 'unprotected',
                             'via_uuid': v['uuid']
                         })
@@ -1858,6 +1859,7 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
                 'drill_mm': s['drill_mm'],
                 'capping': s['capping'],
                 'filling': s['filling'],
+                'protected': s['protected'],
                 'effective_protection': s['effective_protection'],
                 'instruction': vip_instruction,
             }

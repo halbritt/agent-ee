@@ -939,7 +939,7 @@ def _gate(ctx, eid, export_spec, export_result, stage):
     board_bytes = (ctx.inputs / ctx.scope['board']).read_bytes()
     board_vip_sites = extract_board_via_in_pad(board_bytes)
     for s in board_vip_sites:
-        if not s.get('protected', True):
+        if not s.get('protected', False) or s.get('effective_protection') != 'IPC-4761 Type VII' or not (s.get('capping') and s.get('filling')):
             defects.append({'code': 'via_in_pad_unprotected',
                             'locator': f"via-in-pad at {s['reference']} pad {s['pad']} ({s['position_mm']}) lacks Type VII fill/cap protection"})
     if 'via_treatment' in manifest:

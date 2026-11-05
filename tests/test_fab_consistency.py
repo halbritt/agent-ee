@@ -567,6 +567,26 @@ class FabConsistencyTests(FabCase):
             m['via_treatment']['count'] = 1
         self.assertStatus(self.run_case(files=files, manifest_edit=forged_sites), 'ok', 'defect')
 
+    def test_unprotected_via_in_pad_on_board_is_flagged_as_defect(self):
+        # A via directly inside pad 1 of R1 without Type VII protection (e.g. capping no / filling no)
+        # must be detected and flagged as via_in_pad_unprotected defect, failing the done gate.
+        unprotected_board = board_text(
+            extra='\n\t(via (at 10 10) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (capping no) (filling no))\n'
+        )
+        result = self.run_case(board=unprotected_board)
+        self.assertStatus(result, 'ok', 'defect')
+        self.assertIn('via_in_pad_unprotected', self.codes(result))
+        locators = [d['locator'] for d in result['details']['defects'] if d['code'] == 'via_in_pad_unprotected']
+        self.assertTrue(any('R1 pad 1' in loc and 'lacks Type VII fill/cap protection' in loc for loc in locators))
+
+        # Also verify board with default setup (no filling/capping declared) and plain via triggers defect
+        default_board = board_text(
+            extra='\n\t(via (at 10 10) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu"))\n'
+        )
+        result2 = self.run_case(board=default_board)
+        self.assertStatus(result2, 'ok', 'defect')
+        self.assertIn('via_in_pad_unprotected', self.codes(result2))
+
     def test_manifest_tampering_is_malformed(self):
         edits = {
             'candidate': (lambda m: m.update(candidate_id='0' * 64), 'different candidate'),
