@@ -39,15 +39,15 @@ def _pad_bbox_distance(pad, pt):
         elif hasattr(ori, "AsDegrees"):
             theta = math.radians(ori.AsDegrees())
         elif isinstance(ori, (int, float)):
-            theta = math.radians(ori / 10.0 if ori > 360 else ori)
+            theta = math.radians(ori % 360.0)
 
     dx_world = pt[0] - pad_center[0]
     dy_world = pt[1] - pad_center[1]
 
     cos_t = math.cos(theta)
     sin_t = math.sin(theta)
-    local_x = dx_world * cos_t + dy_world * sin_t
-    local_y = -dx_world * sin_t + dy_world * cos_t
+    local_x = dx_world * cos_t - dy_world * sin_t
+    local_y = dx_world * sin_t + dy_world * cos_t
 
     dx = max(0.0, abs(local_x) - pad_size_x / 2.0)
     dy = max(0.0, abs(local_y) - pad_size_y / 2.0)

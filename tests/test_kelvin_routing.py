@@ -45,14 +45,16 @@ class MockShape:
 
 
 class MockPad:
-    def __init__(self, ref, number, x_mm, y_mm, size_mm, netname, orientation=0.0):
+    def __init__(self, ref, number, x_mm, y_mm, size_mm, netname, orientation=0.0, raw_orientation=False):
         self.ref = ref
         self.number = str(number)
         self.pos_nm = (int(round(x_mm * 1e6)), int(round(y_mm * 1e6)))
         self.size_nm = (int(round(size_mm[0] * 1e6)), int(round(size_mm[1] * 1e6)))
         self.netname = netname
         self.radius_nm = int(round(max(size_mm) * 0.5 * 1e6))
-        if isinstance(orientation, (int, float)):
+        if raw_orientation:
+            self.orientation = orientation
+        elif isinstance(orientation, (int, float)):
             self.orientation = MockAngle(orientation)
         else:
             self.orientation = orientation
@@ -415,3 +417,62 @@ class KelvinRoutingTests(unittest.TestCase):
         res = evaluate_leg(board, dev_pad, shunt_pad, "SOURCE_12V")
         self.assertEqual(res["status"], "pass")
         self.assertEqual(res["reason"], "kelvin_sense_direct_land_connection_verified")
+
+    def test_rotated_pad_bbox_distance_non_cardinal_and_negative_angles(self):
+        angles = [30.0, 45.0, 135.0, 225.0, 315.0, -45.0, -90.0]
+        for angle in angles:
+            for raw in (False, True):
+                pad = MockPad("R1", 1, 100.0, 100.0, (1.2, 3.35), "SOURCE_12V", orientation=angle, raw_orientation=raw)
+                rad = math.radians(angle)
+                cos_a = math.cos(rad)
+                sin_a = math.sin(rad)
+
+                # Point strictly on copper: local (u, v) = (0.2, 0.8) mm (inside half-width 0.6 and half-height 1.675)
+                # World displacement for +Y down screen coordinates: dx = u*cos + v*sin, dy = -u*sin + v*cos
+                u_on, v_on = 0.2, 0.8
+                pt_on = (100.0 + u_on * cos_a + v_on * sin_a, 100.0 - u_on * sin_a + v_on * cos_a)
+                dist_on = _pad_bbox_distance(pad, pt_on)
+                self.assertLessEqual(dist_on, SHARED_COPPER_THRESHOLD_MM, f"Failed on-copper distance for angle {angle}")
+
+                # Point 0.4 mm outside copper along positive short axis (local X): local (1.0, 0.0) mm
+                pt_out_pos = (100.0 + 1.0 * cos_a, 100.0 - 1.0 * sin_a)
+                dist_out_pos = _pad_bbox_distance(pad, pt_out_pos)
+                self.assertGreaterEqual(dist_out_pos, 0.35, f"Failed outside short axis distance for angle {angle}")
+                self.assertAlmostEqual(dist_out_pos, 0.4, places=2)
+
+                # Point 0.4 mm outside copper along negative short axis (local X): local (-1.0, 0.0) mm
+                pt_out_neg = (100.0 - 1.0 * cos_a, 100.0 + 1.0 * sin_a)
+                dist_out_neg = _pad_bbox_distance(pad, pt_out_neg)
+                self.assertGreaterEqual(dist_out_neg, 0.35, f"Failed outside short axis distance for angle {angle}")
+                self.assertAlmostEqual(dist_out_neg, 0.4, places=2)
+
+    def test_rotated_shunt_pad_30_and_45_evaluate_leg(self):
+        for angle in (30.0, 45.0):
+            shunt_pad = MockPad("R1", 1, 100.0, 100.0, (1.2, 3.35), "SOURCE_12V", orientation=angle)
+            dev_pad = MockPad("U1", 1, 120.0, 100.0, (0.5, 0.5), "SOURCE_12V")
+            rad = math.radians(angle)
+            cos_a = math.cos(rad)
+            sin_a = math.sin(rad)
+
+            # 1. Direct route to rotated shunt copper (status: pass, shared_length_mm: 0.0)
+            u_on, v_on = 0.2, 0.8
+            pt_land = (round(100.0 + u_on * cos_a + v_on * sin_a, 3), round(100.0 - u_on * sin_a + v_on * cos_a, 3))
+            t_sense = MockTrack((120.0, 100.0), pt_land, 0.2, "SOURCE_12V")
+            t_power = MockTrack((80.0, 100.0), pt_land, 0.5, "SOURCE_12V")
+            board_clean = MockBoard([], [t_sense, t_power])
+            res_clean = evaluate_leg(board_clean, dev_pad, shunt_pad, "SOURCE_12V")
+            self.assertEqual(res_clean["status"], "pass")
+            self.assertEqual(res_clean["reason"], "kelvin_sense_direct_land_connection_verified")
+            self.assertEqual(res_clean["shared_length_mm"], 0.0)
+
+            # 2. External T-junction 0.4 mm outside copper along short axis
+            # (status: defect, circuit-shared-sense-copper, shared_length_mm approx 0.4 mm)
+            pt_ext = (round(100.0 + 1.0 * cos_a, 3), round(100.0 - 1.0 * sin_a, 3))
+            t_sense_bad = MockTrack((120.0, 100.0), pt_ext, 0.2, "SOURCE_12V")
+            t_power_bad = MockTrack((80.0, 100.0), pt_ext, 0.5, "SOURCE_12V")
+            t_shared = MockTrack(pt_ext, (100.0, 100.0), 0.5, "SOURCE_12V")
+            board_defect = MockBoard([], [t_sense_bad, t_power_bad, t_shared])
+            res_defect = evaluate_leg(board_defect, dev_pad, shunt_pad, "SOURCE_12V")
+            self.assertEqual(res_defect["status"], "defect")
+            self.assertEqual(res_defect["reason"], "circuit-shared-sense-copper")
+            self.assertAlmostEqual(res_defect["shared_length_mm"], 0.4, places=2)
