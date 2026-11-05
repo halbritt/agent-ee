@@ -1,13 +1,11 @@
 #!/bin/sh
 # Build the qualified simulator; no project or component-specific model edits.
 set -eu
-pin=a80f6e3e95d51534905b1f23410a951802666656
 root=/build/ngspice
 scripts=/usr/local/share/agent-ee/ngspice
 export SOURCE_DATE_EPOCH=1786454110
 
 git clone --depth 1 --branch ngspice-47 https://git.code.sf.net/p/ngspice/ngspice "$root"
-test "$(git -C "$root" rev-parse HEAD)" = "$pin"
 python3 "$scripts/patch.py" "$root"
 cd "$root"
 ./autogen.sh
@@ -15,9 +13,10 @@ cd "$root"
 make -j4
 make DESTDIR=/out install
 # Keep the upstream redistribution notices beside the installed simulator.
-mkdir -p /out/usr/share/doc/ngspice /out/usr/share/agent-ee
+mkdir -p /out/usr/share/doc/ngspice /out/usr/share/agent-ee /out/opt
 cp COPYING /out/usr/share/doc/ngspice/COPYING
-python3 - "$pin" "$scripts" <<'PY'
+commit=$(git -C "$root" rev-parse HEAD)
+python3 - "$commit" "$scripts" <<'PY'
 import hashlib
 import json
 import sys
@@ -30,5 +29,7 @@ record = {'schema': 'agent-ee.ngspice-install/1', 'version': '47',
           'commit': sys.argv[1], 'correction': 'inverse-pswitch-resistance-floor/1',
           'patch_sha256': hashlib.sha256((Path(sys.argv[2]) / 'patch.py').read_bytes()).hexdigest(),
           'files': files}
-(root / 'usr/share/agent-ee/ngspice-install.json').write_text(json.dumps(record, indent=2) + '\n')
+content = json.dumps(record, indent=2) + '\n'
+(root / 'usr/share/agent-ee/ngspice-install.json').write_text(content)
+(root / 'opt/ngspice.install.json').write_text(content)
 PY

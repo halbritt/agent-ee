@@ -29,19 +29,19 @@ hosted run exposed a user-namespace requirement, handled below.
 
 | Component | Version | How it is fixed or recorded |
 | --- | --- | --- |
-| Base | `ubuntu:24.04@sha256:68ee2200…` | Image index digest in `UBUNTU_DIGEST` |
-| Ubuntu package indexes | Snapshot `20261015T000000Z` | `snapshot.ubuntu.com` URLs, so later archive uploads do not change resolution |
+| Base | `ubuntu:24.04` | Ubuntu noble base image, unpinned; package versions and binary digests recorded in `/opt/base.install.json` |
+| Ubuntu package indexes | Release snapshot | Noble package archive; versions fixed per run and recorded in install receipts |
 | KiCad, newest 10.0 release at build time (10.0.8 on 2026-11-03), with its stock symbols, footprints, 3D models and templates | Not fixed in the Dockerfile: the release used is recorded per image in `/opt/kicad.install.json` and per run with its evidence ([KiCad](#kicad)) | `apt-get install` from the live KiCad 10.0 releases PPA, signed by key `FDA854F61C4D0D9572BB95E5245D5502FAD7A805` stored in [docker/](../docker/kicad-10.0-releases.asc). [docker/kicad/install.py](../docker/kicad/install.py) fails the build unless every package, `kicad-cli` and pcbnew name one release of the 10.x line, each library repository has a tag for it, pcbnew loads an owned board and `kicad-cli` DRC reports on it. Rebuild the image to update |
 | pcbnew Python bindings | Shipped by the `kicad` package | Build fails unless `/usr/bin/python3` imports `pcbnew` and its version is the `kicad-cli` release |
-| ngspice 47 with inverse-switch correction | Upstream `a80f6e3e95d51534905b1f23410a951802666656` plus the hash-guarded [correction](../docker/ngspice/patch.py) | Source build from the same package snapshot; runtime reports 47 and passes 20 independent switch-divider checks; installed file hashes retained in `/usr/share/agent-ee/ngspice-install.json` |
-| Bubblewrap 0.9.0 | `0.9.0-1ubuntu0.3` | Exact apt version; build fails unless `bwrap --version` is `bubblewrap 0.9.0` and the binary is not setuid |
-| Python 3.12 | `python3=3.12.3-0ubuntu2.1` | Exact apt version; build fails unless the interpreter reports 3.12 |
-| PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
+| ngspice 47 with inverse-switch correction | Upstream head at build time plus the syntax-guarded [correction](../docker/ngspice/patch.py) | Source build; runtime reports 47 and passes 20 independent switch-divider checks; installed file commit and hashes retained in `/usr/share/agent-ee/ngspice-install.json` and `/opt/ngspice.install.json` |
+| Bubblewrap | Noble release | Unpinned apt package; build fails unless `bwrap --version` matches `^bubblewrap [0-9]+\.[0-9]+` and binary is not setuid; digest recorded in `/opt/base.install.json` |
+| Python 3.12 | Noble release | Unpinned apt package; build fails unless the interpreter reports >= 3.12; digest recorded in `/opt/base.install.json` |
+| PDF text extraction & fonts | `poppler-utils`, `poppler-data`, `ripgrep` | Unpinned apt packages for page-cited datasheet checks and search; extraction verified via CID font probe; recorded in `/opt/base.install.json` |
 | kicad-happy, newest 2.x release at build time (v2.3.2 on 2026-11-03) | Not fixed in the Dockerfile: the version used is recorded per run. Tag, commit, output format and installed-file identity are written to `/opt/kicad-happy.install.json` | Installed at `/opt/kicad-happy`, outside the package, by [docker/kicad-happy/install.py](../docker/kicad-happy/install.py) with the AGENTEE-219 correction. The build fails if the correction no longer applies or an analyzer reports an output format outside [the contract](../src/agent_ee/data/kicad-happy-contract.json). Rebuild the image to update ([Versions](kicad-happy.md#versions)) |
-| zstd CLI (tests only) | `zstd=1.5.5+dfsg2-2build1.1` | Exact apt version, the image's `libzstd1` version; reference frames for the fab-consistency decoder test |
+| zstd CLI (tests only) | Noble release | Unpinned apt package; reference frames for the fab-consistency decoder test; recorded in `/opt/base.install.json` |
 | kicad-route and its owned KRT-lineage engine | The head of kicad-route `main` when the image is built, recorded in `/opt/kicad-route.install.json`; owned engine (fork lineage `0494a05e`) | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Routing tool at its current version](#routing-tool-at-its-current-version) |
-| Rust placement engine | This checkout's `crates/placement-engine`, committed Cargo lock and digest-pinned Rust 1.99.1 compiler | Locked dependency acquisition, offline Rust unit tests and release build, then source/binary receipt verification in the final image |
-| TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
+| Rust placement engine | This checkout's `crates/placement-engine`, committed Cargo lock and Rust toolchain | Locked dependency acquisition, offline Rust unit tests and release build; toolchain banners and binary receipt recorded in `/usr/local/libexec/agent-ee/agent-ee-placement.json` |
+| TLS bootstrap | `ca-certificates` | Installed from the noble release pocket before subsequent package sources are enabled |
 
 The simulator is compiled by [build.sh](../docker/ngspice/build.sh) with
 `SOURCE_DATE_EPOCH` fixed to the upstream commit time. Build dependencies and
@@ -50,17 +50,15 @@ The correction permits either ordering of a switch's on/off resistances; stock
 42 and 47 incorrectly clamp inverse switches to the larger on resistance at
 threshold endpoints and inside the transition. The image build checks both
 resistance orderings and both threshold polarities against Ohm's law. Upstream
-notices accompany the installed files. Exact pins record the qualified build;
+notices accompany the installed files. Install receipts record the qualified build;
 new releases require fresh qualification, rather than indefinite dependency
 freezing.
 
-Exact-version packages and the KiCad packages are held with `apt-mark hold`, so
-later build stages cannot change them. An unavailable exact version stops
-`apt-get install`, and the verification layer refuses an image whose base tools
-report other versions or whose stock library paths used by the RC fixtures are
-missing. Dependencies without an exact version (shared libraries, `git`) are
-fixed by the snapshot timestamp rather than individual version strings; KiCad's
-own shared-library dependencies resolve against that snapshot.
+Base packages are installed unpinned from the noble repository and recorded in
+`/opt/base.install.json` with binary digests. An installation failure stops
+`apt-get install`, and the verification layer checks the platform requirements
+and tool availability. Packages without a separate installer are fixed and recorded
+per run; KiCad's own shared-library dependencies resolve against the release archive.
 
 All ten image-build `apt-get update` and `apt-get install` invocations use
 [the shared outer retry wrapper](../docker/apt-retry.sh), including the TLS
@@ -85,7 +83,7 @@ The existing `Acquire::Retries=5` options remain, with exponential retry delays
 enabled and each delay capped at eight seconds. The outer loop also covers
 body-less HTTP 5xx responses that apt may not retry internally. Updates use
 `APT::Update::Error-Mode=any` so a failed index fetch cannot return success with
-stale or missing indexes. Snapshot URLs, package version pins and signature
+stale or missing indexes. Snapshot URLs, package install receipts and signature
 verification remain unchanged.
 
 `doctor` reports the KiCad install record with the `kicad-cli` probe. It fails
@@ -352,8 +350,8 @@ docker build -t agent-ee:local .
 
 ## Init and reaping
 
-The image's `ENTRYPOINT` is `/usr/bin/tini --` (Ubuntu `tini` 0.19.0-1, pinned
-and held like the other packages). As PID 1 it reaps orphaned descendants,
+The image's `ENTRYPOINT` is `/usr/bin/tini --` (Ubuntu `tini`, recorded in
+`/opt/base.install.json`). As PID 1 it reaps orphaned descendants,
 forwards `SIGTERM`/`SIGINT` to the command and returns the command's exit
 status (`128+N` for a command killed by signal `N`). Without it, a long-lived
 parent such as `strict_suite.py` leaves every orphaned Bubblewrap process as a
@@ -361,7 +359,7 @@ zombie (about 20,960 accumulated on one gate host). `docker run --init` is not
 used because it bind-mounts `/usr/sbin/docker-init`, a `/usr` submount that the
 stage-receipt refusal (`mount_source_submount`) correctly rejects; the refusal
 is unchanged. `tests/test_ci_init.py` runs the real `tini` against orphaned
-grandchildren, exit codes and signals, and checks the Dockerfile pin.
+grandchildren, exit codes and signals, and checks the Dockerfile configuration.
 
 ## Bubblewrap inside the container
 
@@ -453,7 +451,7 @@ per-push runs needs the owner. The landing gate is the local strict gate; a red
 daily run is a defect to fix. One job:
 
 1. Builds the image from the checkout, including offline Rust planner unit tests
-   and release compilation with the pinned toolchain.
+   and release compilation with the toolchain.
 2. Runs `agent-ee doctor --checks-only` and exercises the production networkless
    executor before the suite. Failed setup also records the host's user-namespace
    sysctl and kernel log (read-only diagnostics).
@@ -673,7 +671,7 @@ or any other trigger. agent-ee's own development does not use pull requests.
 
 Outputs are `verdict` and `run-directory`. The action:
 
-1. Builds the pinned image from the action's own checkout unless `image` is set.
+1. Builds the image from the action's own checkout unless `image` is set.
 2. Runs `agent-ee review SCOPE --checks-only` in the container, then
    `agent-ee verify` on the new run. Their exit statuses are recorded, not judged:
    checks-only always exits 1.

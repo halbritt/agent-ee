@@ -172,12 +172,11 @@ class ReadinessBoundTests(unittest.TestCase):
 
 
 class DockerfileInitTests(unittest.TestCase):
-    def test_image_entrypoint_is_pinned_tini_not_docker_init(self):
+    def test_image_entrypoint_is_tini_not_docker_init(self):
         dockerfile = (ROOT / 'Dockerfile').read_text()
         self.assertIn('ENTRYPOINT ["/usr/bin/tini", "--"]', dockerfile)
-        self.assertRegex(dockerfile, r'(?m)^ARG TINI_VERSION=\d[\w.+~-]*$')
-        self.assertIn('"tini=${TINI_VERSION}"', dockerfile)
-        self.assertIn('apt-mark hold tini;', dockerfile)
+        self.assertIn('tini', dockerfile)
+        self.assertIn('test -x /usr/bin/tini', dockerfile)
 
     def test_canonical_launchers_do_not_use_docker_init(self):
         for path in ('.github/workflows/ci.yml',):

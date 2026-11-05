@@ -493,6 +493,37 @@ class DatasheetFootprintTests(unittest.TestCase):
         self.assertEqual(read_json(self.root / 'cli-2/agreement.json')['decision'], 'rejected')
         self.assertEqual(json.loads(json.dumps(df.EXTRACTION_SCHEMA))['properties']['schema']['enum'], [df.EXTRACTION])
 
+    def test_dockerfile_installs_poppler_data_and_ripgrep(self):
+        dockerfile = (Path(__file__).resolve().parents[1] / 'Dockerfile').read_text()
+        self.assertIn('poppler-data', dockerfile)
+        self.assertIn('ripgrep', dockerfile)
+        self.assertIn('/usr/local/share/agent-ee/probes/cid-font-probe.pdf', dockerfile)
+
+    def test_cid_font_datasheet_extraction_and_render(self):
+        probe_pdf = Path(__file__).resolve().parents[1] / 'fixtures/datasheet-pins/cid-font-probe.pdf'
+        self.assertTrue(probe_pdf.is_file())
+        sha = hashlib.sha256(probe_pdf.read_bytes()).hexdigest()
+        request = copy.deepcopy(self.request)
+        request['pdf'] = {'path': 'datasheets/cid-probe.pdf', 'sha256': sha}
+        inputs = self.root / 'cid-run/inputs'
+        (inputs / 'datasheets').mkdir(parents=True)
+        (inputs / 'datasheets/cid-probe.pdf').write_bytes(probe_pdf.read_bytes())
+        fact = {
+            'id': 'pitch', 'part_number': PART, 'kind': 'dimension',
+            'value': '2.50', 'unit': 'mm', 'conditions': 'probe',
+            'source': {'path': 'datasheets/cid-probe.pdf', 'sha256': sha, 'page': 1,
+                       'locator': 'pitch line', 'quote': '2.50'}
+        }
+        work = self.root / 'cid-run/work'
+        verified = df.verify_facts(
+            request, [('extraction-a', {'facts': {'pitch': fact}}, {'pitch'})],
+            inputs, work
+        )
+        self.assertEqual(verified[('extraction-a', 'pitch')]['status'], 'verified')
+        tool, rendered = df.render_pages(request, [1], inputs, work / 'render')
+        self.assertEqual(len(rendered), 1)
+        self.assertTrue(Path(rendered[0]['source']).is_file())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -159,11 +159,11 @@ read as division, so its text counts as code.
 After a refresh, run the viewer tests and commit the files and manifest
 together.
 
-On 2026-11-03 the refresh refused the newest release, r187. From r186 the
-release tags do not contain `build/three.module.min.js` or
-`build/three.core.min.js`, and in r185 and r187 `GLTFLoader.js` imports
-`../utils/SkeletonUtils.js`. The files stay at r180 until the manifest names
-the new sources and the added module.
+The viewer adopted release r187. The manifest names unminified sources
+(`build/three.module.js` and `build/three.core.js`) following upstream removal of
+minified builds from r186, vendors `utils/SkeletonUtils.js`, and records local
+transforms flattening relative imports of both `BufferGeometryUtils.js` and
+`SkeletonUtils.js`.
 
 ## Development checks
 

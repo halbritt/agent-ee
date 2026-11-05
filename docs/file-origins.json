@@ -462,9 +462,9 @@
       ]
     },
     "T14": {
-      "name": "three.js r180 viewer runtime and loaders",
+      "name": "three.js r187 viewer runtime and loaders",
       "repository": "https://github.com/mrdoob/three.js",
-      "revision": "r180 (npm 0.180.0)",
+      "revision": "r187 (npm 0.187.0)",
       "upstream_license": "MIT; local license and exact source hashes retained under src/agent_ee/viewer_assets/vendor/",
       "permission_status": "unresolved-owner-decision-required",
       "owner_decision": "No separate owner publication decision recorded. Retain the upstream MIT notice; excluded from the proposed agent-ee grant.",
@@ -1031,6 +1031,16 @@
         "AE"
       ],
       "reviewed": "Original eight-pin symbol and footprint written here. Pin numbers and names are facts from TJA1051 Table 3; no datasheet text or vendor library data is copied."
+    },
+    {
+      "paths": [
+        "fixtures/datasheet-pins/cid-font-probe.pdf"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Synthetic CID font probe PDF authored for AGENTEE-608; contains Adobe-Japan1 CMap font dictionary and stream objects for font extraction and rendering verification."
     },
     {
       "paths": [
@@ -1794,7 +1804,7 @@
       "origins": [
         "T14"
       ],
-      "note": "Pinned third-party JS modules and upstream notice; manifest records local transforms and hashes."
+      "note": "Third-party JS modules and upstream notice; manifest records local transforms and hashes."
     },
     {
       "paths": [

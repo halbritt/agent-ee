@@ -28,7 +28,6 @@ PDF_OPTIONS = ['--black-and-white', '--exclude-drawing-sheet',
                '--exclude-pdf-property-popups', '--exclude-pdf-hierarchical-links',
                '--exclude-pdf-metadata']
 RASTER_OPTIONS = ['-r', str(DPI), '-aa', 'no', '-aaVector', 'no', '-singlefile']
-PDFTOPPM_VERSION = '24.02.0'
 # Owned 3 by 5 glyphs, kept independent of installed fonts.
 GLYPHS = dict(zip('0123456789mxy', (
     '111101101101111', '010110010010111', '111001111100111', '111001111001111',
@@ -172,10 +171,13 @@ def render(inputs, root, out, candidate_id):
                     raise ValueError(f'kicad-cli {first!r} is not a release of the KiCad 10.x line; '
                                      'missing visual evidence')
             else:
-                # Raster bytes follow the base image's poppler, an exact snapshot version.
-                version = PDFTOPPM_VERSION
-                if first != 'pdftoppm version ' + version:
-                    raise ValueError(f'pdftoppm requires the image version {version}, observed {actual!r}')
+                m = re.match(r'^pdftoppm version (\d+\.\d+(?:\.\d+)?)$', first)
+                if not m:
+                    raise ValueError(f'pdftoppm {first!r} is not a recognized version; missing visual evidence')
+                version = m.group(1)
+                parts = [int(p) for p in version.split('.')[:2]]
+                if tuple(parts) < (24, 2):
+                    raise ValueError(f'pdftoppm version {version} is below minimum floor 24.02; missing visual evidence')
             tools[name] = {'path': path, 'version': version, 'binary_sha256': digest(path)}
         renderer = {'tools': tools, 'pdf_options': PDF_OPTIONS, 'raster_options': RASTER_OPTIONS,
                     'implementation_sha256': digest(__file__), 'python': sys.version,

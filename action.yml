@@ -23,7 +23,7 @@ inputs:
   image:
     description: >-
       Existing local image to use. When empty, the image is built from this
-      action's Dockerfile, which pins the toolchain.
+      action's Dockerfile, which fixes and records the toolchain.
     required: false
     default: ""
 

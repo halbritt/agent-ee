@@ -17,8 +17,10 @@ refresh_viewer_vendor = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(refresh_viewer_vendor)
 VENDOR = ROOT / 'src/agent_ee/viewer_assets/vendor'
 VIEWER = ROOT / 'src/agent_ee/viewer_assets/viewer.js'
-LOCAL_IMPORT = "from './BufferGeometryUtils.js'"
-UPSTREAM_IMPORT = "from '../utils/BufferGeometryUtils.js'"
+LOCAL_BUFFER_IMPORT = "from './BufferGeometryUtils.js'"
+UPSTREAM_BUFFER_IMPORT = "from '../utils/BufferGeometryUtils.js'"
+LOCAL_SKELETON_IMPORT = "from './SkeletonUtils.js'"
+UPSTREAM_SKELETON_IMPORT = "from '../utils/SkeletonUtils.js'"
 
 
 def sha256(payload):
@@ -36,8 +38,10 @@ class RefreshTests(unittest.TestCase):
         # A later release whose files differ from the vendored ones but keep the viewer's API.
         self.release = {}
         for name, entry in self.manifest['files'].items():
-            payload = (VENDOR / name).read_bytes().replace(LOCAL_IMPORT.encode(), UPSTREAM_IMPORT.encode())
-            self.release[entry['source'].replace('/r180/', '/r999/')] = payload + b'\n// r999\n'
+            payload = (VENDOR / name).read_bytes()
+            payload = payload.replace(LOCAL_BUFFER_IMPORT.encode(), UPSTREAM_BUFFER_IMPORT.encode())
+            payload = payload.replace(LOCAL_SKELETON_IMPORT.encode(), UPSTREAM_SKELETON_IMPORT.encode())
+            self.release[entry['source'].replace('/r187/', '/r999/')] = payload + b'\n// r999\n'
         self.requested = []
 
     def get(self, url):
@@ -48,7 +52,7 @@ class RefreshTests(unittest.TestCase):
         return refresh_viewer_vendor.refresh(self.vendor, VIEWER, get=self.get, tags=lambda repository: 'r999')
 
     def edit(self, name, old, new):
-        url = self.manifest['files'][name]['source'].replace('/r180/', '/r999/')
+        url = self.manifest['files'][name]['source'].replace('/r187/', '/r999/')
         self.assertIn(old.encode(), self.release[url])
         self.release[url] = self.release[url].replace(old.encode(), new.encode())
 
@@ -67,8 +71,10 @@ class RefreshTests(unittest.TestCase):
                 self.assertEqual(entry['transforms'], self.manifest['files'][name]['transforms'])
         # The recorded transform is applied again; the license travels with the files.
         loader = (self.vendor / 'GLTFLoader.js').read_text()
-        self.assertIn(LOCAL_IMPORT, loader)
-        self.assertNotIn(UPSTREAM_IMPORT, loader)
+        self.assertIn(LOCAL_BUFFER_IMPORT, loader)
+        self.assertNotIn(UPSTREAM_BUFFER_IMPORT, loader)
+        self.assertIn(LOCAL_SKELETON_IMPORT, loader)
+        self.assertNotIn(UPSTREAM_SKELETON_IMPORT, loader)
         self.assertTrue((self.vendor / 'LICENSE').read_bytes().endswith(b'// r999\n'))
         # Already current: nothing is fetched again.
         self.requested.clear()
@@ -92,9 +98,9 @@ class RefreshTests(unittest.TestCase):
                                              'constructors OrbitControls'),
             'controls event renamed': ('OrbitControls.js', "type: 'start'", "type: 'begin'", 'controls_events start'),
             'loader imports a module that is not vendored': (
-                'GLTFLoader.js', "} from 'three';", "} from 'three';\nimport { clone } from '../utils/SkeletonUtils.js';",
-                'imports ../utils/SkeletonUtils.js, which is not vendored'),
-            'core export the viewer uses renamed': ('three.module.js', ' as WebGLRenderer,', ' as WebGPURenderer,',
+                'GLTFLoader.js', "} from 'three';", "} from 'three';\nimport { clone } from '../utils/UnvendoredUtils.js';",
+                'imports ../utils/UnvendoredUtils.js, which is not vendored'),
+            'core export the viewer uses renamed': ('three.module.js', ' WebGLRenderer,', ' WebGPURenderer,',
                                                     'three_exports WebGLRenderer'),
         }.items():
             with self.subTest(case):
@@ -108,7 +114,7 @@ class RefreshTests(unittest.TestCase):
     def test_regular_expression_after_return_is_not_a_definition(self):
         # Review of 5704964d: executable this.enableDamping renamed, the old text left in a regex.
         self.edit('OrbitControls.js', 'this.enableDamping', 'this.enableSmoothing')
-        url = self.manifest['files']['OrbitControls.js']['source'].replace('/r180/', '/r999/')
+        url = self.manifest['files']['OrbitControls.js']['source'].replace('/r187/', '/r999/')
         self.release[url] += b'\nfunction removedFeature() { return /this.enableDamping = gone/; }\n'
         report, status = self.refresh()
         self.assertEqual(status, 'refused')
@@ -143,8 +149,8 @@ class RefreshTests(unittest.TestCase):
         self.addCleanup(thread.join)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        url = f'http://127.0.0.1:{server.server_port}/r999/build/three.module.min.js'
-        with self.assertRaisesRegex(refresh_viewer_vendor.CheckFailed, 'r999/build/three.module.min.js does not exist'):
+        url = f'http://127.0.0.1:{server.server_port}/r999/build/three.module.js'
+        with self.assertRaisesRegex(refresh_viewer_vendor.CheckFailed, 'r999/build/three.module.js does not exist'):
             refresh_viewer_vendor.fetch(url)
 
     def test_newest_release_is_the_highest_numbered_tag(self):

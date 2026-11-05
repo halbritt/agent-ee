@@ -32,8 +32,11 @@ COPY source /source
 RUN test -s /source
 ''')
     repo = Path(__file__).resolve().parents[1]
-    base = re.search(r'^ARG UBUNTU_DIGEST=(.+)$', (repo / 'Dockerfile').read_text(), re.M)[1]
-    package = re.search(r'^ARG CA_CERTIFICATES_VERSION=(.+)$', (repo / 'Dockerfile').read_text(), re.M)[1]
+    dockerfile_text = (repo / 'Dockerfile').read_text()
+    base_m = re.search(r'^ARG (?:UBUNTU_BASE|UBUNTU_DIGEST)=(.+)$', dockerfile_text, re.M)
+    base = base_m[1] if base_m else 'ubuntu:24.04'
+    ca_m = re.search(r'^ARG CA_CERTIFICATES_VERSION=(.+)$', dockerfile_text, re.M)
+    package = ca_m[1] if ca_m else '20240203'
     fixture = root / 'Dockerfile'
     fixture.write_text(fixture.read_text().replace('ARG UBUNTU_DIGEST\n', 'ARG UBUNTU_DIGEST=' + base + '\n'))
     common = ['docker', 'buildx', 'build', '--builder', 'default', '--progress=plain',

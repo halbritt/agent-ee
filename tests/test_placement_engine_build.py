@@ -96,12 +96,12 @@ class PlacementEngineBuildTest(unittest.TestCase):
 
     def test_toolchain_rejects_wrong_version_and_host(self):
         for rustc, cargo in ((build.RUSTC + '\nhost: other', build.CARGO),
-                             ('rustc unpinned\nhost: ' + build.TARGET, build.CARGO),
-                             (build.RUSTC + '\nhost: ' + build.TARGET, 'cargo unpinned')):
+                             ('not a banner\nhost: ' + build.TARGET, build.CARGO),
+                             (build.RUSTC + '\nhost: ' + build.TARGET, 'not a cargo banner')):
             with self.subTest(rustc=rustc, cargo=cargo):
                 output = [subprocess.CompletedProcess([], 0, rustc), subprocess.CompletedProcess([], 0, cargo)]
                 with mock.patch.object(build.subprocess, 'run', side_effect=output):
-                    with self.assertRaisesRegex(ValueError, 'pinned Rust'):
+                    with self.assertRaisesRegex(ValueError, 'Rust linux/amd64 toolchain'):
                         build.toolchain({})
 
     def test_build_flags_override_inherited_cpu_selection(self):

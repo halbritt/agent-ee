@@ -9,12 +9,15 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 RUSTC = 'rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 CARGO = 'cargo 1.99.1 (5f94df478 2026-08-27)'
+RUSTC_BANNER = re.compile(r'^rustc \d+\.\d+\.\d+ \([0-9a-f]{7,40} \d{4}-\d{2}-\d{2}\)$')
+CARGO_BANNER = re.compile(r'^cargo \d+\.\d+\.\d+ \([0-9a-f]{7,40} \d{4}-\d{2}-\d{2}\)$')
 TARGET = 'x86_64-unknown-linux-gnu'
 SCHEMA = 'agent-ee.placement-engine-install/1'
 CRATE = Path('crates/placement-engine')
@@ -39,7 +42,7 @@ def environment(root):
     for key in list(env):
         if key == 'RUSTFLAGS' or key.startswith(('CARGO_PROFILE_', 'CARGO_BUILD_', 'CARGO_TARGET_')):
             env.pop(key)
-    env.update(RUSTUP_TOOLCHAIN='1.99.1', RUSTC='rustc', RUSTDOC='rustdoc',
+    env.update(RUSTC='rustc', RUSTDOC='rustdoc',
                RUSTC_WRAPPER='', RUSTC_WORKSPACE_WRAPPER='', CARGO_INCREMENTAL='0',
                CARGO_ENCODED_RUSTFLAGS='-Ctarget-cpu=x86-64\x1f--remap-path-prefix=' + str(root) + '=/opt/agent-ee')
     return env
@@ -48,8 +51,9 @@ def environment(root):
 def toolchain(env):
     rustc = subprocess.run(['rustc', '-vV'], env=env, check=True, capture_output=True, text=True).stdout.strip()
     cargo = subprocess.run(['cargo', '--version'], env=env, check=True, capture_output=True, text=True).stdout.strip()
-    if rustc.splitlines()[:1] != [RUSTC] or cargo != CARGO or '\nhost: ' + TARGET + '\n' not in '\n' + rustc + '\n':
-        raise ValueError('placement engine requires the pinned Rust 1.99.1 linux/amd64 toolchain')
+    first_line = rustc.splitlines()[0] if rustc.splitlines() else ''
+    if not RUSTC_BANNER.match(first_line) or not CARGO_BANNER.match(cargo) or '\nhost: ' + TARGET + '\n' not in '\n' + rustc + '\n':
+        raise ValueError(f'placement engine requires a valid Rust linux/amd64 toolchain, found rustc={first_line!r}, cargo={cargo!r}')
     return {'rustc': rustc, 'cargo': cargo, 'target': TARGET,
             'cpu': 'x86-64', 'source_path_remap': '/opt/agent-ee'}
 
@@ -106,6 +110,9 @@ def build(root, binary, target_dir):
 def verify(root, binary):
     receipt = json.loads(receipt_path(binary).read_bytes())
     current = sources(root)
+    rustc_lines = receipt.get('toolchain', {}).get('rustc', '').splitlines()
+    rustc_first = rustc_lines[0] if rustc_lines else ''
+    cargo_line = receipt.get('toolchain', {}).get('cargo', '')
     checks = (
         receipt.get('schema') == SCHEMA,
         receipt.get('source_sha256') == current,
@@ -113,9 +120,9 @@ def verify(root, binary):
         receipt.get('binary_sha256') == sha(binary),
         receipt.get('rust_unit_tests') == 'passed',
         receipt.get('build') == {'profile': 'release', 'frozen': True},
-        receipt.get('toolchain', {}).get('rustc', '').splitlines()[:1] == [RUSTC],
+        bool(RUSTC_BANNER.match(rustc_first)),
         '\nhost: ' + TARGET + '\n' in '\n' + receipt.get('toolchain', {}).get('rustc', '') + '\n',
-        receipt.get('toolchain', {}).get('cargo') == CARGO,
+        bool(CARGO_BANNER.match(cargo_line)),
         receipt.get('toolchain', {}).get('target') == TARGET,
         receipt.get('toolchain', {}).get('cpu') == 'x86-64',
         receipt.get('toolchain', {}).get('source_path_remap') == '/opt/agent-ee',

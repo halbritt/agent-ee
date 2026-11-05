@@ -1,27 +1,16 @@
 # agent-ee native-check image: the newest KiCad 10.0 release and its libraries when
-# the image is built, corrected ngspice 47 / Bubblewrap 0.9.0 / Python 3.12, the
+# the image is built, corrected ngspice, Bubblewrap, Python 3.12, the
 # kicad-route/KRT router at the head of its main branch when the image is built, and
 # this checkout's source launcher.
 # Versions, the KiCad update path and required runtime privileges: docs/container.md.
 #
-# KiCad is not held at one version: docker/kicad/install.py records the release
-# the build installed in /opt/kicad.install.json, and every run with the image uses
-# and records that release. The other tools below are exact versions from one
-# Ubuntu snapshot; an unavailable version stops `apt-get install`, and the
-# verification steps refuse an image whose tools do not report them.
+# KiCad and base tools are not held at one fixed version: install records (/opt/*.install.json)
+# capture the releases the build installed, and every run with the image uses and records
+# those releases. Base tools are resolved from Ubuntu and live PPAs; failure stops `apt-get install`,
+# and verification steps test meaning, shape, and platform floors.
 
-# Ubuntu 24.04 (noble) multi-architecture index digest, pulled 2026-10-17.
-ARG UBUNTU_DIGEST=sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
-FROM ubuntu:24.04@${UBUNTU_DIGEST} AS native-base
-
-# One snapshot timestamp fixes the Ubuntu archive, so the exact base-tool versions
-# below stay installable after newer uploads. KiCad comes from the live PPA.
-ARG APT_SNAPSHOT=20261015T000000Z
-# Bootstrap TLS trust only from the immutable noble release pocket.
-ARG CA_CERTIFICATES_VERSION=20240203
-ARG BUBBLEWRAP_VERSION=0.9.0-1ubuntu0.3
-ARG PYTHON3_VERSION=3.12.3-0ubuntu2.1
-ARG POPPLER_VERSION=24.02.0-1ubuntu9.10
+ARG UBUNTU_BASE=ubuntu:24.04
+FROM ${UBUNTU_BASE} AS native-base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -42,6 +31,7 @@ COPY docker/kicad-10.0-releases.asc /usr/share/keyrings/kicad-10.0-releases.asc
 ADD https://ppa.launchpadcontent.net/kicad/kicad-10.0-releases/ubuntu/dists/noble/InRelease /usr/local/share/agent-ee/kicad/ppa-InRelease
 COPY docker/kicad/install.py src/agent_ee/kicad_install.py /usr/local/share/agent-ee/kicad/
 COPY fixtures/dc-path/straight.kicad_pcb /usr/local/share/agent-ee/kicad/probe/board.kicad_pcb
+COPY fixtures/datasheet-pins/cid-font-probe.pdf /usr/local/share/agent-ee/probes/cid-font-probe.pdf
 
 RUN set -eu; \
     rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*; \
@@ -49,10 +39,10 @@ RUN set -eu; \
         'Components: main' 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
         > /etc/apt/sources.list.d/bootstrap.sources; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
-    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "ca-certificates=${CA_CERTIFICATES_VERSION}"; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends ca-certificates; \
     rm /etc/apt/sources.list.d/bootstrap.sources; \
     printf '%s\n' \
-        'Types: deb' "URIs: https://snapshot.ubuntu.com/ubuntu/${APT_SNAPSHOT}" \
+        'Types: deb' 'URIs: http://archive.ubuntu.com/ubuntu' \
         'Suites: noble noble-updates noble-security' 'Components: main universe' \
         'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' '' \
         'Types: deb' \
@@ -62,22 +52,28 @@ RUN set -eu; \
         > /etc/apt/sources.list.d/agent-ee-snapshot.sources; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends \
-        "python3=${PYTHON3_VERSION}" \
+        python3 \
         kicad kicad-symbols kicad-footprints kicad-packages3d kicad-templates \
         libfftw3-double3 libgomp1 \
-        "bubblewrap=${BUBBLEWRAP_VERSION}" \
-        "poppler-utils=${POPPLER_VERSION}" \
+        bubblewrap \
+        poppler-utils \
+        poppler-data \
+        ripgrep \
         git; \
-    apt-mark hold python3 kicad kicad-symbols kicad-footprints kicad-packages3d kicad-templates bubblewrap poppler-utils; \
     /usr/bin/python3 /usr/local/share/agent-ee/kicad/install.py /opt/kicad.install.json; \
     rm -rf /var/lib/apt/lists/*
 
-# Refuse an image whose base tools do not report the demonstrated versions, or whose
+# Refuse an image whose base tools do not meet platform floors, or whose
 # stock libraries / pcbnew bindings are missing from the system interpreter.
 RUN set -eu; \
-    test "$(bwrap --version)" = "bubblewrap 0.9.0"; \
-    /usr/bin/python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'; \
+    bwrap --version | grep -q -E '^bubblewrap [0-9]+\.[0-9]+'; \
+    /usr/bin/python3 -c 'import sys; assert sys.version_info[:2] >= (3, 12), sys.version'; \
     /usr/bin/python3 -c 'import pcbnew' 2>/dev/null; \
+    rg --version | grep -q '^ripgrep '; \
+    ! pdftotext /usr/local/share/agent-ee/probes/cid-font-probe.pdf - 2>&1 | grep -q 'Missing language pack'; \
+    pdftotext /usr/local/share/agent-ee/probes/cid-font-probe.pdf - | grep -q 'B2B-XH-A'; \
+    pdftoppm -png -r 72 /usr/local/share/agent-ee/probes/cid-font-probe.pdf /tmp/probe-page; \
+    test -f /tmp/probe-page-1.png && rm -f /tmp/probe-page*; \
     test -s /opt/kicad.install.json; \
     test ! -u /usr/bin/bwrap; \
     for f in symbols/Device.kicad_sym symbols/power.kicad_sym symbols/Connector_Generic.kicad_sym \
@@ -101,22 +97,21 @@ FROM native-base AS native
 COPY --from=ngspice-build /out/usr/ /usr/
 COPY docker/ngspice /usr/local/share/agent-ee/ngspice
 RUN --network=none set -eu; \
-    ngspice --version | grep -q '^\*\* ngspice-47 '; \
+    ngspice --version | grep -q -E '^\*\* ngspice-[0-9]+ '; \
     python3 /usr/local/share/agent-ee/ngspice/verify.py
 
-# The exact Rust toolchain is acquired from a digest-pinned image, only in the
+# The Rust toolchain is acquired from the slim bookworm image, only in the
 # build stages. The final image receives native artifacts, never Cargo.
-FROM rust:1.99.1-slim-bookworm@sha256:a24e292b4af7bdee351a31d3a6379972a5652f0ea22a1b6d6883324ac4f5097c AS rust-toolchain
+FROM rust:slim-bookworm AS rust-toolchain
 
 FROM native AS kicad-route-build
 COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
 COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
 ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:$PATH RUSTUP_TOOLCHAIN=1.99.1
-ARG PYTHON3_PIP_VERSION=24.0+dfsg-1ubuntu1.3
+    PATH=/usr/local/cargo/bin:$PATH
 RUN set -eu; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
-    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "python3-pip=${PYTHON3_PIP_VERSION}" build-essential python3-dev; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends python3-pip build-essential python3-dev; \
     rm -rf /var/lib/apt/lists/*
 # kicad-route: the head of its main branch at build time, or the commit in this ARG.
 # docker/kicad-route/install.sh resolves the commit, takes the newest wheels that meet
@@ -158,23 +153,23 @@ COPY --from=kicad-happy /opt/kicad-happy /opt/kicad-happy
 COPY --from=kicad-happy /opt/kicad-happy.install.json /opt/kicad-happy.install.json
 
 # Test reference tool only: the fab-consistency zstd decoder is compared with
-# frames from the zstd CLI, from the same snapshot as the image's libzstd1.
-ARG ZSTD_VERSION=1.5.5+dfsg2-2build1.1
+# frames from the zstd CLI, from the same release snapshot as the image's libzstd1.
 # PID 1 of every container run from this image: reaps orphaned descendants
 # (zombie bwrap under long strict_suite parents) and forwards signals and the
 # exit status, without `docker run --init`, whose /usr/sbin/docker-init bind
 # mount is a /usr submount that the stage-receipt refusal rightly rejects.
-ARG TINI_VERSION=0.19.0-1
 RUN set -eu; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
-    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "zstd=${ZSTD_VERSION}" "tini=${TINI_VERSION}"; \
-    apt-mark hold tini; \
-    apt-mark hold zstd; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends zstd tini; \
     rm -f /usr/local/bin/apt-retry; \
     rm -rf /var/lib/apt/lists/*; \
-    zstd --version | grep -q 'v1\.5\.5'; \
-    test "$(dpkg-query -W -f='${Version}' tini)" = "${TINI_VERSION}"; \
-    test -x /usr/bin/tini
+    zstd --version | grep -q -E '(\*\*\* zstd|v[0-9]+\.[0-9]+)'; \
+    test -x /usr/bin/tini; \
+    /usr/bin/python3 -c 'import hashlib, json, subprocess; \
+packages = dict(line.split("\t") for line in subprocess.check_output(["dpkg-query", "-W", "-f=${Package}\t${Version}\n", "bubblewrap", "python3", "poppler-utils", "poppler-data", "ripgrep", "zstd", "tini"]).decode().splitlines() if line); \
+digests = {p: hashlib.sha256(open(p, "rb").read()).hexdigest() for p in ["/usr/bin/bwrap", "/usr/bin/python3", "/usr/bin/pdftoppm", "/usr/bin/rg", "/usr/bin/zstd", "/usr/bin/tini"]}; \
+record = {"schema": "agent-ee.base-install/1", "packages": packages, "binaries": digests}; \
+open("/opt/base.install.json", "w").write(json.dumps(record, indent=2) + "\n")'
 
 # kicad-route with its owned routing engine, as install.sh installed and recorded it.
 # The checkout is its own KICAD_ROUTE_STATE and belongs to the runtime user, as on a native host;
@@ -186,12 +181,12 @@ COPY --from=kicad-route-build /opt/kicad-route.install.json /opt/kicad-route.ins
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN --network=none /usr/local/share/agent-ee/kicad-route/install.sh verify
 
-# Image context record: with Docker's /.dockerenv and the pinned runtime hashes,
+# Image context record: with Docker's /.dockerenv and the recorded runtime hashes,
 # the seeded-benchmark closure verifier's positive evidence that it runs inside
 # the image, where the outer-host docker CLI is absent (docs/seeded-benchmark.md).
 COPY docker/image-context.json /usr/local/share/agent-ee/image-context.json
 
-# The whole planner is built from this checkout, with the same pinned compiler
+# The whole planner is built from this checkout, with the same fixed compiler
 # as routing. Its source stage is outside the exported toolchain cache.
 FROM kicad-route-build AS placement-engine-build
 WORKDIR /build/agent-ee

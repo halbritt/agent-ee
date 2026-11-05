@@ -42,6 +42,8 @@ TAG = re.compile(r'r([0-9]+)')
 TRANSFORMS = {
     'Local BufferGeometryUtils import flattened to ./BufferGeometryUtils.js':
         ("from '../utils/BufferGeometryUtils.js'", "from './BufferGeometryUtils.js'"),
+    'Local SkeletonUtils import flattened to ./SkeletonUtils.js':
+        ("from '../utils/SkeletonUtils.js'", "from './SkeletonUtils.js'"),
 }
 IMPORT = re.compile(r'''(?m)^import\s*(?:([\w*{},$\s]+?)\s*from\s*)?['"]([^'"]+)['"]''')
 EXPORT = re.compile(r'export\s*\{([^}]*)\}')
@@ -217,7 +219,7 @@ def api(files, viewer):
     with_strings = {name: code(payload.decode('utf-8', 'replace')) for name, payload in files.items()}
     bare = {name: code(payload.decode('utf-8', 'replace'), strings=False) for name, payload in files.items()}
     uses = viewer_uses(viewer)
-    core = bare.get('three.module.js', '') + bare.get('three.core.min.js', '')
+    core = bare.get('three.module.js', '') + bare.get('three.core.min.js', '') + bare.get('three.core.js', '')
     controls, loader = bare.get('OrbitControls.js', ''), bare.get('GLTFLoader.js', '')
     return {
         'three_exports': {n: n in exports(bare.get('three.module.js', '')) for n in sorted(uses['three'])},
