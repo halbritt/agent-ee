@@ -199,6 +199,28 @@ class RepeatedLandNetTests(unittest.TestCase):
             self.assertEqual(records[0]['outcome'], 'pass', records[0]['modes'])
             self.assertEqual(records[0]['pin1']['pad_map']['74'], ['CASE'])
 
+    def test_renumbered_non_shield_supplier_pin_refuses_inheritance_without_net_binding(self):
+        names = {str(n): 'CASE' for n in range(71, 75)}
+        names['71'] = 'TX'
+        raw = supplier_symbol(connector()[0], names)
+        package = parse_package(raw, 'C900000017', 200)
+        pins = symbol_pins(raw, 'C900000017')['pins']
+        with self.assertRaisesRegex(PatternError, 'supplier pad 71 net.*unconnected.*CASE_NET'):
+            derive(self.native['pattern'], package['pattern'], nets=NETS, supplier_pins=pins)
+
+    def test_renumbered_non_shield_supplier_pin_is_accepted_when_bound_in_design_nets(self):
+        names = {str(n): 'CASE' for n in range(71, 75)}
+        names['71'] = 'TX'
+        raw = supplier_symbol(connector()[0], names)
+        package = parse_package(raw, 'C900000017', 200)
+        pins = symbol_pins(raw, 'C900000017')['pins']
+        result = derive(self.native['pattern'], package['pattern'], nets={**NETS, '71': 'CASE_NET'}, supplier_pins=pins)
+        self.assertEqual(result['pad_map']['71'], ['CASE'])
+
+    def test_unlisted_symbol_pins_inherit_native_net(self):
+        result = derive(self.native['pattern'], self.package['pattern'], nets=NETS, supplier_pins=[])
+        self.assertEqual(result['pad_map']['71'], ['CASE'])
+
 
 class PackageOrientationTests(unittest.TestCase):
     def test_compile_refuses_id_on_a_different_net_from_vb(self):
@@ -309,3 +331,17 @@ class PackageOrientationTests(unittest.TestCase):
         self.assertEqual(records[0]['outcome'], 'pass', records[0]['modes'])
         self.assertEqual(records[0]['pin1']['rotation_degrees'], 0)
         self.assertEqual(records[0]['cpl'][3:], ['Bottom', '180.000000'])
+
+    def test_symbol_parse_failure_falls_back_to_no_names_and_succeeds_for_independent_identities(self):
+        raw, fp, _, _ = connector()
+        corrupt = json.loads(raw)
+        corrupt['dataStr']['shape'] = ['INVALID_SHAPE_RECORD']
+        raw_corrupt = json.dumps(corrupt).encode()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            design = policy_inputs(root, raw_corrupt, fp, native_names={p: '~' for p in NETS})
+            for pin, net in NETS.items():
+                design['nets'].setdefault(net, []).append('J7.' + pin)
+            cpl_policy(design, root)
+            report = json.loads((root / 'design-compile-report.json').read_bytes())
+            self.assertEqual(report['land_patterns'][0]['pad_correspondence']['rotation_degrees'], 0)

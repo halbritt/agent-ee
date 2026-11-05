@@ -70,7 +70,7 @@ def problems(design):
             obj(
                 part,
                 dict(lcsc=str, value=str, lib_id=str, footprint=str, group=str),
-                dict(connector=None, datasheet=dict, cpl_registration=dict),
+                dict(connector=None, datasheet=dict, cpl_registration=dict, thickness_fit=dict),
                 path,
             )
             and part.get("connector") is not None

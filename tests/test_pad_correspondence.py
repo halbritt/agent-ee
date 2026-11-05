@@ -183,6 +183,26 @@ class CorrespondenceTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_declaration(value)
 
+    def test_cad_mismatch_refuses_without_tool_gap_marker(self):
+        for p in self.supplier['pattern']['pads']:
+            p['primitive']['center'][0] = text(-Fraction(p['primitive']['center'][0]))
+            if 'points' in p['primitive']:
+                p['primitive']['points'] = [[text(-Fraction(x)), y] for x, y in p['primitive']['points']]
+        for hole in self.supplier['pattern']['holes']:
+            hole['center'][0] = text(-Fraction(hole['center'][0]))
+        with self.assertRaises(PatternError) as caught:
+            self.derive()
+        self.assertNotIn('[tool_gap]', str(caught.exception))
+        self.assertIn('found 0 geometric and 0 symbol-name registrations', str(caught.exception))
+
+    def test_pcbnew_unconnected_net_names_are_treated_as_no_net(self):
+        nets = {'K1': 'RETURN', 'K2': 'RETURN', 'S0': 'DATA', 'S1': 'SELECT', 'CASE': 'unconnected-(J7-PadCASE)'}
+        result = self.derive(nets=nets)
+        self.assertEqual(result['rotation_degrees'], 0)
+        merging_nets = {'K1': 'unconnected-(J7-PadK1)', 'K2': 'unconnected-(J7-PadK2)', 'S0': 'DATA', 'S1': 'SELECT', 'CASE': 'CASE_NET'}
+        with self.assertRaisesRegex(PatternError, 'merges distinct or unconnected native nets'):
+            self.derive(nets=merging_nets)
+
 
 class CompileAndPackageTests(unittest.TestCase):
     def test_compile_and_package_use_the_same_registration_and_net_short_gate(self):

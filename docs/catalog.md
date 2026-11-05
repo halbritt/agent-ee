@@ -221,7 +221,7 @@ The directory holds:
   a `stale_before` cutoff one year before the snapshot date;
 - `identity-source-manifest.json`: the same volumes under the
   [identity profile](catalog-identity.md). Identity capture of a full current
-  snapshot exceeds that importer's 1 GiB index limit and is refused;
+  snapshot fits under that importer's 1 GiB index limit;
 - `snapshot.json`: the `agent-ee.catalog-snapshot-identity/1` record of the
   snapshot. It has `source` (`url` and `commit`), `snapshot_date`, `size_bytes`
   and `sha256` of all volumes in order, the SHA-256 of both manifests,

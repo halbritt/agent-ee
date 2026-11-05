@@ -406,6 +406,34 @@ class IdentityIndexTests(unittest.TestCase):
         self.assertEqual(out.read_bytes(), (work / 'resolution.json').read_bytes())
         self.assertFalse((self.root / 'refused.json').exists())
 
+    def test_compact_identity_schema_and_virtual_provenance(self):
+        source = self.source()
+        dest = self.root / 'compact_test'
+        capture_identity(source, self.root, dest)
+        db_path = dest / 'identity.sqlite3'
+        with sqlite3.connect(db_path) as con:
+            table_info = con.execute("PRAGMA table_xinfo('identity')").fetchall()
+            col_names = [row[1] for row in table_info]
+            self.assertIn('source_row', col_names)
+            self.assertIn('raw_sha', col_names)
+            self.assertIn('provenance', col_names)
+            prov_col = next(r for r in table_info if r[1] == 'provenance')
+            self.assertEqual(prov_col[6], 2)
+
+            row = con.execute("SELECT lcsc, source_row, lower(hex(raw_sha)), provenance FROM identity WHERE lcsc='C11'").fetchone()
+            self.assertEqual(row[0], 'C11')
+            prov = json.loads(row[3])
+            self.assertEqual(prov['row'], row[1])
+            self.assertEqual(prov['raw_sha256'], row[2])
+            self.assertEqual(prov['volume'], 'cache.zip')
+
+    def test_capture_limit_is_strictly_enforced_at_unchanged_bound(self):
+        source = self.source()
+        dest = self.root / 'limit_test'
+        with mock.patch('agent_ee.catalog_identity.MAX_TOTAL_BYTES', 5000):
+            with self.assertRaisesRegex(ValueError, 'derived identity index exceeds capture limit'):
+                capture_identity(source, self.root, dest)
+
 
 class ResponseDatasheetUrlTests(unittest.TestCase):
     def test_data_manual_url_extraction(self):

@@ -58,14 +58,22 @@ NON_GENERIC_SUBCATEGORY_WORDS = ('ferrite', 'bead', 'common mode', 'common-mode'
 TIERS = ('Basic', 'Preferred', 'Extended')
 COLUMNS = ('lcsc', 'mpn', 'mpn_key', 'mfr', 'package', 'category', 'subcategory', 'library_tier',
            'stock', 'present', 'last_seen', 'datasheet_url', 'provenance')
+STORED_COLUMNS = ('lcsc', 'mpn', 'mpn_key', 'mfr', 'package', 'category', 'subcategory', 'library_tier',
+                  'stock', 'present', 'last_seen', 'datasheet_url', 'source_row', 'raw_sha')
 LCSC_RE = re.compile(r'C[1-9][0-9]*')
 MAX_PREFIX_CANDIDATES = 50
 # Resolved identities that may feed exact-id stock capture and datasheet capture.
 CAPTURE_STATUSES = ('resolved', 'selected', 'verified', 'declared_lcsc')
 LIMIT = ('Catalog identity candidates only: no live stock, datasheet authority, suitability, '
          'or proof of absence is established.')
-TABLE_SQL = ('CREATE TABLE identity (' + ','.join(
-    f'{c} ' + ('INTEGER' if c in ('stock', 'present') else 'TEXT') for c in COLUMNS) + ', PRIMARY KEY(lcsc))')
+TABLE_SQL = (
+    'CREATE TABLE identity ('
+    'lcsc TEXT, mpn TEXT, mpn_key TEXT, mfr TEXT, package TEXT, '
+    'category TEXT, subcategory TEXT, library_tier TEXT, stock INTEGER, present INTEGER, '
+    'last_seen TEXT, datasheet_url TEXT, source_row INTEGER, raw_sha BLOB, '
+    "provenance TEXT GENERATED ALWAYS AS (json_object('raw_sha256', lower(hex(raw_sha)), 'row', source_row, 'volume', 'cache.zip')) VIRTUAL, "
+    'PRIMARY KEY(lcsc))'
+)
 INDEX_SQL = 'CREATE INDEX identity_mpn ON identity (mpn_key, lcsc)'
 
 
@@ -167,9 +175,22 @@ def write_database(path, rows):
     with closing(sqlite3.connect(path)) as connection:
         connection.execute('PRAGMA page_size=4096')
         connection.execute(TABLE_SQL)
-        connection.executemany('INSERT INTO identity VALUES (' + ','.join('?' for _ in COLUMNS) + ')',
-                               (tuple(canonical(row[c]).decode() if c == 'provenance' else row[c]
-                                      for c in COLUMNS) for row in rows))
+        insert_sql = ('INSERT INTO identity (' + ','.join(STORED_COLUMNS) +
+                      ') VALUES (' + ','.join('?' for _ in STORED_COLUMNS) + ')')
+        batch = []
+        for row in rows:
+            batch.append((
+                row['lcsc'], row['mpn'], row['mpn_key'], row['mfr'], row['package'],
+                row['category'], row['subcategory'], row['library_tier'], row['stock'],
+                row['present'], row['last_seen'], row['datasheet_url'],
+                row['provenance']['row'],
+                bytes.fromhex(row['provenance']['raw_sha256']),
+            ))
+            if len(batch) >= 10000:
+                connection.executemany(insert_sql, batch)
+                batch = []
+        if batch:
+            connection.executemany(insert_sql, batch)
         connection.execute(INDEX_SQL)
         connection.commit()
         if connection.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
@@ -177,7 +198,7 @@ def write_database(path, rows):
 
 
 def capture_identity(source_manifest, source_root, destination):
-    """Verify every pinned volume, derive the index privately, publish once."""
+    """Verify every declared volume, derive the index privately, publish once."""
     validate_source(source_manifest)
     boundary = passive_boundary(GENERIC_FAMILIES)
     destination = Path(destination)
@@ -191,19 +212,33 @@ def capture_identity(source_manifest, source_root, destination):
             reassemble(source_manifest['volumes'], root, native / 'joined.zip', FORMAT)
             extract_database(native / 'joined.zip', native / 'cache.sqlite3')
             pruned = {'generic': 0, 'stale': 0}
-            rows = list(native_rows(native / 'cache.sqlite3', source_manifest, pruned, boundary))
-        if not rows:
+            database = stage / 'identity.sqlite3'
+            hashed = hashlib.sha256(b'[')
+            count = 0
+            previous_lcsc = 0
+
+            def stream_rows():
+                nonlocal count, previous_lcsc
+                for row in native_rows(native / 'cache.sqlite3', source_manifest, pruned, boundary):
+                    number = int(row['lcsc'][1:])
+                    if number <= previous_lcsc:
+                        raise ValueError('duplicate LCSC identity')
+                    previous_lcsc = number
+                    hashed.update((b',' if count else b'') + canonical(row))
+                    count += 1
+                    yield row
+
+            write_database(database, stream_rows())
+            hashed.update(b']')
+
+        if not count:
             raise ValueError('identity index has no retained rows')
-        if len({row['lcsc'] for row in rows}) != len(rows):
-            raise ValueError('duplicate LCSC identity')
-        database = stage / 'identity.sqlite3'
-        write_database(database, rows)
         if not 0 < database.stat().st_size <= MAX_TOTAL_BYTES:
             raise ValueError('derived identity index exceeds capture limit')
         manifest = {**source_manifest, 'schema': SCHEMA, 'generic_families_excluded': list(GENERIC_FAMILIES),
                     'database': {'path': database.name, 'sha256': digest(database),
                                  'size_bytes': database.stat().st_size},
-                    'row_count': len(rows), 'rows_sha256': rows_sha256(rows), 'pruned_rows': pruned,
+                    'row_count': count, 'rows_sha256': hashed.hexdigest(), 'pruned_rows': pruned,
                     'sqlite_version': sqlite3.sqlite_version}
         write_json(stage / 'manifest.json', manifest)
         publish_directory(stage, destination)

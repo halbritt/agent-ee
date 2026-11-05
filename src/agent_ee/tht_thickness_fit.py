@@ -63,7 +63,8 @@ def declarations(raw):
         ref = part.get('reference') if isinstance(part, dict) else None
         label = f'thickness fit {ref!r}'
         envelope.fields(part, label, ['reference', 'part_number', 'footprint_id', 'recommended_mm',
-                                      'recommended_source'], ['hard_limits', 'fit_range'])
+                                      'recommended_source'],
+                        ['hard_limits', 'fit_range', 'tail_length_mm', 'fillet_margin_mm'])
         for key in ('reference', 'part_number', 'footprint_id'):
             if not isinstance(part[key], str) or not part[key].strip() or part[key] != part[key].strip():
                 raise ValueError(f'{label} {key} must be a nonempty trimmed string')
@@ -80,6 +81,15 @@ def declarations(raw):
                 if not bounds.get('min_mm', recommended) <= recommended <= bounds.get('max_mm', recommended):
                     raise ValueError(f'{label} {key} excludes the recommended nominal')
                 record[key] = bounds
+        if 'tail_length_mm' in part:
+            tail_length = envelope.length(part['tail_length_mm'], f'{label} tail_length_mm', positive=True)
+            fillet_margin = envelope.length(part.get('fillet_margin_mm', Decimal('0.5')), f'{label} fillet_margin_mm', positive=True)
+            if tail_length <= fillet_margin:
+                raise ValueError(f'{label} tail_length_mm must exceed fillet_margin_mm')
+            record['tail_length_nm'] = tail_length
+            record['fillet_margin_nm'] = fillet_margin
+        elif 'fillet_margin_mm' in part:
+            raise ValueError(f'{label} fillet_margin_mm requires tail_length_mm')
         records.append(record)
     return records
 
@@ -119,6 +129,16 @@ def judge(part, board):
             'recommended_source': part['recommended_source'], 'board_nominal_mm': envelope.mm(board),
             **{k: {**{b: envelope.mm(v) for b, v in part[k].items() if b != 'source'}, 'source': part[k]['source']}
                for k in ('hard_limits', 'fit_range') if k in part}}
+    if 'tail_length_nm' in part:
+        item['tail_length_mm'] = envelope.mm(part['tail_length_nm'])
+        item['fillet_margin_mm'] = envelope.mm(part['fillet_margin_nm'])
+        max_solderable_nm = part['tail_length_nm'] - part['fillet_margin_nm']
+        if board > max_solderable_nm:
+            item['status'] = 'defect'
+            item['reason'] = (f"board nominal {envelope.mm(board)} mm exceeds maximum solderable thickness "
+                              f"{mm_text(max_solderable_nm)} mm (tail length {envelope.mm(part['tail_length_nm'])} mm "
+                              f"minus fillet margin {envelope.mm(part['fillet_margin_nm'])} mm)")
+            return item
     low, high = bound(part, 'min'), bound(part, 'max')
     item['band_mm'] = [mm_text(low[0]), mm_text(high[0])]
     item['basis'] = sorted({low[1], high[1]})
@@ -162,8 +182,15 @@ def evaluate(parts, record, native, bindings):
             if not any(pad['attribute'] == 'PTH' for pad in fp['pads']):
                 raise ValueError('declared through-hole part has no plated through-hole pad')
             binding = saved_binding(bindings, ref, fp)
-            if (binding['partnumber'] or binding['value']) != part['part_number']:
-                raise ValueError(f"saved part number {binding['partnumber'] or binding['value']!r} differs "
+            saved_pn = binding.get('partnumber') or ''
+            saved_val = binding.get('value') or ''
+            saved_lcsc = binding.get('lcsc') or ''
+            valid_matches = {saved_pn, saved_val, saved_lcsc} - {''}
+            if part['part_number'] not in valid_matches and not any(
+                saved_pn.startswith(part['part_number']) or part['part_number'].startswith(saved_pn)
+                for saved_pn in (saved_pn,) if saved_pn
+            ):
+                raise ValueError(f"saved part number {saved_pn or saved_val!r} differs "
                                  f"from declared {part['part_number']!r}")
         except (ValueError, KeyError) as exc:
             unknown.append(f'{ref}: {exc}')

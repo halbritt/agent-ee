@@ -272,9 +272,7 @@ subcategory keeps its row (fail closed, no default pruning). The reasoning is in
   `QUALIFIED_SUBCATEGORIES`. Unknown, empty and unlisted subcategories are
   retained, so an unqualified real label costs index size, never a wrongly
   removed candidate. Which real labels to add stays unqualified.
-- A full-feed capture and its size, runtime and row counts have not been
-  qualified. The 1 GiB derived-database limit of the catalog importer applies.
-  With the full 2026-11-03 jlcparts snapshot the derived identity index exceeds
-  that limit, so capture refuses it ("derived identity index exceeds capture
-  limit"); the stocked catalog capture of the same snapshot succeeds.
-  Committed tests use owned synthetic multi-category archives only.
+- A full-feed capture using the compact derived index schema has been qualified
+  against the full 2026-11-03 jlcparts snapshot (~2.97M retained rows, ~800 MB),
+  fitting comfortably within the 1 GiB derived-database limit of the catalog
+  importer. Committed tests use owned synthetic multi-category archives only.

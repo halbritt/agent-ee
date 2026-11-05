@@ -1163,6 +1163,7 @@ from .net_names import check_net_names
 from .topology_rules import check_topology_rules
 from .decoupling_loops import check as check_decoupling_loops
 from .board_text import check as check_board_text
+from .kelvin_routing import check_kelvin_routing
 from .design_diff import check_regeneration_determinism
 from .design_rules import check_design_rules
 from .interval_assertions import check_interval_assertions

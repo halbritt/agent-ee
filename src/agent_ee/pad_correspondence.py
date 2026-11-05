@@ -8,9 +8,32 @@ land must carry one connected net, and renumbering must preserve the design's ne
 bindings. All decisions are over captured bytes and the design's nets.
 """
 from fractions import Fraction
+import re
 
 from . import land_geometry as geometry
 from .land_pattern import PatternError, _transform, register
+
+_SHIELD_OR_MECHANICAL = re.compile(
+    r'^(?:(?:sh(?:ield(?:ing)?)?|shell|case|chassis|earth|eh|frame|mech(?:anical)?|mount(?:ing)?|mp)'
+    r'(?:[_\s-]*(?:gnd|ground|pin|\d+))*'
+    r'|(?:gnd|ground)[_\s-]+(?:sh(?:ield(?:ing)?)?|shell|case|chassis|earth|eh|frame|mech(?:anical)?|mount(?:ing)?|mp))$',
+    re.IGNORECASE
+)
+
+
+def _is_shield_or_mechanical(pin):
+    if not pin or not isinstance(pin, dict):
+        return False
+    name = pin.get('name', '')
+    displayed = pin.get('displayed', '')
+    return bool(_SHIELD_OR_MECHANICAL.match(name) or _SHIELD_OR_MECHANICAL.match(displayed))
+
+
+def _normalize_nets(nets):
+    if not nets:
+        return {}
+    return {k: (None if (v is None or v == '' or str(v).startswith('unconnected-(')) else v)
+            for k, v in nets.items()}
 
 
 def _refuse(message):
@@ -146,26 +169,43 @@ def _overlap_graph(left, right):
     return lp, rp, edges, possible, budget
 
 
-def _check_alias_nets(mapping, nets):
+def _check_alias_nets(mapping, nets, supplier_pins=()):
     """Supplier-only numbering inherits native nets; existing bindings cannot move.
 
     A group that retains its native number also retains that net identity for
     its supplier pins. An unconnected extra pin cannot join that connected group.
-    Fully renumbered repeated lands use the native terminal's design binding.
+    Fully renumbered repeated lands use the native terminal's design binding for
+    shield/mechanical pins or unlisted pins; other functions must be bound by the design.
     """
+    symbol_pins_map = {p['number']: p for p in supplier_pins if isinstance(p, dict) and 'number' in p}
+    target_counts = {}
+    for targets in mapping.values():
+        for target in targets:
+            target_counts[target] = target_counts.get(target, 0) + 1
+
     for name, targets in mapping.items():
+        pin = symbol_pins_map.get(name)
+        can_inherit = (pin is None) or _is_shield_or_mechanical(pin)
         for target in targets:
             if name == target:
                 continue
-            if name not in nets and (len(targets) > 1 or target not in mapping):
-                continue
-            source_net, target_net = nets.get(name) or None, nets.get(target) or None
+            is_lug_group = target_counts.get(target, 0) > 1
+            if name not in nets:
+                if len(targets) > 1:
+                    continue
+                if target not in mapping:
+                    if not is_lug_group or can_inherit:
+                        continue
+            source_net, target_net = nets.get(name), nets.get(target)
             if source_net != target_net:
                 _refuse(f'supplier pad {name} net {source_net or "unconnected"!r} differs from '
                         f'native pad {target} net {target_net or "unconnected"!r}')
+            if is_lug_group and not can_inherit and name not in nets:
+                _refuse(f'supplier pad {name} is not a shield or mechanical pin; '
+                        f'design nets must bind it to native pad {target}')
 
 
-def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='100000'):
+def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='100000', supplier_pins=()):
     """Prove complete land coverage and identity at one quarter-turn registration.
 
     ``pad_map`` is supplier number -> native number list. ``nets`` binds native
@@ -174,6 +214,7 @@ def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='10
     plated aliases preserve supplied net bindings regardless of symbol pin count.
     This fixed-angle check does not establish independent orientation evidence.
     """
+    nets = _normalize_nets(nets)
     left, right, translation = _registered(native, supplier, rotation)
     lp, rp, edges, possible, budget = _overlap_graph(left, right)
     native_names = {p[0] for p in lp[0]}
@@ -205,7 +246,7 @@ def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='10
         if pad_map is not None and set(pad_map[name]) != names:
             _refuse(f'pad_map for {name} disagrees with copper correspondence {sorted(names)}')
         if len(names) > 1:
-            net_ids = {(nets or {}).get(n) for n in names}
+            net_ids = {nets.get(n) for n in names}
             if None in net_ids or '' in net_ids or len(net_ids) != 1:
                 _refuse(f'supplier pad {name} merges distinct or unconnected native nets: {sorted(names)}')
         mapping[name] = sorted(names)
@@ -214,7 +255,7 @@ def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='10
         _refuse('automatic registration needs at least two identified electrical terminal groups')
     if any(lp[0][i][0] not in mapping[rp[0][j][0]] for i, j in possible):
         _refuse('copper may contact an unrelated electrical land on a shared layer')
-    _check_alias_nets(mapping, nets or {})
+    _check_alias_nets(mapping, nets, supplier_pins=supplier_pins)
     return dict(rotation_degrees=rotation, pad_map=mapping, identity_proof=proofs, translation=translation,
                 pairs=[dict(native_index=i, supplier_index=j) for i, j in edges])
 
@@ -237,11 +278,13 @@ def derive(native, supplier, *, declaration=None, nets=None, supplier_pins=(), n
     """
     mapping = validate_declaration(declaration)['pad_map'] if declaration is not None else None
     candidates, geometric, reasons = [], [], []
+    if supplier_pins is None:
+        supplier_pins = ()
     snames, nnames = _symbol_names(supplier_pins, supplier=True), _symbol_names(native_pins)
     geometry_nets = {p['number']: 'geometry-only' for pattern in (native, supplier) for p in pattern['pads']}
     for angle in (0, 90, 180, 270):
         try:
-            candidates.append(verify(native, supplier, angle, nets=geometry_nets))
+            candidates.append(verify(native, supplier, angle, nets=geometry_nets, supplier_pins=supplier_pins))
         except PatternError as exc:
             reasons.append(f'{angle}: {exc}')
         # Geometry is evaluated without the author's pad map or circuit nets.
@@ -251,7 +294,8 @@ def derive(native, supplier, *, declaration=None, nets=None, supplier_pins=(), n
             lp, rp, edges, _, _ = _overlap_graph(left, right)
             inferred = {name: sorted({lp[0][i][0] for i, j in edges if rp[0][j][0] == name})
                         for name in {p[0] for p in rp[0]}}
-            provisional = verify(native, supplier, angle, pad_map=inferred, nets=geometry_nets)
+            provisional = verify(native, supplier, angle, pad_map=inferred, nets=geometry_nets,
+                                 supplier_pins=supplier_pins)
             named = [(nnames[lp[0][i][0]], snames[rp[0][j][0]]) for i, j in edges
                      if lp[0][i][0] in nnames and rp[0][j][0] in snames]
             geometric.append((provisional, len(named) == len(edges) and all(a == b for a, b in named)))
@@ -264,7 +308,8 @@ def derive(native, supplier, *, declaration=None, nets=None, supplier_pins=(), n
     else:
         named = [result for result, agrees in geometric if agrees]
         if len(named) != 1:
-            _refuse('[tool_gap] orientation requires one independently admissible quarter turn; '
+            gap = '[tool_gap] ' if len(geometric) >= 2 else ''
+            _refuse(f'{gap}orientation requires one independently admissible quarter turn; '
                     f'found {len(geometric)} geometric and {len(named)} symbol-name registrations; '
                     'inspect captured geometry and symbol identities; author orientation selection is refused; '
                     + '; '.join(reasons))
@@ -272,10 +317,11 @@ def derive(native, supplier, *, declaration=None, nets=None, supplier_pins=(), n
     symbolic = next((result['pad_map'] for result, agrees in geometric
                      if agrees and result['rotation_degrees'] == angle), None)
     result = verify(native, supplier, angle, pad_map=mapping if mapping is not None else symbolic,
-                    nets=nets)
+                    nets=nets, supplier_pins=supplier_pins)
     if mapping is None and symbolic is not None:
         result['identity_proof'] = {name: 'captured_symbol_name_and_copper'
             if proof == 'declared_map_and_copper' else proof for name, proof in result['identity_proof'].items()}
     if declaration is not None and 'rotation_degrees' in declaration and declaration['rotation_degrees'] != angle:
         _refuse('declared rotation assertion disagrees with independently derived orientation')
     return dict(result, orientation_proof=basis)
+

@@ -179,6 +179,48 @@ def datasheet_source(parts, ref, path, fail):
         )
 
 
+def validate_thickness_fit(fit, path, fail):
+    if not isinstance(fit, dict):
+        fail(path, "supply thickness_fit as an object")
+        return
+    from decimal import Decimal
+    from . import tht_thickness_fit
+    from . import board_envelope as envelope
+
+    def _to_decimal(val):
+        if isinstance(val, float):
+            return Decimal(str(val))
+        if isinstance(val, dict):
+            return {k: _to_decimal(v) for k, v in val.items()}
+        return val
+
+    try:
+        norm = _to_decimal(fit)
+        envelope.fields(norm, path, ['recommended_mm', 'recommended_source'],
+                        ['hard_limits', 'fit_range', 'tail_length_mm', 'fillet_margin_mm'])
+        recommended = envelope.length(norm['recommended_mm'], f'{path}.recommended_mm', positive=True)
+        tht_thickness_fit.source(norm['recommended_source'], f'{path}.recommended_source')
+        for key, both in (('hard_limits', False), ('fit_range', True)):
+            if key in norm:
+                bounds = tht_thickness_fit.limits(norm[key], f'{path}.{key}', both=both)
+                if not bounds.get('min_mm', recommended) <= recommended <= bounds.get('max_mm', recommended):
+                    fail(f'{path}.{key}', 'excludes the recommended nominal')
+        if 'tail_length_mm' in norm:
+            tail = envelope.length(norm['tail_length_mm'], f'{path}.tail_length_mm', positive=True)
+            fillet = envelope.length(norm.get('fillet_margin_mm', Decimal('0.5')), f'{path}.fillet_margin_mm', positive=True)
+            if tail <= fillet:
+                fail(f'{path}.tail_length_mm', 'tail_length_mm must exceed fillet_margin_mm')
+        elif 'fillet_margin_mm' in norm:
+            fail(f'{path}.fillet_margin_mm', 'fillet_margin_mm requires tail_length_mm')
+    except (ValueError, KeyError) as exc:
+        msg = str(exc)
+        if msg.startswith(path + ": "):
+            msg = msg[len(path) + 2:]
+        elif msg.startswith(path + "."):
+            msg = msg[len(path) + 1:]
+        fail(path, msg)
+
+
 def validate_kelvin_senses(design, nets, parts, footprints, fail):
     senses = design.get("kelvin_senses", [])
     if not isinstance(senses, list):
@@ -488,6 +530,8 @@ def validate(design, captures=None, *, cad_only=False):
                 validate_declaration(part['cpl_registration'])
             except ValueError as exc:
                 fail('parts.' + ref + '.cpl_registration', str(exc))
+        if 'thickness_fit' in part:
+            validate_thickness_fit(part['thickness_fit'], 'parts.' + ref + '.thickness_fit', fail)
     if not isinstance(parts, dict) or not parts:
         fail("parts", "supply parts keyed by physical reference")
         parts = {}
@@ -524,7 +568,7 @@ def validate(design, captures=None, *, cad_only=False):
         if not re.fullmatch(r"[A-Z]+[1-9][0-9]*", ref):
             fail(path, "use a physical KiCad reference such as U1")
         if not fields(
-            p, ("lcsc", "value", "lib_id", "footprint", "group"), ("connector", "datasheet", "cpl_registration"), path
+            p, ("lcsc", "value", "lib_id", "footprint", "group"), ("connector", "datasheet", "cpl_registration", "thickness_fit"), path
         ):
             continue
         if not isinstance(p["lcsc"], str) or not re.fullmatch(

@@ -125,6 +125,10 @@ def spec(design):
         sections["Placement and mechanics"][2] += (
             " Sense lines for declared Kelvin connections shall connect directly to their respective shunt resistor lands without shared current-carrying copper outside the shunt lands."
         )
+    if any("thickness_fit" in p for p in design["parts"].values()):
+        sections["Placement and mechanics"][0] += (
+            f" Through-hole parts shall satisfy board-thickness applicability (tht-thickness-fit/1) against nominal board thickness {design['board']['thickness_mm']} mm."
+        )
     return "".join(
         "# "
         + title
@@ -860,9 +864,14 @@ def cpl_policy(design, root):
                 if symbol_path.is_file():
                     native_pins, _, _ = resolve_symbol(parse_library(symbol_path.read_bytes()), symbol,
                                                        lib, digest(symbol_path))
+                spins = ()
+                try:
+                    spins = symbol_pins((root / provenance['path']).read_bytes(), lcsc)['pins']
+                except (SupplierError, KeyError, TypeError, ValueError):
+                    pass
                 correspondence = derive(native['pattern'], supplier['pattern'],
                     declaration=part.get('cpl_registration'), nets=nets, native_pins=native_pins,
-                    supplier_pins=symbol_pins((root / provenance['path']).read_bytes(), lcsc)['pins'])
+                    supplier_pins=spins)
             except (PatternError, GeometryError, SupplierError) as exc:
                 raise DesignError([f"parts.{ref}.lcsc: {lcsc}: deterministic {exc.mode}: {exc}"]) from exc
             offset = correspondence['rotation_degrees']
@@ -1063,6 +1072,33 @@ def board_kelvin(design, root):
     ))
 
 
+def board_tht_fit(design, root):
+    from . import tht_thickness_fit
+    parts = []
+    for ref, p in sorted(design["parts"].items()):
+        if "thickness_fit" in p:
+            fit = p["thickness_fit"]
+            part_number = p.get("lcsc") or p.get("value")
+            parts.append({
+                "reference": ref,
+                "part_number": part_number,
+                "footprint_id": p["footprint"],
+                **fit,
+            })
+    if not parts:
+        return None
+    doc = {"schema": tht_thickness_fit.SCHEMA, "parts": parts}
+    raw = json.dumps(doc).encode("utf-8")
+    validated = tht_thickness_fit.declarations(raw)
+    b_nm = int(Decimal(str(design["board"]["thickness_mm"])) * 10**6)
+    for part in validated:
+        verdict = tht_thickness_fit.judge(part, b_nm)
+        if verdict["status"] == "defect":
+            raise DesignError([f"parts.{part['reference']}.thickness_fit: {verdict['reason']}"])
+    write_json(root / "tht-thickness-fit.json", doc)
+    return "tht-thickness-fit.json"
+
+
 def requirements(design, root, record, suppliers):
     prefix = design["requirement_prefix"]
     name = design["name"]
@@ -1172,7 +1208,20 @@ def requirements(design, root, record, suppliers):
                 envelope_check("mech-outline", "outline/1"),
                 envelope_check("mech-layers", "layers/1"),
                 envelope_check("mech-stackup", "stackup/1"),
-            ],
+            ]
+            + (
+                [
+                    check(
+                        "mech-tht-fit",
+                        "board_envelope",
+                        criterion="tht-thickness-fit/1",
+                        envelope="envelope.json",
+                        thickness_fit="tht-thickness-fit.json",
+                    )
+                ]
+                if (root / "tht-thickness-fit.json").is_file()
+                else []
+            ),
         ),
         req(
             "MECH-2",
@@ -1503,6 +1552,7 @@ def _compile_design(design, captures, out):
         current_constraints(design, root)
         board_markings(design, root)
         board_kelvin(design, root)
+        board_tht_fit(design, root)
         placement(design, root)
         mechanics(design, root)
         suppliers = cpl_policy(design, root)

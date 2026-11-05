@@ -167,6 +167,30 @@ class PolicyTests(unittest.TestCase):
                 self.assertEqual(result['status'], 'defect')
                 self.assertIn(f'{word} the manufacturer hard limit', result['defects'][0])
 
+    def test_tail_length_solder_fillet_defect(self):
+        part = j1(tail_length_mm=1.5, fillet_margin_mm=0.5)
+        result = grade('1.2', part)
+        self.assertEqual(result['status'], 'defect')
+        self.assertIn('exceeds maximum solderable thickness 1 mm', result['defects'][0])
+
+    def test_tail_length_solder_fillet_pass(self):
+        part = j1(tail_length_mm=3.4, fillet_margin_mm=0.5)
+        result = grade('1.6', part)
+        self.assertEqual(result['status'], 'pass')
+
+    def test_tail_length_validation(self):
+        with self.assertRaisesRegex(ValueError, 'tail_length_mm must exceed fillet_margin_mm'):
+            fit.declarations(raw(j1(tail_length_mm=0.5, fillet_margin_mm=0.5)))
+        with self.assertRaisesRegex(ValueError, 'fillet_margin_mm requires tail_length_mm'):
+            fit.declarations(raw(j1(fillet_margin_mm=0.5)))
+
+    def test_part_number_flexible_matching(self):
+        part = j1(part_number='C158012')
+        b = {'J1': {**bindings()['J1'], 'partnumber': 'B2B-XH-A', 'lcsc': 'C158012'}}
+        parts = fit.declarations(raw(part))
+        result = fit.evaluate(parts, record('1.6'), native('1.6'), b)
+        self.assertEqual(result['status'], 'pass')
+
     def test_mixed_unknown_and_defect_keeps_the_defect_and_fails_closed(self):
         hard = {'max_mm': 1.58, 'source': dict(TE)}
         parts = fit.declarations(raw(j1(hard_limits=hard),

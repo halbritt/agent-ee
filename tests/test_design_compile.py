@@ -1966,3 +1966,70 @@ class KelvinSenseTests(unittest.TestCase):
         }]
         with self.assertRaisesRegex(DesignError, "copper plane fills bypass the sensed shunt"):
             validate(d4, self.captures)
+
+
+class ThtThicknessFitCompileTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.captures = self.root / "captures"
+        self.captures.mkdir()
+        self.design = design_fixture(self.captures)
+        seal_capture(self.captures)
+
+    def test_compile_with_tht_thickness_fit_pass(self):
+        d = copy.deepcopy(self.design)
+        d["parts"]["R1"]["thickness_fit"] = {
+            "recommended_mm": 1.2,
+            "recommended_source": {
+                "class": "manufacturer",
+                "citation": "Manufacturer drawing note 1: nominal PCB thickness 1.2 mm",
+            },
+            "tail_length_mm": 3.4,
+            "fillet_margin_mm": 0.5,
+        }
+        out = self.root / "out"
+        compile_design(d, self.captures, out)
+
+        inputs = out / "inputs"
+        fit_file = inputs / "tht-thickness-fit.json"
+        self.assertTrue(fit_file.is_file())
+        fit_data = json.loads(fit_file.read_text())
+        self.assertEqual(fit_data["schema"], "agent-ee.tht-thickness-fit/1")
+        self.assertEqual(len(fit_data["parts"]), 1)
+        self.assertEqual(fit_data["parts"][0]["reference"], "R1")
+
+        spec_text = (inputs / "spec.md").read_text()
+        self.assertIn("Through-hole parts shall satisfy board-thickness applicability (tht-thickness-fit/1)", spec_text)
+
+        req_map = json.loads((inputs / "requirement-map.json").read_text())
+        requirement = next(r for r in req_map["requirements"] if r["id"] == "TEST-MECH-1")
+        tht_checks = [c for c in requirement["checks"] if c.get("params", {}).get("criterion") == "tht-thickness-fit/1"]
+        self.assertEqual(len(tht_checks), 1)
+        self.assertEqual(tht_checks[0]["params"]["thickness_fit"], "tht-thickness-fit.json")
+
+    def test_compile_rejects_tht_thickness_hard_defect(self):
+        d = copy.deepcopy(self.design)
+        d["parts"]["R1"]["thickness_fit"] = {
+            "recommended_mm": 1.6,
+            "recommended_source": {
+                "class": "manufacturer",
+                "citation": "Manufacturer drawing: nominal PCB thickness 1.6 mm",
+            },
+            "tail_length_mm": 1.5,
+            "fillet_margin_mm": 0.5,
+        }
+        out = self.root / "out"
+        with self.assertRaisesRegex(DesignError, "parts.R1.thickness_fit: board nominal 1.2 mm exceeds maximum solderable thickness 1 mm"):
+            compile_design(d, self.captures, out)
+
+    def test_design_validates_thickness_fit(self):
+        from agent_ee.design import validate
+        d = copy.deepcopy(self.design)
+        d["parts"]["R1"]["thickness_fit"] = {
+            "recommended_mm": 1.6,
+            "recommended_source": {"class": "invalid", "citation": "none"}
+        }
+        with self.assertRaisesRegex(DesignError, "recommended_source class must be one of"):
+            validate(d, self.captures)
