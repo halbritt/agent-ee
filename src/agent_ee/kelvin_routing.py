@@ -30,8 +30,27 @@ def _pad_bbox_distance(pad, pt):
     pad_center = (_to_mm(pad.GetPosition().x), _to_mm(pad.GetPosition().y))
     pad_size_x = _to_mm(pad.GetSize().x)
     pad_size_y = _to_mm(pad.GetSize().y)
-    dx = max(0.0, abs(pt[0] - pad_center[0]) - pad_size_x / 2.0)
-    dy = max(0.0, abs(pt[1] - pad_center[1]) - pad_size_y / 2.0)
+
+    theta = 0.0
+    if hasattr(pad, "GetOrientation"):
+        ori = pad.GetOrientation()
+        if hasattr(ori, "AsRadians"):
+            theta = ori.AsRadians()
+        elif hasattr(ori, "AsDegrees"):
+            theta = math.radians(ori.AsDegrees())
+        elif isinstance(ori, (int, float)):
+            theta = math.radians(ori / 10.0 if ori > 360 else ori)
+
+    dx_world = pt[0] - pad_center[0]
+    dy_world = pt[1] - pad_center[1]
+
+    cos_t = math.cos(theta)
+    sin_t = math.sin(theta)
+    local_x = dx_world * cos_t + dy_world * sin_t
+    local_y = -dx_world * sin_t + dy_world * cos_t
+
+    dx = max(0.0, abs(local_x) - pad_size_x / 2.0)
+    dy = max(0.0, abs(local_y) - pad_size_y / 2.0)
     return math.hypot(dx, dy)
 
 
@@ -124,7 +143,7 @@ def _find_shortest_path(adj, start_nodes, target_nodes):
 
 def evaluate_leg(board, dev_pad, shunt_pad, net_name, layer=None):
     """Evaluate one Kelvin sense leg for shared copper outside shunt land."""
-    tracks = [t for t in board.GetTracks() if t.GetNetname() == net_name and t.GetClass() == "PCB_TRACK"]
+    tracks = [t for t in board.GetTracks() if t.GetNetname() == net_name and t.GetClass() in ("PCB_TRACK", "PCB_ARC")]
     if not tracks:
         return {
             "status": "defect",

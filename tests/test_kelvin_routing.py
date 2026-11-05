@@ -10,6 +10,7 @@ from agent_ee.kelvin_routing import (
     evaluate_leg,
     SCHEMA,
     SHARED_COPPER_THRESHOLD_MM,
+    _pad_bbox_distance,
 )
 
 
@@ -17,6 +18,17 @@ class MockVector:
     def __init__(self, x_nm, y_nm):
         self.x = x_nm
         self.y = y_nm
+
+
+class MockAngle:
+    def __init__(self, degrees):
+        self._deg = float(degrees)
+
+    def AsDegrees(self):
+        return self._deg
+
+    def AsRadians(self):
+        return math.radians(self._deg)
 
 
 class MockShape:
@@ -33,13 +45,17 @@ class MockShape:
 
 
 class MockPad:
-    def __init__(self, ref, number, x_mm, y_mm, size_mm, netname):
+    def __init__(self, ref, number, x_mm, y_mm, size_mm, netname, orientation=0.0):
         self.ref = ref
         self.number = str(number)
         self.pos_nm = (int(round(x_mm * 1e6)), int(round(y_mm * 1e6)))
         self.size_nm = (int(round(size_mm[0] * 1e6)), int(round(size_mm[1] * 1e6)))
         self.netname = netname
         self.radius_nm = int(round(max(size_mm) * 0.5 * 1e6))
+        if isinstance(orientation, (int, float)):
+            self.orientation = MockAngle(orientation)
+        else:
+            self.orientation = orientation
 
     def GetNumber(self):
         return self.number
@@ -56,6 +72,9 @@ class MockPad:
     def GetNetname(self):
         return self.netname
 
+    def GetOrientation(self):
+        return self.orientation
+
     def GetLayerSet(self):
         class Layers:
             def CuStack(self):
@@ -67,14 +86,15 @@ class MockPad:
 
 
 class MockTrack:
-    def __init__(self, start_mm, end_mm, width_mm, netname):
+    def __init__(self, start_mm, end_mm, width_mm, netname, track_class="PCB_TRACK"):
         self.start_nm = (int(round(start_mm[0] * 1e6)), int(round(start_mm[1] * 1e6)))
         self.end_nm = (int(round(end_mm[0] * 1e6)), int(round(end_mm[1] * 1e6)))
         self.width_nm = int(round(width_mm * 1e6))
         self.netname = netname
+        self.track_class = track_class
 
     def GetClass(self):
-        return "PCB_TRACK"
+        return self.track_class
 
     def GetStart(self):
         return MockVector(*self.start_nm)
@@ -341,3 +361,57 @@ class KelvinRoutingTests(unittest.TestCase):
         describe_kelvin_routing(ctx)
         self.assertIn("kelvin-routing:circuit-shared-sense-copper", ctx.result["predicates"])
         self.assertIn("placement-kelvin.json", ctx.result["immutable_inputs"])
+
+    def test_rotated_pad_bbox_distance_90_and_270(self):
+        # 2512 package (1.2 x 3.35 mm) centered at (100, 100)
+        # Rotated 90°: long axis is along world X (half-width 1.675), narrow axis along world Y (half-height 0.6)
+        pad_90 = MockPad("R1", 1, 100.0, 100.0, (1.2, 3.35), "SOURCE_12V", orientation=90.0)
+        # Point on rotated copper at (101.0, 100.0) -> offset 1.0 mm <= 1.675 mm
+        self.assertLessEqual(_pad_bbox_distance(pad_90, (101.0, 100.0)), SHARED_COPPER_THRESHOLD_MM)
+        # External point 0.4 mm outside rotated copper along Y at (100.0, 101.0) -> offset 1.0 mm > 0.6 mm
+        dist_outside_90 = _pad_bbox_distance(pad_90, (100.0, 101.0))
+        self.assertAlmostEqual(dist_outside_90, 0.4, places=2)
+        self.assertGreaterEqual(dist_outside_90, 0.35)
+
+        # Rotated 270°: same rotated geometry
+        pad_270 = MockPad("R1", 1, 100.0, 100.0, (1.2, 3.35), "SOURCE_12V", orientation=270.0)
+        self.assertLessEqual(_pad_bbox_distance(pad_270, (101.0, 100.0)), SHARED_COPPER_THRESHOLD_MM)
+        dist_outside_270 = _pad_bbox_distance(pad_270, (100.0, 101.0))
+        self.assertAlmostEqual(dist_outside_270, 0.4, places=2)
+        self.assertGreaterEqual(dist_outside_270, 0.35)
+
+    def test_rotated_shunt_pad_90_and_270_evaluate_leg(self):
+        for angle in (90.0, 270.0):
+            # 1. Clean direct connection to rotated shunt copper (no false defect)
+            shunt_pad = MockPad("R1", 1, 100.0, 100.0, (1.2, 3.35), "SOURCE_12V", orientation=angle)
+            dev_pad = MockPad("U1", 1, 120.0, 100.0, (0.5, 0.5), "SOURCE_12V")
+            # Sense trace lands at (101.0, 100.0) on the pad copper
+            t_sense = MockTrack((120.0, 100.0), (101.0, 100.0), 0.2, "SOURCE_12V")
+            t_power = MockTrack((80.0, 100.0), (101.0, 100.0), 0.5, "SOURCE_12V")
+            board_clean = MockBoard([], [t_sense, t_power])
+            res_clean = evaluate_leg(board_clean, dev_pad, shunt_pad, "SOURCE_12V")
+            self.assertEqual(res_clean["status"], "pass")
+            self.assertEqual(res_clean["reason"], "kelvin_sense_direct_land_connection_verified")
+            self.assertEqual(res_clean["shared_length_mm"], 0.0)
+
+            # 2. External junction 0.4 mm outside rotated copper (no false pass)
+            # Junction at (100.0, 101.0) is 0.4 mm outside copper along Y
+            t_sense_bad = MockTrack((120.0, 100.0), (100.0, 101.0), 0.2, "SOURCE_12V")
+            t_power_bad = MockTrack((80.0, 101.0), (100.0, 101.0), 0.5, "SOURCE_12V")
+            t_shared = MockTrack((100.0, 101.0), (100.0, 100.0), 0.5, "SOURCE_12V")
+            board_defect = MockBoard([], [t_sense_bad, t_power_bad, t_shared])
+            res_defect = evaluate_leg(board_defect, dev_pad, shunt_pad, "SOURCE_12V")
+            self.assertEqual(res_defect["status"], "defect")
+            self.assertEqual(res_defect["reason"], "circuit-shared-sense-copper")
+            self.assertAlmostEqual(res_defect["shared_length_mm"], 0.4, places=2)
+
+    def test_pcb_arc_track_support(self):
+        # Verify PCB_ARC class tracks are traversed as valid track segments
+        shunt_pad = MockPad("R1", 1, 10.0, 10.0, (1.0, 1.0), "SOURCE_12V")
+        dev_pad = MockPad("U1", 1, 20.0, 10.0, (0.5, 0.5), "SOURCE_12V")
+        t_arc = MockTrack((20.0, 10.0), (10.0, 10.0), 0.2, "SOURCE_12V", track_class="PCB_ARC")
+        t_power = MockTrack((0.0, 10.0), (10.0, 10.0), 0.5, "SOURCE_12V")
+        board = MockBoard([], [t_arc, t_power])
+        res = evaluate_leg(board, dev_pad, shunt_pad, "SOURCE_12V")
+        self.assertEqual(res["status"], "pass")
+        self.assertEqual(res["reason"], "kelvin_sense_direct_land_connection_verified")
