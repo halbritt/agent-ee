@@ -731,7 +731,14 @@ def termination_dissipation(card, roles, design, facts):
             rated_str = (comp.get('power_rating_w') or comp.get('Power') or
                          properties.get('power_rating_w') or properties.get('Power') or
                          r_part.get('power_rating_w') or r_part.get('Power') or '0.100')
-            rated_w = Decimal(str(rated_str))
+            try:
+                rated_w = Decimal(str(rated_str))
+            except Exception:
+                item.update(status='unknown', reason='rated_power_unparsed')
+                continue
+            if rated_w <= Decimal('0'):
+                item.update(status='unknown', reason='rated_power_invalid')
+                continue
             stress_ratio = p_cont / rated_w
 
             item.update({

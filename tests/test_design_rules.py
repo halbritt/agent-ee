@@ -746,6 +746,17 @@ class DifferentialAndControlRuleTests(unittest.TestCase):
         self.assertEqual(card['status'], 'defect')
         self.assertEqual(card['items'][0]['reason'], 'rated_power_exceeded')
 
+        # Case 4: Non-positive or zero rated power yields unknown rather than crashing
+        parts4 = [
+            ('U1', 'Owned:XCVR', 'SP3485', ['A', 'B', '+3V3', 'GND']),
+            ('R1', 'Owned:R', '120', ['A', 'B'], {'power_rating_w': '0'})
+        ]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings),
+                          ['TERMINATION_RESISTOR_DISSIPATION'], self.make_graph(parts4), {})
+        card = cards(report)['TERMINATION_RESISTOR_DISSIPATION']
+        self.assertEqual(card['status'], 'unknown')
+        self.assertEqual(card['items'][0]['reason'], 'rated_power_invalid')
+
 
 if __name__ == '__main__':
     unittest.main()

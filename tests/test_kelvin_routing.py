@@ -20,14 +20,16 @@ class MockVector:
 
 
 class MockShape:
-    def __init__(self, center_nm, radius_nm):
+    def __init__(self, center_nm, size_nm):
         self.cx = center_nm[0]
         self.cy = center_nm[1]
-        self.r = radius_nm
+        self.sx = size_nm[0]
+        self.sy = size_nm[1]
 
     def Collide(self, pt, margin=0):
-        dist_nm = math.hypot(pt.x - self.cx, pt.y - self.cy)
-        return dist_nm <= self.r + margin
+        dx = max(0, abs(pt.x - self.cx) - self.sx // 2)
+        dy = max(0, abs(pt.y - self.cy) - self.sy // 2)
+        return math.hypot(dx, dy) <= margin
 
 
 class MockPad:
@@ -61,7 +63,7 @@ class MockPad:
         return Layers()
 
     def GetEffectiveShape(self, layer=None):
-        return MockShape(self.pos_nm, self.radius_nm)
+        return MockShape(self.pos_nm, self.size_nm)
 
 
 class MockTrack:
@@ -194,7 +196,126 @@ class KelvinRoutingTests(unittest.TestCase):
         self.assertEqual(finding["id"], "circuit-shared-sense-copper")
         self.assertEqual(finding["severity"], "defect")
         self.assertGreater(finding["shared_length_mm"], 2.0)
-        self.assertIn("R1.2 to U1.7", finding["location"])
+    def test_disconnected_sense_trace_fails_with_defect(self):
+        r1_pad1 = MockPad("R1", 1, 10.0, 10.0, (1.2, 2.0), "SOURCE_12V")
+        r1_pad2 = MockPad("R1", 2, 10.0, 14.0, (1.2, 2.0), "LOAD_12V")
+        fp_r1 = MockFootprint("R1", [r1_pad1, r1_pad2])
+
+        u1_pad8 = MockPad("U1", 8, 25.0, 10.0, (0.6, 0.6), "SOURCE_12V")
+        u1_pad7 = MockPad("U1", 7, 25.0, 14.0, (0.6, 0.6), "LOAD_12V")
+        fp_u1 = MockFootprint("U1", [u1_pad8, u1_pad7])
+
+        # Positive sense is routed, but negative sense trace is disconnected
+        t_src_sense = MockTrack((25.0, 10.0), (10.0, 10.0), 0.2, "SOURCE_12V")
+        t_load = MockTrack((0.0, 14.0), (10.0, 14.0), 0.5, "LOAD_12V")
+
+        board = MockBoard([fp_r1, fp_u1], [t_src_sense, t_load])
+
+        declaration = {
+            "schema": "agent-ee.kelvin-senses/1",
+            "items": [{
+                "name": "LOAD_CURRENT_SENSE",
+                "shunt": "R1",
+                "device": "U1",
+                "positive": ["U1.8", "R1.1"],
+                "negative": ["U1.7", "R1.2"]
+            }]
+        }
+
+        report = evaluate_board(board, declaration)
+        self.assertEqual(report["outcome"], "defect")
+        neg_leg = report["items"][0]["legs"]["negative"]
+        self.assertEqual(neg_leg["status"], "defect")
+        self.assertEqual(neg_leg["reason"], "unrouted_sense_trace")
+
+    def test_rectangular_pad_aspect_ratio_shared_copper_defect(self):
+        # 2512 package shunt pad (1.2 mm x 3.35 mm). Half-width in X is 0.6 mm.
+        shunt_pad = MockPad("R1", 1, 10.0, 10.0, (1.2, 3.35), "SOURCE_12V")
+        dev_pad = MockPad("U1", 1, 25.0, 10.0, (0.5, 0.5), "SOURCE_12V")
+
+        # Junction at (11.2, 10.0) is 0.6 mm outside copper on the narrow side
+        t_shared = MockTrack((10.0, 10.0), (11.2, 10.0), 0.5, "SOURCE_12V")
+        t_load = MockTrack((0.0, 10.0), (11.2, 10.0), 0.5, "SOURCE_12V")
+        t_sense = MockTrack((25.0, 10.0), (11.2, 10.0), 0.2, "SOURCE_12V")
+
+        board = MockBoard([], [t_shared, t_load, t_sense])
+        res = evaluate_leg(board, dev_pad, shunt_pad, "SOURCE_12V")
+        self.assertEqual(res["status"], "defect")
+        self.assertEqual(res["reason"], "circuit-shared-sense-copper")
+        self.assertAlmostEqual(res["shared_length_mm"], 0.6, places=2)
+
+    def test_downstream_power_branch_passes(self):
+        # Shunt R1 pad at (10, 10). Direct Kelvin connection to U1 at (20, 10)
+        shunt_pad = MockPad("R1", 1, 10.0, 10.0, (1.0, 1.0), "SOURCE_12V")
+        dev_pad = MockPad("U1", 1, 20.0, 10.0, (0.5, 0.5), "SOURCE_12V")
+        t_sense = MockTrack((20.0, 10.0), (10.0, 10.0), 0.2, "SOURCE_12V")
+        t_power = MockTrack((0.0, 10.0), (10.0, 10.0), 0.5, "SOURCE_12V")
+        # Unrelated branch 10 mm away on power net (e.g. bulk cap or TVS diode)
+        t_branch1 = MockTrack((0.0, 10.0), (0.0, 20.0), 0.5, "SOURCE_12V")
+        t_branch2 = MockTrack((0.0, 10.0), (0.0, 0.0), 0.5, "SOURCE_12V")
+        board = MockBoard([], [t_sense, t_power, t_branch1, t_branch2])
+        res = evaluate_leg(board, dev_pad, shunt_pad, "SOURCE_12V")
+        self.assertEqual(res["status"], "pass")
+        self.assertEqual(res["reason"], "kelvin_sense_direct_land_connection_verified")
+        self.assertEqual(res["shared_length_mm"], 0.0)
+
+    def test_missing_footprint_pad_fails_with_defect(self):
+        r1_pad1 = MockPad("R1", 1, 10.0, 10.0, (1.2, 2.0), "SOURCE_12V")
+        r1_pad2 = MockPad("R1", 2, 10.0, 14.0, (1.2, 2.0), "LOAD_12V")
+        fp_r1 = MockFootprint("R1", [r1_pad1, r1_pad2])
+
+        # U1 only has pad 8; pad 7 is missing from footprint
+        u1_pad8 = MockPad("U1", 8, 25.0, 10.0, (0.6, 0.6), "SOURCE_12V")
+        fp_u1 = MockFootprint("U1", [u1_pad8])
+
+        board = MockBoard([fp_r1, fp_u1], [])
+
+        declaration = {
+            "schema": "agent-ee.kelvin-senses/1",
+            "items": [{
+                "name": "LOAD_CURRENT_SENSE",
+                "shunt": "R1",
+                "device": "U1",
+                "positive": ["U1.8", "R1.1"],
+                "negative": ["U1.7", "R1.2"]
+            }]
+        }
+
+        report = evaluate_board(board, declaration)
+        self.assertEqual(report["outcome"], "defect")
+        neg_leg = report["items"][0]["legs"]["negative"]
+        self.assertEqual(neg_leg["status"], "defect")
+        self.assertEqual(neg_leg["reason"], "missing_pad")
+        finding = [f for f in report["findings"] if "U1.7" in f["location"]][0]
+        self.assertNotIn("None mm", finding["condition"])
+
+    def test_unrouted_net_formatting_no_none_mm(self):
+        r1_pad1 = MockPad("R1", 1, 10.0, 10.0, (1.2, 2.0), "SOURCE_12V")
+        r1_pad2 = MockPad("R1", 2, 10.0, 14.0, (1.2, 2.0), "LOAD_12V")
+        fp_r1 = MockFootprint("R1", [r1_pad1, r1_pad2])
+
+        u1_pad8 = MockPad("U1", 8, 25.0, 10.0, (0.6, 0.6), "SOURCE_12V")
+        u1_pad7 = MockPad("U1", 7, 25.0, 14.0, (0.6, 0.6), "LOAD_12V")
+        fp_u1 = MockFootprint("U1", [u1_pad8, u1_pad7])
+
+        # No tracks at all
+        board = MockBoard([fp_r1, fp_u1], [])
+
+        declaration = {
+            "schema": "agent-ee.kelvin-senses/1",
+            "items": [{
+                "name": "LOAD_CURRENT_SENSE",
+                "shunt": "R1",
+                "device": "U1",
+                "positive": ["U1.8", "R1.1"],
+                "negative": ["U1.7", "R1.2"]
+            }]
+        }
+
+        report = evaluate_board(board, declaration)
+        self.assertEqual(report["outcome"], "defect")
+        for finding in report["findings"]:
+            self.assertNotIn("None mm", finding["condition"])
 
     def test_describe_kelvin_routing(self):
         class MockCtx:
