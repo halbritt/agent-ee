@@ -127,7 +127,7 @@ from the matched comparison; only its public controls/grading changed. The
 agent-ee revision and verified source hashes are recorded in
 `build/pair-matching/integration.json`. All retained evidence is copied to the
 main checkout before worktree removal and then sealed under
-`~/.cache/agent-ee-qualification/agent545/pair-matching-20261024-<revision>`.
+`~/.cache/agent-ee-qualification/agent545/pair-matching-20261024-e17e9b00`.
 The original acquisition package stays bound to its accepted revision and bytes;
 this opt-in feature does not require rebuilding that unchanged design.
 
