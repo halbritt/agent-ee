@@ -331,6 +331,27 @@ class PurposeFollowupTests(unittest.TestCase):
         self.assertEqual(result['purpose_coverage'], records[:2])
         self.assertEqual(result['limitations'], ['Declared scope limitation', limit])
 
+    def test_record_coverage_when_all_reviews_silent(self):
+        from agent_ee.purpose_review import record_coverage
+        silent = {'role': 'circuit', 'coverage': [], 'limitations': [], 'findings': []}
+        result = {'reviews': [silent], 'limitations': []}
+        record_coverage(result)
+        self.assertEqual(len(result['purpose_coverage']), 1)
+        self.assertEqual(result['purpose_coverage'][0]['role'], 'circuit')
+        self.assertEqual(result['purpose_coverage'][0]['status'], 'unknown')
+        self.assertTrue(any('circuit: purpose coverage unknown' in l for l in result['limitations']))
+
+    def test_verify_records_tolerates_historical_empty_purpose_coverage(self):
+        from agent_ee.purpose_review import verify_records
+        run = self.root / 'run-historical'
+        run.mkdir()
+        (run / 'reviews').mkdir()
+        (run / 'events').mkdir()
+        silent = {'role': 'circuit', 'coverage': [], 'limitations': [], 'findings': []}
+        write_json(run / 'reviews/circuit.json', silent)
+        result = {'state': 'complete', 'purpose_coverage': [], 'limitations': [], 'findings': []}
+        verify_records(run, result)
+
     def test_brief_and_adjudicator_prompt_state_the_advisory_contract(self):
         from agent_ee.purpose_review import BRIEF
         self.assertIn('dimension=purpose_review', BRIEF)

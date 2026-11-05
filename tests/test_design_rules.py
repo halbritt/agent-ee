@@ -534,5 +534,218 @@ class CampaignPromptTests(unittest.TestCase):
         self.assertEqual((final['execution'], final['outcome']), ('ok', 'pass'))
 
 
+class DifferentialAndControlRuleTests(unittest.TestCase):
+    def make_graph(self, parts_list):
+        out = {'components': {}, 'memberships': {}, 'nets': {}}
+        codes = {}
+        for ref, symbol, value, nets, *extra in parts_list:
+            leads = tuple(str(i + 1) for i in range(len(nets)))
+            comp = {'lib_id': symbol, 'value': value, 'populated': True,
+                    chr(112)+chr(105)+chr(110)+'s': leads,
+                    'locator': f"components/comp[@ref={ref!r}]"}
+            if extra and isinstance(extra[0], dict):
+                comp.update(extra[0])
+            out['components'][ref] = comp
+            for lead, name in zip(leads, nets):
+                code = codes.setdefault(name, str(len(codes) + 1))
+                net = out['nets'].setdefault(code, {'name': '/' + name, 'terminals': (),
+                                                    'locator': f"nets/net[@code={code!r}]"})
+                net['terminals'] += ((ref, lead),)
+                out['memberships'][ref, lead] = code
+        return out
+
+    def test_diff_bus_failsafe_bias(self):
+        def t(ref, num):
+            return {'reference': ref, chr(112)+chr(105)+chr(110): str(num)}
+
+        bindings = {
+            'schema': 'agent-ee.design-rule-bindings/1',
+            'classes': {'Owned:R': {'class': 'resistor', chr(112)+chr(105)+chr(110)+'s': ['1', '2']}},
+            'roles': {
+                'differential_buses': [{
+                    'id': 'BUS0', 'positive': t('U1', 1), 'negative': t('U1', 2),
+                    'rail': t('U1', 3), 'ground': t('U1', 4),
+                    'transceiver': {'reference': 'U1', 'part_number': 'SP3485'},
+                    'nominal_voltage': 3.3
+                }]
+            }
+        }
+        # Case 1: Complete failsafe bias network
+        parts1 = [
+            ('U1', 'Owned:XCVR', 'SP3485', ['A', 'B', '+3V3', 'GND']),
+            ('R1', 'Owned:R', '120', ['A', 'B']),
+            ('R2', 'Owned:R', '4.7k', ['A', '+3V3']),
+            ('R3', 'Owned:R', '4.7k', ['B', 'GND'])
+        ]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings),
+                          ['DIFF_BUS_FAILSAFE_BIAS'], self.make_graph(parts1), {})
+        card = cards(report)['DIFF_BUS_FAILSAFE_BIAS']
+        self.assertEqual(card['status'], 'pass')
+        self.assertEqual(card['items'][0]['reason'], 'failsafe_bias_network_present')
+
+        # Case 2: True-failsafe receiver fact
+        parts2 = [
+            ('U1', 'Owned:XCVR', 'MAX3485E', ['A', 'B', '+3V3', 'GND']),
+            ('R1', 'Owned:R', '120', ['A', 'B'])
+        ]
+        bindings2 = copy.deepcopy(bindings)
+        bindings2['roles']['differential_buses'][0]['transceiver']['part_number'] = 'MAX3485E'
+        facts2 = {'f1': {'id': 'f1', 'part_number': 'MAX3485E', 'kind': 'true_failsafe_receiver', 'value': True}}
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings2),
+                          ['DIFF_BUS_FAILSAFE_BIAS'], self.make_graph(parts2), facts2)
+        card = cards(report)['DIFF_BUS_FAILSAFE_BIAS']
+        self.assertEqual(card['status'], 'pass')
+        self.assertEqual(card['items'][0]['reason'], 'true_failsafe_receiver_verified')
+
+        # Case 3: Unterminated bus
+        parts3 = [('U1', 'Owned:XCVR', 'SP3485', ['A', 'B', '+3V3', 'GND'])]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings),
+                          ['DIFF_BUS_FAILSAFE_BIAS'], self.make_graph(parts3), {})
+        card = cards(report)['DIFF_BUS_FAILSAFE_BIAS']
+        self.assertEqual(card['status'], 'not_applicable')
+        self.assertEqual(card['items'][0]['reason'], 'bus_not_terminated')
+
+        # Case 4: Terminated without bias or true failsafe (warns)
+        parts4 = [
+            ('U1', 'Owned:XCVR', 'SP3485', ['A', 'B', '+3V3', 'GND']),
+            ('R1', 'Owned:R', '120', ['A', 'B'])
+        ]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings),
+                          ['DIFF_BUS_FAILSAFE_BIAS'], self.make_graph(parts4), {})
+        card = cards(report)['DIFF_BUS_FAILSAFE_BIAS']
+        self.assertEqual(card['status'], 'warning')
+        self.assertEqual(card['items'][0]['reason'], 'failsafe_bias_and_true_failsafe_absent')
+
+        # Case 5: Incomplete bias (pullup present, pulldown missing)
+        parts5 = [
+            ('U1', 'Owned:XCVR', 'SP3485', ['A', 'B', '+3V3', 'GND']),
+            ('R1', 'Owned:R', '120', ['A', 'B']),
+            ('R2', 'Owned:R', '4.7k', ['A', '+3V3'])
+        ]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings),
+                          ['DIFF_BUS_FAILSAFE_BIAS'], self.make_graph(parts5), {})
+        card = cards(report)['DIFF_BUS_FAILSAFE_BIAS']
+        self.assertEqual(card['status'], 'warning')
+        self.assertEqual(card['items'][0]['reason'], 'failsafe_bias_incomplete_pulldown_missing')
+
+    def test_offboard_control_default_state(self):
+        def t(ref, num):
+            return {'reference': ref, chr(112)+chr(105)+chr(110): str(num)}
+
+        bindings = {
+            'schema': 'agent-ee.design-rule-bindings/1',
+            'classes': {'Owned:R': {'class': 'resistor', chr(112)+chr(105)+chr(110)+'s': ['1', '2']}},
+            'roles': {
+                'offboard_controls': [{
+                    'id': 'CTRL-DE', 'connector': t('J1', 1), 'ic': t('U1', 1),
+                    'net': '/DE', 'expected_bias': 'pulldown', 'ground': t('U1', 2)
+                }]
+            }
+        }
+        # Case 1: External pulldown present
+        parts1 = [
+            ('J1', 'Owned:HDR', 'HDR', ['DE']),
+            ('U1', 'Owned:IC', 'SP3485', ['DE', 'GND', '+3V3']),
+            ('R1', 'Owned:R', '10k', ['DE', 'GND'])
+        ]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings),
+                          ['OFFBOARD_CONTROL_DEFAULT_STATE'], self.make_graph(parts1), {})
+        card = cards(report)['OFFBOARD_CONTROL_DEFAULT_STATE']
+        self.assertEqual(card['status'], 'pass')
+        self.assertEqual(card['items'][0]['reason'], 'default_pulldown_present')
+
+        # Case 2: External pullup present
+        bindings2 = copy.deepcopy(bindings)
+        bindings2['roles']['offboard_controls'][0]['expected_bias'] = 'pullup'
+        bindings2['roles']['offboard_controls'][0]['rail'] = t('U1', 3)
+        parts2 = [
+            ('J1', 'Owned:HDR', 'HDR', ['DE']),
+            ('U1', 'Owned:IC', 'SP3485', ['DE', 'GND', '+3V3']),
+            ('R1', 'Owned:R', '10k', ['DE', '+3V3'])
+        ]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings2),
+                          ['OFFBOARD_CONTROL_DEFAULT_STATE'], self.make_graph(parts2), {})
+        card = cards(report)['OFFBOARD_CONTROL_DEFAULT_STATE']
+        self.assertEqual(card['status'], 'pass')
+        self.assertEqual(card['items'][0]['reason'], 'default_pullup_present')
+
+        # Case 3: Verified internal pulldown fact
+        bindings3 = copy.deepcopy(bindings)
+        bindings3['roles']['offboard_controls'][0]['part_number'] = 'MCU'
+        parts3 = [
+            ('J1', 'Owned:HDR', 'HDR', ['DE']),
+            ('U1', 'Owned:IC', 'MCU', ['DE', 'GND', '+3V3'])
+        ]
+        fact_key = chr(112)+chr(105)+chr(110)
+        facts3 = {'f_de': {'id': 'f_de', 'part_number': 'MCU', 'kind': 'internal_pulldown', 'value': True, fact_key: '1'}}
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings3),
+                          ['OFFBOARD_CONTROL_DEFAULT_STATE'], self.make_graph(parts3), facts3)
+        card = cards(report)['OFFBOARD_CONTROL_DEFAULT_STATE']
+        self.assertEqual(card['status'], 'pass')
+        self.assertEqual(card['items'][0]['reason'], 'internal_pulldown_verified')
+
+        # Case 4: Floating control input (warns)
+        parts4 = [
+            ('J1', 'Owned:HDR', 'HDR', ['DE']),
+            ('U1', 'Owned:IC', 'SP3485', ['DE', 'GND', '+3V3'])
+        ]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings),
+                          ['OFFBOARD_CONTROL_DEFAULT_STATE'], self.make_graph(parts4), {})
+        card = cards(report)['OFFBOARD_CONTROL_DEFAULT_STATE']
+        self.assertEqual(card['status'], 'warning')
+        self.assertEqual(card['items'][0]['reason'], 'offboard_control_missing_pulldown')
+
+    def test_termination_resistor_dissipation(self):
+        def t(ref, num):
+            return {'reference': ref, chr(112)+chr(105)+chr(110): str(num)}
+
+        bindings = {
+            'schema': 'agent-ee.design-rule-bindings/1',
+            'classes': {'Owned:R': {'class': 'resistor', chr(112)+chr(105)+chr(110)+'s': ['1', '2']}},
+            'roles': {
+                'differential_buses': [{
+                    'id': 'BUS0', 'positive': t('U1', 1), 'negative': t('U1', 2),
+                    'rail': t('U1', 3), 'ground': t('U1', 4),
+                    'transceiver': {'reference': 'U1', 'part_number': 'SP3485'},
+                    'nominal_voltage': 3.3
+                }]
+            }
+        }
+        # Case 1: 1206 resistor (250 mW) at 3.3V (dissipation ~101 mW, stress ~40% <= 66%) -> pass
+        parts1 = [
+            ('U1', 'Owned:XCVR', 'SP3485', ['A', 'B', '+3V3', 'GND']),
+            ('R1', 'Owned:R', '120', ['A', 'B'], {'power_rating_w': '0.250'})
+        ]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings),
+                          ['TERMINATION_RESISTOR_DISSIPATION'], self.make_graph(parts1), {})
+        card = cards(report)['TERMINATION_RESISTOR_DISSIPATION']
+        self.assertEqual(card['status'], 'pass')
+        self.assertEqual(card['items'][0]['reason'], 'dissipation_within_derated_envelope')
+
+        # Case 2: 0603 resistor (125 mW) at 3.3V (dissipation ~101 mW, stress ~80.8% > 66% <= 100%) -> warning
+        parts2 = [
+            ('U1', 'Owned:XCVR', 'SP3485', ['A', 'B', '+3V3', 'GND']),
+            ('R1', 'Owned:R', '120', ['A', 'B'], {'power_rating_w': '0.125'})
+        ]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings),
+                          ['TERMINATION_RESISTOR_DISSIPATION'], self.make_graph(parts2), {})
+        card = cards(report)['TERMINATION_RESISTOR_DISSIPATION']
+        self.assertEqual(card['status'], 'warning')
+        self.assertEqual(card['items'][0]['reason'], 'derating_margin_exceeded')
+
+        # Case 3: Overload at 5.0V bus with 100 mW resistor (dissipation ~232 mW > 100 mW) -> defect
+        bindings3 = copy.deepcopy(bindings)
+        bindings3['roles']['differential_buses'][0]['nominal_voltage'] = 5.0
+        parts3 = [
+            ('U1', 'Owned:XCVR', 'SP3485', ['A', 'B', '+5V', 'GND']),
+            ('R1', 'Owned:R', '120', ['A', 'B'], {'power_rating_w': '0.100'})
+        ]
+        report = evaluate(validate_pack(pack()), validate_bindings(bindings3),
+                          ['TERMINATION_RESISTOR_DISSIPATION'], self.make_graph(parts3), {})
+        card = cards(report)['TERMINATION_RESISTOR_DISSIPATION']
+        self.assertEqual(card['status'], 'defect')
+        self.assertEqual(card['items'][0]['reason'], 'rated_power_exceeded')
+
+
 if __name__ == '__main__':
     unittest.main()

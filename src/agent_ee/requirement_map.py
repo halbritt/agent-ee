@@ -43,7 +43,7 @@ KIND_CLASS = {
     **dict.fromkeys(('netlist', 'netlist_parity', 'topology_rules', 'hardware_interface', 'net_names',
                      'block_provenance', 'pin_map', 'pin_contracts', 'symbol_pins'), 'topology'),
     **dict.fromkeys(('interval_assertions', 'active_spice', 'rc_transient', 'dc_path'), 'model'),
-    **dict.fromkeys(('measurements', 'dfm_geometry', 'rf_geometry', 'decoupling_loops'), 'measurement'),
+    **dict.fromkeys(('measurements', 'dfm_geometry', 'rf_geometry', 'decoupling_loops', 'kelvin_routing'), 'measurement'),
 }
 STATUS_ORDER = ('failed', 'unknown', 'pending', 'pass', 'not_applicable')
 

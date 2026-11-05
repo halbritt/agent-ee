@@ -179,6 +179,86 @@ def datasheet_source(parts, ref, path, fail):
         )
 
 
+def validate_kelvin_senses(design, nets, parts, footprints, fail):
+    senses = design.get("kelvin_senses", [])
+    if not isinstance(senses, list):
+        fail("kelvin_senses", "supply a list of Kelvin sense connection declarations")
+        return
+    plane_net = design.get("plane", {}).get("net")
+    declared_names = set()
+    term_to_net = {}
+    for net_name, terms in nets.items():
+        if isinstance(terms, list):
+            for t in terms:
+                if isinstance(t, str):
+                    term_to_net[t] = net_name
+
+    for i, sense in enumerate(senses):
+        path = f"kelvin_senses[{i}]"
+        if not isinstance(sense, dict):
+            continue
+        if "name" in sense:
+            sname = sense["name"]
+            if not isinstance(sname, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,47}", sname):
+                fail(f"{path}.name", "use a short identifier beginning with a letter")
+            elif sname in declared_names:
+                fail(f"{path}.name", f"duplicate Kelvin sense name '{sname}'")
+            else:
+                declared_names.add(sname)
+
+        shunt = sense.get("shunt")
+        device = sense.get("device")
+        if not isinstance(shunt, str) or shunt not in parts:
+            fail(f"{path}.shunt", "select a declared part")
+        if not isinstance(device, str) or device not in parts:
+            fail(f"{path}.device", "select a declared part")
+        if shunt and device and shunt == device:
+            fail(path, "shunt and device must be distinct parts")
+
+        pos = sense.get("positive")
+        neg = sense.get("negative")
+        pos_net = None
+        neg_net = None
+
+        if isinstance(pos, list) and len(pos) == 2 and all(isinstance(t, str) for t in pos):
+            pos_nets = [term_to_net.get(t) for t in pos]
+            if None in pos_nets:
+                fail(f"{path}.positive", "both terminals must be assigned to declared nets")
+            elif pos_nets[0] != pos_nets[1]:
+                fail(f"{path}.positive", f"both terminals must be on the same net, got '{pos_nets[0]}' and '{pos_nets[1]}'")
+            else:
+                pos_net = pos_nets[0]
+
+        if isinstance(neg, list) and len(neg) == 2 and all(isinstance(t, str) for t in neg):
+            neg_nets = [term_to_net.get(t) for t in neg]
+            if None in neg_nets:
+                fail(f"{path}.negative", "both terminals must be assigned to declared nets")
+            elif neg_nets[0] != neg_nets[1]:
+                fail(f"{path}.negative", f"both terminals must be on the same net, got '{neg_nets[0]}' and '{neg_nets[1]}'")
+            else:
+                neg_net = neg_nets[0]
+
+        if pos_net and neg_net and pos_net == neg_net:
+            fail(path, f"positive and negative sense connections must be on different nets, got '{pos_net}'")
+
+        for net_val, label in ((pos_net, "positive"), (neg_net, "negative")):
+            if net_val and plane_net and net_val == plane_net:
+                fail(f"{path}.{label}", f"sensed net '{net_val}' cannot be assigned to plane.net; copper plane fills bypass the sensed shunt")
+
+        if "max_distance_mm" in sense:
+            dist = sense["max_distance_mm"]
+            if isinstance(dist, bool) or not isinstance(dist, (int, float)) or dist <= 0:
+                fail(f"{path}.max_distance_mm", "must be a positive number")
+
+        if "max_loop_mm" in sense:
+            loop = sense["max_loop_mm"]
+            if isinstance(loop, bool) or not isinstance(loop, (int, float)) or loop <= 0:
+                fail(f"{path}.max_loop_mm", "must be a positive number")
+
+        if "coupled" in sense and not isinstance(sense["coupled"], bool):
+            fail(f"{path}.coupled", "must be Boolean")
+
+
 PAIR_FIELDS = ("intra_pair_match", "impedance")
 
 
@@ -321,7 +401,7 @@ def validate(design, captures=None, *, cad_only=False):
             "functional",
             "bench",
         ),
-        ("placement", "mechanics", "markings", "diff_pairs", "currents"),
+        ("placement", "mechanics", "markings", "diff_pairs", "currents", "kelvin_senses"),
         "design",
     ):
         raise DesignError(errors)
@@ -839,6 +919,7 @@ def validate(design, captures=None, *, cad_only=False):
                     "or more, or choose pads or packages that let the capacitor sit closer",
                 )
     validate_diff_pairs(design, nets, fail)
+    validate_kelvin_senses(design, nets, parts, footprints, fail)
     functional = design["functional"]
     if not isinstance(functional, list) or not functional:
         fail("functional", "supply at least one witnessed functional requirement")

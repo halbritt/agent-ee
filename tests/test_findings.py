@@ -182,6 +182,16 @@ class FindingsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires an immutable"):
             validate_citation_path("baseline.json", self.run_dir)
 
+    def test_navigation_files_are_valid_citation_paths(self):
+        nav_dir = self.run_dir / "work" / ".navigation"
+        nav_dir.mkdir(parents=True, exist_ok=True)
+        write_json(nav_dir / "index.json", {"files": []})
+        write_json(nav_dir / "binding.json", {"bindings": []})
+        self.assertEqual(validate_citation_path("work/.navigation/index.json", self.run_dir), "work/.navigation/index.json")
+        self.assertEqual(validate_citation_path("work/.navigation/binding.json", self.run_dir), "work/.navigation/binding.json")
+        with self.assertRaisesRegex(ValueError, "must be index.json or binding.json"):
+            validate_citation_path("work/.navigation/other.json", self.run_dir)
+
     def test_unsupported_defect_downgraded_to_concern_and_cannot_be_accepted_without_evidence(self):
         ungrounded = self._review(findings=[self._finding(fid="unbacked-claim", assessment="defect", evidence=[])])
         validated = validate_review(

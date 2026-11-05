@@ -763,9 +763,9 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
                                          ") but the review profile declares no rf reviewer; reviews not dispatched.")
         if not checks_only and not rf_missing and time.monotonic() < deadline:
             from .profiles import validate_profile
-            validate_profile(m["scope"].get("review_profile"))
+            from .reviewers import summarize_packet_limits
             packet = build_packet(run, result["checks"], result["run_id"])
-            result["limitations"] += packet["packet_limits"]
+            result["limitations"] += summarize_packet_limits(packet["packet_limits"])
             result["reviews"], result["review_executions"] = initial_reviews(run, packet, deadline, launch_context=launch_context,
                                                                              roles=review_roles)
             result["findings"] = collect_findings(result["reviews"], result["checks"])

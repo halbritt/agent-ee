@@ -48,7 +48,7 @@ def problems(design):
         bench=list,
     )
     if not obj(design, required, dict(placement=dict, mechanics=dict, markings=list, diff_pairs=list,
-                                      currents=dict), "design"):
+                                      currents=dict, kelvin_senses=list), "design"):
         return errors
     if errors:
         return errors
@@ -149,6 +149,15 @@ def problems(design):
             if isinstance(pair.get("impedance"), dict):
                 obj(pair["impedance"], dict(target_ohm=None, tolerance_percent=None, max_uncoupled_mm=None),
                     {}, path + ".impedance")
+    for i, sense in rows(design.get("kelvin_senses", []), "kelvin_senses"):
+        path = f"kelvin_senses[{i}]"
+        if obj(sense, dict(shunt=str, device=str, positive=list, negative=list),
+               dict(name=str, max_distance_mm=None, max_loop_mm=None, coupled=bool), path):
+            for end in ("positive", "negative"):
+                for n, v in rows(sense.get(end, []), f"{path}.{end}"):
+                    expect(v, str, f"{path}.{end}[{n}]")
+                if len(sense.get(end, [])) != 2:
+                    errors.append(f"{path}.{end}: supply exactly 2 terminals")
     if "placement" in design:
         obj(
             design["placement"],

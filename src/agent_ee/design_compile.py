@@ -121,6 +121,10 @@ def spec(design):
         )
     if design.get("currents"):
         sections["Manufacturing"].append(current_text(design))
+    if design.get("kelvin_senses"):
+        sections["Placement and mechanics"][2] += (
+            " Sense lines for declared Kelvin connections shall connect directly to their respective shunt resistor lands without shared current-carrying copper outside the shunt lands."
+        )
     return "".join(
         "# "
         + title
@@ -1049,6 +1053,16 @@ def board_markings(design, root):
         origin_mm=list(BOARD_ORIGIN_MM), fab_profile="board-text-profile.json", items=design["markings"]))
 
 
+def board_kelvin(design, root):
+    if not design.get("kelvin_senses"):
+        return
+    write_json(root / "placement-kelvin.json", dict(
+        schema="agent-ee.kelvin-senses/1",
+        namespace=design["name"],
+        items=design["kelvin_senses"],
+    ))
+
+
 def requirements(design, root, record, suppliers):
     prefix = design["requirement_prefix"]
     name = design["name"]
@@ -1170,7 +1184,8 @@ def requirements(design, root, record, suppliers):
         ),
         req(
             "MECH-3",
-            [
+            (
+                [
                 check(
                     "locality",
                     "placement",
@@ -1182,7 +1197,13 @@ def requirements(design, root, record, suppliers):
                       generation='project/local-decoupling-generation.json'),
             ]
             if design["decoupling"]
-            else [check("plane-drc", "drc", plane_plans=[blob(root, "planes.json")])],
+            else [check("plane-drc", "drc", plane_plans=[blob(root, "planes.json")])]
+            )
+            + (
+                [check("kelvin-routing", "kelvin_routing", declaration="placement-kelvin.json")]
+                if design.get("kelvin_senses")
+                else []
+            ),
         ),
         req(
             "MECH-4",
@@ -1481,6 +1502,7 @@ def _compile_design(design, captures, out):
         envelope(design, root)
         current_constraints(design, root)
         board_markings(design, root)
+        board_kelvin(design, root)
         placement(design, root)
         mechanics(design, root)
         suppliers = cpl_policy(design, root)

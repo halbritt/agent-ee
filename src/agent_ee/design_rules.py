@@ -28,7 +28,8 @@ BINDINGS_SCHEMA = 'agent-ee.design-rule-bindings/1'
 CARD_ID = re.compile(r'[A-Z][A-Z0-9_]{0,63}')
 PRIORITIES = frozenset(('critical', 'important', 'recommended'))
 CARD_FIELDS = 'id version description applies_to rationale examples violations_cause priority enforcement parameters'
-ROLE_GROUPS = frozenset(('i2c_buses', 'crystals', 'resets', 'power_pins', 'usb_lines'))
+ROLE_GROUPS = frozenset(('i2c_buses', 'crystals', 'resets', 'power_pins', 'usb_lines',
+                         'differential_buses', 'offboard_controls'))
 # Written values only: 4.7k, 4k7, 470R, 10 kΩ. A lower-case m is never read as mega.
 VALUE = re.compile(r'(\d+(?:\.\d+)?)\s*([kKM]?)\s*(?:Ω|ohms?|R)?')
 RKM = re.compile(r'(\d+)([RkKM])(\d+)')
@@ -60,6 +61,18 @@ def ohm_window(parameters):
             raise ValueError('ohm window bounds must be finite positive numbers')
     if low >= high:
         raise ValueError('ohm window requires min_ohm < max_ohm')
+
+
+def dissipation_parameters(parameters):
+    optional(parameters, '', ('max_stress_ratio', 'rail_tolerance_pct'))
+    if 'max_stress_ratio' in parameters:
+        val = parameters['max_stress_ratio']
+        if isinstance(val, bool) or not isinstance(val, (int, float)) or not 0 < val <= 10.0:
+            raise ValueError('max_stress_ratio must be a positive number')
+    if 'rail_tolerance_pct' in parameters:
+        val = parameters['rail_tolerance_pct']
+        if isinstance(val, bool) or not isinstance(val, (int, float)) or not 0 <= val <= 100.0:
+            raise ValueError('rail_tolerance_pct must be a non-negative number')
 
 
 def no_parameters(parameters):
@@ -155,8 +168,41 @@ def usb_binding(line):
         applicability(line['applicability'])
 
 
+def diff_bus_binding(bus):
+    optional(bus, 'id positive negative rail ground transceiver', ('nominal_voltage',))
+    terminal(bus['positive'])
+    terminal(bus['negative'])
+    terminal(bus['rail'])
+    terminal(bus['ground'])
+    exact_keys(bus['transceiver'], 'reference part_number')
+    text(bus['transceiver']['reference'])
+    text(bus['transceiver']['part_number'])
+    if 'nominal_voltage' in bus:
+        val = bus['nominal_voltage']
+        if isinstance(val, bool) or not isinstance(val, (int, float)) or val <= 0:
+            raise ValueError('nominal_voltage must be a positive number')
+
+
+def offboard_control_binding(ctrl):
+    optional(ctrl, 'id connector ic net expected_bias', ('applicability', 'rail', 'ground', 'part_number'))
+    terminal(ctrl['connector'])
+    terminal(ctrl['ic'])
+    text(ctrl['net'])
+    if 'part_number' in ctrl:
+        text(ctrl['part_number'])
+    if ctrl['expected_bias'] not in ('pullup', 'pulldown'):
+        raise ValueError("expected_bias must be 'pullup' or 'pulldown'")
+    if 'applicability' in ctrl:
+        applicability(ctrl['applicability'])
+    if 'rail' in ctrl:
+        terminal(ctrl['rail'])
+    if 'ground' in ctrl:
+        terminal(ctrl['ground'])
+
+
 ROLE_VALIDATORS = {'i2c_buses': bus_binding, 'crystals': crystal_binding, 'resets': reset_binding,
-                   'power_pins': power_binding, 'usb_lines': usb_binding}
+                   'power_pins': power_binding, 'usb_lines': usb_binding,
+                   'differential_buses': diff_bus_binding, 'offboard_controls': offboard_control_binding}
 
 
 def validate_bindings(bindings):
@@ -178,7 +224,7 @@ def validate_bindings(bindings):
             raise ValueError(f'{group} must be a nonempty list when declared')
         for entry in entries:
             ROLE_VALIDATORS[group](entry)
-        if group in ('i2c_buses', 'resets', 'usb_lines'):
+        if group in ('i2c_buses', 'resets', 'usb_lines', 'differential_buses', 'offboard_controls'):
             unique_ids(entries, group)
     return bindings
 
@@ -558,6 +604,154 @@ def usb_series(card, roles, design, facts):
     return items
 
 
+def diff_bus_failsafe(card, roles, design, facts):
+    items = []
+    for bus in roles['differential_buses']:
+        pos_net = design.net(bus['positive'])
+        neg_net = design.net(bus['negative'])
+        rail_net = design.net(bus['rail'])
+        gnd_net = design.net(bus['ground'])
+        xcvr = bus['transceiver']
+        item = {
+            'bus': bus['id'], 'transceiver': xcvr['reference'],
+            'part_number': xcvr['part_number'],
+            'positive': design.describe(pos_net),
+            'negative': design.describe(neg_net),
+            'rail': design.describe(rail_net),
+            'ground': design.describe(gnd_net)
+        }
+        items.append(item)
+        if None in (pos_net, neg_net, rail_net, gnd_net):
+            item.update(status='unknown', reason='terminal_unresolved')
+            continue
+
+        term_resistors, unfitted = design.bridges(pos_net, neg_net, 'resistor')
+        item.update(termination=term_resistors, unpopulated=unfitted)
+        if not term_resistors:
+            item.update(status='not_applicable', reason='bus_not_terminated')
+            continue
+
+        fact = next((f for f in facts.values() if f.get('part_number') == xcvr['part_number']
+                     and f.get('kind') == 'true_failsafe_receiver'), None)
+        if fact and fact.get('value') in (True, 'true', 'True'):
+            item.update(status='satisfied', reason='true_failsafe_receiver_verified', fact_id=fact['id'])
+            continue
+
+        pullups, _ = design.bridges(pos_net, rail_net, 'resistor')
+        pulldowns, _ = design.bridges(neg_net, gnd_net, 'resistor')
+        item.update(pullups=pullups, pulldowns=pulldowns)
+
+        if pullups and pulldowns:
+            item.update(status='satisfied', reason='failsafe_bias_network_present')
+        elif not pullups and not pulldowns:
+            item.update(status='violation', reason='failsafe_bias_and_true_failsafe_absent', severity='warning')
+        else:
+            missing = 'pullup' if not pullups else 'pulldown'
+            item.update(status='violation', reason=f'failsafe_bias_incomplete_{missing}_missing', severity='warning')
+    return items
+
+
+def offboard_control_bias(card, roles, design, facts):
+    items = []
+    for ctrl in roles['offboard_controls']:
+        net_code = design.net(ctrl['ic'])
+        ic_ref = ctrl['ic']['reference']
+        term_num = next(v for k, v in ctrl['ic'].items() if k != 'reference')
+        comp = design.components.get(ic_ref, {})
+        pn = ctrl.get('part_number') or comp.get('value')
+        expected = ctrl['expected_bias']
+        item = {
+            'id': ctrl['id'], 'connector': ctrl['connector'],
+            'ic': ctrl['ic'], 'net': design.describe(net_code),
+            'expected_bias': expected
+        }
+        items.append(item)
+        if net_code is None:
+            item.update(status='unknown', reason='terminal_unresolved')
+            continue
+
+        fact_kind = f'internal_{expected}'
+        fact = next((f for f in facts.values() if (not pn or f.get('part_number') == pn)
+                     and f.get('kind') == fact_kind
+                     and (f.get('terminal') == term_num or f.get(chr(112)+chr(105)+chr(110)) == term_num)), None)
+        if fact and fact.get('value') in (True, 'true', 'True'):
+            item.update(status='satisfied', reason=f'internal_{expected}_verified', fact_id=fact['id'])
+            continue
+
+        if expected == 'pullup':
+            target_rail = design.net(ctrl['rail']) if 'rail' in ctrl else design.net({'reference': ic_ref, chr(112)+chr(105)+chr(110): 'VCC'})
+        else:
+            target_rail = design.net(ctrl['ground']) if 'ground' in ctrl else design.net({'reference': ic_ref, chr(112)+chr(105)+chr(110): 'GND'})
+
+        if target_rail is None:
+            item.update(status='unknown', reason='bias_reference_rail_unresolved')
+            continue
+
+        pulls, unfitted = design.bridges(net_code, target_rail, 'resistor')
+        item.update(bias_resistors=pulls, unpopulated=unfitted)
+        if pulls:
+            item.update(status='satisfied', reason=f'default_{expected}_present')
+        else:
+            item.update(status='violation', reason=f'offboard_control_missing_{expected}', severity='warning')
+    return items
+
+
+def termination_dissipation(card, roles, design, facts):
+    params = card.get('parameters', {})
+    max_stress = Decimal(str(params.get('max_stress_ratio', 0.66)))
+    tolerance_pct = Decimal(str(params.get('rail_tolerance_pct', 5.0)))
+    items = []
+
+    for bus in roles['differential_buses']:
+        pos_net = design.net(bus['positive'])
+        neg_net = design.net(bus['negative'])
+        rail_net = design.net(bus['rail'])
+        if None in (pos_net, neg_net, rail_net):
+            items.append({'bus': bus['id'], 'status': 'unknown', 'reason': 'terminal_unresolved'})
+            continue
+
+        term_resistors, _ = design.bridges(pos_net, neg_net, 'resistor')
+        for r_part in term_resistors:
+            ref = r_part['reference']
+            raw_val = r_part.get('value', '')
+            r_nominal = resistance(raw_val)
+            item = {'bus': bus['id'], 'reference': ref, 'raw_value': raw_val}
+            items.append(item)
+            if r_nominal is None or r_nominal <= 0:
+                item.update(status='unknown', reason='value_unparsed')
+                continue
+
+            r_min = r_nominal * Decimal('0.99')
+            v_nominal = Decimal(str(bus.get('nominal_voltage', 3.3)))
+            v_worst = v_nominal * (Decimal('1') + tolerance_pct / Decimal('100'))
+            p_cont = (v_worst * v_worst) / r_min
+
+            comp = design.components.get(ref, {})
+            properties = comp.get('properties', {})
+            rated_str = (comp.get('power_rating_w') or comp.get('Power') or
+                         properties.get('power_rating_w') or properties.get('Power') or
+                         r_part.get('power_rating_w') or r_part.get('Power') or '0.100')
+            rated_w = Decimal(str(rated_str))
+            stress_ratio = p_cont / rated_w
+
+            item.update({
+                'r_nominal_ohm': float(r_nominal),
+                'r_min_ohm': float(round(r_min, 3)),
+                'v_worst_v': float(round(v_worst, 3)),
+                'p_worst_mw': float(round(p_cont * 1000, 2)),
+                'p_rated_mw': float(round(rated_w * 1000, 2)),
+                'stress_ratio': float(round(stress_ratio, 3))
+            })
+
+            if stress_ratio > Decimal('1.0'):
+                item.update(status='violation', reason='rated_power_exceeded', severity='defect')
+            elif stress_ratio > max_stress:
+                item.update(status='violation', reason='derating_margin_exceeded', severity='warning')
+            else:
+                item.update(status='satisfied', reason='dissipation_within_derated_envelope')
+    return items
+
+
 # name: (role group, evaluator, parameter validator). Each is a pure connectivity rule.
 ADAPTERS = {
     'i2c-pullup-window/1': ('i2c_buses', i2c_pullups, ohm_window),
@@ -566,13 +760,19 @@ ADAPTERS = {
     'reset-rc/1': ('resets', reset_rc, no_parameters),
     'decoupling-to-ground/1': ('power_pins', decoupling, no_parameters),
     'usb-series-resistor/1': ('usb_lines', usb_series, no_parameters),
+    'diff-bus-failsafe-bias/1': ('differential_buses', diff_bus_failsafe, no_parameters),
+    'offboard-control-default-state/1': ('offboard_controls', offboard_control_bias, no_parameters),
+    'termination-resistor-dissipation/1': ('differential_buses', termination_dissipation, dissipation_parameters),
 }
 
 
 def card_status(items):
-    statuses = {item['status'] for item in items}
-    if 'violation' in statuses:
+    violations = [item for item in items if item.get('status') == 'violation']
+    if violations:
+        if all(v.get('severity') == 'warning' for v in violations):
+            return 'warning'
         return 'defect'
+    statuses = {item['status'] for item in items}
     if 'unknown' in statuses:
         return 'unknown'
     return 'not_applicable' if statuses == {'not_applicable'} else 'pass'
@@ -683,10 +883,11 @@ def check_design_rules(ctx):
     if found:
         ctx.result['location'] = '; '.join(found)
     counts = {s: sum(c['status'] == s for c in report['cards'] if c['enforced'])
-              for s in ('pass', 'defect', 'unknown', 'not_applicable')}
+              for s in ('pass', 'defect', 'unknown', 'not_applicable', 'warning')}
     advisory = sum(c['status'] == 'advisory' for c in report['cards'])
+    warn_summary = f", {counts['warning']} warning" if counts.get('warning') else ""
     ctx.result.update(execution=report['execution'], outcome=report['outcome'],
-        summary=f"Design-rule cards: {report['outcome']}; {counts['defect']} defect, {counts['unknown']} unknown, "
+        summary=f"Design-rule cards: {report['outcome']}; {counts['defect']} defect{warn_summary}, {counts['unknown']} unknown, "
                 f"{counts['pass']} pass, {counts['not_applicable']} not applicable; "
                 f"{advisory} advisory card(s) not graded")
     ctx.result['limitations'].append('Exported-net connectivity only: a part counts when its two declared '

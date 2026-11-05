@@ -1877,3 +1877,92 @@ class TrackAccessWidthTests(unittest.TestCase):
     def test_footprint_with_a_custom_land_gets_no_claim(self):
         target = '(pad "1" smd rect (at 0 0) (size 0.4 0.4) (layers "F.Cu")) '
         self.assertIsNone(self.width(target + '(pad "2" smd custom (at 3 0) (size 1 1) (layers "F.Cu"))'))
+
+
+class KelvinSenseTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.captures = self.root / "captures"
+        self.captures.mkdir()
+        self.design = design_fixture(self.captures)
+        seal_capture(self.captures)
+
+    def test_kelvin_sense_compiles_and_emits_declaration_and_spec_clause(self):
+        d = copy.deepcopy(self.design)
+        d["parts"]["R3"] = copy.deepcopy(d["parts"]["R2"])
+        d["parts"]["R4"] = copy.deepcopy(d["parts"]["R2"])
+        d["nets"]["SENSE_HI"] = ["R3.1", "R4.1"]
+        d["nets"]["SENSE_LO"] = ["R3.2", "R4.2"]
+        d["kelvin_senses"] = [{
+            "name": "CURRENT_SENSE",
+            "shunt": "R3",
+            "device": "R4",
+            "positive": ["R3.1", "R4.1"],
+            "negative": ["R3.2", "R4.2"],
+            "max_distance_mm": 20.0
+        }]
+        out = self.root / "out"
+        compile_design(d, self.captures, out)
+
+        inputs = out / "inputs"
+        kelvin_file = inputs / "placement-kelvin.json"
+        self.assertTrue(kelvin_file.is_file())
+        kelvin_data = json.loads(kelvin_file.read_text())
+        self.assertEqual(kelvin_data["schema"], "agent-ee.kelvin-senses/1")
+        self.assertEqual(len(kelvin_data["items"]), 1)
+        self.assertEqual(kelvin_data["items"][0]["name"], "CURRENT_SENSE")
+
+        spec_text = (inputs / "spec.md").read_text()
+        self.assertIn("Sense lines for declared Kelvin connections shall connect directly", spec_text)
+
+        req_map = json.loads((inputs / "requirement-map.json").read_text())
+        requirement = next(r for r in req_map["requirements"] if r["id"] == "TEST-MECH-3")
+        kelvin_checks = [c for c in requirement["checks"] if c["kind"] == "kelvin_routing"]
+        self.assertEqual(len(kelvin_checks), 1)
+        self.assertEqual(kelvin_checks[0]["params"]["declaration"], "placement-kelvin.json")
+
+    def test_kelvin_sense_validation_refusals(self):
+        from agent_ee.design import validate
+        d = copy.deepcopy(self.design)
+        d["parts"]["R3"] = copy.deepcopy(d["parts"]["R2"])
+        d["parts"]["R4"] = copy.deepcopy(d["parts"]["R2"])
+        d["nets"]["SENSE_HI"] = ["R3.1", "R4.1"]
+        d["nets"]["SENSE_LO"] = ["R3.2", "R4.2"]
+
+        d1 = copy.deepcopy(d)
+        d1["kelvin_senses"] = [{
+            "shunt": "R3", "device": "R3",
+            "positive": ["R3.1", "R3.1"], "negative": ["R3.2", "R3.2"]
+        }]
+        with self.assertRaisesRegex(DesignError, "shunt and device must be distinct parts"):
+            validate(d1, self.captures)
+
+        d2 = copy.deepcopy(d)
+        d2["kelvin_senses"] = [{
+            "shunt": "R3", "device": "R4",
+            "positive": ["R3.1", "R4.2"], "negative": ["R3.2", "R4.1"]
+        }]
+        with self.assertRaisesRegex(DesignError, "both terminals must be on the same net"):
+            validate(d2, self.captures)
+
+        d3 = copy.deepcopy(d)
+        d3["nets"] = copy.deepcopy(d["nets"])
+        d3["nets"]["SENSE_HI"] = ["R3.1", "R4.1", "R3.2", "R4.2"]
+        del d3["nets"]["SENSE_LO"]
+        d3["kelvin_senses"] = [{
+            "shunt": "R3", "device": "R4",
+            "positive": ["R3.1", "R4.1"], "negative": ["R3.2", "R4.2"]
+        }]
+        with self.assertRaisesRegex(DesignError, "positive and negative sense connections must be on different nets"):
+            validate(d3, self.captures)
+
+        d4 = copy.deepcopy(d)
+        d4["plane"] = {"net": "SENSE_HI", "layer": "B.Cu"}
+        d4["kelvin_senses"] = [{
+            "shunt": "R3", "device": "R4",
+            "positive": ["R3.1", "R4.1"], "negative": ["R3.2", "R4.2"]
+        }]
+        with self.assertRaisesRegex(DesignError, "copper plane fills bypass the sensed shunt"):
+            validate(d4, self.captures)

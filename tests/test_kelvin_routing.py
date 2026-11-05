@@ -1,0 +1,222 @@
+"""Tests for Kelvin sense connection routing verification."""
+
+import math
+import unittest
+from pathlib import Path
+
+from agent_ee.kelvin_routing import (
+    describe_kelvin_routing,
+    evaluate_board,
+    evaluate_leg,
+    SCHEMA,
+    SHARED_COPPER_THRESHOLD_MM,
+)
+
+
+class MockVector:
+    def __init__(self, x_nm, y_nm):
+        self.x = x_nm
+        self.y = y_nm
+
+
+class MockShape:
+    def __init__(self, center_nm, radius_nm):
+        self.cx = center_nm[0]
+        self.cy = center_nm[1]
+        self.r = radius_nm
+
+    def Collide(self, pt, margin=0):
+        dist_nm = math.hypot(pt.x - self.cx, pt.y - self.cy)
+        return dist_nm <= self.r + margin
+
+
+class MockPad:
+    def __init__(self, ref, number, x_mm, y_mm, size_mm, netname):
+        self.ref = ref
+        self.number = str(number)
+        self.pos_nm = (int(round(x_mm * 1e6)), int(round(y_mm * 1e6)))
+        self.size_nm = (int(round(size_mm[0] * 1e6)), int(round(size_mm[1] * 1e6)))
+        self.netname = netname
+        self.radius_nm = int(round(max(size_mm) * 0.5 * 1e6))
+
+    def GetNumber(self):
+        return self.number
+
+    def GetName(self):
+        return self.number
+
+    def GetPosition(self):
+        return MockVector(*self.pos_nm)
+
+    def GetSize(self):
+        return MockVector(*self.size_nm)
+
+    def GetNetname(self):
+        return self.netname
+
+    def GetLayerSet(self):
+        class Layers:
+            def CuStack(self):
+                return [0, 31]
+        return Layers()
+
+    def GetEffectiveShape(self, layer=None):
+        return MockShape(self.pos_nm, self.radius_nm)
+
+
+class MockTrack:
+    def __init__(self, start_mm, end_mm, width_mm, netname):
+        self.start_nm = (int(round(start_mm[0] * 1e6)), int(round(start_mm[1] * 1e6)))
+        self.end_nm = (int(round(end_mm[0] * 1e6)), int(round(end_mm[1] * 1e6)))
+        self.width_nm = int(round(width_mm * 1e6))
+        self.netname = netname
+
+    def GetClass(self):
+        return "PCB_TRACK"
+
+    def GetStart(self):
+        return MockVector(*self.start_nm)
+
+    def GetEnd(self):
+        return MockVector(*self.end_nm)
+
+    def GetNetname(self):
+        return self.netname
+
+    def GetWidth(self):
+        return self.width_nm
+
+
+class MockFootprint:
+    def __init__(self, ref, pads):
+        self.ref = ref
+        self._pads = pads
+
+    def GetReference(self):
+        return self.ref
+
+    def Pads(self):
+        return self._pads
+
+
+class MockBoard:
+    def __init__(self, footprints, tracks):
+        self._fps = footprints
+        self._tracks = tracks
+
+    def GetFootprints(self):
+        return self._fps
+
+    def GetTracks(self):
+        return self._tracks
+
+
+class KelvinRoutingTests(unittest.TestCase):
+    def test_direct_kelvin_routes_pass(self):
+        # Shunt R1: pad 1 at (10, 10), pad 2 at (10, 14)
+        r1_pad1 = MockPad("R1", 1, 10.0, 10.0, (1.2, 2.0), "SOURCE_12V")
+        r1_pad2 = MockPad("R1", 2, 10.0, 14.0, (1.2, 2.0), "LOAD_12V")
+        fp_r1 = MockFootprint("R1", [r1_pad1, r1_pad2])
+
+        # Monitor U1: pad 8 (IN+) at (25, 10), pad 7 (IN-) at (25, 14)
+        u1_pad8 = MockPad("U1", 8, 25.0, 10.0, (0.6, 0.6), "SOURCE_12V")
+        u1_pad7 = MockPad("U1", 7, 25.0, 14.0, (0.6, 0.6), "LOAD_12V")
+        fp_u1 = MockFootprint("U1", [u1_pad8, u1_pad7])
+
+        # Tracks on LOAD_12V:
+        # 1. Sense track directly from U1.7 to R1.2
+        t_sense = MockTrack((25.0, 14.0), (10.0, 14.0), 0.2, "LOAD_12V")
+        # 2. Load current track from J2.1 to R1.2 (meeting at R1.2 pad center)
+        t_load = MockTrack((0.0, 14.0), (10.0, 14.0), 0.5, "LOAD_12V")
+
+        # Tracks on SOURCE_12V:
+        t_src_sense = MockTrack((25.0, 10.0), (10.0, 10.0), 0.2, "SOURCE_12V")
+        t_src_power = MockTrack((0.0, 10.0), (10.0, 10.0), 0.5, "SOURCE_12V")
+
+        board = MockBoard([fp_r1, fp_u1], [t_sense, t_load, t_src_sense, t_src_power])
+
+        declaration = {
+            "schema": "agent-ee.kelvin-senses/1",
+            "items": [{
+                "name": "LOAD_CURRENT_SENSE",
+                "shunt": "R1",
+                "device": "U1",
+                "positive": ["U1.8", "R1.1"],
+                "negative": ["U1.7", "R1.2"]
+            }]
+        }
+
+        report = evaluate_board(board, declaration)
+        self.assertEqual(report["outcome"], "pass")
+        self.assertEqual(len(report["findings"]), 0)
+        self.assertEqual(report["items"][0]["status"], "pass")
+
+    def test_shared_copper_branch_fails_with_defect(self):
+        # Reproduces Defect #13:
+        # Shunt R1 pad 2 at (121.31, 108.55)
+        # T-junction at (121.3, 113.5), ~3.275 mm outside pad boundary
+        r1_pad1 = MockPad("R1", 1, 121.31, 100.0, (1.2, 3.35), "SOURCE_12V")
+        r1_pad2 = MockPad("R1", 2, 121.31, 108.55, (1.2, 3.35), "LOAD_12V")
+        fp_r1 = MockFootprint("R1", [r1_pad1, r1_pad2])
+
+        u1_pad8 = MockPad("U1", 8, 140.0, 100.0, (0.6, 0.6), "SOURCE_12V")
+        u1_pad7 = MockPad("U1", 7, 140.0, 113.5, (0.6, 0.6), "LOAD_12V")
+        fp_u1 = MockFootprint("U1", [u1_pad8, u1_pad7])
+
+        # Positive side clean
+        t_src_sense = MockTrack((140.0, 100.0), (121.31, 100.0), 0.2, "SOURCE_12V")
+
+        # Negative side with external T-junction at (121.3, 113.5)
+        # 1. Sense track from U1.7 to junction
+        t_sense = MockTrack((140.0, 113.5), (121.3, 113.5), 0.2, "LOAD_12V")
+        # 2. Track from load connector to junction
+        t_load = MockTrack((100.0, 113.5), (121.3, 113.5), 0.5, "LOAD_12V")
+        # 3. Shared track from junction to R1.2 pad
+        t_shared = MockTrack((121.3, 113.5), (121.31, 108.55), 0.2, "LOAD_12V")
+
+        board = MockBoard([fp_r1, fp_u1], [t_src_sense, t_sense, t_load, t_shared])
+
+        declaration = {
+            "schema": "agent-ee.kelvin-senses/1",
+            "items": [{
+                "name": "LOAD_CURRENT_SENSE",
+                "shunt": "R1",
+                "device": "U1",
+                "positive": ["U1.8", "R1.1"],
+                "negative": ["U1.7", "R1.2"]
+            }]
+        }
+
+        report = evaluate_board(board, declaration)
+        self.assertEqual(report["outcome"], "defect")
+        self.assertEqual(len(report["findings"]), 1)
+        finding = report["findings"][0]
+        self.assertEqual(finding["id"], "circuit-shared-sense-copper")
+        self.assertEqual(finding["severity"], "defect")
+        self.assertGreater(finding["shared_length_mm"], 2.0)
+        self.assertIn("R1.2 to U1.7", finding["location"])
+
+    def test_describe_kelvin_routing(self):
+        class MockCtx:
+            def __init__(self, params):
+                self.params = params
+                self.scope = {"board": "project/board.kicad_pcb"}
+                self.inputs = None
+                self.result = {}
+                self._captured = []
+
+            def captured(self, item, immutable=False):
+                self._captured.append((item, immutable))
+
+            def apply(self, desc):
+                self.result.update(desc)
+
+        # Missing declaration raises ValueError
+        with self.assertRaises(ValueError):
+            describe_kelvin_routing(MockCtx({}))
+
+        # Valid declaration registers predicates
+        ctx = MockCtx({"declaration": "placement-kelvin.json"})
+        describe_kelvin_routing(ctx)
+        self.assertIn("kelvin-routing:circuit-shared-sense-copper", ctx.result["predicates"])
+        self.assertIn("placement-kelvin.json", ctx.result["immutable_inputs"])

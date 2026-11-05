@@ -95,6 +95,42 @@
       "priority": "recommended",
       "enforcement": null,
       "parameters": {}
+    },
+    {
+      "id": "DIFF_BUS_FAILSAFE_BIAS",
+      "version": 1,
+      "description": "Provide a failsafe bias network (pull-up on positive line to rail, pull-down on negative line to ground) for any terminated differential bus whose receiver does not have true failsafe inputs.",
+      "applies_to": ["rs485 bus", "differential bus"],
+      "rationale": "An unbiased terminated bus settles to 0 V differential when all drivers are disabled, falling within standard receiver threshold intervals (-200 mV to +200 mV) and producing undefined receiver outputs.",
+      "examples": ["RS-485 bus with 120 ohm termination: 4.7 kohm pull-up from A to 3.3V and 4.7 kohm pull-down from B to GND"],
+      "violations_cause": "Spurious UART framing errors, breaks, noise reception during bus idle",
+      "priority": "important",
+      "enforcement": {"adapter": "diff-bus-failsafe-bias/1"},
+      "parameters": {}
+    },
+    {
+      "id": "OFFBOARD_CONTROL_DEFAULT_STATE",
+      "version": 1,
+      "description": "Provide an on-board pull-up or pull-down resistor for any IC control input driven through an off-board connector without verified internal bias.",
+      "applies_to": ["transceiver", "control input", "connector"],
+      "rationale": "External connector terminals float when disconnected or during host microcontroller boot/reset, causing high CMOS shoot-through current, spurious driver assertion, or bus contention.",
+      "examples": ["10 kohm pull-down on RS-485 DE terminal to GND ensures driver defaults to disabled"],
+      "violations_cause": "Transmitter contention, floating CMOS current, unpredictable startup states",
+      "priority": "important",
+      "enforcement": {"adapter": "offboard-control-default-state/1"},
+      "parameters": {}
+    },
+    {
+      "id": "TERMINATION_RESISTOR_DISSIPATION",
+      "version": 1,
+      "description": "Verify that worst-case continuous power dissipation across interface termination resistors does not exceed component power rating and derating limits.",
+      "applies_to": ["termination resistor", "differential bus"],
+      "rationale": "Continuous bus drive across external lines dissipates Vdiff^2 / R continuously, heating termination resistors and risking thermal breakdown or value drift if package power is undersized.",
+      "examples": ["120 ohm termination across 3.3V bus dissipates 91.7 mW (101 mW at +5%); requires 0805 125 mW or 1206 250 mW for 66% derating margin"],
+      "violations_cause": "Resistor thermal degradation, open circuit, fire risk under sustained fault or DC drive",
+      "priority": "important",
+      "enforcement": {"adapter": "termination-resistor-dissipation/1"},
+      "parameters": {"max_stress_ratio": 0.66, "rail_tolerance_pct": 5.0}
     }
   ]
 }

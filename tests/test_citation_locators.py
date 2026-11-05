@@ -751,3 +751,18 @@ class CitationLocatorTests(unittest.TestCase):
         reviews, records = self.run_native_correction({'lines': [1, 999999]})
         self.assertEqual(reviews, [])
         self.assertTrue(all('out of range' in r['error'] for r in records))
+
+    def test_summarize_packet_limits(self):
+        from agent_ee.reviewers import summarize_packet_limits
+        limits = [
+            "text artifact partially supplied: file1.txt (100/500 bytes)",
+            "text artifact partially supplied: file2.txt (0/1000 bytes)",
+            "binary artifact omitted from text; available through mounted evidence: model.step",
+            "binary artifact omitted from text; available through mounted evidence: pic.png",
+            "artifact unavailable: missing.json"
+        ]
+        summarized = summarize_packet_limits(limits)
+        self.assertEqual(len(summarized), 3)
+        self.assertIn("2 text artifacts partially supplied (1400 bytes not inlined", summarized[0])
+        self.assertIn("2 binary artifacts omitted from text", summarized[1])
+        self.assertEqual(summarized[2], "artifact unavailable: missing.json")

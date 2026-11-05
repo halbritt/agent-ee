@@ -4738,6 +4738,17 @@
       "license_verified": false,
       "source_group": "T13.upstream.pcbschemagen.task_sources.open_schematics",
       "note": "Exact task specifications and authored interface wrappers. The named source group records the upstream licence chain; publication status remains unresolved."
+    },
+    {
+      "paths": [
+        "src/agent_ee/kelvin_routing.py",
+        "tests/test_kelvin_routing.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original Kelvin-sense connection routing and shared-copper evaluation logic. Geometric trace inspection and branch-point distance measurement; no third-party CAD or proprietary assets."
     }
   ]
 }

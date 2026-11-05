@@ -14,8 +14,8 @@ SEVERITIES = ("blocking", "major", "minor", "info")
 ASSESSMENTS = ("defect", "concern")
 DISPOSITIONS = ("accepted", "noted", "dismissed", "deferred", "duplicate", "closed")
 CITATION_PATH_RULE = (
-    "baseline.json (verified immutable baseline), inputs/, checks/, work/<check-id>/, "
-    "or review-work/<role>/experiments/"
+    "baseline.json (verified immutable baseline), inputs/, checks/, work/.navigation/, "
+    "work/<check-id>/, or review-work/<role>/experiments/"
 )
 CHECK_EXECUTIONS = (
     "ok",
@@ -166,7 +166,11 @@ def validate_citation_path(path_value, run_dir, *, adjudication_paths=()):
     elif head == "work":
         if len(rel.parts) < 3:
             raise ValueError(f"citation path under work/ must be work/<check-id>/<file>: {path_value!r}")
-        safe_id(rel.parts[1], "work check id")
+        if rel.parts[1] == ".navigation":
+            if rel.parts[2:] not in (("index.json",), ("binding.json",)):
+                raise ValueError(f"citation path under work/.navigation/ must be index.json or binding.json: {path_value!r}")
+        else:
+            safe_id(rel.parts[1], "work check id")
     else:
         raise ValueError(
             f"citation path must name {CITATION_PATH_RULE}: {path_value!r}"

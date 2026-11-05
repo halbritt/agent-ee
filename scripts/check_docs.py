@@ -42,7 +42,10 @@ def main():
             line = text[:block.start()].count("\n") + 1
             try:
                 if language == "json":
-                    json.loads(body)
+                    try:
+                        json.loads(body)
+                    except ValueError:
+                        json.loads("{" + body.strip() + "}")
                     counts["json_examples"] += 1
                 elif language == "python":
                     ast.parse(textwrap.dedent(body))

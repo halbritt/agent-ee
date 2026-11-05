@@ -562,6 +562,42 @@ def build_packet(run_dir, checks, run_id):
     return packet
 
 
+def summarize_packet_limits(packet_limits):
+    """Summarize clipped text and omitted binary artifact notices into compact limitations."""
+    import re
+    text_count = 0
+    text_omitted_bytes = 0
+    binary_count = 0
+    other_limits = []
+    text_pattern = re.compile(r"^text artifact partially supplied: .* \((\d+)/(\d+) bytes\)$")
+    binary_prefix = "binary artifact omitted from text; available through mounted evidence:"
+
+    for limit in packet_limits:
+        m = text_pattern.match(limit)
+        if m:
+            supplied, total = int(m.group(1)), int(m.group(2))
+            text_count += 1
+            text_omitted_bytes += (total - supplied)
+        elif limit.startswith(binary_prefix):
+            binary_count += 1
+        else:
+            other_limits.append(limit)
+
+    summaries = []
+    if text_count:
+        summaries.append(
+            f"{text_count} text artifact{'s' if text_count != 1 else ''} partially supplied "
+            f"({text_omitted_bytes} bytes not inlined; available through mounted evidence; "
+            f"see packet_limits in packet.json)"
+        )
+    if binary_count:
+        summaries.append(
+            f"{binary_count} binary artifact{'s' if binary_count != 1 else ''} omitted from text; "
+            f"available through mounted evidence; see packet_limits in packet.json"
+        )
+    return summaries + other_limits
+
+
 def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", tools=False, *, cancellation=None, executable=None):
     """Claude subscription route with explicit tools; no MCP, hooks or fallback."""
     run_dir = Path(run_dir)
