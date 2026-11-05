@@ -795,9 +795,15 @@ def cpl_policy(design, root):
             c._top_view(supplier["pattern"]),
         )
         use_correspondence = (part.get('cpl_registration') is not None
-            or sum(p[0] == '1' for p in board_pads) != 1
-            or not c._same_pads_apart_from_extras(
-                sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)))
+            or sum(p[0] == '1' for p in board_pads) != 1)
+        if not use_correspondence and not c._same_pads_apart_from_extras(
+            sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)
+        ):
+            raise DesignError(
+                [
+                    f"parts.{ref}.lcsc: supplier and native pad sets disagree; select matching CAD and part"
+                ]
+            )
         board_name = None
         board_numbers = sorted(p[0] for p in board_pads)
         polarity_record = {}

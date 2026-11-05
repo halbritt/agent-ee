@@ -94,6 +94,21 @@ class CompileCplTests(unittest.TestCase):
                     self.policy(pads, raw, ref="U1")
                 self.root = original
 
+    def test_pad_set_mismatch_precedence_over_orientation_tool_gap(self):
+        root = self.root / "precedence"
+        root.mkdir()
+        for directory in ("supplier", "named", "Owned.pretty"):
+            (root / directory).mkdir()
+        original = self.root
+        self.root = root
+        try:
+            with self.assertRaises(DesignError) as caught:
+                self.policy(SOIC_PADS, component("C1", chip(4, 2, 2)), ref="U1")
+            self.assertIn("parts.U1.lcsc: supplier and native pad sets disagree; select matching CAD and part", str(caught.exception))
+            self.assertNotIn("[tool_gap]", str(caught.exception))
+        finally:
+            self.root = original
+
     def test_opposite_supplier_diode_numbering_matches_gate_polarity(self):
         power = (
             '(kicad_symbol_lib (version 20241209) (generator "owned") '
