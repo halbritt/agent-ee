@@ -443,7 +443,7 @@ def compile_profile(profile, files, inputs):
     required = {'schema', 'name', 'as_of', 'limits'}
     if (not isinstance(profile, dict) or not required <= profile.keys() or
             set(profile) - required - ({'finished_thickness_tolerance', 'stackup', 'advisories', 'applicability',
-                                        'order'}
+                                        'order', 'via_in_pad'}
                                       if profile.get('schema') == SCHEMAS[1] else set()) or
             profile['schema'] not in SCHEMAS or not isinstance(profile['name'], str)
             or not ID.fullmatch(profile['name']) or not isinstance(profile['limits'], list)
@@ -533,6 +533,28 @@ def compile_profile(profile, files, inputs):
             record['execution'] = 'ready'
         # This is an envelope bound, not an isolated native DRC rule or predicate.
         metadata['finished_thickness_tolerance'] = record
+    if 'via_in_pad' in profile:
+        vip = profile['via_in_pad']
+        if not isinstance(vip, dict) or set(vip) != {'supplier_option', 'mechanism', 'source'}:
+            raise ValueError('via_in_pad profile needs supplier_option, mechanism, source')
+        for key in ('supplier_option', 'mechanism'):
+            if not isinstance(vip[key], str) or not vip[key].strip():
+                raise ValueError(f'via_in_pad {key} must be a nonempty string')
+        record = {'expected': copy.deepcopy(vip), 'execution': 'unsupported'}
+        try:
+            source = vip['source']
+            if isinstance(source, dict) and isinstance(source.get('path'), str):
+                captured_file(inputs, files, source['path'])
+                dependencies.add(source['path'])
+            verify_source(source, inputs, files, as_of)
+        except (ValueError, KeyError, OSError, UnicodeError) as exc:
+            record['reason'] = str(exc)
+        else:
+            record['execution'] = 'ready'
+            record['supplier_option'] = vip['supplier_option']
+            record['mechanism'] = vip['mechanism']
+            record['source'] = copy.deepcopy(vip['source'])
+        metadata['via_in_pad'] = record
     if 'advisories' in profile:
         metadata['advisories'] = compile_advisories(profile['advisories'], files, inputs, as_of, dependencies)
     if 'stackup' in profile:
@@ -548,6 +570,26 @@ def compile_profile(profile, files, inputs):
     return {'schema': 'agent-ee.compiled-fab/1', 'name': profile['name'], 'as_of': as_of, **metadata,
             'constraints': sorted(records, key=lambda c: c['id']),
             'immutable_inputs': sorted(dependencies)}
+
+
+def format_via_in_pad_instruction(profile_doc_or_compiled):
+    """Format IPC-4761 Type VII via-in-pad instruction from compiled fab profile or raw profile dict.
+
+    Returns the supplier mechanism when verified/sourced, or explicit unsourced notice.
+    Never silent.
+    """
+    vip = None
+    if isinstance(profile_doc_or_compiled, dict):
+        vip = profile_doc_or_compiled.get('via_in_pad')
+    if vip is not None and isinstance(vip, dict):
+        if vip.get('execution') == 'ready' or ('supplier_option' in vip and 'mechanism' in vip):
+            opt = vip.get('supplier_option', '')
+            mech = vip.get('mechanism', '')
+            if opt and mech:
+                return f"IPC-4761 Type VII: filled, capped and plated ({opt}; {mech})"
+            if opt or mech:
+                return f"IPC-4761 Type VII: filled, capped and plated ({opt or mech})"
+    return "IPC-4761 Type VII (filled + capped + plated); supplier process is not sourced in fab profile"
 
 
 def capability(params, scope, files, inputs, cid):

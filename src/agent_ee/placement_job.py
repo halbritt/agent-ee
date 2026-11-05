@@ -1351,13 +1351,47 @@ def board_metrics(path, groups=None, edges=None, *, rails=None, proximity=None, 
         else:
             segments += 1
             length[pcbnew.LayerName(t.GetLayer())] += t.GetLength()
+    settings = board.GetDesignSettings()
+    board_cap = bool(getattr(settings, 'm_CapVias', False))
+    board_fill = bool(getattr(settings, 'm_FillVias', False))
     in_pad = []
+    unprotected_vias = []
+    seen_sites = set()
     for v in vias:
         pos = v.GetPosition()
+        drill_nm = v.GetDrillValue()
+        barrel_radius = drill_nm // 2
+        cap_mode = v.GetCappingMode()
+        fill_mode = v.GetFillingMode()
+        capped = (True if cap_mode == pcbnew.CAPPING_MODE_CAPPED
+                  else False if cap_mode == pcbnew.CAPPING_MODE_NOT_CAPPED
+                  else board_cap)
+        filled = (True if fill_mode == pcbnew.FILLING_MODE_FILLED
+                  else False if fill_mode == pcbnew.FILLING_MODE_NOT_FILLED
+                  else board_fill)
+        is_protected = (capped and filled)
+
         for fp in board.GetFootprints():
             for pad in fp.Pads():
-                if any(pad.IsOnLayer(layer) and pad.HitTest(pos, 0, layer) for layer in (pcbnew.F_Cu, pcbnew.B_Cu)):
-                    in_pad.append({'via': v.m_Uuid.AsString(), 'ref': fp.GetReference(), 'pad': pad.GetNumber()})
+                if any(pad.IsOnLayer(layer) and pad.HitTest(pos, barrel_radius, layer)
+                       for layer in (pcbnew.F_Cu, pcbnew.B_Cu, pcbnew.F_Paste, pcbnew.B_Paste)):
+                    site_key = (v.m_Uuid.AsString(), fp.GetReference(), str(pad.GetNumber()))
+                    if site_key not in seen_sites:
+                        seen_sites.add(site_key)
+                        site_entry = {
+                            'via': v.m_Uuid.AsString(),
+                            'ref': fp.GetReference(),
+                            'pad': pad.GetNumber(),
+                            'drill_mm': round(drill_nm / NM, 4),
+                            'position_mm': [round(pos.x / NM, 4), round(pos.y / NM, 4)],
+                            'capping': capped,
+                            'filling': filled,
+                            'protected': is_protected,
+                            'effective_protection': 'IPC-4761 Type VII' if is_protected else 'unprotected',
+                        }
+                        in_pad.append(site_entry)
+                        if not is_protected:
+                            unprotected_vias.append(site_entry)
     centres = {fp.GetReference(): (fp.GetPosition().x, fp.GetPosition().y) for fp in board.GetFootprints()}
     grouping = []
     for g in (groups or []):
@@ -1377,7 +1411,8 @@ def board_metrics(path, groups=None, edges=None, *, rails=None, proximity=None, 
     return {'board_sha256': sha256_bytes(data), 'track_segments': segments, 'track_arcs': arcs,
             'route_length_mm': {k: round(v / NM, 4) for k, v in sorted(length.items())},
             'route_length_total_mm': round(sum(length.values()) / NM, 4), 'vias': len(vias),
-            'via_in_pad': {'count': len(in_pad), 'sites': in_pad, 'method': 'via centre inside native pad copper (HitTest) on F.Cu/B.Cu'},
+            'via_in_pad': {'count': len(in_pad), 'sites': in_pad, 'unprotected': unprotected_vias,
+                           'method': 'via barrel inside native pad copper/paste (HitTest) on F.Cu/B.Cu/F.Paste/B.Paste'},
             'grouping': grouping, 'group_links': group_links, 'pad_edge_legs': pad_edge_legs, 'edges': edge_rows,
             'extraction': 'pcbnew GetTracks lengths (segments and arcs), all copper layers'}
 
@@ -2608,6 +2643,9 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
         problems.append('final board changed after block contract check')
     if mechanics_result.get('status') != 'not_declared' and mechanics_result.get('board_sha256') != final_board_sha256:
         problems.append('final board changed after acquisition mechanics check')
+    for s in metrics.get('via_in_pad', {}).get('sites', []):
+        if not s.get('protected', True):
+            problems.append(f"unprotected via-in-pad: {s['ref']} pad {s['pad']} at {s['position_mm']} mm lacks Type VII fill/cap")
     silk_conflicts = _silk_graphic_conflicts(report_)
     track_conflicts = _unrepairable_track_warnings(report_, reject_track_dangling=reject_track_dangling)
     failed = (problems or (reject_silk_graphics and silk_conflicts) or track_conflicts or any(split.values())

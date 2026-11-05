@@ -346,7 +346,8 @@ class NativeFabPackageTests(NativeRun):
         self.assertEqual(artifacts['candidate_id'], read_json(self.run_dir / 'candidate.json')['candidate_id'])
         names = sorted(Path(p).name for p in artifacts['files'])
         self.assertEqual(names, ['bom.csv', 'cpl.csv', 'fab-NPTH-drl_map.gbr', 'fab-NPTH.drl',
-                                 'fab-PTH-drl_map.gbr', 'fab-PTH.drl', 'gerbers.zip', 'manifest.json'])
+                                 'fab-PTH-drl_map.gbr', 'fab-PTH.drl', 'gerbers.zip', 'manifest.json',
+                                 'via-treatment.txt'])
         seal = read_json(self.run_dir / 'work/verification/evidence.json')['checks']['fab']['artifacts']
         for path, sha in artifacts['files'].items():
             self.assertEqual(seal[path], sha)
@@ -522,18 +523,25 @@ class RotationCompositionTests(NativeRun):
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
         artifacts = result['details']['artifacts']
         self.assertEqual(artifacts, artifact_record(self.run_dir, result))
-        self.assertIn('work/cpl/cpl/cpl.csv', artifacts['files'])
-        self.assertNotIn('work/fab/fab/cpl.csv', artifacts['files'])
+        self.assertIn('work/fab/fab/cpl.csv', artifacts['files'])
+        self.assertNotIn('work/cpl/cpl/cpl.csv', artifacts['files'])
         rotation = artifacts['rotation']
+        self.assertEqual(artifacts['files']['work/fab/fab/cpl.csv'], rotation['cpl_sha256'])
         self.assertEqual(result['details']['rotation'], rotation)
         self.assertEqual((rotation['status'], rotation['check_id']), ('PREVIEW_REQUIRED', 'cpl'))
         self.assertEqual(rotation['policy_sha256'], digest(CPL_FIXTURE / 'jlc-cpl-policy.json'))
-        self.assertEqual(rotation['native_cpl_sha256'], digest(self.run_dir / 'work/fab/fab/cpl.csv'))
+        self.assertEqual(rotation['cpl_sha256'], digest(self.run_dir / 'work/fab/fab/cpl.csv'))
+        self.assertEqual(rotation['cpl_sha256'],
+                         read_json(self.run_dir / 'work/fab/fab/manifest.json')['files']['cpl.csv'])
+        self.assertTrue((self.run_dir / 'work/fab/raw-native-cpl.csv').is_file())
+        self.assertEqual(rotation['native_cpl_sha256'], digest(self.run_dir / 'work/fab/raw-native-cpl.csv'))
         self.assertEqual(digest(self.run_dir / 'work/fab-export/fab/cpl.csv'), rotation['native_cpl_sha256'])
         self.assertNotEqual(rotation['cpl_sha256'], rotation['native_cpl_sha256'])
+        cpls = [p.name for p in (self.run_dir / 'work/fab/fab').glob('*cpl*')]
+        self.assertEqual(cpls, ['cpl.csv'])
         self.assertIn('cpl rotation PREVIEW_REQUIRED', result['summary'])
         seal = read_json(self.run_dir / 'work/verification/evidence.json')['checks']['fab']['artifacts']
-        self.assertEqual(seal['work/cpl/cpl/cpl.csv'], rotation['cpl_sha256'])
+        self.assertEqual(seal['work/fab/fab/cpl.csv'], rotation['cpl_sha256'])
         self.assertIn('fab-package:done-gate', load_baseline(self.run_dir)['coverage']['checks']['fab']['predicates'])
         # AGENTEE-151: PREVIEW_REQUIRED is done only as the recorded operator obligation, every corrected
         # CPL designator with its side, bound to the policy; the status itself is never upgraded.
@@ -787,8 +795,9 @@ class GenerationCampaignTests(GenerationCampaignFixture):
         self.assertEqual(artifacts, fab_artifacts(final))
         self.assertEqual(artifacts['rotation']['status'], 'PREVIEW_REQUIRED')
         self.assertEqual(artifacts['rotation']['policy_sha256'], digest(CPL_FIXTURE / 'jlc-cpl-policy.json'))
-        self.assertIn('work/cpl/cpl/cpl.csv', artifacts['files'])
-        self.assertNotIn('work/fab/fab/cpl.csv', artifacts['files'])
+        self.assertIn('work/fab/fab/cpl.csv', artifacts['files'])
+        self.assertEqual(artifacts['files']['work/fab/fab/cpl.csv'], artifacts['rotation']['cpl_sha256'])
+        self.assertNotIn('work/cpl/cpl/cpl.csv', artifacts['files'])
         obligations = artifacts['rotation']['preview_obligations']
         self.assertEqual(obligations['designators'], cpl_obligations(final / 'work/cpl/cpl/cpl.csv'))
 

@@ -67,7 +67,7 @@ LEGACY_SCHEMAS = ('agent-ee.fab-manifest/1',)
 MANIFEST_KEYS = frozenset(('schema', 'candidate_id', 'board_path', 'board_sha256', 'tool', 'files',
                            'headers', 'copper_layers', 'enabled_fab_layers', 'drill', 'designators',
                            'generated_utc'))
-OPTIONAL_MANIFEST_KEYS = frozenset(('bom_variant', 'probe_features'))
+OPTIONAL_MANIFEST_KEYS = frozenset(('bom_variant', 'probe_features', 'via_treatment'))
 MAX_MANIFEST_FILES = 4096
 REQUIRED_FILES = ('bom.csv', 'cpl.csv', 'gerbers.zip', 'pcb_summary.json')
 TEMPLATE_SCHEMA = 'agent-ee.jlc-templates/1'
@@ -595,6 +595,110 @@ def mechanical_inventory(data, components=None):
     if len(set(refs)) != len(refs):
         problems.append('duplicate mechanical footprint reference')
     return sorted(set(refs), key=natural_key), problems
+
+
+def kicad_rotate(x, y, deg):
+    rad = math.radians(deg)
+    return x * math.cos(rad) + y * math.sin(rad), -x * math.sin(rad) + y * math.cos(rad)
+
+
+def kicad_unrotate(x, y, deg):
+    rad = math.radians(deg)
+    return x * math.cos(rad) - y * math.sin(rad), x * math.sin(rad) + y * math.cos(rad)
+
+
+def extract_board_via_in_pad(board_bytes):
+    """Extract all via-in-pad sites from board S-expression with effective protection."""
+    from .symbol_library import parse_sexpr
+    root = parse_sexpr(board_bytes)
+    if root[0] != 'kicad_pcb':
+        return []
+    setup_capping, setup_filling = False, False
+    for setup in _lists(root, 'setup'):
+        for c in _lists(setup, 'capping'):
+            if len(c) > 1:
+                setup_capping = (c[1] == 'yes')
+        for f in _lists(setup, 'filling'):
+            if len(f) > 1:
+                setup_filling = (f[1] == 'yes')
+    vias = []
+    for v in _lists(root, 'via'):
+        at = _lists(v, 'at')
+        drill = _lists(v, 'drill')
+        if not at or not drill or len(at[0]) < 3 or len(drill[0]) < 2:
+            continue
+        vx, vy = float(at[0][1]), float(at[0][2])
+        d = float(drill[0][1])
+        c = _lists(v, 'capping')
+        f = _lists(v, 'filling')
+        capping = (c[0][1] == 'yes') if (c and len(c[0]) > 1) else setup_capping
+        filling = (f[0][1] == 'yes') if (f and len(f[0]) > 1) else setup_filling
+        uuid_node = _lists(v, 'uuid')
+        uuid_str = uuid_node[0][1] if (uuid_node and len(uuid_node[0]) > 1) else ''
+        vias.append({
+            'vx': vx, 'vy': vy, 'drill': d, 'radius': d / 2.0,
+            'capping': capping, 'filling': filling, 'uuid': uuid_str
+        })
+    if not vias:
+        return []
+    sites = []
+    seen = set()
+    for fp in _lists(root, 'footprint'):
+        at = _lists(fp, 'at')
+        if not at or len(at[0]) < 3:
+            continue
+        fx, fy = float(at[0][1]), float(at[0][2])
+        frot = float(at[0][3]) if len(at[0]) > 3 else 0.0
+        ref = ''
+        for p in _lists(fp, 'property'):
+            if len(p) > 2 and p[1] == 'Reference':
+                ref = p[2]
+                break
+        if not ref:
+            for t in _lists(fp, 'fp_text'):
+                if len(t) > 2 and t[1] == 'reference':
+                    ref = t[2]
+                    break
+        if not ref:
+            continue
+        for pad in _lists(fp, 'pad'):
+            pad_num = str(pad[1]) if len(pad) > 1 else ''
+            pat = _lists(pad, 'at')
+            psize = _lists(pad, 'size')
+            playres = _lists(pad, 'layers')
+            if not pat or not psize or not playres or len(pat[0]) < 3 or len(psize[0]) < 3:
+                continue
+            layers = [x for x in playres[0][1:] if isinstance(x, str)]
+            if not any(l in layers for l in ('F.Cu', 'B.Cu', 'F.Paste', 'B.Paste')):
+                continue
+            px, py = float(pat[0][1]), float(pat[0][2])
+            prot = float(pat[0][3]) if len(pat[0]) > 3 else 0.0
+            sx, sy = float(psize[0][1]), float(psize[0][2])
+            rx, ry = kicad_rotate(px, py, frot)
+            cpx, cpy = fx + rx, fy + ry
+            tot_rot = frot + prot
+            for v in vias:
+                dx, dy = v['vx'] - cpx, v['vy'] - cpy
+                lx, ly = kicad_unrotate(dx, dy, tot_rot)
+                cx = max(-sx / 2.0, min(sx / 2.0, lx))
+                cy = max(-sy / 2.0, min(sy / 2.0, ly))
+                dist = math.hypot(lx - cx, ly - cy)
+                if dist <= v['radius'] + 1e-4:
+                    key = (ref, pad_num, round(v['vx'], 4), round(v['vy'], 4))
+                    if key not in seen:
+                        seen.add(key)
+                        prot_ok = (v['capping'] and v['filling'])
+                        sites.append({
+                            'reference': ref,
+                            'pad': pad_num,
+                            'position_mm': [round(v['vx'], 4), round(v['vy'], 4)],
+                            'drill_mm': round(v['drill'], 4),
+                            'capping': v['capping'],
+                            'filling': v['filling'],
+                            'effective_protection': 'IPC-4761 Type VII' if prot_ok else 'unprotected',
+                            'via_uuid': v['uuid']
+                        })
+    return sorted(sites, key=lambda s: (natural_key(s['reference']), natural_key(s['pad']), s['position_mm']))
 
 
 def board_facts(data, probes=None, copper_features=()):
@@ -1177,6 +1281,17 @@ def _verify_manifest_fields(ctx, data):
             any(not isinstance(ref, str) or not ref for ref in mechanical) or
             len(set(mechanical)) != len(mechanical)):
         _manifest_fail('manifest', 'designators.mechanical must hold unique references')
+    if 'via_treatment' in data:
+        vt = data['via_treatment']
+        if (not isinstance(vt, dict)
+                or not ({'schema', 'status', 'count', 'note_file', 'note_sha256', 'sites'} <= set(vt))
+                or vt.get('schema') != 'agent-ee.via-treatment/1'
+                or vt.get('status') not in ('specified', 'none')
+                or not isinstance(vt.get('count'), int) or vt.get('count') < 0
+                or vt.get('note_file') != 'via-treatment.txt'
+                or not isinstance(vt.get('note_sha256'), str) or not re.fullmatch(r'[0-9a-f]{64}', vt.get('note_sha256'))
+                or not isinstance(vt.get('sites'), list) or len(vt.get('sites')) != vt.get('count')):
+            _manifest_fail('manifest', 'invalid via_treatment manifest record')
     return data
 
 
@@ -1204,6 +1319,18 @@ def _verify_package_inventory(stage, manifest, missing_files=None):
                     found[rel] = entry.stat(follow_symlinks=False).st_size
                 if len(found) > MAX_MANIFEST_FILES:
                     _manifest_fail('inventory', 'staging tree exceeds the file limit')
+    competing_cpl = sorted(
+        rel for rel in found
+        if rel != 'cpl.csv' and not rel.startswith(('gerbers/', 'drill/'))
+        and rel not in ('bom.csv', 'via-treatment.txt', 'pcb_summary.json', 'gerbers.zip')
+        and (
+            'cpl' in PurePosixPath(rel).stem.lower()
+            or 'placement' in PurePosixPath(rel).stem.lower()
+            or PurePosixPath(rel).stem.lower().startswith('pos')
+        )
+    )
+    if competing_cpl:
+        _manifest_fail('competing_cpl', f'competing CPL file(s) in fab folder: {competing_cpl}')
     declared = manifest['files']
     extra, missing = sorted(set(found) - set(declared)), sorted(set(declared) - set(found))
     if extra or (missing and missing_files is None):
@@ -1640,6 +1767,31 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
     (fab / 'cpl.csv').write_text(render_cpl(cpl))
     (fab / 'bom.csv').write_text(render_bom(rows))
     (fab / 'pcb_summary.json').write_text(summary[0])
+    vip_sites = extract_board_via_in_pad((ctx.inputs / board_rel).read_bytes())
+    from .fab_profile import format_via_in_pad_instruction
+    profile_data = None
+    if 'fab_profile' in (ctx.spec.get('params') or {}):
+        try:
+            profile_path = ctx.inputs / ctx.spec['params']['fab_profile']
+            if profile_path.is_file():
+                profile_data = read_json(profile_path)
+        except Exception:
+            pass
+    vip_instruction = format_via_in_pad_instruction(profile_data)
+    note_lines = []
+    if vip_sites:
+        note_lines.append(f"Via-in-pad treatment for {board_rel}:")
+        note_lines.append(f"Process requirement: {vip_instruction}")
+        note_lines.append(f"Total sites: {len(vip_sites)}")
+        for idx, s in enumerate(vip_sites, start=1):
+            note_lines.append(
+                f"  Site {idx}: {s['reference']}.{s['pad']} at ({s['position_mm'][0]}, {s['position_mm'][1]}) mm, "
+                f"drill {s['drill_mm']} mm, effective protection: {s['effective_protection']}"
+            )
+    else:
+        note_lines.append("Via-in-pad treatment: none. No via-in-pad sites detected on board.")
+    note_text = '\n'.join(note_lines) + '\n'
+    (fab / 'via-treatment.txt').write_text(note_text, encoding='utf-8')
     members = ([(p.name, p) for p in sorted((fab / 'gerbers').iterdir(), key=lambda p: p.name)] +
                [(p.name, p) for p in sorted((fab / 'drill').iterdir(), key=lambda p: p.name)])
     if len({name for name, _ in members}) != len(members):
@@ -1692,6 +1844,27 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
                                    ('name', 'project', 'registered', 'native_bom_sha256', 'binding_changes')}
     if probes:
         manifest['probe_features'] = probes
+    manifest['via_treatment'] = {
+        'schema': 'agent-ee.via-treatment/1',
+        'status': 'specified' if vip_sites else 'none',
+        'count': len(vip_sites),
+        'note_file': 'via-treatment.txt',
+        'note_sha256': digest(fab / 'via-treatment.txt'),
+        'sites': [
+            {
+                'reference': s['reference'],
+                'pad': s['pad'],
+                'position_mm': s['position_mm'],
+                'drill_mm': s['drill_mm'],
+                'capping': s['capping'],
+                'filling': s['filling'],
+                'effective_protection': s['effective_protection'],
+                'instruction': vip_instruction,
+            }
+            for s in vip_sites
+        ]
+    }
+    details['via_treatment'] = manifest['via_treatment']
     write_json(fab / 'manifest.json', manifest)
     try:
         load_verified_manifest(fab)

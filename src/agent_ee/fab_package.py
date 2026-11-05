@@ -47,11 +47,12 @@ from . import check_prerequisites as _requires
 
 import re
 from decimal import Decimal, InvalidOperation
+import shutil
 from pathlib import Path
 
 from . import fab_consistency, fab_export
 from .fab_export import read_native_cpl
-from .storage import digest, identity, read_json
+from .storage import digest, identity, read_json, write_json
 
 ARTIFACT_SCHEMA = 'agent-ee.fab-artifacts/1'
 SCHEMA = 'agent-ee.assembly-profile/1'
@@ -235,11 +236,12 @@ def rotation_record(run_dir, scope, candidate_id, manifest):
     status = report.get('status')
     if status not in ROTATION_STATUSES or report.get('physical_validation') is not (status == 'ok'):
         raise ValueError(f'cpl_rotation {cid!r} status {status!r} is invalid')
-    native_cpl = manifest.get('files', {}).get('cpl.csv')
-    if (report.get('candidate_id') != candidate_id or report.get('board_sha256') != manifest.get('board_sha256')
-            or not native_cpl or report.get('export', {}).get('cpl_sha256') != native_cpl):
-        raise ValueError(f'cpl_rotation {cid!r} did not correct this package\'s native cpl.csv')
+    manifest_cpl = manifest.get('files', {}).get('cpl.csv')
     corrected = report.get('cpl') or {}
+    native_cpl = report.get('export', {}).get('cpl_sha256')
+    if (report.get('candidate_id') != candidate_id or report.get('board_sha256') != manifest.get('board_sha256')
+            or not manifest_cpl or manifest_cpl != corrected.get('sha256')):
+        raise ValueError(f"cpl_rotation {cid!r} did not correct this package's native cpl.csv")
     if corrected.get('path') != 'cpl/cpl.csv' or digest(cpl_path) != corrected.get('sha256'):
         raise ValueError(f'cpl_rotation {cid!r} corrected CPL differs from its report')
     cpl_text = cpl_path.read_text(encoding='utf-8')
@@ -292,19 +294,16 @@ def artifact_record(run_dir, check):
         raise ValueError(f'fab_package {cid!r} package lacks {missing}')
     scope = read_json(run_dir / 'candidate.json')['scope']
     rotation = rotation_record(run_dir, scope, check['candidate_id'], manifest)
-    if rotation['status'] != 'not_declared':
-        wanted.remove('cpl.csv')
     sealed = {e.get('path') if isinstance(e, dict) else e for e in check.get('evidence', [])}
+    if rotation['status'] != 'not_declared' and rotation['cpl'] not in sealed:
+        raise ValueError(f"fab_package {cid!r} did not seal {rotation['cpl']}")
+    extras = [rel for rel in ('via-treatment.txt',) if rel in listed]
     files = {}
-    for rel in [*wanted, 'manifest.json']:
+    for rel in [*wanted, *extras, 'manifest.json']:
         path = f'work/{cid}/fab/{rel}'
         if path not in sealed:
             raise ValueError(f'fab_package {cid!r} did not seal {path}')
         files[path] = listed[rel] if rel != 'manifest.json' else digest(manifest_path)
-    if rotation['status'] != 'not_declared':
-        if rotation['cpl'] not in sealed:
-            raise ValueError(f"fab_package {cid!r} did not seal {rotation['cpl']}")
-        files[rotation['cpl']] = rotation['cpl_sha256']
     from .board_envelope import require_final
     # Last, bound to the candidate the done check ran for: a re-identified run is refused.
     require_final(run_dir, check['candidate_id'])
@@ -332,20 +331,6 @@ def check_fab_package(ctx):
     ctx.result['limitations'] += export_result.limitations_except('export_only')
     export_summary = export_result['summary']
 
-    sub_result = fab_consistency.gate(ctx, ctx.cid, ctx.spec, export_result, ctx.work / 'fab')
-    details['consistency'] = sub_result['details']
-    for entry in sub_result['evidence']:
-        if entry not in ctx.result['evidence']:
-            ctx.result['evidence'].append(entry)
-    ctx.result['limitations'] += sub_result['limitations']
-    if sub_result['execution'] != 'ok':
-        raise CheckError(sub_result['execution'], sub_result['summary'])
-    if sub_result['outcome'] == 'defect':
-        ctx.result.update(execution='ok', outcome='defect', location=sub_result['location'],
-                          summary=f'fab package done gate failed: {sub_result["summary"]}')
-        return
-    if (sub_result['execution'], sub_result['outcome']) != ('ok', 'pass'):
-        raise CheckError('malformed', 'fab consistency gate returned no verdict')
     rotation = declared_rotation(ctx.scope)
     if rotation is not None:
         prior = ctx.run_dir / 'checks' / f"{rotation['id']}.json"
@@ -361,6 +346,38 @@ def check_fab_package(ctx):
         for rel in (f"work/{rotation['id']}/cpl-rotation.json", f"work/{rotation['id']}/cpl/cpl.csv"):
             if rel in prior.get('evidence', []) and rel not in ctx.result['evidence']:
                 ctx.result['evidence'].append(rel)
+        native_cpl_path = ctx.work / 'fab' / 'cpl.csv'
+        raw_native_dest = ctx.work / 'raw-native-cpl.csv'
+        if native_cpl_path.is_file():
+            shutil.copyfile(native_cpl_path, raw_native_dest)
+            rel_raw = f"work/{ctx.cid}/raw-native-cpl.csv"
+            if rel_raw not in ctx.result['evidence']:
+                ctx.result['evidence'].append(rel_raw)
+        corrected_cpl_src = ctx.run_dir / f"work/{rotation['id']}/cpl/cpl.csv"
+        if not corrected_cpl_src.is_file():
+            raise CheckError('malformed', f"declared cpl_rotation {rotation['id']!r} corrected CPL missing")
+        shutil.copyfile(corrected_cpl_src, native_cpl_path)
+        manifest_path = ctx.work / 'fab' / 'manifest.json'
+        if manifest_path.is_file():
+            manifest = read_json(manifest_path)
+            manifest['files']['cpl.csv'] = digest(native_cpl_path)
+            write_json(manifest_path, manifest)
+            details['manifest_sha256'] = digest(manifest_path)
+
+    sub_result = fab_consistency.gate(ctx, ctx.cid, ctx.spec, export_result, ctx.work / 'fab')
+    details['consistency'] = sub_result['details']
+    for entry in sub_result['evidence']:
+        if entry not in ctx.result['evidence']:
+            ctx.result['evidence'].append(entry)
+    ctx.result['limitations'] += sub_result['limitations']
+    if sub_result['execution'] != 'ok':
+        raise CheckError(sub_result['execution'], sub_result['summary'])
+    if sub_result['outcome'] == 'defect':
+        ctx.result.update(execution='ok', outcome='defect', location=sub_result['location'],
+                          summary=f'fab package done gate failed: {sub_result["summary"]}')
+        return
+    if (sub_result['execution'], sub_result['outcome']) != ('ok', 'pass'):
+        raise CheckError('malformed', 'fab consistency gate returned no verdict')
     from .board_envelope import require_final
     try:
         # The exports above stay as diagnostics; the done gate and sealed release wait for qualification.
@@ -479,7 +496,11 @@ def assess_orientation(ctx, rotation):
     """
     from .catalog import strict_json
     from .checks import CheckError
-    native_cpl = (ctx.work / 'fab' / 'cpl.csv').read_text(encoding='utf-8')
+    raw_native = ctx.work / 'raw-native-cpl.csv'
+    if raw_native.is_file():
+        native_cpl = raw_native.read_text(encoding='utf-8')
+    else:
+        native_cpl = (ctx.work / 'fab' / 'cpl.csv').read_text(encoding='utf-8')
     rel = ctx.params.get('assembly_profile')
     if rel is None:
         return unassessed_record(rotation, native_cpl, 'no assembly profile declared')

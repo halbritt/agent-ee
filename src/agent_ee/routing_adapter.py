@@ -20,6 +20,7 @@ accepted.
 
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 
 from . import kicad_route_attempt as attempt
@@ -1021,6 +1022,28 @@ def board_refusal(route_dir, argv, exit_code):
     return {'reason_class': value['reason_class'], 'message': value['message'], 'record': value.get('record')}
 
 
+VIA_IN_PAD_LINE = re.compile(r'^VIA_IN_PAD_JSON:\s*(.+)$', re.MULTILINE)
+
+
+def parse_via_in_pad_record(text_or_dict):
+    """Extract structured via-in-pad data from a router log, stdout, or summary.json dict."""
+    if isinstance(text_or_dict, dict):
+        raw = text_or_dict.get('via_in_pad')
+        if isinstance(raw, dict):
+            return raw
+    if isinstance(text_or_dict, (str, bytes)):
+        text = text_or_dict.decode('utf-8', errors='replace') if isinstance(text_or_dict, bytes) else text_or_dict
+        match = VIA_IN_PAD_LINE.search(text)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except ValueError:
+                pass
+    return {'count': 0, 'sites': [], 'stamped': 0, 'restored': 0,
+            'protected': 0, 'unstampable': 0, 'site_created': 0,
+            'unprotected': [], 'note': ''}
+
+
 def bind_board_attempt(route_dir, argv, exit_code):
     """Bind one board-level kicad-route attempt output directory and verify its candidate digest."""
     route_dir = Path(route_dir)
@@ -1073,8 +1096,30 @@ def bind_board_attempt(route_dir, argv, exit_code):
     if sha != result.get('validation', {}).get('candidate_board_sha256'):
         return {**record, 'status': 'stale_candidate', 'failure_kind': 'environment',
                 'failing_stage': 'routing', 'reason': 'router candidate digest differs from validation'}
+    vip_record = None
+    summaries = sorted((route_dir / 'out').rglob('summary.json'))
+    if summaries and summaries[0].is_file():
+        try:
+            vip_record = parse_via_in_pad_record(json.loads(summaries[0].read_bytes()))
+        except (OSError, ValueError):
+            pass
+    if vip_record is None or vip_record.get('count') == 0:
+        for log_name in ('work/krt.log', 'krt.log', 'kicad-route.stdout'):
+            candidates = sorted(route_dir.rglob(Path(log_name).name))
+            if candidates and candidates[0].is_file():
+                try:
+                    parsed = parse_via_in_pad_record(candidates[0].read_text(encoding='utf-8', errors='replace'))
+                    if parsed.get('count', 0) > 0 or vip_record is None:
+                        vip_record = parsed
+                        if parsed.get('count', 0) > 0:
+                            break
+                except (OSError, ValueError):
+                    pass
+    if vip_record is None:
+        vip_record = parse_via_in_pad_record({})
     return {**record, 'status': 'routed', 'board': str(board), 'board_sha256': sha,
             'router_accepted': outcome == 'accepted',
+            'via_in_pad': vip_record,
             **({'impedance_plan': result['settings']['pair_impedance']}
                if 'pair_impedance' in result.get('settings', {}) else {})}
 

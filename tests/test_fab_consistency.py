@@ -517,6 +517,56 @@ class FabConsistencyTests(FabCase):
         del files['pcb_summary.json']
         self.assertStatus(self.run_case(files=files), 'malformed', 'unknown', 'required package file')
 
+    def test_planted_competing_cpl_in_fab_folder_refused_by_name(self):
+        for name in ('raw-cpl.csv', 'native-cpl.csv', 'cpl.raw.csv', 'placement.csv'):
+            with self.subTest(name=name):
+                files = package()
+                files[name] = b'Designator,Mid X,Mid Y,Layer,Rotation\n'
+                result = self.run_case(files=files)
+                self.assertStatus(result, 'malformed', 'unknown')
+                self.assertIn('competing CPL file(s) in fab folder', result['summary'])
+                self.assertIn(name, result['summary'])
+
+    def test_via_treatment_consistency_and_mutants(self):
+        note_content = 'Via-in-pad treatment: none. No via-in-pad sites detected on board.\n'
+        note_hash = hashlib.sha256(note_content.encode('utf-8')).hexdigest()
+
+        def add_vip(m):
+            m['schema'] = 'agent-ee.fab-manifest/2'
+            m['files']['via-treatment.txt'] = note_hash
+            m['designators']['mechanical'] = []
+            m['via_treatment'] = {
+                'schema': 'agent-ee.via-treatment/1',
+                'status': 'none',
+                'count': 0,
+                'note_file': 'via-treatment.txt',
+                'note_sha256': note_hash,
+                'sites': [],
+            }
+
+        files = package()
+        files['via-treatment.txt'] = note_content.encode('utf-8')
+        result = self.run_case(files=files, manifest_edit=add_vip)
+        self.assertStatus(result, 'ok', 'pass')
+        manifest = read_json(self.run_dir / 'work/export/fab/manifest.json')
+        self.assertIn('via_treatment', manifest)
+        self.assertEqual(manifest['via_treatment']['status'], 'none')
+        self.assertEqual(manifest['via_treatment']['count'], 0)
+        self.assertEqual(manifest['via_treatment']['note_file'], 'via-treatment.txt')
+
+        def tamper_note(stage):
+            (stage / 'via-treatment.txt').write_text('Tampered note')
+        self.assertStatus(self.run_case(files=files, manifest_edit=add_vip, post=tamper_note),
+                          'malformed', 'unknown', 'differ from manifest')
+
+        def forged_sites(m):
+            add_vip(m)
+            m['via_treatment']['sites'] = [{'reference': 'U1', 'pad': '1', 'position_mm': [0, 0],
+                                            'drill_mm': 0.3, 'capping': True, 'filling': True,
+                                            'effective_protection': 'IPC-4761 Type VII', 'instruction': 'none'}]
+            m['via_treatment']['count'] = 1
+        self.assertStatus(self.run_case(files=files, manifest_edit=forged_sites), 'ok', 'defect')
+
     def test_manifest_tampering_is_malformed(self):
         edits = {
             'candidate': (lambda m: m.update(candidate_id='0' * 64), 'different candidate'),

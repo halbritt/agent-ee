@@ -624,20 +624,25 @@ def check_cpl(rows, defects):
     return placements
 
 
-def check_coordinates(cpl, geometry, by_ref, defects):
+def check_coordinates(cpl, geometry, by_ref, defects, expected_cpl=None):
     """fab_export/1 uses the footprint anchor, absolute X and negated board Y on both sides."""
     native_positions = {fp[0]: fp[-1] for fp in geometry}
     records = []
     for ref, placement in sorted(cpl.items()):
         if len(by_ref.get(ref, ())) != 1:
             continue  # reference parity/duplicates are reported separately
-        x, y = native_positions[ref]
-        expected = [Decimal(x) / 1_000_000, -Decimal(y) / 1_000_000]
-        delta = [abs(actual - native) for actual, native in zip(placement['position_mm'], expected)]
+        if expected_cpl is not None and ref in expected_cpl:
+            expected = expected_cpl[ref]
+            basis = 'corrected'
+        else:
+            x, y = native_positions[ref]
+            expected = [Decimal(x) / 1_000_000, -Decimal(y) / 1_000_000]
+            basis = 'native'
+        delta = [abs(actual - exp) for actual, exp in zip(placement['position_mm'], expected)]
         # Compare to exact bounds: subtracting an arbitrarily precise CSV value
         # first could round a just-outside coordinate onto the tolerance boundary.
-        exceeds = any(actual < native - COORDINATE_TOLERANCE or actual > native + COORDINATE_TOLERANCE
-                      for actual, native in zip(placement['position_mm'], expected))
+        exceeds = any(actual < exp - COORDINATE_TOLERANCE or actual > exp + COORDINATE_TOLERANCE
+                      for actual, exp in zip(placement['position_mm'], expected))
         records.append({'ref': ref, 'expected_mm': [float(n) for n in expected],
                         'actual_mm': [float(n) for n in placement['position_mm']],
                         'delta_mm': [float(n) for n in delta], 'outcome': 'defect' if exceeds else 'pass'})
@@ -646,7 +651,7 @@ def check_coordinates(cpl, geometry, by_ref, defects):
             expected_text = ', '.join(str(n) for n in expected)
             defects.append({'code': 'cpl_coordinates', 'file': 'cpl.csv', 'locator':
                             f'cpl.csv row {placement["row"]} designator {ref} coordinates '
-                            f'({actual_text}) differ from native ({expected_text}) '
+                            f'({actual_text}) differ from {basis} ({expected_text}) '
                             f'by more than {COORDINATE_TOLERANCE} mm'})
     return {'convention': 'absolute-board-x-negative-y', 'tolerance_mm': float(COORDINATE_TOLERANCE),
             'records': records}
@@ -909,7 +914,59 @@ def _gate(ctx, eid, export_spec, export_result, stage):
                             f'cpl.csv row {placement["row"]} designator {ref} Layer {placement["layer"]} '
                             f'but board footprint is {boards[0]["side"]}'})
 
-    details['coordinates'] = check_coordinates(cpl, geometry, by_ref, defects)
+    expected_cpl = None
+    rotation_checks = [c for c in (ctx.scope or {}).get('checks', ()) if c.get('kind') == 'cpl_rotation']
+    if rotation_checks:
+        rot_check_id = rotation_checks[0]['id']
+        rot_check_file = ctx.run_dir / 'checks' / f'{rot_check_id}.json'
+        if rot_check_file.is_file():
+            rot_result = read_json(rot_check_file)
+            if (rot_result.get('execution'), rot_result.get('outcome')) == ('ok', 'pass'):
+                rot_report_path = ctx.run_dir / f'work/{rot_check_id}/cpl-rotation.json'
+                if rot_report_path.is_file():
+                    rot_report = read_json(rot_report_path)
+                    corr = rot_report.get('cpl') or {}
+                    if digest(stage / 'cpl.csv') != corr.get('sha256'):
+                        defects.append({'code': 'uncorrected_cpl', 'file': 'cpl.csv',
+                                        'locator': 'fab folder cpl.csv differs from sealed corrected CPL'})
+                    expected_cpl = {r['designator']: [Decimal(r['cpl'][1]), Decimal(r['cpl'][2])]
+                                    for r in rot_report.get('designators', [])
+                                    if r.get('cpl') and len(r['cpl']) >= 3}
+
+    details['coordinates'] = check_coordinates(cpl, geometry, by_ref, defects, expected_cpl=expected_cpl)
+
+    from .fab_export import extract_board_via_in_pad
+    board_bytes = (ctx.inputs / ctx.scope['board']).read_bytes()
+    board_vip_sites = extract_board_via_in_pad(board_bytes)
+    for s in board_vip_sites:
+        if not s.get('protected', True):
+            defects.append({'code': 'via_in_pad_unprotected',
+                            'locator': f"via-in-pad at {s['reference']} pad {s['pad']} ({s['position_mm']}) lacks Type VII fill/cap protection"})
+    if 'via_treatment' in manifest:
+        m_vip = manifest['via_treatment']
+        note_name = m_vip.get('note_file', 'via-treatment.txt')
+        note_path = stage / note_name
+        if not note_path.is_file():
+            defects.append({'code': 'via_treatment_missing', 'file': note_name,
+                            'locator': f'manifest via_treatment note file {note_name} is absent'})
+        else:
+            note_sha = digest(note_path)
+            if note_sha != m_vip.get('note_sha256') or note_sha != manifest.get('files', {}).get(note_name):
+                defects.append({'code': 'via_treatment_note_mismatch', 'file': note_name,
+                                'locator': f'{note_name} digest differs from manifest'})
+        b_map = {(s['reference'], s['pad'], tuple(s['position_mm'])): s for s in board_vip_sites}
+        m_map = {(s['reference'], s['pad'], tuple(s['position_mm'])): s for s in m_vip.get('sites', [])}
+        for k in sorted(set(b_map) - set(m_map)):
+            defects.append({'code': 'via_treatment_mismatch',
+                            'locator': f'via-in-pad site {k[0]}.{k[1]} at {list(k[2])} mm missing from manifest via_treatment'})
+        for k in sorted(set(m_map) - set(b_map)):
+            defects.append({'code': 'via_treatment_mismatch',
+                            'locator': f'manifest via_treatment lists site {k[0]}.{k[1]} at {list(k[2])} mm not on board'})
+        for k in sorted(set(b_map) & set(m_map)):
+            bs, ms = b_map[k], m_map[k]
+            if (bs['capping'], bs['filling']) != (ms.get('capping'), ms.get('filling')):
+                defects.append({'code': 'via_treatment_mismatch',
+                                'locator': f'via-in-pad site {k[0]}.{k[1]} at {list(k[2])} mm protection changed'})
 
     models = []
     libraries = load_model_libraries(ctx)
