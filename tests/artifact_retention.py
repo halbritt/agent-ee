@@ -61,7 +61,9 @@ class RetainedTemporaryDirectory(tempfile.TemporaryDirectory):
         super().__init__(**kwargs)
 
     def cleanup(self):
-        if not self.retained:
-            retain(self.test_id, roots=[Path(self.name)])
-            self.retained = True
-        super().cleanup()
+        try:
+            if not self.retained:
+                self.retained = True  # A failed capture must not be retried by cleanup.
+                retain(self.test_id, roots=[Path(self.name)])
+        finally:
+            super().cleanup()
