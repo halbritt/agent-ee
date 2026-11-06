@@ -1620,6 +1620,16 @@ class NativeReceiptCase:
         self.assertFalse((routing / 'attempt/work/input').exists())
         return routing / 'attempt', omitted
 
+    def capture_consumer_boundary(self, boundary):
+        """Capture direct-consumer observations before either fixture owner tears down."""
+        self.addCleanup(boundary.doCleanups)
+        self.consumer_outcomes = []
+        payload = {'source_input': {'path': str(self.source), 'run_identity': self.RUN,
+                                    'source_identity': self.SOURCE, 'pinned_files': self.PINNED},
+                   'consumer_outcomes': self.consumer_outcomes}
+        self.addCleanup(retain_test_artifacts, self.id(), payload,
+                        roots=[self.source, self.root, Path(boundary.tmp.name)])
+
     def grade(self, attempt_dir, observed, run_dir=None, source_dir=None, result=None):
         result = result or json.loads((attempt_dir / 'result.json').read_text())
         record = attempt.experiment_grade({'experiment_policy': self.policy}, result, attempt_dir,
@@ -1865,7 +1875,7 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
         # tree at a neutral path is an original and runs.
         boundary = ExperimentBoundaryTest('setUp')
         boundary.setUp()
-        self.addCleanup(boundary.doCleanups)
+        self.capture_consumer_boundary(boundary)
         record = json.loads((self.run_copy / 'attempt.json').read_text())
         project = PurePosixPath(record['candidate_dir']).name
         self.assertEqual(PurePosixPath(record['candidate_dir']).parent.name, 'candidate')
@@ -1888,8 +1898,10 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
                 root = self.root / f'consumer-{label.replace(" ", "-")}'
                 spec = boundary.routing_step(root, {'name': 'complete'}, self.policy, **request)
                 receipt_dir = root / 'receipts/1-kicad-route-builtin'
-                with self.assertRaisesRegex(ValueError, detail):
+                with self.assertRaisesRegex(ValueError, detail) as refused:
                     stage_receipts.run_step(receipt_dir, design, spec, {'implementation': 1, 'receipt_index': 1})
+                self.consumer_outcomes.append({'label': label, 'raised': {
+                    'type': type(refused.exception).__name__, 'message': str(refused.exception)}})
                 self.assertFalse(os.path.lexists(receipt_dir))
         # Without a declared experiment policy no origin evidence is consumed: a run's own
         # candidate or one beside a run record still refuses, a directory that is only
@@ -1899,9 +1911,11 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
             with self.subTest(label):
                 root = self.root / f'consumer-{label.replace(" ", "-").replace(",", "")}'
                 spec = boundary.routing_step(root, {'name': 'complete'}, policy, **request)
-                with self.assertRaisesRegex(ValueError, 'predecessor'):
+                with self.assertRaisesRegex(ValueError, 'predecessor') as refused:
                     stage_receipts.run_step(root / 'receipts/1-kicad-route-builtin', design, spec,
                                             {'implementation': 1, 'receipt_index': 1})
+                self.consumer_outcomes.append({'label': label, 'raised': {
+                    'type': type(refused.exception).__name__, 'message': str(refused.exception)}})
         for label, design, policy in (('neutral original', neutral, self.policy),
                                       ('directory named candidate, no policy', orphan, None)):
             with self.subTest(label):
@@ -1909,6 +1923,7 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
                 spec = boundary.routing_step(root, {'name': 'complete'}, policy, **request)
                 receipt = stage_receipts.run_step(root / 'receipts/1-kicad-route-builtin', design, spec,
                                                   {'implementation': 1, 'receipt_index': 1})
+                self.consumer_outcomes.append({'label': label, 'receipt': receipt})
                 self.assertIsNotNone(receipt['execution'])
 
     def test_a_capture_run_inputs_layout_is_refused_and_its_neutral_copy_runs(self):
@@ -1920,7 +1935,7 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
         # to a neutral path is an original and runs.
         boundary = ExperimentBoundaryTest('setUp')
         boundary.setUp()
-        self.addCleanup(boundary.doCleanups)
+        self.capture_consumer_boundary(boundary)
         record = json.loads((self.run_copy / 'attempt.json').read_text())
         project = PurePosixPath(record['candidate_dir']).name
         capture = self.root / 'campaign/runs/2'
@@ -1935,9 +1950,11 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
                 root = self.root / f'consumer-{label.replace(" ", "-").replace(",", "")}'
                 spec = boundary.routing_step(root, {'name': 'complete'}, policy, **request)
                 receipt_dir = root / 'receipts/1-kicad-route-builtin'
-                with self.assertRaisesRegex(ValueError, 'without a readable owning run'):
+                with self.assertRaisesRegex(ValueError, 'without a readable owning run') as refused:
                     stage_receipts.run_step(receipt_dir, capture / 'inputs', spec,
                                             {'implementation': 1, 'receipt_index': 1})
+                self.consumer_outcomes.append({'label': label, 'raised': {
+                    'type': type(refused.exception).__name__, 'message': str(refused.exception)}})
                 self.assertFalse(os.path.lexists(receipt_dir))
         for label, policy in (('neutral copy', self.policy), ('neutral copy, no policy', None)):
             with self.subTest(label):
@@ -1945,6 +1962,7 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
                 spec = boundary.routing_step(root, {'name': 'complete'}, policy, **request)
                 receipt = stage_receipts.run_step(root / 'receipts/1-kicad-route-builtin', neutral, spec,
                                                   {'implementation': 1, 'receipt_index': 1})
+                self.consumer_outcomes.append({'label': label, 'receipt': receipt})
                 self.assertIsNotNone(receipt['execution'])
 
     def test_the_real_receipt_as_an_adapter_execution_is_refused_and_not_adopted(self):
@@ -1954,7 +1972,7 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
         # replays its committed sidecar and manifests the same way).
         boundary = ExperimentBoundaryTest('setUp')
         boundary.setUp()
-        self.addCleanup(boundary.doCleanups)
+        self.capture_consumer_boundary(boundary)
         spec = json.loads((REAL / 'receipts.json').read_text())['runs']['final-current']
         body = json.loads((self.run_copy / attempt.EXPERIMENT_SIDECAR).read_text())
         # Every file the sidecar seals, and its snapshot, as the router's run: every digest
@@ -1966,9 +1984,12 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
                                     'replay': {'sidecar': (self.run_copy / attempt.EXPERIMENT_SIDECAR).read_text(),
                                                'copy': (self.run_copy / attempt.EXPERIMENT_POLICY_COPY).read_text()}},
                                    self.policy)
+        self.consumer_outcomes.append({'receipt': outcome[0], 'receipt_directory': str(outcome[1]),
+                                       'adapter_report': outcome[3]})
         record = RealReceiptReplayTest.refused(boundary, outcome, 'run_mismatch',
                                                f"attempt.json source_dir '{K91_FINAL_SOURCE}' is not this attempt's "
                                                'input /work/routing/agent-ee-original/project')
+        self.consumer_outcomes.append({'replayed_refusal': record})
         self.assertEqual(record['identity_sha256'], K91_REVIEWED['native_receipt']['identity_sha256'])
         self.assertEqual(outcome[3]['omitted_design_files'][attempt.EXPERIMENT_RAW_OUTPUT],
                          K91_FINAL_PINNED[attempt.EXPERIMENT_RAW_OUTPUT])

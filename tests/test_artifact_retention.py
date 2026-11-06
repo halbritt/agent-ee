@@ -42,6 +42,94 @@ class ArtifactRetentionTests(unittest.TestCase):
                 self.assertIsNone(retain(self.id(), {'value': 1}))
             self.assertFalse(Path(working).exists())
 
+    def test_capture_failure_does_not_skip_cleanup_or_hide_the_original_test_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            destination = Path(temp) / 'blocked'
+            destination.write_text('a file cannot contain retained evidence')
+            paths = []
+            resources = []
+
+            class Probe(unittest.TestCase):
+                def runTest(self):
+                    working = RetainedTemporaryDirectory(self.id())
+                    resources.append(working)  # Observe explicit cleanup, before finalizer fallback.
+                    paths.append(Path(working.name))
+                    self.addCleanup(working.cleanup)
+                    raise RuntimeError('original consumer diagnostic')
+
+            with patch.dict(os.environ, {'AGENT_EE_EVIDENCE_DIR': str(destination)}):
+                result = unittest.TestResult()
+                Probe().run(result)
+            self.assertEqual(len(result.errors), 2)
+            diagnostics = '\n'.join(text for _, text in result.errors)
+            self.assertIn('original consumer diagnostic', diagnostics)
+            self.assertIn('NotADirectoryError', diagnostics)
+            self.assertTrue(all(not path.exists() for path in paths))
+
+    def test_native_consumer_cleanup_captures_source_and_both_owned_roots(self):
+        from tests.test_routing_experiment_boundary import NativeReceiptCase
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'source'
+            source.mkdir()
+            (source / 'input.json').write_text('{"fixture":"portable lifecycle only"}')
+            evidence = root / 'evidence'
+            paths = []
+
+            class Probe(NativeReceiptCase, unittest.TestCase):
+                RUN, SOURCE, PINNED = 'portable-run', 'owned-portable-source', {}
+                fail_body = False
+
+                def setUp(self):
+                    self.source = source
+                    workspace = tempfile.TemporaryDirectory()
+                    self.addCleanup(workspace.cleanup)
+                    self.root = Path(workspace.name)
+                    paths.append(self.root)
+
+                def runTest(self):
+                    boundary = unittest.TestCase()
+                    boundary.tmp = tempfile.TemporaryDirectory()
+                    boundary.addCleanup(boundary.tmp.cleanup)
+                    paths.append(Path(boundary.tmp.name))
+                    self.capture_consumer_boundary(boundary)
+                    (self.root / 'disposable.json').write_text('{"owned":"disposable"}')
+                    (Path(boundary.tmp.name) / 'receipt.json').write_text('{"status":"refused"}')
+                    self.consumer_outcomes.append({'fixture': 'portable', 'refusal': 'observed refusal'})
+                    if self.fail_body:
+                        raise RuntimeError('original direct-consumer diagnostic')
+
+            with patch.dict(os.environ, {'AGENT_EE_EVIDENCE_DIR': str(evidence)}):
+                result = unittest.TestResult()
+                probe = Probe()
+                probe.run(result)
+            self.assertTrue(result.wasSuccessful(), result.errors)
+            self.assertTrue(all(not path.exists() for path in paths))
+            record_path, = evidence.rglob('evidence.json')
+            record = json.loads(record_path.read_text())
+            self.assertEqual(record['test_id'], probe.id())
+            self.assertEqual(record['payload']['source_input']['path'], str(source))
+            self.assertEqual(record['payload']['consumer_outcomes'],
+                             [{'fixture': 'portable', 'refusal': 'observed refusal'}])
+            self.assertEqual(len(record['roots']), 3)
+            self.assertEqual(json.loads((record_path.parent / 'root-2/receipt.json').read_text()),
+                             {'status': 'refused'})
+            self.assertTrue((record_path.parent / 'root-0/input.json').is_file())
+            self.assertTrue((record_path.parent / 'root-1/disposable.json').is_file())
+            blocked = root / 'blocked'
+            blocked.write_text('capture cannot create a directory here')
+            Probe.fail_body = True
+            with patch.dict(os.environ, {'AGENT_EE_EVIDENCE_DIR': str(blocked)}):
+                failed = unittest.TestResult()
+                Probe().run(failed)
+            self.assertEqual(len(failed.errors), 2)
+            diagnostic = '\n'.join(text for _, text in failed.errors)
+            self.assertIn('original direct-consumer diagnostic', diagnostic)
+            self.assertIn('NotADirectoryError', diagnostic)
+            self.assertTrue(all(not path.exists() for path in paths))
+            self.assertEqual((source / 'input.json').read_text(), '{"fixture":"portable lifecycle only"}')
+
 
 if __name__ == '__main__':
     unittest.main()

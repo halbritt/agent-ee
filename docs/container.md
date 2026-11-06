@@ -822,6 +822,10 @@ refusal diagnostics and disposable input trees before temporary-directory cleanu
 when `AGENT_EE_EVIDENCE_DIR` is set. `tests/artifact_retention.py` writes exact test
 IDs and byte inventories below `/artifacts/tests`; symlinks are preserved as links
 and linked targets are not copied. Test assertions and identities are unchanged.
+Direct K91 consumer cases also capture their separately owned consumer workspace,
+returned receipts/replay states and actual refusal diagnostics. Capture runs before
+either fixture cleanup. A capture error fails the test while cleanup still runs;
+an original test failure remains visible alongside a cleanup failure.
 
 A producer-declared module-local unavailable input remains a required setup failure
 for that module, even if a path happens to exist in the image. Other modules remain
