@@ -8,6 +8,8 @@ import time
 import unittest
 from pathlib import Path
 
+from agent_ee import native_run
+from agent_ee.datasheet_facts import capture_extractor
 from agent_ee.baseline import freeze_evidence, load_baseline, verify_evidence
 from agent_ee.candidate import capture
 from agent_ee.run_record import verify, run_review
@@ -17,6 +19,83 @@ from toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 PDF = ROOT / 'references/TJA1051.pdf'
+
+
+class ExtractorCaptureTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.binary = self.root / 'pdftotext'
+        self.binary.write_bytes(b'recorded extractor binary')
+        self.selector = {'path': str(self.binary)}
+        self.extractor_patch = patch('agent_ee.datasheet_facts.EXTRACTOR', str(self.binary))
+        self.extractor_patch.start()
+        self.addCleanup(self.extractor_patch.stop)
+
+    def test_failed_or_unusable_version_probe_refuses_identity(self):
+        for name, outcome, error in (
+                ('failed', native_run.Outcome(exit_code=1), 'identity probe failed'),
+                ('empty', native_run.Outcome(), 'returned no version'),
+                ('malformed', native_run.Outcome(stderr=b'not a version\n'), 'extractor requires')):
+            with self.subTest(name=name), native_run.using(native_run.Recorded(lambda call: outcome)):
+                with self.assertRaisesRegex(ValueError, error):
+                    capture_extractor(self.selector, self.root, self.root / name)
+
+    def test_binary_replaced_during_version_probe_refuses_identity(self):
+        def replace_binary(call):
+            self.binary.write_bytes(b'replaced extractor')
+            return native_run.Outcome(stderr=b'pdftotext version 24.02.0\n')
+
+        with native_run.using(native_run.Recorded(replace_binary)):
+            with self.assertRaisesRegex(ValueError, 'pdftotext hash changed'):
+                capture_extractor(self.selector, self.root, self.root / 'probe')
+
+    def test_exhausted_deadline_refuses_before_probe(self):
+        with native_run.using(native_run.Recorded(), deadline=time.monotonic() - 1):
+            with self.assertRaises(native_run.DeadlineExhausted):
+                capture_extractor(self.selector, self.root, self.root / 'expired')
+        self.assertFalse((self.root / 'expired').exists())
+
+    def test_missing_binary_refuses_before_probe(self):
+        self.binary.unlink()
+        with native_run.using(native_run.Recorded()):
+            with self.assertRaises(FileNotFoundError):
+                capture_extractor(self.selector, self.root, self.root / 'missing')
+        self.assertFalse((self.root / 'missing').exists())
+
+    def test_cancelled_probe_propagates_interrupt_and_retains_execution(self):
+        outcome = native_run.Outcome(exit_code=None, execution='interrupted')
+        work = self.root / 'cancelled'
+        with native_run.using(native_run.Recorded(lambda call: outcome)):
+            with self.assertRaises(KeyboardInterrupt):
+                capture_extractor(self.selector, self.root, work)
+        self.assertEqual(read_json(work / 'execution.json')['execution'], 'interrupted')
+
+    def test_review_budget_bounds_capture_probe_and_preserves_timeout(self):
+        scope = {'schema': 'agent-ee.scope/1',
+                 'inputs': [{'path': str(self.binary), 'at': 'binary'}],
+                 'checks': [{'id': 'facts', 'kind': 'datasheet_facts', 'params': {
+                     'facts': 'facts.json', 'extractor': self.selector}}]}
+        scope_path = self.root / 'scope.json'
+        write_json(scope_path, scope)
+
+        def timeout_probe(call):
+            if call.intent.tool == 'probe':
+                return native_run.Outcome(exit_code=None, execution='timeout')
+            return native_run.Outcome(stdout=b'recorded-revision\n')
+
+        run = self.root / 'run'
+        with native_run.using(native_run.Recorded(timeout_probe)), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_review(scope_path, run, 5, host={'runtime_files': {}}), 1)
+        result = read_json(run / 'result.json')
+        self.assertEqual(result['state'], 'incomplete')
+        self.assertIn('DeadlineExhausted', result['error'])
+        execution = read_json(run / 'capture/pdftotext-version/execution.json')
+        self.assertEqual(execution['execution'], 'timeout')
+        self.assertLessEqual(execution['timeout_s'], 5)
+        self.assertFalse((run / 'candidate.json').exists())
 
 
 def text_pdf(path, lines, to_unicode=None):
