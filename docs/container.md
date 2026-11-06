@@ -525,21 +525,79 @@ external Git checkout of `https://github.com/HZou9/PCBSchemaGen_v2`, at any
 commit (normally the current `main`), including `framework/topo`,
 `framework/task_config.yaml`, `component.json`, `kg_component.json` and
 `kg/kg_open_schematics.json`. Install the checkout's Python requirements in
-the test environment. Agent-ee does not vendor this verifier or its graphs.
+the test environment. The native image includes the deterministic adapter's
+`yaml` and `networkx` dependencies. Agent-ee does not vendor this verifier or its graphs.
 Provision it outside the image, with the checkout and its Git metadata owned by
 the UID/GID of the user that runs the tests inside the container. As with the
 fome-mc store in `ci.yml`, Git refuses a checkout owned by another user. Mount
 it read-only into the test container, then set `PCBSCHEMAGEN_ROOT` to that
 container path. The default is
-`~/git/PCBSchemaGen_v2`. See the
+`/opt/agent-ee-inputs/pcbschemagen`. See the
 [benchmarking guide](benchmarking-guide.md#executing-pcbschemagen-benchmarks).
-The CI runner and `ae-ci-exec` do not provision this input yet. A full strict
-suite therefore reports the 12 real-verifier tests as not executed and fails
-until the input is supplied. Adapter translation and dependency-refusal tests
+The local `ae-ci-exec` runner accepts an explicit input manifest, described below.
+A full strict suite reports the 12 real-verifier tests as not executed and fails
+when the input is absent. Adapter translation and dependency-refusal tests
 run without it. The checkout check requires tracked files to match the
 checkout's commit, which the tests compare with the recorded `verifier.commit`;
 untracked files do not make the checkout dirty. Gate 1 imports the verifier from
 a private `git archive` copy of that commit, so a read-only mount is enough.
+
+For local strict execution, install the reviewed infra runner and its sibling
+`native-inputs.py` from `infra/shared/agent-ee`. Select a durable manifest with
+`AE_CI_INPUT_MANIFEST` (default `~/.config/agent-ee/native-inputs.json` when
+present) and a durable output root with `AE_CI_EVIDENCE_DIR`. The runner verifies
+each explicitly selected input before the test command, retains a separate copy,
+and exports only its named input variable. It also records the clean agent-ee
+commit/tree, input inventories and verifier commit, selected image, and runner
+digest. Existing `ci.yml` fome-mc and J1 drawing selection remains active.
+
+```json
+{
+  "schema": "agent-ee.native-inputs/1",
+  "inputs": [
+    {
+      "name": "pcbschemagen",
+      "env": "PCBSCHEMAGEN_ROOT",
+      "path": "/durable/selected/PCBSchemaGen_v2",
+      "git": true
+    }
+  ]
+}
+```
+
+For K91 inputs, add entries with `name`, `env`, `path` and a `files` object in
+place of `git`. The `files` object must enumerate every regular file and its exact SHA-256;
+missing, extra, damaged or linked entries refuse setup. Generate this inventory
+with `python3 native-inputs.py inventory /durable/retained/k91-final` after
+checking the historical receipt against its retained producer identity. Provision
+the protected receipts the same way, using `AGENT_EE_K91_PROTECTED_EXISTING` and
+`AGENT_EE_K91_PROTECTED_HUMAN`. Keep their original run/source identities and
+original/prepared inputs unchanged. Store receipt bytes and the local manifest
+outside this public repository; use stable storage rather than `/tmp` or an
+ambient HOME-derived producer checkout.
+
+The runner mounts each copy read-only at `/opt/agent-ee-inputs/NAME`. A Git input
+is a standalone checkout of the clean commit selected for that run, with its own
+objects; later source movement cannot alter it. The adapter still creates its
+private archive and enforces the existing custody and import-origin guards.
+Writable outputs appear at `/artifacts`, with the input receipt at
+`$AGENT_EE_RUN_INPUT_RECEIPT`; input snapshots remain outside that writable mount.
+The host evidence root retains snapshots, receipts, and outputs after scratch
+cleanup. These provisioning records establish input selection, not test success.
+
+Inputs that need different values in different test modules can add
+`"modules": ["test_acquisition_prepare", "test_typed_overlay"]` to their entry.
+Such variables are scoped rather than exported globally. An optional top-level
+`outputs` list uses entries with `name`, `env` and `modules`; each output leaf is
+kept absent under `/artifacts/modules/MODULE/NAME` while its parent is created.
+The producer mounts a read-only `agent-ee.module-env/1` mapping at
+`$AGENT_EE_MODULE_ENV`. The composed strict-suite consumer must call
+`strict_inputs.validate` before dispatch and use `strict_inputs.for_module` to
+copy each child environment. The validator refuses unknown modules, reserved
+variables, missing inputs, path escapes and existing output leaves. Inputs stay
+under `/opt/agent-ee-inputs`; outputs stay under the selected module's artifact
+directory. This preserves distinct historical source inventories that share an
+environment variable without changing their pinned test identities.
 
 [test_pod_j1_courtyard.py](../tests/test_pod_j1_courtyard.py) uses committed
 fixtures and needs only the public TE drawing of the AMPSEAL connector, which

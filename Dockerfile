@@ -160,10 +160,11 @@ COPY --from=kicad-happy /opt/kicad-happy.install.json /opt/kicad-happy.install.j
 # mount is a /usr submount that the stage-receipt refusal rightly rejects.
 RUN set -eu; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
-    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends zstd tini; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends zstd tini python3-yaml python3-networkx; \
     rm -f /usr/local/bin/apt-retry; \
     rm -rf /var/lib/apt/lists/*; \
     zstd --version | grep -q -E '(\*\*\* zstd|v[0-9]+\.[0-9]+)'; \
+    /usr/bin/python3 -c 'import yaml, networkx; print("PCBSchemaGen dependencies:", yaml.__version__, networkx.__version__)'; \
     test -x /usr/bin/tini; \
     /usr/bin/python3 -c 'import hashlib, json, subprocess; \
 packages = dict(line.split("\t") for line in subprocess.check_output(["dpkg-query", "-W", "-f=${Package}\t${Version}\n", "bubblewrap", "python3", "poppler-utils", "poppler-data", "ripgrep", "zstd", "tini"]).decode().splitlines() if line); \
