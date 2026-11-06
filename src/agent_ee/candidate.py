@@ -67,7 +67,7 @@ def source_manifest(scope, base):
     return files, sources, revisions
 
 
-def capture(scope_path, run_dir, profile_path=None):
+def capture(scope_path, run_dir, profile_path=None, *, extractor_deadline=None):
     scope_path, run_dir = Path(scope_path).resolve(), Path(run_dir).resolve()
     scope_bytes = scope_path.read_bytes()
     scope = read_json(scope_path)
@@ -90,7 +90,10 @@ def capture(scope_path, run_dir, profile_path=None):
     from .violation_waivers import capture_inputs
     capture_inputs(scope, before, inputs)
     from .datasheet_facts import capture_extractors
-    capture_extractors(scope, inputs, run_dir / 'capture' / 'pdftotext-version')
+    # Metadata capture remains available for zero-budget runs; only the new native
+    # extractor probe consumes the review's execution budget.
+    with native_run.using(deadline=extractor_deadline):
+        capture_extractors(scope, inputs, run_dir / 'capture' / 'pdftotext-version')
     after, _, _ = source_manifest(scope, scope_path.parent)
     if before != after or scope_path.read_bytes() != scope_bytes:
         raise ValueError("source or scope changed during capture; use a new run")

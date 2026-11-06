@@ -688,8 +688,7 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         if result["policy_files"] != LOADED_POLICY_FILES:
             raise ValueError("implementation files changed after this process loaded; start a fresh process")
         result["kicad_install"] = capture_kicad_install(run, result["runtime_files"])
-        with native_run.using(deadline=deadline):
-            m = capture(scope_path, run, profile)
+        m = capture(scope_path, run, profile, extractor_deadline=deadline)
         from .board_envelope import final_qualification
         # Final acceptance is held by the captured baseline's open envelope qualification (AGENTEE-197).
         if (qualification := final_qualification(run, m["candidate_id"])) is not None:
