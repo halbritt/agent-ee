@@ -544,8 +544,7 @@ a private `git archive` copy of that commit, so a read-only mount is enough.
 
 For local strict execution, install the reviewed infra runner and its sibling
 `native-inputs.py` from `infra/shared/agent-ee`. Select a durable manifest with
-`AE_CI_INPUT_MANIFEST` (default `~/.config/agent-ee/native-inputs.json` when
-present) and a durable output root with `AE_CI_EVIDENCE_DIR`. The runner verifies
+`AE_CI_INPUT_MANIFEST` (required for extra input selection; no ambient default) and a durable output root with `AE_CI_EVIDENCE_DIR`. The runner verifies
 each explicitly selected input before the test command, retains a separate copy,
 and exports only its named input variable. It also records the clean agent-ee
 commit/tree, input inventories and verifier commit, selected image, and runner
@@ -580,8 +579,8 @@ The runner mounts each copy read-only at `/opt/agent-ee-inputs/NAME`. A Git inpu
 is a standalone checkout of the clean commit selected for that run, with its own
 objects; later source movement cannot alter it. The adapter still creates its
 private archive and enforces the existing custody and import-origin guards.
-Writable outputs appear at `/artifacts`, with the input receipt at
-`$AGENT_EE_RUN_INPUT_RECEIPT`; input snapshots remain outside that writable mount.
+Writable outputs appear at `/artifacts`, with a read-only custody receipt at
+`$AGENT_EE_RUN_INPUT_RECEIPT` (`/opt/agent-ee-inputs/receipt.json`); input snapshots remain outside that writable mount.
 The host evidence root retains snapshots, receipts, and outputs after scratch
 cleanup. These provisioning records establish input selection, not test success.
 
@@ -817,3 +816,14 @@ source; the install record names its library tag and commit. The library adds
 approximately 280 MB of downloads and 3.3 GB unpacked (package estimates).
 [Candidate model coverage](pcb-renders.md#proposal-project-model-closure-agentee-394)
 records the actual referenced model file hashes; runtime rendering is offline.
+
+The K91 native receipt cases and PCBSchemaGen integrations retain their reports,
+refusal diagnostics and disposable input trees before temporary-directory cleanup
+when `AGENT_EE_EVIDENCE_DIR` is set. `tests/artifact_retention.py` writes exact test
+IDs and byte inventories below `/artifacts/tests`; symlinks are preserved as links
+and linked targets are not copied. Test assertions and identities are unchanged.
+
+A producer-declared module-local unavailable input remains a required setup failure
+for that module, even if a path happens to exist in the image. Other modules remain
+eligible. Declared variables come from `scripts/native-input-policy.json`; arbitrary
+`AGENT_EE_*` control flags and pod overrides are not accepted as input selectors.

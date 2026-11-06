@@ -10,6 +10,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from tests.artifact_retention import RetainedTemporaryDirectory, retain
 
 from agent_ee.pcbschemagen_gate1 import (
     DEFAULT_PCBSCHEMAGEN_ROOT,
@@ -96,10 +97,13 @@ def owned_verifier(root):
     return fixture_git(root, 'rev-parse', 'HEAD')
 
 
-def run_isolated(script, *args, env=None):
+def run_isolated(script, *args, env=None, test_id=None):
     """Run script in a new interpreter, so owned framework.topo modules stay out of this process."""
-    return subprocess.run([sys.executable, '-c', textwrap.dedent(script), *map(str, args)],
+    result = subprocess.run([sys.executable, '-c', textwrap.dedent(script), *map(str, args)],
                           env=env, capture_output=True, text=True, timeout=60)
+    if test_id:
+        retain(test_id, {'exit_code': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr})
+    return result
 
 
 RECORD_SCRIPT = '''
@@ -301,6 +305,7 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
     def test_valid_circuit_passes_gate1(self):
         design = _make_valid_tps54302_design()
         result = verify_gate1(design_input=design, task_id=6, task_name="BUCK_AUX_LOGIC")
+        retain(self.id(), {'report': result.report, 'snapshot': result.snapshot})
 
         self.assertTrue(result.passed)
         self.assertEqual(result.status, "PASS")
@@ -319,6 +324,7 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
         design_floating_vin["nets"]["VIN"] = ["J1.1", "C1.1"]  # U1.3 missing
 
         result = verify_gate1(design_input=design_floating_vin, task_id=6)
+        retain(self.id(), {'report': result.report, 'snapshot': result.snapshot})
         self.assertFalse(result.passed)
         self.assertEqual(result.status, "FAIL")
         self.assertLess(result.reward, 1.0)
@@ -330,6 +336,7 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
         design_floating_sw = _make_valid_tps54302_design()
         design_floating_sw["nets"]["SW"] = ["L1.1", "C2.2"]  # U1.2 missing
         result_sw = verify_gate1(design_input=design_floating_sw, task_id=6)
+        retain(self.id(), {'report': result_sw.report, 'snapshot': result_sw.snapshot})
         self.assertFalse(result_sw.passed)
         self.assertEqual(result_sw.status, "FAIL")
         sw_cats = [e["category"] for e in result_sw.report["errors"]]
@@ -342,6 +349,7 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
         design_shorted["nets"]["VIN"].remove("U1.3")
 
         result = verify_gate1(design_input=design_shorted, task_id=6)
+        retain(self.id(), {'report': result.report, 'snapshot': result.snapshot})
         self.assertFalse(result.passed)
         self.assertEqual(result.status, "FAIL")
         categories = [e["category"] for e in result.report["errors"]]
@@ -369,6 +377,7 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
             },
         ]
         result_swapped = verify_gate1(design_input=design_swapped, task_id=6, rules=rules)
+        retain(self.id(), {'report': result_swapped.report, 'snapshot': result_swapped.snapshot})
         self.assertFalse(result_swapped.passed)
         self.assertEqual(result_swapped.status, "FAIL")
         categories = [e["category"] for e in result_swapped.report["errors"]]
@@ -424,6 +433,7 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
             task_id=6,
             std_snapshot=std_snapshot,
         )
+        retain(self.id(), {'report': result.report, 'snapshot': result.snapshot})
         self.assertTrue(result.passed)
         self.assertEqual(result.status, "PASS")
         count_errors = [
@@ -433,7 +443,7 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
 
     def test_cli_invocation(self):
         design = _make_valid_tps54302_design()
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with RetainedTemporaryDirectory(self.id()) as tmpdir:
             design_path = Path(tmpdir) / "design.json"
             out_path = Path(tmpdir) / "gate1_report.json"
             design_path.write_text(json.dumps(design), encoding="utf-8")
@@ -452,7 +462,7 @@ class TestPCBSchemaGenGate1Verification(unittest.TestCase):
 
 class TestVerifierBoundary(unittest.TestCase):
     def setUp(self):
-        scratch = tempfile.TemporaryDirectory()
+        scratch = RetainedTemporaryDirectory(self.id())
         self.addCleanup(scratch.cleanup)
         self.temp = Path(scratch.name)
 
@@ -460,7 +470,7 @@ class TestVerifierBoundary(unittest.TestCase):
         root = self.temp / 'verifier'
         first = owned_verifier(root)
         design = json.dumps(_make_valid_tps54302_design())
-        result = run_isolated(RECORD_SCRIPT, root, design)
+        result = run_isolated(RECORD_SCRIPT, root, design, test_id=self.id())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {'repository': PCBSCHEMAGEN_REPOSITORY, 'commit': first})
         # A later upstream commit with changed knowledge graph data is used and recorded as such.
@@ -468,7 +478,7 @@ class TestVerifierBoundary(unittest.TestCase):
         fixture_git(root, 'commit', '-q', '-am', 'Owned knowledge graph update')
         second = fixture_git(root, 'rev-parse', 'HEAD')
         self.assertNotEqual(second, first)
-        result = run_isolated(RECORD_SCRIPT, root, design)
+        result = run_isolated(RECORD_SCRIPT, root, design, test_id=self.id())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)['commit'], second)
 
@@ -517,7 +527,7 @@ class TestVerifierBoundary(unittest.TestCase):
     else:
         print('accepted')
 """
-        result = run_isolated(script, root, json.dumps(_make_valid_tps54302_design()))
+        result = run_isolated(script, root, json.dumps(_make_valid_tps54302_design()), test_id=self.id())
         self.assertEqual(result.returncode, 0, result.stderr)
         recorded, outcome = result.stdout.split('\n', 1)
         self.assertEqual(json.loads(recorded)['commit'], first)
@@ -540,7 +550,7 @@ class TestVerifierBoundary(unittest.TestCase):
                 root = self.temp / case.replace(' ', '-')
                 first = owned_verifier(root)
                 env = dict(os.environ, OWNED_VERIFIER_MOVE=str(root), **({'OWNED_VERIFIER_RETURN': '1'} if returns else {}))
-                result = run_isolated(script, root, json.dumps(_make_valid_tps54302_design()), env=env)
+                result = run_isolated(script, root, json.dumps(_make_valid_tps54302_design()), env=env, test_id=self.id())
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(json.loads(result.stdout), {
                     'verifier': {'repository': PCBSCHEMAGEN_REPOSITORY, 'commit': first},
@@ -568,7 +578,7 @@ class TestVerifierBoundary(unittest.TestCase):
             print('topo loaded:', any(name.startswith('framework.topo') for name in sys.modules))
         """
         env = dict(os.environ, OWNED_VERIFIER_MOVE=str(root), OWNED_VERIFIER_RETURN='1')
-        result = run_isolated(script, root, json.dumps(_make_valid_tps54302_design()), env=env)
+        result = run_isolated(script, root, json.dumps(_make_valid_tps54302_design()), env=env, test_id=self.id())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("refused: PCBSchemaGen module already imported from outside Gate 1's private copy: "
                       f"framework ({root / 'framework/__init__.py'})", result.stdout)
@@ -581,7 +591,7 @@ class TestVerifierBoundary(unittest.TestCase):
         owned_verifier(root)
         (root / 'framework/topo/extra.py').write_text('# Owned untracked module, not in any commit.\n')
         env = dict(os.environ, OWNED_VERIFIER_EXTRA='1')
-        result = run_isolated(RECORD_SCRIPT, root, json.dumps(_make_valid_tps54302_design()), env=env)
+        result = run_isolated(RECORD_SCRIPT, root, json.dumps(_make_valid_tps54302_design()), env=env, test_id=self.id())
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("PCBSchemaGen module imported from outside Gate 1's private copy", result.stderr)
         self.assertIn(f"framework.topo.extra ({root / 'framework/topo/extra.py'})", result.stderr)
@@ -610,7 +620,7 @@ class TestVerifierBoundary(unittest.TestCase):
         '''
         env = {k: v for k, v in os.environ.items()
                if k not in ('PYTHONDONTWRITEBYTECODE', 'PYTHONPYCACHEPREFIX')}
-        result = run_isolated(script, root, commit, env=env)
+        result = run_isolated(script, root, commit, env=env, test_id=self.id())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_missing_checkout_is_explicit_even_after_a_verifier_was_loaded(self):

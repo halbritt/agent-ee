@@ -26,6 +26,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from tests.artifact_retention import retain as retain_test_artifacts
 from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
@@ -1621,9 +1622,11 @@ class NativeReceiptCase:
 
     def grade(self, attempt_dir, observed, run_dir=None, source_dir=None, result=None):
         result = result or json.loads((attempt_dir / 'result.json').read_text())
-        return attempt.experiment_grade({'experiment_policy': self.policy}, result, attempt_dir,
+        record = attempt.experiment_grade({'experiment_policy': self.policy}, result, attempt_dir,
                                         {'run_dir': run_dir or self.RUN, 'source_dir': source_dir or self.SOURCE,
                                          'observed': observed})
+        retain_test_artifacts(self.id(), record, roots=[attempt_dir, self.run_copy])
+        return record
 
     def assert_refused(self, record, reason, detail, attempt_dir, observed, **grade):
         self.assertEqual((record['status'], record['reason'], record['qualified']), ('refused', reason, False), record)
