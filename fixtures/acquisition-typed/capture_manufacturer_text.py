@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproduce the acquisition's additive primary-text capture with pinned CPU tools."""
+"""Capture acquisition primary text and retain the CPU tools used by each run."""
 import argparse
 import hashlib
 import json
@@ -44,14 +44,36 @@ def verify_sources(root, declaration):
             raise ValueError('source PDF differs from its capture manifest: ' + document['id'])
 
 
+def observe_tools(root, selectors):
+    if set(selectors) != {'pdfinfo', 'pdftotext'}:
+        raise ValueError('capture requires pdfinfo and pdftotext selectors')
+    tools = {}
+    for name, selector in selectors.items():
+        if (not isinstance(selector, dict) or set(selector) != {'path'}
+                or not isinstance(selector['path'], str) or not Path(selector['path']).is_absolute()):
+            raise ValueError('tool selector requires an absolute path: ' + name)
+        path = selector['path']
+        sha256 = digest(Path(path).read_bytes())
+        completed, _ = run([path, '-v'], root)
+        lines = (completed.stdout + completed.stderr).decode('utf-8').splitlines()
+        prefix = name + ' version '
+        if (completed.returncode or not lines or not lines[0].startswith(prefix)
+                or not lines[0][len(prefix):].strip()):
+            raise ValueError('extraction binary version unavailable: ' + name)
+        if digest(Path(path).read_bytes()) != sha256:
+            raise ValueError('extraction binary changed during version probe: ' + name)
+        tools[name] = {'path': path, 'sha256': sha256, 'version': lines[0]}
+    return tools
+
+
 def verify_tools(root, tools):
-    for name, pin in tools.items():
-        if digest(Path(pin['path']).read_bytes()) != pin['sha256']:
+    for name, tool in tools.items():
+        if digest(Path(tool['path']).read_bytes()) != tool['sha256']:
             raise ValueError('extraction binary changed: ' + name)
-        completed, _ = run([pin['path'], '-v'], root)
-        version = (completed.stdout + completed.stderr).decode('utf-8').splitlines()[0]
-        if completed.returncode or version != pin['version']:
-            raise ValueError('extraction binary version changed: ' + name)
+    observed = observe_tools(root, {name: {'path': tool['path']} for name, tool in tools.items()})
+    for name, tool in tools.items():
+        if observed[name] != tool:
+            raise ValueError('extraction binary changed: ' + name)
 
 
 def extract_document(root, out, document, tools, record):
@@ -101,19 +123,21 @@ def capture(root, out):
     if out == root or root in out.parents or out in root.parents:
         raise ValueError('output must be disjoint from the original capture')
     verify_sources(root, declaration)
-    verify_tools(root, declaration['tools'])
+    tools = observe_tools(root, declaration['tools'])
     out.mkdir()  # exclusive ownership; existing successful or failed captures are never overwritten
     manifest = {'schema': 'agent-ee.manufacturer-text-capture/1', 'status': 'incomplete',
                 'source_descriptor_sha256': digest(declaration_raw),
                 'procedure_sha256': digest(Path(__file__).read_bytes()),
-                'tools': declaration['tools'], 'environment': {'LC_ALL': 'C.UTF-8', 'TZ': 'UTC'},
+                'tools': tools, 'environment': {'LC_ALL': 'C.UTF-8', 'TZ': 'UTC'},
                 'page_offsets': 'UTF-8 bytes, half-open; byte_end includes one final form feed; content_byte_end excludes it',
                 'limitations': declaration['limitations'], 'documents': [], 'failures': []}
     try:
         for document in declaration['documents']:
             record = {'id': document['id'], 'source': document['source'], 'status': 'incomplete'}
             manifest['documents'].append(record)
-            extract_document(root, out, document, declaration['tools'], record)
+            verify_tools(root, tools)
+            extract_document(root, out, document, tools, record)
+            verify_tools(root, tools)
         verify_sources(root, declaration)
         manifest['status'] = 'complete'
     except (ValueError, OSError, subprocess.TimeoutExpired) as exc:

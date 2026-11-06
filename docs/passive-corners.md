@@ -55,13 +55,14 @@ An unbounded extra observation remains diagnostic; at least one bounded
 observation is required. Zero tolerance deduplicates to one corner and agrees
 with nominal analysis within the same numerical allowance.
 
-Captured qualification inputs bind the exact corrected ngspice 47 executable SHA-256,
-parser/model source hashes and fixed policy. Changing any identity invalidates
-old qualification inputs. Requalification requires reviewing the changed semantics,
-updating the captured contract, and rerunning the owned native acceptance corpus;
-do not merely edit hashes to imply qualification. The policy intentionally pins
-one installed binary rather than claiming compatibility with arbitrary ngspice
-builds. Other versions/builds need a policy change and demonstrated qualification.
+Captured qualification inputs bind parser/model source hashes and the fixed policy.
+Each ensemble records the installed ngspice executable SHA-256 and version before
+starting, and refuses a binary change before or after any analysis. A new run
+can use an updated simulator; every analysis still has to satisfy the independent
+analytic oracle. Retained evidence identifies the simulator actually used, and
+continuing a run requires its recorded runtime. Changing parser/model semantics
+or policy invalidates old qualification inputs and requires reviewing the change,
+updating the captured contract, and rerunning the owned native acceptance corpus.
 
 `parser_sha256` covers the entire `agent_ee/checks.py` module, so changes to
 native-netlist prerequisites also require this process. If integration changes

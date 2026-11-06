@@ -12,8 +12,6 @@ from .storage import digest, identity, read_json, write_json
 
 POLICY = 'unloaded-first-order-rc/1'
 TOOL = Path('/usr/bin/ngspice')
-# Native qualification target: corrected ngspice 47 in the supported image.
-TOOL_SHA256 = 'a238c8f410e1f59656a62b3cb12d4955cfbaca2d70db92b661b2bf98a9fc586b'
 RAMP_S = 1e-9
 NUMERICAL_REL = 1e-4
 
@@ -22,7 +20,7 @@ def qualification():
     """Expected captured policy inputs; identities do not replace analytic checks."""
     from . import checks
     return {'schema': 'agent-ee.passive-corners/1', 'policy': POLICY,
-            'tool': str(TOOL), 'tool_sha256': TOOL_SHA256, 'tool_version': 'ngspice-47',
+            'tool': str(TOOL),
             'parser_sha256': digest(checks.__file__), 'model_sha256': digest(__file__),
             'ramp_s': RAMP_S, 'numerical_relative_v': NUMERICAL_REL,
             'tau_s': [1e-4, 1e-2], 'at_ms': [0.1, 5.0], 'step_v': [0.1, 5.0],
@@ -121,6 +119,25 @@ def plan(conn, params):
             'nominal': {'id': 'nominal', 'values': nominal, 'tau_s': math.prod(nominal.values())}}
 
 
+def observe_tool(ctx):
+    """Record the installed simulator once, before this ensemble starts."""
+    from . import native_run
+    from .checks import CheckError
+    before = digest(TOOL)
+    work = ctx.work / 'version'
+    record = ctx.run_native(native_run.Intent('check', [str(TOOL), '--version'], timeout=30),
+                            work=work)
+    ctx.evidence(*(f'version/{name}' for name in ('execution.json', 'console.log', 'stdout.log', 'stderr.log')))
+    if record['execution'] != 'ok':
+        raise CheckError(record['execution'], 'simulator version probe failed')
+    version = (work / 'console.log').read_text().strip()
+    if not version or 'ngspice' not in version.lower():
+        raise CheckError('malformed', 'simulator returned no ngspice version')
+    if digest(TOOL) != before:
+        raise CheckError('unsupported', 'simulator changed during identity probe')
+    return {'path': str(TOOL), 'sha256': before, 'version': version}
+
+
 def run_analysis(ctx, conn, params, analysis):
     from .checks import Ctx, CheckError, analyze_sim, build_deck
     derived = copy.deepcopy(conn)
@@ -142,10 +159,10 @@ def run_analysis(ctx, conn, params, analysis):
     child = Ctx(ctx.run_dir, ctx.manifest, ctx.spec, min(ctx.deadline, ctx.corner_deadline))
     child.work = work
     try:
-        if digest(TOOL) != TOOL_SHA256:
-            raise CheckError('unsupported', 'simulator identity requires requalification')
+        if digest(TOOL) != ctx.corner_tool['sha256']:
+            raise CheckError('unsupported', 'simulator changed before corner analysis')
         child.execute([str(TOOL), '-n', '-b', '-o', '/work/ngspice.log', '/work/control.sp'], 30)
-        if digest(TOOL) != TOOL_SHA256:
+        if digest(TOOL) != ctx.corner_tool['sha256']:
             raise CheckError('unsupported', 'simulator changed during corner analysis')
         measured, _, raw = analyze_sim(work, wanted)
         for name, metric in measured.items():
@@ -176,7 +193,7 @@ def check_passive_corners(ctx):
         if qpath not in ctx.manifest['files'] or digest(ctx.inputs / qpath) != ctx.manifest['files'][qpath]:
             raise ValueError('qualification must be unchanged captured input')
         if read_json(ctx.inputs / qpath) != qualification():
-            raise ValueError('tool/parser/model/policy identity requires explicit requalification')
+            raise ValueError('parser/model/policy identity requires explicit requalification')
         nid = params['netlist_check']
         specs = ctx.scope['checks']
         if not any(s['id'] == nid and s['kind'] == 'netlist' for s in specs[:specs.index(ctx.spec)]):
@@ -188,8 +205,9 @@ def check_passive_corners(ctx):
         ctx.result['evidence'].extend([f'work/{nid}/design.xml', f'work/{nid}/connectivity.json'])
         ensemble = plan(conn, ctx.params)
         expected = [c['id'] for c in ensemble['corners']]
+        ctx.corner_tool = observe_tool(ctx)
         receipt = {'schema': 'agent-ee.corner-ensemble/1', 'candidate_id': ctx.manifest['candidate_id'],
-                   'qualification': qualification(), 'plan': ensemble,
+                   'qualification': qualification(), 'tool': ctx.corner_tool, 'plan': ensemble,
                    'expected': expected, 'completed': [], 'complete': False}
         write_json(ctx.work / 'ensemble.json', receipt)
         ctx.evidence('ensemble.json')
@@ -220,7 +238,7 @@ def check_passive_corners(ctx):
             if limit:
                 limits[name] = {**limit, 'unit': 'V', 'condition': metrics[name]['condition']}
         ctx.result['details'].update(metrics=metrics, producer={'tool': str(TOOL),
-            'sha256': TOOL_SHA256, 'domain': 'electrical'}, ensemble=receipt)
+            'sha256': ctx.corner_tool['sha256'], 'version': ctx.corner_tool['version'], 'domain': 'electrical'}, ensemble=receipt)
         # Even exact-design nominal residuals have no qualification over hypothetical corner designs.
         if ctx.scope.get('empirical'):
             raise CheckError('unsupported', 'nominal empirical residual transfer to corner domain is unqualified')

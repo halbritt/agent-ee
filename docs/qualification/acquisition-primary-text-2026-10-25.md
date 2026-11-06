@@ -23,8 +23,9 @@ The committed metadata in
 [`manufacturer-text-sources.json`](../../fixtures/acquisition-typed/manufacturer-text-sources.json)
 pins P1–P13 from source-readiness result `4a6027fc@1`: each original PDF path,
 SHA-256, originating capture manifest/hash, part ID and physical page count.
-It also pins the installed `/usr/bin/pdftotext` and `/usr/bin/pdfinfo` binaries
-and their Poppler 24.02.0 version strings. No source is fetched.
+It selects `/usr/bin/pdftotext` and `/usr/bin/pdfinfo` by path. Each new capture
+records the installed binaries’ SHA-256 hashes and version strings; the source
+descriptor does not constrain their versions. No source is fetched.
 
 Run the committed, CPU-only procedure on the immutable base capture, writing a
 new private directory whose parent already exists:
@@ -36,12 +37,15 @@ python3 fixtures/acquisition-typed/capture_manufacturer_text.py \
 ```
 
 The procedure verifies the complete base inventory, each selected PDF against
-its existing manifest, and both extraction tools before creating the output.
+its existing manifest, and observes both extraction tools before creating the output.
 It refuses an existing output or an output nested with the base. For each PDF,
 it runs `pdfinfo` for the page count, then `pdftotext -f 1 -l N -layout -enc UTF-8
 -eol unix SOURCE -`, with `LC_ALL=C.UTF-8` and `TZ=UTC`. Both invocations have a
 120-second bound. The manifest retains their exact argument arrays, exit codes,
-diagnostics, PDF metadata, procedure/descriptor hashes and output hashes.
+diagnostics, PDF metadata, procedure/descriptor hashes, observed tool identities
+and output hashes. Both tools are rechecked before and after each document; a
+binary or version change fails the capture. Existing manifests retain the tool
+identities they recorded and are never rewritten for a tool update.
 
 The text file contains exact stdout bytes, with one form-feed byte after every
 physical page. All offsets are half-open UTF-8 byte offsets. Each page record

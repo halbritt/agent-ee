@@ -10,7 +10,7 @@ class CornerContractTest(unittest.TestCase):
     def test_shipped_fixture_qualification_matches_reviewed_producer(self):
         self.assertEqual(read_json(REPO / 'fixtures/passive-corners/qualification.json'),
                          passive_corners.qualification(),
-                         'Shipped fixture needs semantic review, pin refresh and native requalification')
+                         'Shipped fixture needs semantic review and native requalification')
 
     def test_complete_endpoint_grid_and_native_values(self):
         params = {**copy.deepcopy(BASE_PARAMS), 'tolerances': {
@@ -112,6 +112,9 @@ class NativeCornerTests(unittest.TestCase):
                 self.assertEqual(metric['unit'], 'V')
                 self.assertIn('ramp=1ns;initial=0V', metric['condition'])
                 ensemble = check['details']['ensemble']
+                self.assertEqual(ensemble['tool']['path'], '/usr/bin/ngspice')
+                self.assertEqual(ensemble['tool']['sha256'], digest('/usr/bin/ngspice'))
+                self.assertIn('ngspice', ensemble['tool']['version'].lower())
                 self.assertTrue(ensemble['complete'])
                 self.assertEqual(ensemble['expected'], ensemble['completed'])
                 self.assertEqual(len(ensemble['completed']), 1 if label == 'corner-zero' else 4)
@@ -211,7 +214,7 @@ class NativeCornerTests(unittest.TestCase):
             receipt = read_json(ctx.work / 'ensemble.json')
             self.assertFalse(receipt['complete'])
             self.assertNotEqual(receipt['expected'], receipt['completed'])
-        for field in ('parser_sha256', 'model_sha256', 'tool_sha256', 'policy'):
+        for field in ('parser_sha256', 'model_sha256', 'policy'):
             changed = passive_corners.qualification()
             changed[field] = 'changed'
             write_json(root / 'run/inputs/qualification.json', changed)
@@ -253,8 +256,16 @@ class NativeCornerTests(unittest.TestCase):
                     return original_analyze(work, wanted)
                 with patch.object(checks, 'analyze_sim', side_effect=corrupt):
                     if failure == 'tool':
-                        with patch.object(passive_corners, 'TOOL_SHA256', '0' * 64):
-                            with self.assertRaisesRegex(checks.CheckError, 'requalification'):
+                        reads = 0
+                        def changed_tool(path):
+                            nonlocal reads
+                            if Path(path) == passive_corners.TOOL:
+                                reads += 1
+                                if reads > 2:
+                                    return '0' * 64
+                            return digest(path)
+                        with patch.object(passive_corners, 'digest', side_effect=changed_tool):
+                            with self.assertRaisesRegex(checks.CheckError, 'simulator changed'):
                                 passive_corners.check_passive_corners(ctx)
                     else:
                         with self.assertRaises(checks.CheckError):

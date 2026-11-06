@@ -153,14 +153,10 @@
   "schema": "agent-ee.manufacturer-text-sources/1",
   "tools": {
     "pdfinfo": {
-      "path": "/usr/bin/pdfinfo",
-      "sha256": "a77b2df7a2461aba1f33706daaf5ba4d78304e971686173b6db3b10a9fe44d65",
-      "version": "pdfinfo version 24.02.0"
+      "path": "/usr/bin/pdfinfo"
     },
     "pdftotext": {
-      "path": "/usr/bin/pdftotext",
-      "sha256": "46e5639c4096edd4bb06963cc7219401f9b91e0390fe40b3ba1482d1b5386c63",
-      "version": "pdftotext version 24.02.0"
+      "path": "/usr/bin/pdftotext"
     }
   }
 }
