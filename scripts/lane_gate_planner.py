@@ -3,6 +3,8 @@
 
 Computes affected test modules, transitive reverse dependents, and
 repository-wide scanners for fast, deterministic lane gating (< 3s).
+Execution-image changes select the full suite because native dependencies
+can affect tests that do not import the changed files.
 The plan is explicitly non-qualifying and does not replace formal release
 qualification (scripts/strict_selection.py).
 """
@@ -216,6 +218,11 @@ def plan_lane_gate(root: Path, changed_files: list[str], change_base: str | None
 
     all_modules = sorted(touched_test_modules | reverse_dependent_test_modules | set(repo_scanners))
 
+    image_changes = sorted(f for f in set(norm_changed)
+                           if f in ('Dockerfile', '.dockerignore') or f.startswith('docker/'))
+    if image_changes:
+        all_modules = sorted(path.stem for path in (root / 'tests').glob('test_*.py'))
+
     reasons = []
     for f in sorted(norm_changed):
         reasons.append(f'{f}: changed file')
@@ -223,9 +230,11 @@ def plan_lane_gate(root: Path, changed_files: list[str], change_base: str | None
         reasons.append(f'reverse dependent: {t} imports affected agent_ee modules')
     for s in repo_scanners:
         reasons.append(f'repository scanner: {s}')
+    for f in image_changes:
+        reasons.append(f'{f}: execution image changed; full suite required')
 
     # Check native requirement
-    native_required = bool(changed_src_modules)
+    native_required = bool(changed_src_modules or image_changes)
     if not native_required:
         for mod_name in all_modules:
             test_path = root / 'tests' / f'{mod_name}.py'
@@ -239,7 +248,7 @@ def plan_lane_gate(root: Path, changed_files: list[str], change_base: str | None
         'schema': SCHEMA,
         'qualification': 'non-qualifying',
         'qualifying': False,
-        'mode': 'affected-lane-gate',
+        'mode': 'full' if image_changes else 'affected-lane-gate',
         'native_required': native_required,
         'inputs': {
             'change_base': change_base,

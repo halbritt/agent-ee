@@ -13,6 +13,24 @@ import lane_gate_planner
 
 
 class LaneGatePlannerTests(unittest.TestCase):
+    def test_execution_image_changes_require_every_test_module(self):
+        # AGENTEE-618: updated Poppler broke consumers outside the selected lane.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tests = root / 'tests'
+            tests.mkdir()
+            for name in ('test_file_origins.py', 'test_unrelated.py', 'helper.py'):
+                (tests / name).write_text('')
+            for changed in ('Dockerfile', 'docker/install.sh', 'docker/removed/config',
+                            '.dockerignore', str(root / 'Dockerfile')):
+                with self.subTest(changed=changed):
+                    plan = lane_gate_planner.plan_lane_gate(root, [changed])
+                    self.assertEqual(plan['mode'], 'full')
+                    self.assertEqual(plan['modules'], ['test_file_origins', 'test_unrelated'])
+                    self.assertTrue(plan['native_required'])
+                    self.assertFalse(plan['qualifying'])
+                    self.assertTrue(any('full suite required' in reason for reason in plan['reasons']))
+
     def test_local_decoupling_returns_architecture_boundaries_and_dependents(self):
         """Diff touching local_decoupling.py returns test_architecture_boundaries and dependents."""
         plan = lane_gate_planner.plan_lane_gate(
