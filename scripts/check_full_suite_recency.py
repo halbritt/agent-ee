@@ -5,13 +5,16 @@ Validates that a commit has a 'local-full-suite' status recorded for the exact m
 GitHub Actions executes this completion monitor instead of actual test suites.
 """
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 import re
 from pathlib import Path
 import subprocess
 import sys
+
+
+CLOCK_SKEW = timedelta(seconds=5)
 
 
 def parse_iso_timestamp(ts_str: str) -> datetime:
@@ -46,8 +49,11 @@ def check_recency(
     except (KeyError, AttributeError, ValueError, TypeError):
         return False, 'Malformed status timestamp; completion ordering is unknown'
     created, latest = max(ordered, key=lambda pair: pair[0])
+    if any((status.get('state'), status.get('description')) != (latest.get('state'), latest.get('description'))
+           for timestamp, status in ordered if timestamp == created):
+        return False, 'Conflicting statuses share the latest timestamp; completion ordering is unknown'
     now = now_utc if now_utc is not None else datetime.now(timezone.utc)
-    if created > now:
+    if created > now + CLOCK_SKEW:
         return False, 'Future-dated status cannot establish completion'
     state = latest.get('state', 'unknown')
     if state not in ('success', 'failure'):
@@ -64,10 +70,10 @@ def check_recency(
         finished = parse_iso_timestamp(finished_text)
     except (AttributeError, ValueError, TypeError):
         return False, 'Malformed completion timestamp'
-    if finished > now or finished > created:
+    if finished > now + CLOCK_SKEW or finished > created + CLOCK_SKEW:
         return False, 'Future or inconsistent completion timestamp'
-    if state == 'success' and int(problems) != 0:
-        return False, 'Successful suite status contradicts its problem count'
+    if (state == 'success') != (int(problems) == 0):
+        return False, 'Suite status contradicts its problem count'
     age_hours = (now - created).total_seconds() / 3600
     return True, (f'Completed local-full-suite for {recorded_sha}: age {age_hours:.1f}h; '
                   f'no expiration (suite state={state}, problems={problems}, finished={finished_text})')

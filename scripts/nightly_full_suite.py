@@ -10,7 +10,7 @@ statuses without exposing logs or local machine paths.
 """
 import argparse
 import collections
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import fcntl
 import hashlib
 import html
@@ -20,8 +20,12 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
+import uuid
+
+import nightly_evidence
 
 
 DEFAULT_STATE_DIR = Path.home() / '.local/share/agent-ee-full-suite'
@@ -107,11 +111,14 @@ def parse_problems_from_log(log_path: Path | str) -> dict[str, str]:
     return out
 
 
-def compare_problems(old: dict[str, str], new: dict[str, str]) -> dict:
-    """Compare old problem set with new problem set."""
+def compare_problems(old: dict[str, str], new: dict[str, str], unexecuted: dict[str, str] | None = None) -> dict:
+    """Keep prior identities unknown when a module's setup prevented execution."""
+    old = {**(unexecuted or {}), **old}
     old_set = set(old.keys())
     new_set = set(new.keys())
-    gone = sorted(old_set - new_set)
+    refused = {key for key, kind in new.items() if '.' not in key and kind.startswith(('MISSING-INPUT ', 'MODULE:'))}
+    unknown = {key: old[key] for key in old_set - new_set if '.' in key and key.split('.')[0] in refused}
+    gone = sorted(old_set - new_set - set(unknown))
     added = sorted(new_set - old_set)
     def kind_class(kind):
         return kind.split(':', 1)[0] if kind.startswith(('SKIP:', 'MODULE:')) else kind.split(' ', 1)[0]
@@ -124,6 +131,7 @@ def compare_problems(old: dict[str, str], new: dict[str, str]) -> dict:
         'added': added,
         'kept': kept,
         'changed': changed,
+        'unexecuted': unknown,
     }
 
 
@@ -148,6 +156,9 @@ def format_compare_summary(comp: dict) -> str:
     if changed := comp.get('changed'):
         lines.append(f'CHANGED kind: {len(changed)}')
         lines += [f'  ! {key} | {old[key]} -> {new[key]}' for key in changed]
+    if unknown := comp.get('unexecuted'):
+        lines.append(f'UNEXECUTED prior problems: {len(unknown)} (status unknown)')
+        lines += [f'  ? {key} | {kind}' for key, kind in sorted(unknown.items())]
     if kept:
         kinds = collections.Counter(new.get(k, '').split(':')[0] for k in kept)
         lines.append(f'KEPT kinds: {dict(kinds)}')
@@ -224,7 +235,7 @@ def prepare_worktree(root: Path, worktree: Path, commit: str) -> None:
     if worktree.exists():
         common = (root / git_output(root, 'rev-parse', '--git-common-dir')).resolve()
         existing = (worktree / git_output(worktree, 'rev-parse', '--git-common-dir')).resolve()
-        if common != existing or git_output(worktree, 'status', '--porcelain', '--untracked-files=all'):
+        if common != existing or git_output(worktree, 'status', '--porcelain', '--untracked-files=all', '--ignored=matching'):
             raise RuntimeError('nightly worktree is foreign or dirty; preserving it for inspection')
         git_output(worktree, 'checkout', '--detach', '--no-overwrite-ignore', commit)
     else:
@@ -233,26 +244,145 @@ def prepare_worktree(root: Path, worktree: Path, commit: str) -> None:
         raise RuntimeError('nightly worktree does not match origin/main')
 
 
-def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int) -> dict[str, str]:
+def unique_fields(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f'duplicate execution outcome field: {key}')
+        result[key] = value
+    return result
+
+
+def read_outcome(receipt: dict, run_dir: Path) -> tuple[dict, str]:
+    """Authenticate one private, completed supervisor observation against its plan."""
+    command = receipt.get('command')
+    if (not isinstance(command, list) or not all(isinstance(arg, str) for arg in command)
+            or hashlib.sha256(json.dumps(command).encode()).hexdigest() != receipt.get('command_sha256')
+            or command != [receipt.get('runner'), receipt.get('worktree'), '--', 'env',
+                f"AGENT_EE_NIGHTLY_ATTEMPT_ID={receipt.get('nightly_attempt_id')}",
+                'python3', 'scripts/strict_suite.py', f"--jobs={receipt.get('jobs')}", '--full']):
+        raise ValueError('execution command does not bind this exact planned attempt')
+    path = run_dir / 'outcome.json'
+    if receipt.get('outcome_file') != str(path) or path.is_symlink():
+        raise ValueError('execution outcome path differs from this attempt')
+    with path.open('rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ValueError('execution outcome must be a private caller-owned regular file')
+        raw = stream.read(65537)
+    if len(raw) > 65536:
+        raise ValueError('execution outcome exceeds its record bound')
+    digest = hashlib.sha256(raw).hexdigest()
+    if receipt.get('outcome_sha256', digest) != digest:
+        raise ValueError('execution outcome changed after it was bound')
+    outcome = json.loads(raw, object_pairs_hook=unique_fields)
+    if (not isinstance(outcome, dict) or outcome.get('schema') != 'agent-ee.exec-outcome/1'
+            or outcome.get('complete') is not True
+            or outcome.get('state') not in ('not_started', 'started_or_uncertain')
+            or type(outcome.get('exit_code')) is not int
+            or outcome['exit_code'] != receipt.get('exit_code')):
+        raise ValueError('execution outcome is incomplete, uncertain or contradicts the observed exit')
+    if any(not isinstance(outcome.get(key), str) for key in (
+            'created_at', 'finished_at', 'runner_sha256', 'supervisor_sha256', 'command_sha256')):
+        raise ValueError('execution outcome is missing required identity fields')
+    attempt = outcome.get('attempt_id')
+    if not isinstance(attempt, str) or str(uuid.UUID(attempt)) != attempt or outcome.get('token') != attempt:
+        raise ValueError('execution outcome has no consistent attempt identity')
+    if receipt.get('outcome_attempt_id', attempt) != attempt:
+        raise ValueError('execution outcome belongs to another supervisor attempt')
+    for field in ('runner_sha256', 'supervisor_sha256', 'command_sha256'):
+        if outcome.get(field) != receipt[field]:
+            raise ValueError(f'execution outcome differs from the planned {field}')
+    times = [datetime.fromisoformat(value) for value in (
+        receipt['started_at'], outcome['created_at'], outcome['finished_at'],
+        receipt.get('finished_at', datetime.now(timezone.utc).isoformat()))]
+    if (any(value.tzinfo is None for value in times) or times != sorted(times)
+            or times[-1] > datetime.now(timezone.utc) + timedelta(seconds=5)):
+        raise ValueError('execution outcome timestamps do not fit this attempt')
+    if outcome['state'] == 'not_started' and 'command_boundary_at' in outcome:
+        raise ValueError('no-start outcome contradicts its command launch marker')
+    return outcome, digest
+
+
+def seal_outcome(receipt: dict, run_dir: Path) -> dict:
+    outcome, digest = read_outcome(receipt, run_dir)
+    receipt.update(outcome_sha256=digest, outcome_attempt_id=outcome['attempt_id'],
+                   outcome_state=outcome['state'])
+    return outcome
+
+
+def reconcile_no_start(active_file: Path, state_dir: Path) -> bool:
+    """Clear only an already-bound proof; preserve every ambiguous attempt."""
+    try:
+        active = json.loads(active_file.read_text(), object_pairs_hook=unique_fields)
+        run_dir = Path(active['run_dir'])
+        if (active.get('schema') != 'agent-ee.nightly-attempt/1'
+                or run_dir.parent != state_dir / 'runs' or run_dir.is_symlink()):
+            return False
+        receipt = json.loads((run_dir / 'execution.json').read_text(), object_pairs_hook=unique_fields)
+        if (receipt.get('nightly_attempt_id') != active['attempt_id']
+                or receipt.get('commit') != active['commit'] or receipt.get('tree') != active['tree']
+                or not receipt.get('outcome_sha256') or not receipt.get('outcome_attempt_id')):
+            return False
+        outcome, _ = read_outcome(receipt, run_dir)
+        if outcome['state'] != 'not_started':
+            return False
+        write_json(run_dir / 'reconciliation.json', {
+            'reason': 'proven_not_started', 'attempt_id': active['attempt_id'],
+            'outcome_sha256': receipt['outcome_sha256'],
+            'reconciled_at': datetime.now(timezone.utc).isoformat()})
+        nightly_evidence.update_run(state_dir, run_dir, 'not_started')
+        active_file.unlink()
+        return True
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int,
+                  attempt_id: str, runner: str) -> dict[str, str]:
     log_path = run_dir / 'suite.log'
-    command = ['ae-ci-exec', str(worktree), '--', 'python3', 'scripts/strict_suite.py', f'--jobs={jobs}', '--full']
-    runner = shutil.which('ae-ci-exec')
+    resolved = shutil.which(runner)
+    if not resolved:
+        raise RuntimeError(f'native runner not found: {runner}')
+    runner_path = Path(resolved).resolve()
+    command = [str(runner_path), str(worktree), '--', 'env', f'AGENT_EE_NIGHTLY_ATTEMPT_ID={attempt_id}',
+               'python3', 'scripts/strict_suite.py', f'--jobs={jobs}', '--full']
+    outcome_path = run_dir / 'outcome.json'
     receipt = {
         'schema': 'agent-ee.nightly-execution/1', 'command': command,
+        'nightly_attempt_id': attempt_id,
+        'worktree': str(worktree),
         'commit': git_output(worktree, 'rev-parse', 'HEAD'),
         'tree': git_output(worktree, 'rev-parse', 'HEAD^{tree}'),
         'weight': weight, 'jobs': jobs, 'timeout_seconds': SUITE_TIMEOUT_SECONDS,
         'termination_grace_seconds': SUITE_STOP_GRACE_SECONDS,
         'nightly_runner': str(Path(__file__).resolve()),
         'nightly_runner_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        'runner': runner,
-        'runner_sha256': hashlib.sha256(Path(runner).read_bytes()).hexdigest() if runner else None,
+        'nightly_evidence_sha256': nightly_evidence.digest(Path(nightly_evidence.__file__)),
+        'runner': str(runner_path),
+        'runner_files': {path.name: nightly_evidence.digest(path) for path in (
+            runner_path, *(runner_path.with_name(name) for name in (
+                'ae-ci-outcome.py', 'native-inputs.py', 'native-input-policy.json', 'native-input-fetch.sh')))
+            if path.is_file()},
+        'runner_sha256': hashlib.sha256(runner_path.read_bytes()).hexdigest(),
+        'supervisor_sha256': hashlib.sha256(runner_path.with_name('ae-ci-outcome.py').read_bytes()).hexdigest(),
+        'command_sha256': hashlib.sha256(json.dumps(command).encode()).hexdigest(),
+        'outcome_file': str(outcome_path),
+        'native_evidence_directory': str(run_dir / 'native'),
+        'scratch_root': str(Path(os.environ.get('AE_CI_EXEC_HOME', str(Path.home() / '.cache/ae-ci-exec'))) / 'tmp'),
         'started_at': datetime.now(timezone.utc).isoformat(),
     }
     write_json(run_dir / 'execution.json', receipt)
     try:
+        if run_dir.resolve().is_relative_to(worktree.resolve()):
+            raise RuntimeError('nightly evidence must stay outside the writable native worktree')
+        if outcome_path.exists() or outcome_path.is_symlink():
+            raise RuntimeError('execution outcome already exists before this attempt')
+        env = dict(os.environ, AE_CI_WEIGHT=str(weight), AE_CI_KEEP_TMP='1',
+                   AE_CI_OUTCOME_FILE=str(outcome_path), AE_CI_EVIDENCE_DIR=str(run_dir / 'native'))
+        env.pop('AE_CI_OUTCOME_TOKEN', None)
         with log_path.open('w', encoding='utf-8') as output:
-            with subprocess.Popen(command, env=dict(os.environ, AE_CI_WEIGHT=str(weight), AE_CI_KEEP_TMP='1'),
+            with subprocess.Popen(command, env=env,
                                   stdout=output, stderr=subprocess.STDOUT, text=True, start_new_session=True) as proc:
                 try:
                     proc.wait(timeout=SUITE_TIMEOUT_SECONDS)
@@ -261,18 +391,30 @@ def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int) -> dict
                     receipt['exit_code'] = proc.returncode
                     raise
         receipt['exit_code'] = proc.returncode
+        receipt['finished_at'] = datetime.now(timezone.utc).isoformat()
+        outcome = seal_outcome(receipt, run_dir)
+        if outcome['state'] == 'not_started':
+            raise RuntimeError('native COMMAND was not started; retained proof permits a later attempt')
         problems = parse_problems_from_log(log_path)
         if proc.returncode != (1 if problems else 0):
             raise RuntimeError('runner exit status disagrees with the strict-suite verdict')
         receipt['problem_count'] = len(problems)
+        receipt['full_suite'] = True
         return problems
     finally:
-        receipt['finished_at'] = datetime.now(timezone.utc).isoformat()
+        receipt.setdefault('finished_at', datetime.now(timezone.utc).isoformat())
+        if 'outcome_sha256' not in receipt:
+            try:
+                seal_outcome(receipt, run_dir)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                receipt['outcome_error'] = str(error)
         if log_path.exists():
             content = log_path.read_bytes()
             receipt['suite_log_sha256'] = hashlib.sha256(content).hexdigest()
             receipt['image_ids'] = sorted(set(re.findall(
                 r'ae-ci-exec: image (sha256:[0-9a-f]{64})', content.decode('utf-8', errors='replace'))))
+            receipt['retained_scratch'] = sorted(set(re.findall(
+                r'^ae-ci-exec: kept scratch (.+)$', content.decode('utf-8', errors='replace'), re.MULTILINE)))
         write_json(run_dir / 'execution.json', receipt)
 
 
@@ -288,6 +430,126 @@ def stop_suite(process: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         os.killpg(process.pid, signal.SIGKILL)
         process.wait()
+
+
+def import_baseline(root: Path, state_dir: Path, selection_file: Path) -> int:
+    """Record one reviewed gate's original completion; never execute or publish."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    with (state_dir / 'job.lock').open('a') as lock_file:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if (state_dir / 'state.json').exists() or (state_dir / 'active-run.json').exists():
+                raise ValueError('baseline import requires uninitialized state and no active attempt')
+            selection = json.loads(selection_file.read_text(), object_pairs_hook=unique_fields)
+            if (selection.get('schema') != 'agent-ee.baseline-import/1'
+                    or not isinstance(selection.get('review_reference'), str) or not selection['review_reference'].strip()):
+                raise ValueError('baseline import needs an explicit selected review reference')
+            for field, length in (('commit', 40), ('tree', 40), ('output_manifest_sha256', 64), ('input_manifest_sha256', 64)):
+                if not isinstance(selection.get(field), str) or not re.fullmatch('[0-9a-f]{' + str(length) + '}', selection[field]):
+                    raise ValueError(f'baseline import needs an exact {field}')
+            git_output(root, 'fetch', 'origin', 'main')
+            if (git_output(root, 'rev-parse', 'origin/main^{commit}') != selection['commit']
+                    or git_output(root, 'rev-parse', selection['commit'] + '^{tree}') != selection['tree']):
+                raise ValueError('selected baseline commit/tree does not match intended main')
+            gate = Path(selection['gate_directory'])
+            if not gate.is_absolute() or gate.is_symlink() or state_dir.resolve().is_relative_to(gate.resolve()):
+                raise ValueError('gate must be an independent retained absolute directory')
+            nightly_evidence.verify_manifest(gate, selection['output_manifest_sha256'])
+            receipt = json.loads((gate / 'execution.json').read_text(), object_pairs_hook=unique_fields)
+            if (receipt.get('schema') != 'agent-ee.nightly-execution/1' or receipt.get('full_suite') is not True
+                    or receipt.get('commit') != selection['commit'] or receipt.get('tree') != selection['tree']
+                    or not receipt.get('outcome_sha256') or not receipt.get('outcome_attempt_id')
+                    or not receipt.get('nightly_runner_sha256') or not receipt.get('runner_files')):
+                raise ValueError('gate lacks complete source/runtime lineage')
+            for name, field in (('nightly_full_suite.py', 'nightly_runner_sha256'),
+                                ('nightly_evidence.py', 'nightly_evidence_sha256')):
+                source = subprocess.run(['git', 'show', selection['commit'] + ':scripts/' + name],
+                                        cwd=root, capture_output=True, check=True, timeout=60).stdout
+                if hashlib.sha256(source).hexdigest() != receipt.get(field):
+                    raise ValueError('gate controller differs from its selected source commit')
+            outcome, _ = read_outcome(receipt, gate)
+            if outcome['state'] != 'started_or_uncertain':
+                raise ValueError('gate never reached native command launch')
+            log = gate / 'suite.log'
+            if nightly_evidence.digest(log) != receipt.get('suite_log_sha256'):
+                raise ValueError('gate log hash differs from its execution receipt')
+            problems = parse_problems_from_log(log)
+            if receipt.get('problem_count') != len(problems) or receipt.get('exit_code') != (1 if problems else 0):
+                raise ValueError('gate verdict/count/exit disagree')
+            inputs = sorted((gate / 'native').glob('*/native-inputs.json'))
+            if not inputs:
+                raise ValueError('gate has no retained native input receipt')
+            for path in inputs:
+                record = json.loads(path.read_text(), object_pairs_hook=unique_fields)
+                source = record.get('agent_ee', {})
+                if (record.get('schema') != 'agent-ee.native-inputs/1'
+                        or record.get('status') not in ('prepared', 'prepared_with_unavailable_inputs')
+                        or source.get('commit') != selection['commit'] or source.get('tree') != selection['tree']
+                        or source.get('clean') is not True
+                        or record.get('runner', {}).get('sha256') != receipt['runner_sha256']
+                        or record.get('manifest_sha256') != selection['input_manifest_sha256']
+                        or record.get('image') not in receipt.get('image_ids', [])):
+                    raise ValueError('native input receipt differs from selected source/runtime/input identity')
+            run_dir = state_dir / 'runs' / ('import-' + str(uuid.uuid4()))
+            run_dir.mkdir(parents=True)
+            comp = compare_problems({}, problems)
+            comp.update(baseline=True, added=[], fixed=[], kept=[], changed=[])
+            write_json(run_dir / 'compare.json', comp)
+            write_json(run_dir / 'baseline-origin.json', {**selection,
+                'original_started_at': receipt['started_at'], 'original_finished_at': receipt['finished_at'],
+                'original_attempt_id': receipt['nightly_attempt_id'],
+                'imported_at': datetime.now(timezone.utc).isoformat(), 'native_execution': False,
+                'external_publication': False})
+            nightly_evidence.register_run(state_dir, run_dir, receipt['nightly_attempt_id'], state='imported')
+            write_json(state_dir / 'latest-compare.json', comp)
+            write_json(state_dir / 'state.json', {
+                'schema': 'agent-ee.nightly-state/1', 'last_commit': selection['commit'],
+                'last_run_dir': str(run_dir), 'last_run_timestamp': receipt['finished_at'],
+                'last_problems': problems, 'unexecuted_problems': {},
+                'last_added_count': None, 'last_fixed_count': None, 'last_kept_count': None, 'last_changed_count': None,
+                'reporting': {'plane': True, 'github': True},
+                'reporting_owner': 'original reviewed gate; import never publishes or refreshes statuses'})
+            return 0
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+            print(f'Baseline import refused: {error}', file=sys.stderr)
+            return 1
+
+
+def qualify_gate(root: Path, run_dir: Path, commit: str, tree: str, runner: str,
+                 weight: int, jobs: int, repo: str, skip_gh_status: bool) -> int:
+    """Capture one candidate full gate before landing; baseline import is separate."""
+    created = False
+    try:
+        if (weight < 1 or jobs < 1 or git_output(root, 'rev-parse', 'HEAD') != commit
+                or git_output(root, 'rev-parse', 'HEAD^{tree}') != tree
+                or git_output(root, 'status', '--porcelain', '--untracked-files=all', '--ignored=matching')):
+            raise ValueError('full gate needs its exact clean candidate commit/tree')
+        if run_dir.is_relative_to(root) or root.is_relative_to(run_dir):
+            raise ValueError('gate evidence must be independent of the writable checkout')
+        run_dir.mkdir(parents=True, exist_ok=False)
+        created = True
+        attempt = str(uuid.uuid4())
+        write_json(run_dir / 'attempt.json', {'schema': 'agent-ee.nightly-attempt/1',
+            'attempt_id': attempt, 'commit': commit, 'tree': tree, 'run_dir': str(run_dir),
+            'started_at': datetime.now(timezone.utc).isoformat(), 'purpose': 'pre-landing full qualification'})
+        if not skip_gh_status:
+            publish_github_status(repo, commit, 'pending', 'Native full qualification in progress; no complete verdict yet')
+        problems = execute_suite(root, run_dir, weight, jobs, attempt, runner)
+        receipt = json.loads((run_dir / 'execution.json').read_text())
+        write_json(run_dir / 'problem-inventory.json', {'commit': commit, 'tree': tree, 'problems': problems})
+        reporting = {'required': not skip_gh_status, 'published': False}
+        if not skip_gh_status:
+            reporting['published'] = publish_github_status(repo, commit, 'failure' if problems else 'success',
+                f"strict-complete {commit} {receipt['finished_at']} problems={len(problems)} gate")
+        write_json(run_dir / 'reporting.json', reporting)
+        nightly_evidence.write_manifest(run_dir)
+        return 1 if problems or (reporting['required'] and not reporting['published']) else 0
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        if created:
+            write_json(run_dir / 'attempt-failure.json', {'error': str(error), 'status': 'incomplete',
+                'timestamp': datetime.now(timezone.utc).isoformat()})
+        print(f'Full qualification failed: {error}', file=sys.stderr)
+        return 1
 
 
 def report_run(state: dict, state_dir: Path, repo: str, skip_plane: bool, skip_gh_status: bool) -> int:
@@ -327,6 +589,10 @@ def run_nightly_suite(
     skip_gh_status: bool = False,
     repo: str = 'halbritt/agent-ee',
     initialize_baseline: bool = False,
+    runner: str = 'ae-ci-exec',
+    fresh_worktree: bool = False,
+    max_retained_runs: int = 7,
+    max_retained_bytes: int = 20 * 1024 ** 3,
 ) -> int:
     """Run moved main once; retain completed tests separately from reporting."""
     if weight < 1 or jobs < 1:
@@ -342,7 +608,7 @@ def run_nightly_suite(
         try:
             state_file = state_dir / 'state.json'
             active_file = state_dir / 'active-run.json'
-            if active_file.exists():
+            if active_file.exists() and not reconcile_no_start(active_file, state_dir):
                 raise RuntimeError('previous native attempt is unresolved; reconcile active-run.json before retrying')
             state = json.loads(state_file.read_text(encoding='utf-8')) if state_file.exists() else {}
             if not isinstance(state, dict) or (state and state.get('schema') != 'agent-ee.nightly-state/1'):
@@ -357,17 +623,26 @@ def run_nightly_suite(
             origin_head = git_output(root, 'rev-parse', '--verify', 'origin/main^{commit}')
             if not force and state.get('last_commit') == origin_head:
                 return report_run(state, state_dir, repo, skip_plane, skip_gh_status)
-            prepare_worktree(root, worktree_dir, origin_head)
+            nightly_evidence.guard_retention(state_dir, max_retained_runs, max_retained_bytes)
             run_id = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-%f')
+            selected_worktree = worktree_dir / run_id if fresh_worktree else worktree_dir
+            prepare_worktree(root, selected_worktree, origin_head)
             run_dir = state_dir / 'runs' / f'{run_id}-{origin_head[:8]}'
             run_dir.mkdir(parents=True)
-            write_json(active_file, {'commit': origin_head, 'run_dir': str(run_dir), 'started_at': run_id})
+            attempt_id = str(uuid.uuid4())
+            active = {'schema': 'agent-ee.nightly-attempt/1', 'attempt_id': attempt_id,
+                      'commit': origin_head, 'tree': git_output(selected_worktree, 'rev-parse', 'HEAD^{tree}'),
+                      'worktree': str(selected_worktree),
+                      'run_dir': str(run_dir), 'started_at': datetime.now(timezone.utc).isoformat()}
+            write_json(run_dir / 'attempt.json', active)
+            nightly_evidence.register_run(state_dir, run_dir, attempt_id, selected_worktree)
+            write_json(active_file, active)
             if not skip_gh_status:
                 publish_github_status(repo, origin_head, 'pending', 'Native full suite in progress; no complete verdict yet')
             print(f'Starting full suite run on {origin_head[:8]} (weight={weight}, jobs={jobs})...')
-            new_problems = execute_suite(worktree_dir, run_dir, weight, jobs)
+            new_problems = execute_suite(selected_worktree, run_dir, weight, jobs, attempt_id, runner)
             finish_time = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-            comp = compare_problems(state.get('last_problems', {}), new_problems)
+            comp = compare_problems(state.get('last_problems', {}), new_problems, state.get('unexecuted_problems', {}))
             comp['baseline'] = not state
             if comp['baseline']:
                 for field in ('added', 'fixed', 'kept', 'changed'):
@@ -376,23 +651,32 @@ def run_nightly_suite(
             write_json(state_dir / 'latest-compare.json', comp)
             summary = format_compare_summary(comp)
             (run_dir / 'compare.txt').write_text(summary, encoding='utf-8')
-            if regressions(comp):
+            if regressions(comp) or comp['unexecuted']:
                 failures = {'commit': origin_head, 'timestamp': finish_time,
                             'added': {k: new_problems[k] for k in comp['added']},
                             'changed': {k: {'old': comp['old'][k], 'new': new_problems[k]}
-                                        for k in comp.get('changed', [])}}
+                                        for k in comp.get('changed', [])},
+                            'unexecuted': comp['unexecuted']}
                 write_json(run_dir / 'failures.json', failures)
                 write_json(state_dir / 'latest-failures.json', failures)
             state = {
                 'schema': 'agent-ee.nightly-state/1', 'last_commit': origin_head,
                 'last_run_dir': str(run_dir), 'last_run_timestamp': finish_time,
                 'last_problems': new_problems,
+                'unexecuted_problems': comp['unexecuted'],
                 'last_added_count': None if comp['baseline'] else len(comp['added']),
                 'last_fixed_count': None if comp['baseline'] else len(comp['fixed']),
                 'last_kept_count': None if comp['baseline'] else len(comp['kept']),
                 'last_changed_count': None if comp['baseline'] else len(comp.get('changed', [])),
                 'reporting': {'plane': not regressions(comp), 'github': False},
             }
+            write_json(run_dir / 'retention.json', {
+                'schema': 'agent-ee.nightly-retention/1', 'status': 'retained-awaiting-lead-release',
+                'worktree': str(selected_worktree), 'native_evidence': str(run_dir / 'native'),
+                'max_retained_runs': max_retained_runs, 'max_retained_bytes': max_retained_bytes,
+                'automatic_deletion': False})
+            nightly_evidence.write_manifest(run_dir)
+            nightly_evidence.update_run(state_dir, run_dir, 'complete')
             write_json(state_file, state)
             active_file.unlink()
             print(f'Full suite run completed on {origin_head[:8]}: {summary.strip()}')
@@ -401,12 +685,21 @@ def run_nightly_suite(
             failure = {'commit': origin_head, 'run_dir': str(run_dir) if run_dir else None,
                        'timestamp': datetime.now(timezone.utc).isoformat(), 'status': 'incomplete',
                        'error': str(error)}
+            if run_dir and active_file.exists():
+                failure['proven_not_started'] = reconcile_no_start(active_file, state_dir)
             if origin_head and not skip_gh_status:
                 failure['github_error_reported'] = publish_github_status(
                     repo, origin_head, 'error', 'Native full suite did not complete; inspect local attempt failure evidence')
             write_json(state_dir / 'latest-attempt-failure.json', failure)
             if run_dir:
                 write_json(run_dir / 'attempt-failure.json', failure)
+                try:
+                    nightly_evidence.update_run(state_dir, run_dir,
+                                                'not_started' if failure.get('proven_not_started') else 'incomplete')
+                except (OSError, ValueError, KeyError, TypeError) as index_error:
+                    failure['retention_index_error'] = str(index_error)
+                    write_json(state_dir / 'latest-attempt-failure.json', failure)
+                    write_json(run_dir / 'attempt-failure.json', failure)
             print(f'Nightly suite failed: {error}', file=sys.stderr)
             return 1
 
@@ -415,6 +708,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Nightly Full Suite Runner (AGENTEE-614 Part 2)')
     subparsers = parser.add_subparsers(dest='subcommand')
     run_parser = subparsers.add_parser('run', help='Execute nightly full suite run')
+    import_parser = subparsers.add_parser('import-baseline', help='Import a reviewed retained full gate without native work')
+    import_parser.add_argument('--root', required=True)
+    import_parser.add_argument('--state-dir', required=True)
+    import_parser.add_argument('--selection', required=True, help='Explicit agent-ee.baseline-import/1 JSON')
+    gate_parser = subparsers.add_parser('qualify', help='Execute one exact full gate without initializing nightly state')
+    gate_parser.add_argument('--root', required=True)
+    gate_parser.add_argument('--commit', required=True)
+    gate_parser.add_argument('--tree', required=True)
+    gate_parser.add_argument('--evidence-dir', required=True)
+    gate_parser.add_argument('--runner', required=True)
+    gate_parser.add_argument('--weight', type=int, default=2)
+    gate_parser.add_argument('--jobs', type=int, default=2)
+    gate_parser.add_argument('--skip-gh-status', action='store_true')
+    gate_parser.add_argument('--repo', default='halbritt/agent-ee')
 
     for p in (parser, run_parser):
         p.add_argument('--force', action='store_true', help='Force run even if origin/main has not moved')
@@ -428,9 +735,19 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument('--root', default='.', help='Repository root path')
         p.add_argument('--initialize-baseline', action='store_true',
                        help='Explicit first native run recording a baseline; refuses existing state')
+        p.add_argument('--runner', default='ae-ci-exec', help='Reviewed ae-ci-exec executable path')
+        p.add_argument('--fresh-worktree', action='store_true', help='Use a new retained worktree for each native attempt')
+        p.add_argument('--max-retained-runs', type=int, default=7, help='Refuse a new native attempt at this retained run count')
+        p.add_argument('--max-retained-bytes', type=int, default=20 * 1024 ** 3,
+                       help='Refuse a new native attempt at this retained byte count; no automatic deletion')
 
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
+    if args.subcommand == 'import-baseline':
+        return import_baseline(root, Path(args.state_dir).expanduser().resolve(), Path(args.selection))
+    if args.subcommand == 'qualify':
+        return qualify_gate(root, Path(args.evidence_dir).expanduser().resolve(), args.commit, args.tree,
+                            args.runner, args.weight, args.jobs, args.repo, args.skip_gh_status)
     state_dir = Path(args.state_dir).expanduser().resolve()
     worktree_dir = Path(args.worktree).expanduser().resolve()
 
@@ -445,6 +762,10 @@ def main(argv: list[str] | None = None) -> int:
         skip_gh_status=args.skip_gh_status,
         repo=args.repo,
         initialize_baseline=args.initialize_baseline,
+        runner=args.runner,
+        fresh_worktree=args.fresh_worktree,
+        max_retained_runs=args.max_retained_runs,
+        max_retained_bytes=args.max_retained_bytes,
     )
 
 

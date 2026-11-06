@@ -699,8 +699,10 @@ class WorkflowInputTests(unittest.TestCase):
             self.assertEqual(runner.run_nightly_suite(
                 case['root'], state_dir=case['state_dir'], worktree_dir=case['worktree_dir'],
                 skip_plane=True, skip_gh_status=True, initialize_baseline=True), 0)
-            self.assertEqual((case['base'] / 'runner-args').read_text().splitlines(), [
-                str(case['worktree_dir']), '--', 'python3', 'scripts/strict_suite.py', '--jobs=2', '--full'])
+            args = (case['base'] / 'runner-args').read_text().splitlines()
+            self.assertEqual(args[:3], [str(case['worktree_dir']), '--', 'env'])
+            self.assertRegex(args[3], r'^AGENT_EE_NIGHTLY_ATTEMPT_ID=[0-9a-f-]{36}$')
+            self.assertEqual(args[4:], ['python3', 'scripts/strict_suite.py', '--jobs=2', '--full'])
             self.assertEqual((case['base'] / 'weights').read_text().splitlines(), ['2'])
         for absent in ('AGENT_EE_POD_INPUTS=', 'AGENT_EE_DECLARED_GAPS', 'continue-on-error', 'docker'):
             self.assertNotIn(absent, self.WORKFLOW)

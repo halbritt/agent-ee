@@ -27,7 +27,7 @@ class ModuleEnvironmentConsumerTests(unittest.TestCase):
         for name in ('scripts', 'tests', 'src', 'inputs', 'artifacts'):
             (self.root / name).mkdir()
         (self.root / 'tests/__init__.py').write_text('')
-        for name in ('strict_suite.py', 'strict_selection.py', 'strict_inputs.py'):
+        for name in ('strict_suite.py', 'strict_selection.py', 'strict_inputs.py', 'native-input-policy.json'):
             shutil.copyfile(ROOT / 'scripts' / name, self.root / 'scripts' / name)
         self.document = {'schema': 'agent-ee.module-env/1', 'modules': {}}
         for module, value in (('test_left', 'alpha'), ('test_right', 'beta')):
@@ -37,7 +37,7 @@ class ModuleEnvironmentConsumerTests(unittest.TestCase):
             parent.mkdir(parents=True)
             self.document['modules'][module] = {
                 'inputs': {'AGENT_EE_ACQUISITION_INPUTS': str(source)},
-                'outputs': {'AGENT_EE_CONSUMER_RESULT': str(parent / 'captured.json')},
+                'outputs': {'AGENT_EE_POWER_PART_ARTIFACTS': str(parent / 'captured.json')},
             }
             (self.root / 'tests' / (module + '.py')).write_text(f'''
 import json, os, unittest
@@ -46,7 +46,7 @@ class SelectedInput(unittest.TestCase):
     def test_selected_input(self):
         self.assertEqual(Path(os.environ['AGENT_EE_ACQUISITION_INPUTS']).read_text(), {value!r})
         self.assertEqual(os.environ['AGENT_EE_REQUIRE_TOOLCHAIN'], '1')
-        output = Path(os.environ['AGENT_EE_CONSUMER_RESULT'])
+        output = Path(os.environ['AGENT_EE_POWER_PART_ARTIFACTS'])
         self.assertFalse(output.exists())
         output.write_text(json.dumps({{'value': {value!r}, 'strict': os.environ['AGENT_EE_REQUIRE_TOOLCHAIN']}}))
 ''')
@@ -95,7 +95,7 @@ raise SystemExit(strict_suite.main(sys.argv[1:]))
         self.assertEqual(json.loads(self.output('test_right').read_text()), {'value': 'beta', 'strict': '1'})
 
     def test_global_policy_fault_in_unselected_module_refuses_before_children(self):
-        for fault in ('schema', 'unknown-module', 'reserved', 'traversal'):
+        for fault in ('schema', 'unknown-module', 'reserved', 'pod-input', 'visual-skip', 'traversal'):
             document = copy.deepcopy(self.document)
             if fault == 'schema':
                 document['schema'] = 'unknown/1'
@@ -103,6 +103,9 @@ raise SystemExit(strict_suite.main(sys.argv[1:]))
                 document['modules']['test_unknown'] = {'inputs': {}, 'outputs': {}}
             elif fault == 'reserved':
                 document['modules']['test_right']['inputs']['AGENT_EE_REQUIRE_TOOLCHAIN'] = str(self.root / 'inputs/test_right')
+            elif fault in ('pod-input', 'visual-skip'):
+                variable = 'AGENT_EE_POD_INPUTS' if fault == 'pod-input' else 'AGENT_EE_SKIP_VISUALS'
+                document['modules']['test_right']['inputs'][variable] = str(self.root / 'inputs/test_right')
             else:
                 document['modules']['test_right']['inputs']['AGENT_EE_ACQUISITION_INPUTS'] = str(self.root / 'inputs/../inputs/test_right')
             with self.subTest(fault=fault):
@@ -143,11 +146,20 @@ raise SystemExit(strict_suite.main(sys.argv[1:]))
         self.assertTrue(self.output('test_right').exists())
         self.assertFalse(self.output('test_left').exists())
 
+    def test_declared_unavailability_refuses_even_an_existing_source_without_fallback(self):
+        self.document['unavailable'] = {'test_left': {'AGENT_EE_ACQUISITION_INPUTS': 'retained inventory is incomplete'}}
+        result = self.execute()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('NOT EXECUTED, required input AGENT_EE_ACQUISITION_INPUTS missing: test_left', result.stderr)
+        self.assertIn('2 modules, 1 tests, 1 problem(s)', result.stderr)
+        self.assertFalse(self.output('test_left').exists())
+        self.assertTrue(self.output('test_right').exists())
+
     def test_existing_output_is_preserved_and_other_module_still_executes(self):
         self.output('test_left').write_bytes(b'preserve prior output\n')
         result = self.execute()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn('required input AGENT_EE_CONSUMER_RESULT missing: test_left', result.stderr)
+        self.assertIn('required input AGENT_EE_POWER_PART_ARTIFACTS missing: test_left', result.stderr)
         self.assertEqual(self.output('test_left').read_bytes(), b'preserve prior output\n')
         self.assertTrue(self.output('test_right').exists())
 

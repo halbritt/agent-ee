@@ -30,6 +30,31 @@ def completed_status(created, state='success', problems=0, label=''):
 
 
 class RecencyEvaluationTests(unittest.TestCase):
+    def test_clock_skew_has_an_exact_five_second_boundary(self):
+        now = datetime(2026, 11, 6, 12, tzinfo=timezone.utc)
+        for seconds, expected in ((0, True), (5, True), (5.000001, False)):
+            with self.subTest(seconds=seconds):
+                publication = now + timedelta(seconds=seconds)
+                status = completed_status(now)
+                status['created_at'] = publication.isoformat()
+                self.assertEqual(check_full_suite_recency.check_recency([status], now_utc=now)[0], expected)
+                status['created_at'] = now.isoformat()
+                status['description'] = f'strict-complete {COMMIT} {publication.isoformat()} problems=0'
+                self.assertEqual(check_full_suite_recency.check_recency([status], now_utc=now)[0], expected)
+
+    def test_equal_timestamp_conflicts_refuse_in_both_orders_but_duplicates_pass(self):
+        now = datetime(2026, 11, 6, 12, tzinfo=timezone.utc)
+        passed = completed_status(now)
+        pending = {'context': 'local-full-suite', 'created_at': now.isoformat(), 'state': 'error'}
+        for statuses in ([passed, pending], [pending, passed]):
+            self.assertFalse(check_full_suite_recency.check_recency(statuses, now_utc=now)[0])
+        self.assertTrue(check_full_suite_recency.check_recency([dict(passed, id=1), dict(passed, id=2)], now_utc=now)[0])
+
+    def test_failed_zero_problem_status_is_inconsistent(self):
+        now = datetime(2026, 11, 6, 12, tzinfo=timezone.utc)
+        status = completed_status(now, state='failure', problems=0)
+        self.assertFalse(check_full_suite_recency.check_recency([status], now_utc=now)[0])
+
     def test_fresh_status_passes(self):
         """A recent authoritative exact-commit completion passes."""
         now = datetime(2026, 11, 5, 12, 0, 0, tzinfo=timezone.utc)
@@ -67,7 +92,8 @@ class RecencyEvaluationTests(unittest.TestCase):
                 ok, _ = check_full_suite_recency.check_recency([{
                     'context': 'local-full-suite', 'state': state,
                     'created_at': (now - timedelta(hours=1)).isoformat(),
-                    'description': completed_status(now - timedelta(hours=1), state=state)['description'],
+                    'description': completed_status(now - timedelta(hours=1), state=state,
+                                                    problems=1 if state == 'failure' else 0)['description'],
                 }], now_utc=now)
                 self.assertEqual(ok, expected)
 
@@ -183,6 +209,22 @@ class RecencyEvaluationTests(unittest.TestCase):
 
 
 class ProblemComparisonTests(unittest.TestCase):
+    def test_setup_refusal_keeps_prior_problem_identities_unknown_until_recovery(self):
+        old = {'test_a.T.test_x': 'SKIP: old input', 'test_a.T.test_y': 'FAIL', 'test_b.T.test_z': 'ERROR'}
+        refused = {'test_a': 'MISSING-INPUT AGENT_EE_ACQUISITION_INPUTS'}
+        comp = nightly_full_suite.compare_problems(old, refused)
+        self.assertEqual(comp['fixed'], ['test_b.T.test_z'])
+        self.assertEqual(comp['unexecuted'], {'test_a.T.test_x': 'SKIP: old input', 'test_a.T.test_y': 'FAIL'})
+        self.assertEqual(comp['new'], refused)
+        repeated = nightly_full_suite.compare_problems(refused, refused, comp['unexecuted'])
+        self.assertEqual(repeated['unexecuted'], comp['unexecuted'])
+        self.assertEqual(repeated['fixed'], [])
+        summary = nightly_full_suite.format_compare_summary(repeated)
+        self.assertIn('UNEXECUTED prior problems: 2', summary)
+        recovered = nightly_full_suite.compare_problems(refused, {}, repeated['unexecuted'])
+        self.assertEqual(recovered['fixed'], ['test_a', 'test_a.T.test_x', 'test_a.T.test_y'])
+        self.assertEqual(recovered['unexecuted'], {})
+
     def parse(self, text):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / 'suite.log'
@@ -284,6 +326,131 @@ class ProblemComparisonTests(unittest.TestCase):
 
 
 class NightlyLifecycleTests(unittest.TestCase):
+    def test_unknown_prior_problems_survive_refusal_and_close_only_after_execution(self):
+        with nightly_fixture() as case:
+            report = case['base'] / 'report'
+            report.write_text('SKIP refused in strict mode: test_a.T.test_x: old dependency\n'
+                'ERROR: test_a.T.test_y\n'
+                'strict suite FAILED: 1 modules, 2 tests, 2 problem(s), '
+                '0 required test(s) not executed for missing inputs, 2 other problem(s)\n')
+            with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='1'):
+                self.assertEqual(self.run_case(case, initialize_baseline=True), 0)
+                for _ in range(2):
+                    self.advance_main(case)
+                    report.write_text('NOT EXECUTED, required input AGENT_EE_ACQUISITION_INPUTS missing: test_a\n'
+                        'strict suite FAILED: 1 modules, 0 tests, 1 problem(s), '
+                        '0 required test(s) not executed for missing inputs, 1 other problem(s); '
+                        '1 required module setup(s) refused, unexecuted test count unknown\n')
+                    self.assertEqual(self.run_case(case), 0)
+                    comp = json.loads((case['state_dir'] / 'latest-compare.json').read_text())
+                    self.assertEqual(comp['fixed'], [])
+                    self.assertEqual(comp['unexecuted'], {'test_a.T.test_x': 'SKIP: old dependency', 'test_a.T.test_y': 'ERROR'})
+                    failure = json.loads((case['state_dir'] / 'latest-failures.json').read_text())
+                    self.assertEqual(failure['unexecuted'], comp['unexecuted'])
+            self.advance_main(case)
+            report.write_text('strict suite passed: 1 modules, 2 tests, no skips\n')
+            self.assertEqual(self.run_case(case), 0)
+            comp = json.loads((case['state_dir'] / 'latest-compare.json').read_text())
+            self.assertEqual(comp['unexecuted'], {})
+            self.assertEqual(comp['fixed'], ['test_a', 'test_a.T.test_x', 'test_a.T.test_y'])
+
+    def test_imported_baseline_preserves_gate_time_without_native_execution_or_reporting(self):
+        with nightly_fixture() as case:
+            self.assertEqual(self.run_case(case, initialize_baseline=True), 0)
+            gate = next((case['state_dir'] / 'runs').iterdir())
+            receipt = json.loads((gate / 'execution.json').read_text())
+            native = gate / 'native/native-inputs-actual'
+            native.mkdir(parents=True)
+            (native / 'native-inputs.json').write_text(json.dumps({
+                'schema': 'agent-ee.native-inputs/1', 'status': 'prepared',
+                'agent_ee': {'commit': receipt['commit'], 'tree': receipt['tree'], 'clean': True},
+                'runner': {'sha256': receipt['runner_sha256']}, 'image': 'sha256:' + 'a' * 64,
+                'manifest_sha256': 'b' * 64}))
+            manifest = nightly_full_suite.nightly_evidence.write_manifest(gate)
+            intent = case['base'] / 'baseline-import.json'
+            intent.write_text(json.dumps({
+                'schema': 'agent-ee.baseline-import/1', 'gate_directory': str(gate),
+                'commit': receipt['commit'], 'tree': receipt['tree'],
+                'output_manifest_sha256': nightly_full_suite.nightly_evidence.digest(manifest),
+                'input_manifest_sha256': 'b' * 64, 'review_reference': 'owned-test-review@1'}))
+            before = (case['base'] / 'runner-args').read_bytes()
+            gh_before = (case['base'] / 'gh-calls').read_bytes()
+            imported = case['base'] / 'imported-state'
+            self.assertEqual(nightly_full_suite.import_baseline(case['root'], imported, intent), 0)
+            state = json.loads((imported / 'state.json').read_text())
+            self.assertEqual(state['last_run_timestamp'], receipt['finished_at'])
+            self.assertEqual(state['last_commit'], case['commit'])
+            self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
+            self.assertEqual((case['base'] / 'gh-calls').read_bytes(), gh_before)
+            self.assertNotEqual(nightly_full_suite.import_baseline(case['root'], imported, intent), 0)
+
+    def test_ignored_build_artifacts_are_preserved_and_cannot_reach_the_next_suite(self):
+        with nightly_fixture() as case:
+            (case['root'] / '.git/info/exclude').write_text('build/\n')
+            self.assertEqual(self.run_case(case, initialize_baseline=True), 0)
+            stale = case['worktree_dir'] / 'build/stale.json'
+            stale.parent.mkdir()
+            stale.write_bytes(b'owned prior output\n')
+            self.advance_main(case)
+            before = (case['base'] / 'runner-args').read_bytes()
+            self.assertNotEqual(self.run_case(case), 0)
+            self.assertEqual(stale.read_bytes(), b'owned prior output\n')
+            self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
+
+    def test_unproven_no_start_never_clears_or_retries_an_attempt(self):
+        faults = ('missing', 'malformed', 'stale', 'future', 'runner', 'supervisor', 'command', 'token',
+                  'incomplete', 'exit', 'missing-fields', 'duplicate-fields', 'not-a-bool')
+        for fault in faults:
+            with self.subTest(fault=fault), nightly_fixture() as case:
+                with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75', NIGHTLY_START_STATE='not_started',
+                                NIGHTLY_JOURNAL_FAULT=fault):
+                    self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
+                self.assertTrue((case['state_dir'] / 'active-run.json').exists())
+                before = (case['base'] / 'runner-args').read_bytes()
+                self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
+                self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
+                self.assertFalse((case['state_dir'] / 'state.json').exists())
+
+    def test_bound_no_start_proof_cannot_be_changed_after_sealing(self):
+        with nightly_fixture() as case:
+            with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75', NIGHTLY_START_STATE='not_started'):
+                self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
+            run = next((case['state_dir'] / 'runs').iterdir())
+            # Simulate a crash after the receipt was bound, before marker removal.
+            active = case['state_dir'] / 'active-run.json'
+            active.write_bytes((run / 'attempt.json').read_bytes())
+            journal = run / 'outcome.json'
+            journal.write_bytes(journal.read_bytes() + b'\n')
+            before = (case['base'] / 'runner-args').read_bytes()
+            self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
+            self.assertTrue(active.exists())
+            self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
+
+    def test_interrupted_or_started_attempts_never_get_no_start_clearance(self):
+        for state in ('interrupted', 'started_or_uncertain'):
+            with self.subTest(state=state), nightly_fixture() as case:
+                with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75', NIGHTLY_START_STATE=state):
+                    self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
+                self.assertTrue((case['state_dir'] / 'active-run.json').exists())
+                before = (case['base'] / 'runner-args').read_bytes()
+                self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
+                self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
+
+    def test_proven_no_start_is_retained_and_allows_a_later_attempt(self):
+        with nightly_fixture() as case:
+            with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75', NIGHTLY_START_STATE='not_started'):
+                self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
+            self.assertFalse((case['state_dir'] / 'active-run.json').exists())
+            self.assertFalse((case['state_dir'] / 'state.json').exists())
+            run = next((case['state_dir'] / 'runs').iterdir())
+            self.assertEqual(json.loads((run / 'reconciliation.json').read_text())['reason'], 'proven_not_started')
+            self.assertTrue((run / 'outcome.json').exists())
+            self.assertNotIn('strict-complete', (case['base'] / 'gh-args').read_text())
+            self.assertEqual(self.run_case(case, initialize_baseline=True), 0)
+            self.assertEqual(len(list((case['state_dir'] / 'runs').iterdir())), 2)
+            receipts = [json.loads(path.read_text()) for path in (case['state_dir'] / 'runs').glob('*/execution.json')]
+            self.assertEqual(len({r['command_sha256'] for r in receipts}), 2)
+
     def test_missing_state_requires_explicit_initialization(self):
         with nightly_fixture() as case:
             self.assertNotEqual(self.run_case(case), 0)
