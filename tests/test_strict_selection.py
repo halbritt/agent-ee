@@ -102,7 +102,7 @@ class ChangeBaseTests(unittest.TestCase):
             (root / 'tests').mkdir()
             (root / 'src').mkdir()
             (root / 'tests/__init__.py').write_text('')
-            for name in ('strict_suite.py', 'strict_selection.py', 'strict_inputs.py'):
+            for name in ('strict_suite.py', 'strict_selection.py', 'strict_inputs.py', 'native-input-policy.json'):
                 shutil.copyfile(ROOT / 'scripts' / name, root / 'scripts' / name)
             (root / 'tests/test_example.py').write_text('''
 import unittest
