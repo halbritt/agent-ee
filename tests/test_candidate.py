@@ -2,7 +2,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from agent_ee import native_run
 from agent_ee.candidate import capture, verify_snapshot, verify_source
 from agent_ee.executor import execute
 
@@ -47,6 +49,31 @@ class CandidateTests(unittest.TestCase):
         self.scope.write_text(json.dumps(scope))
         with self.assertRaisesRegex(ValueError, "scope changed"):
             verify_source(self.run)
+
+    def test_source_changes_during_extractor_probe_refuse_capture(self):
+        # AGENTEE-618: the version probe must finish before the final source check.
+        extractor = self.root / 'pdftotext'
+        extractor.write_bytes(b'recorded extractor binary')
+        scope = json.loads(self.scope.read_text())
+        scope['checks'] = [{'id': 'facts', 'kind': 'datasheet_facts', 'params': {
+            'facts': 'facts.json', 'extractor': {'path': str(extractor)}}}]
+        for changed in (self.scope, self.source / 'board'):
+            with self.subTest(changed=changed.name):
+                self.scope.write_text(json.dumps(scope))
+                run = self.root / ('run-' + changed.name)
+                run.mkdir()
+
+                def respond(call):
+                    if call.intent.tool == 'probe':
+                        changed.write_text(changed.read_text() + '\n')
+                        return native_run.Outcome(stderr=b'pdftotext version 24.02.0\n')
+                    return native_run.Outcome(stdout=b'recorded-revision\n')
+
+                with patch('agent_ee.datasheet_facts.EXTRACTOR', str(extractor)), \
+                        native_run.using(native_run.Recorded(respond)):
+                    with self.assertRaisesRegex(ValueError, 'source or scope changed during capture'):
+                        capture(self.scope, run)
+                self.assertFalse((run / 'candidate.json').exists())
 
     def test_added_and_deleted_inputs_invalidate(self):
         capture(self.scope, self.run)
