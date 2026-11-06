@@ -34,13 +34,18 @@ DECLARED = 'declared gap fome-mc-store: fome-mc object store with df304f332129 n
 # often while the strict suite itself is running, so they must never write bytecode into src/.
 REAL_PRECOMPILE = strict_suite.precompile_sources
 _precompile = patch.object(strict_suite, 'precompile_sources', return_value=True)
+_module_environment = patch.dict(os.environ)
 
 
 def setUpModule():
     _precompile.start()
+    _module_environment.start()
+    # Nested suite fixtures declare their own test inventory and input policy.
+    os.environ.pop('AGENT_EE_MODULE_ENV', None)
 
 
 def tearDownModule():
+    _module_environment.stop()
     _precompile.stop()
 
 
@@ -287,7 +292,8 @@ class JudgeTests(unittest.TestCase):
                 """))
             env = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
             env.pop('AGENT_EE_SKIP_VISUALS', None)
-            with patch.dict(os.environ, env, clear=True), patch.object(strict_suite, 'ROOT', tree):
+            with patch.dict(os.environ, env, clear=True), patch.object(strict_suite, 'ROOT', tree), \
+                    patch.object(strict_suite, 'TESTS', tests):
                 outcome = strict_suite.run_module('test_visual_default', root, 30)
         self.assertEqual(outcome['exit'], 0, outcome['log'])
         self.assertEqual(outcome['result']['run'], 1)
@@ -601,7 +607,8 @@ class WorkflowInputTests(unittest.TestCase):
             self.assertNotIn(forbidden, triggers)
         script = self.full_gate_script()
         self.assertIn('scripts/check_full_suite_recency.py', script)
-        self.assertIn('--commit "${{ github.sha }}" --max-hours 36', script)
+        self.assertIn('--commit "${{ github.sha }}"', script)
+        self.assertNotIn('--max-hours', script)
         for forbidden in ('strict_suite.py', 'unittest', 'pytest', 'docker', 'ae-ci-exec'):
             self.assertNotIn(forbidden, script)
 
@@ -619,10 +626,13 @@ class WorkflowInputTests(unittest.TestCase):
             script = self.full_gate_script().replace('${{ github.sha }}', 'a' * 40)
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
                        RECENCY_STATUSES=str(statuses))
-            for hours, expected in ((2, 0), (48, 1)):
+            for hours, state, expected in ((2, 'success', 0), (48, 'success', 0),
+                                           (2, 'pending', 1), (2, 'error', 1)):
+                created = datetime.now(timezone.utc) - timedelta(hours=hours)
                 statuses.write_text(json.dumps([{
-                    'context': 'local-full-suite', 'state': 'success',
-                    'created_at': (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(),
+                    'context': 'local-full-suite', 'state': state,
+                    'created_at': created.isoformat(),
+                    'description': f"strict-complete {'a' * 40} {created.strftime('%Y-%m-%dT%H:%M:%SZ')} problems=0",
                 }]))
                 proc = subprocess.run(['bash', '--noprofile', '--norc', '-e', '-c', script],
                                       cwd=root, env=env, capture_output=True, text=True)
@@ -688,7 +698,7 @@ class WorkflowInputTests(unittest.TestCase):
         with nightly_fixture() as case:
             self.assertEqual(runner.run_nightly_suite(
                 case['root'], state_dir=case['state_dir'], worktree_dir=case['worktree_dir'],
-                skip_plane=True, skip_gh_status=True), 0)
+                skip_plane=True, skip_gh_status=True, initialize_baseline=True), 0)
             self.assertEqual((case['base'] / 'runner-args').read_text().splitlines(), [
                 str(case['worktree_dir']), '--', 'python3', 'scripts/strict_suite.py', '--jobs=2', '--full'])
             self.assertEqual((case['base'] / 'weights').read_text().splitlines(), ['2'])

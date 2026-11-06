@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Check Full Suite Recency (AGENTEE-614 Part 3 / Defect #42).
 
-Validates that a commit has a 'local-full-suite' status recorded within
-the maximum age window (default: 36 hours). Replaces running actual test suites
-inside GitHub Actions CI.
+Validates that a commit has a 'local-full-suite' status recorded for the exact monitored commit. Completed unchanged commits do not expire.
+GitHub Actions executes this completion monitor instead of actual test suites.
 """
 import argparse
 from datetime import datetime, timezone
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -19,7 +19,7 @@ def parse_iso_timestamp(ts_str: str) -> datetime:
     norm = ts_str.replace('Z', '+00:00')
     dt = datetime.fromisoformat(norm)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        raise ValueError('timestamp must include a timezone')
     return dt.astimezone(timezone.utc)
 
 
@@ -27,51 +27,50 @@ def check_recency(
     statuses: list[dict],
     max_hours: float = 36.0,
     now_utc: datetime | None = None,
+    commit_sha: str | None = None,
 ) -> tuple[bool, str]:
-    """Evaluate whether any 'local-full-suite' status is fresh within max_hours."""
+    """Check authoritative completion for an exact SHA; max_hours is legacy compatibility.
+
+    Completed unchanged commits do not expire. Ambiguous timestamps cannot be
+    ordered safely, and newer incomplete evidence never borrows an older pass.
+    """
     if not statuses:
         return False, "No commit statuses found"
-
-    matching = [s for s in statuses if s.get('context') == 'local-full-suite']
+    if not isinstance(statuses, list) or not all(isinstance(status, dict) for status in statuses):
+        return False, "Malformed commit status records"
+    matching = [status for status in statuses if status.get('context') == 'local-full-suite']
     if not matching:
         return False, "No 'local-full-suite' commit status found"
-
-    # Sort matching statuses descending by created_at
-    def sort_key(item):
-        ts = item.get('created_at') or item.get('updated_at') or ''
-        return ts
-
-    matching.sort(key=sort_key, reverse=True)
-    latest = matching[0]
-
-    ts_str = latest.get('created_at') or latest.get('updated_at')
-    if not ts_str:
-        return False, "Status record is missing created_at timestamp"
-
     try:
-        created_dt = parse_iso_timestamp(ts_str)
-    except (ValueError, TypeError) as err:
-        return False, f"Failed to parse status timestamp '{ts_str}': {err}"
-
+        ordered = [(parse_iso_timestamp(status['created_at']), status) for status in matching]
+    except (KeyError, AttributeError, ValueError, TypeError):
+        return False, 'Malformed status timestamp; completion ordering is unknown'
+    created, latest = max(ordered, key=lambda pair: pair[0])
     now = now_utc if now_utc is not None else datetime.now(timezone.utc)
-    age_seconds = (now - created_dt).total_seconds()
-    age_hours = age_seconds / 3600.0
-
+    if created > now:
+        return False, 'Future-dated status cannot establish completion'
     state = latest.get('state', 'unknown')
-    desc = latest.get('description', '')
     if state not in ('success', 'failure'):
         return False, f'local-full-suite status does not record a completed suite (state={state})'
-
-    if age_hours <= max_hours:
-        return True, (
-            f"local-full-suite status is fresh: age {max_hours if age_hours < 0 else age_hours:.1f}h "
-            f"<= {max_hours}h (state={state}, description={desc!r})"
-        )
-    else:
-        return False, (
-            f"local-full-suite status is stale: age {age_hours:.1f}h > {max_hours}h "
-            f"(created_at={ts_str}, state={state}, description={desc!r})"
-        )
+    description = latest.get('description')
+    marker = (re.match(r'^strict-complete ([0-9a-f]{40}) (\S+) problems=(\d+)(?:\s|$)', description)
+              if isinstance(description, str) else None)
+    if marker is None:
+        return False, 'Status has no authoritative strict-suite completion marker'
+    recorded_sha, finished_text, problems = marker.groups()
+    if commit_sha is not None and recorded_sha != commit_sha.lower():
+        return False, 'Completed result belongs to a different commit SHA'
+    try:
+        finished = parse_iso_timestamp(finished_text)
+    except (AttributeError, ValueError, TypeError):
+        return False, 'Malformed completion timestamp'
+    if finished > now or finished > created:
+        return False, 'Future or inconsistent completion timestamp'
+    if state == 'success' and int(problems) != 0:
+        return False, 'Successful suite status contradicts its problem count'
+    age_hours = (now - created).total_seconds() / 3600
+    return True, (f'Completed local-full-suite for {recorded_sha}: age {age_hours:.1f}h; '
+                  f'no expiration (suite state={state}, problems={problems}, finished={finished_text})')
 
 
 def fetch_statuses_via_gh(repo: str, commit_sha: str, token: str | None = None) -> list[dict]:
@@ -89,7 +88,7 @@ def fetch_statuses_via_gh(repo: str, commit_sha: str, token: str | None = None) 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Check local-full-suite recency (AGENTEE-614 Part 3)')
     parser.add_argument('--commit', help='Commit SHA to inspect (default: HEAD)')
-    parser.add_argument('--max-hours', type=float, default=36.0, help='Maximum permitted age in hours (default: 36)')
+    parser.add_argument('--max-hours', type=float, default=36.0, help='Legacy compatibility option; exact-commit completed evidence does not expire')
     parser.add_argument('--status-json', help='Path to mock or cached statuses JSON array file')
     parser.add_argument('--repo', default='halbritt/agent-ee', help='Repository (owner/repo)')
     parser.add_argument('--gh-token', help='GitHub API token (default: env GH_TOKEN or GITHUB_TOKEN)')
@@ -120,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
             sys.stderr.write(f"check_full_suite_recency: error: {err}\n")
             return 1
 
-    ok, message = check_recency(statuses, max_hours=args.max_hours)
+    ok, message = check_recency(statuses, max_hours=args.max_hours, commit_sha=commit)
     if ok:
         print(f"RECENCY OK: commit {commit or 'mock'}: {message}")
         return 0

@@ -40,6 +40,7 @@ def nightly_fixture():
         gh = bins / 'gh'
         gh.write_text('#!/bin/sh\n'
                       'printf "%s\\n" "$@" > "$NIGHTLY_PROBE/gh-args"\n'
+                      'printf invoked\\n >> "$NIGHTLY_PROBE/gh-calls"\n'
                       'exit "${NIGHTLY_GH_EXIT:-0}"\n')
         for command in (runner, plane, gh):
             command.chmod(0o755)
