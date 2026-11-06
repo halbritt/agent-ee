@@ -591,6 +591,32 @@ class RotationCompositionTests(NativeRun):
         with self.assertRaisesRegex(ValueError, 'policy sha256'):
             preview_obligations('PREVIEW_REQUIRED', None, report_data, cpl_text)
 
+        # AGENTEE-620: corrected bytes cannot stand in for lost or changed native evidence.
+        native = self.run_dir / 'work/fab/raw-native-cpl.csv'
+        native_bytes = native.read_bytes()
+        for fault in ('changed', 'missing'):
+            with self.subTest(native_custody=fault):
+                if fault == 'changed':
+                    native.write_bytes(native_bytes + b'\n')
+                else:
+                    native.unlink()
+                with self.assertRaisesRegex(ValueError, 'native CPL'):
+                    artifact_record(self.run_dir, result)
+                native.write_bytes(native_bytes)
+        report_path = self.run_dir / 'work/cpl/cpl-rotation.json'
+        check_path = self.run_dir / 'checks/cpl.json'
+        report_bytes, check_bytes = report_path.read_bytes(), check_path.read_bytes()
+        changed_source = read_json(report_path)
+        changed_source['export']['cpl_sha256'] = '0' * 64
+        write_json(report_path, changed_source)
+        changed_check = read_json(check_path)
+        changed_check['details']['report_sha256'] = digest(report_path)
+        write_json(check_path, changed_check)
+        with self.assertRaisesRegex(ValueError, 'native CPL differs from its rotation source'):
+            artifact_record(self.run_dir, result)
+        report_path.write_bytes(report_bytes)
+        check_path.write_bytes(check_bytes)
+
         # The correction must be of exactly this package's native CPL, and remain as sealed.
         scope = read_json(self.run_dir / 'candidate.json')['scope']
         manifest = read_json(self.run_dir / 'work/fab/fab/manifest.json')

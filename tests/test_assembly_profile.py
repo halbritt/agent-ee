@@ -233,6 +233,10 @@ class NativeAssessmentTests(unittest.TestCase):
         self.assertEqual((result['execution'], result['outcome']), ('malformed', 'unknown'), result)
         self.assertIn('corrected CPL differs from its report', result['summary'])
         self.assertNotIn('assembly_orientation', result['details'])
+        manifest = read_json(self.run_dir / 'work/fab/fab/manifest.json')
+        native_sha = read_json(self.run_dir / 'work/cpl/cpl-rotation.json')['export']['cpl_sha256']
+        self.assertEqual(manifest['files']['cpl.csv'], native_sha)
+        self.assertEqual(digest(self.run_dir / 'work/fab/fab/cpl.csv'), native_sha)
 
     def test_hashed_cpl_faults_cannot_pass_profile_assessment(self):
         """AGENTEE-524: custody cannot support wrong angles or rows the report never assessed."""
@@ -272,7 +276,7 @@ class NativeAssessmentTests(unittest.TestCase):
         result = self.run_case(self.scope(profile_document(self.policy_sha())))
         rotation = result['details']['rotation']
         report = read_json(self.run_dir / 'work/cpl/cpl-rotation.json')
-        native = (self.run_dir / 'work/fab/fab/cpl.csv').read_text()
+        native = (self.run_dir / 'work/fab/raw-native-cpl.csv').read_text()
         pads = read_json(self.run_dir / 'work/geometry/geometry.json')['pads']
         profile = read_json(self.run_dir / 'inputs' / PROFILE_REL)
         sha = digest(self.run_dir / 'inputs' / PROFILE_REL)
