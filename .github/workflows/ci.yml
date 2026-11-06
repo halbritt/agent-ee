@@ -14,7 +14,7 @@ permissions:
   statuses: read
 
 env:
-  # Pinned external inputs read by ae-ci-exec and test toolchains
+  # Runtime input metadata consumed by ae-ci-exec; retained until its contract changes.
   FOME_MC_COMMIT: 1289f3149d2bcaa83a3b490a0bfbd11ed8a17589
   FOME_MC_STORE: build/external/fome-mc
   J1_DRAWING_URL: https://www.farnell.com/cad/2916153.pdf

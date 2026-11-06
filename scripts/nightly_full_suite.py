@@ -12,10 +12,13 @@ import argparse
 import collections
 from datetime import datetime, timezone
 import fcntl
+import hashlib
+import html
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -25,27 +28,55 @@ DEFAULT_WORKTREE_DIR = Path.home() / '.cache/agent-worktrees/agent-ee/nightly-fu
 
 
 def parse_problems_from_log(log_path: Path | str) -> dict[str, str]:
-    """Parse failed, skipped-refused, and missing-input tests from suite.log."""
-    out = {}
-    path = Path(log_path)
-    if not path.exists():
-        return out
+    """Read only the final strict-suite verdict and its exact problem inventory.
 
-    with open(path, 'r', encoding='utf-8', errors='replace') as f:
-        for line in f:
-            line = line.rstrip('\n')
-            m = re.match(r'^(FAIL|ERROR): (\S+) \(([^)]+)\)(.*)$', line)
-            if m:
-                key = m.group(3) + (m.group(4).strip() and ' ' + m.group(4).strip() or '')
-                out.setdefault(key, m.group(1))
-                continue
-            m = re.match(r'^SKIP refused in strict mode: ([^:]+): (.*)$', line)
-            if m:
-                out.setdefault(m.group(1), 'SKIP: ' + m.group(2)[:120])
-                continue
-            m = re.match(r'^::error title=required input ([^:]+) missing::(\S+) not executed', line)
-            if m:
-                out.setdefault(m.group(2), 'MISSING-INPUT ' + m.group(1))
+    Raw unittest output repeats these problems and uses a different subtest
+    spelling. An absent or incomplete verdict cannot establish zero problems.
+    """
+    lines = Path(log_path).read_text(encoding='utf-8', errors='strict').splitlines()
+    verdict_pattern = re.compile(
+        r'strict suite FAILED: \d+ modules, \d+ tests, (\d+) problem\(s\), '
+        r'\d+ required test\(s\) not executed for missing inputs, \d+ other problem\(s\)')
+    verdicts = []
+    for index, line in enumerate(lines):
+        if re.fullmatch(r'strict suite passed: \d+ modules, \d+ tests, no skips', line):
+            verdicts.append((index, 0))
+        elif match := verdict_pattern.fullmatch(line):
+            if int(match[1]) == 0:
+                raise ValueError('failed strict-suite verdict must name a problem')
+            verdicts.append((index, int(match[1])))
+    if len(verdicts) != 1:
+        raise ValueError('log must contain one complete full strict-suite verdict')
+    end, count = verdicts[0]
+    if not count:
+        return {}
+    if end < count:
+        raise ValueError('strict-suite problem inventory is truncated')
+    out = {}
+    occurrences = collections.Counter()
+    for line in lines[end - count:end]:
+        if match := re.fullmatch(r'(FAILURE|ERROR|UNEXPECTED SUCCESS|EXPECTED FAILURE refused in strict mode): (.+)', line):
+            kind, key = match.groups()
+            kind = 'FAIL' if kind == 'FAILURE' else kind
+        elif match := re.fullmatch(r'SKIP refused in strict mode: (.+?): (.*)', line):
+            key, reason = match.groups()
+            kind = 'SKIP: ' + reason
+        elif match := re.fullmatch(r'NOT EXECUTED, required input (\S+) missing: (.+)', line):
+            gap, key = match.groups()
+            kind = 'MISSING-INPUT ' + gap
+        elif match := re.fullmatch(r'(test_[\w.]+): (.+)', line):
+            key, reason = match.groups()
+            kind = 'MODULE: ' + reason
+        elif match := re.fullmatch(r'\d+ module records for \d+ selected modules', line):
+            key, kind = 'strict-suite.module-records', 'MODULE: ' + line
+        else:
+            raise ValueError('unrecognized strict-suite problem inventory line')
+        occurrences[key] += 1
+        if occurrences[key] > 1:
+            key += f' [occurrence {occurrences[key]}]'
+        if key in out:
+            raise ValueError('ambiguous strict-suite problem identity')
+        out[key] = kind
     return out
 
 
@@ -112,14 +143,110 @@ def file_plane_issue(project: str, name: str, description: str, external_source:
         'plane', 'issue', 'create',
         '-p', project,
         '-n', name,
-        '--description', description,
+        '--description-html', '<pre>' + html.escape(description) + '</pre>',
         '--data', data
     ]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        return proc.returncode == 0
+        if proc.returncode == 0:
+            return True
+        if proc.returncode == 5:
+            failure = json.loads(proc.stdout)
+            if isinstance(failure, dict) and isinstance(failure.get('error'), dict) and failure['error'].get('http_status') == 409:
+                found = subprocess.run(
+                    ['plane', 'issue', 'get', '-p', project, '--external-source', external_source,
+                     '--external-id', external_id], capture_output=True, text=True, timeout=30)
+                payload = json.loads(found.stdout)
+                issue = payload.get('data') if isinstance(payload, dict) else None
+                return (found.returncode == 0 and isinstance(issue, dict) and payload.get('ok') is True
+                        and issue.get('external_source') == external_source
+                        and issue.get('external_id') == external_id)
+        return False
+    except (ValueError, TypeError):
+        return False
     except (subprocess.SubprocessError, OSError):
         return False
+
+
+def write_json(path: Path, payload: dict) -> None:
+    temporary = path.with_suffix(path.suffix + '.new')
+    temporary.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
+    temporary.replace(path)
+
+
+def git_output(root: Path, *args: str) -> str:
+    return subprocess.run(['git', *args], cwd=root, capture_output=True, text=True,
+                          check=True, timeout=60).stdout.strip()
+
+
+def prepare_worktree(root: Path, worktree: Path, commit: str) -> None:
+    worktree.parent.mkdir(parents=True, exist_ok=True)
+    if worktree.exists():
+        common = (root / git_output(root, 'rev-parse', '--git-common-dir')).resolve()
+        existing = (worktree / git_output(worktree, 'rev-parse', '--git-common-dir')).resolve()
+        if common != existing or git_output(worktree, 'status', '--porcelain', '--untracked-files=all'):
+            raise RuntimeError('nightly worktree is foreign or dirty; preserving it for inspection')
+        git_output(worktree, 'checkout', '--detach', '--no-overwrite-ignore', commit)
+    else:
+        git_output(root, 'worktree', 'add', '--detach', str(worktree), commit)
+    if git_output(worktree, 'rev-parse', 'HEAD') != commit:
+        raise RuntimeError('nightly worktree does not match origin/main')
+
+
+def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int) -> dict[str, str]:
+    log_path = run_dir / 'suite.log'
+    command = ['ae-ci-exec', str(worktree), '--', 'python3', 'scripts/strict_suite.py', f'--jobs={jobs}', '--full']
+    runner = shutil.which('ae-ci-exec')
+    receipt = {
+        'schema': 'agent-ee.nightly-execution/1', 'command': command,
+        'commit': git_output(worktree, 'rev-parse', 'HEAD'),
+        'tree': git_output(worktree, 'rev-parse', 'HEAD^{tree}'),
+        'weight': weight, 'jobs': jobs, 'timeout_seconds': 7200,
+        'runner': runner,
+        'runner_sha256': hashlib.sha256(Path(runner).read_bytes()).hexdigest() if runner else None,
+        'started_at': datetime.now(timezone.utc).isoformat(),
+    }
+    write_json(run_dir / 'execution.json', receipt)
+    try:
+        with log_path.open('w', encoding='utf-8') as output:
+            proc = subprocess.run(command, env=dict(os.environ, AE_CI_WEIGHT=str(weight), AE_CI_KEEP_TMP='1'),
+                                  stdout=output, stderr=subprocess.STDOUT, text=True, timeout=7200)
+        receipt['exit_code'] = proc.returncode
+        problems = parse_problems_from_log(log_path)
+        if proc.returncode != (1 if problems else 0):
+            raise RuntimeError('runner exit status disagrees with the strict-suite verdict')
+        receipt['problem_count'] = len(problems)
+        return problems
+    finally:
+        receipt['finished_at'] = datetime.now(timezone.utc).isoformat()
+        if log_path.exists():
+            content = log_path.read_bytes()
+            receipt['suite_log_sha256'] = hashlib.sha256(content).hexdigest()
+            receipt['image_ids'] = sorted(set(re.findall(
+                r'ae-ci-exec: image (sha256:[0-9a-f]{64})', content.decode('utf-8', errors='replace'))))
+        write_json(run_dir / 'execution.json', receipt)
+
+
+def report_run(state: dict, state_dir: Path, repo: str, skip_plane: bool, skip_gh_status: bool) -> int:
+    """Resume unfinished reporting without repeating a completed native run."""
+    run_dir = Path(state['last_run_dir'])
+    comp = json.loads((run_dir / 'compare.json').read_text(encoding='utf-8'))
+    done = state['reporting']
+    if not done['plane'] and not skip_plane:
+        done['plane'] = file_plane_issue(
+            'AGENTEE', f"Nightly suite regressions on {state['last_commit'][:8]}",
+            format_compare_summary(comp), 'agent-ee-nightly-suite', f"nightly-{state['last_commit']}")
+        write_json(state_dir / 'state.json', state)
+    if not done['github'] and not skip_gh_status:
+        description = (f"{state['last_run_timestamp']}: {len(comp['new'])} problems "
+                       f"(+{len(comp['added'])}, -{len(comp['fixed'])}, ={len(comp['kept'])})")
+        done['github'] = publish_github_status(
+            repo, state['last_commit'], 'failure' if comp['added'] else 'success', description)
+        write_json(state_dir / 'state.json', state)
+    failed = (not skip_plane and not done['plane']) or (not skip_gh_status and not done['github'])
+    if failed:
+        print('Nightly reporting incomplete; retained state will resume reporting without rerunning the suite.', file=sys.stderr)
+    return 1 if failed else 0
 
 
 def run_nightly_suite(
@@ -133,104 +260,62 @@ def run_nightly_suite(
     skip_gh_status: bool = False,
     repo: str = 'halbritt/agent-ee',
 ) -> int:
-    """Execute the nightly suite run lifecycle."""
+    """Run moved main once; retain completed tests separately from reporting."""
+    if weight < 1 or jobs < 1:
+        raise ValueError('weight and jobs must be positive')
     state_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = state_dir / 'job.lock'
-    lock_file = open(lock_path, 'w')
-    try:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        print('Another nightly suite run is active; exiting.')
-        return 0
-
-    state_file = state_dir / 'state.json'
-    state = {}
-    if state_file.exists():
+    with (state_dir / 'job.lock').open('a') as lock_file:
         try:
-            state = json.loads(state_file.read_text(encoding='utf-8'))
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    # Check origin/main
-    subprocess.run(['git', 'fetch', 'origin', 'main'], cwd=root, capture_output=True, text=True)
-    proc = subprocess.run(['git', 'rev-parse', 'origin/main'], cwd=root, capture_output=True, text=True)
-    origin_head = proc.stdout.strip() if proc.returncode == 0 else ''
-    if not origin_head:
-        proc = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True)
-        origin_head = proc.stdout.strip()
-
-    if not force and state.get('last_commit') == origin_head:
-        print(f'origin/main ({origin_head[:8]}) has not moved since last run; skipping.')
-        return 0
-
-    # Ensure isolated worktree exists at origin/main
-    worktree_dir.parent.mkdir(parents=True, exist_ok=True)
-    if (worktree_dir / '.git').exists():
-        subprocess.run(['git', 'fetch', 'origin', 'main'], cwd=worktree_dir, capture_output=True)
-        subprocess.run(['git', 'checkout', '--detach', origin_head], cwd=worktree_dir, capture_output=True)
-        subprocess.run(['git', 'reset', '--hard', origin_head], cwd=worktree_dir, capture_output=True)
-        subprocess.run(['git', 'clean', '-fdx'], cwd=worktree_dir, capture_output=True)
-    else:
-        subprocess.run(['git', 'worktree', 'add', '--detach', str(worktree_dir), origin_head], cwd=root, capture_output=True)
-
-    now = datetime.now(timezone.utc)
-    run_id = now.strftime('%Y%m%d-%H%M%S')
-    run_dir = state_dir / 'runs' / f'{run_id}-{origin_head[:8]}'
-    run_dir.mkdir(parents=True, exist_ok=True)
-    log_path = run_dir / 'suite.log'
-
-    print(f'Starting full suite run on {origin_head[:8]} (weight={weight}, jobs={jobs})...')
-    cmd = ['ae-ci-exec', str(worktree_dir), '--', 'python3', 'scripts/strict_suite.py', f'--jobs={jobs}', '--full']
-    env = os.environ.copy()
-    env['AE_CI_WEIGHT'] = str(weight)
-
-    with open(log_path, 'w', encoding='utf-8') as log_out:
-        proc = subprocess.run(cmd, env=env, stdout=log_out, stderr=subprocess.STDOUT, text=True)
-
-    finish_time = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-    new_problems = parse_problems_from_log(log_path)
-    old_problems = state.get('last_problems', {})
-    comp = compare_problems(old_problems, new_problems)
-
-    (run_dir / 'compare.json').write_text(json.dumps(comp, indent=2) + '\n', encoding='utf-8')
-    summary_text = format_compare_summary(comp)
-    (run_dir / 'compare.txt').write_text(summary_text, encoding='utf-8')
-    (state_dir / 'latest-compare.json').write_text(json.dumps(comp, indent=2) + '\n', encoding='utf-8')
-
-    if comp['added']:
-        failures = {
-            'commit': origin_head,
-            'timestamp': finish_time,
-            'added': {k: new_problems.get(k, '') for k in comp['added']},
-        }
-        (state_dir / 'latest-failures.json').write_text(json.dumps(failures, indent=2) + '\n', encoding='utf-8')
-        (run_dir / 'failures.json').write_text(json.dumps(failures, indent=2) + '\n', encoding='utf-8')
-
-        if not skip_plane:
-            file_plane_issue(
-                'AGENTEE',
-                f'Nightly suite regressions on {origin_head[:8]}',
-                summary_text,
-                'agent-ee-nightly-suite',
-                f'nightly-{origin_head}'
-            )
-
-    if not skip_gh_status:
-        state_status = 'failure' if comp['added'] else 'success'
-        desc = f"{finish_time}: {len(new_problems)} problems (+{len(comp['added'])}, -{len(comp['fixed'])}, ={len(comp['kept'])})"
-        publish_github_status(repo, origin_head, state_status, desc)
-
-    state_data = {
-        'last_commit': origin_head,
-        'last_run_timestamp': finish_time,
-        'last_problems': new_problems,
-        'last_added_count': len(comp['added']),
-        'last_fixed_count': len(comp['fixed']),
-        'last_kept_count': len(comp['kept']),
-    }
-    state_file.write_text(json.dumps(state_data, indent=2) + '\n', encoding='utf-8')
-    print(f'Full suite run completed on {origin_head[:8]}: {summary_text.strip()}')
-    return 0
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print('Another nightly suite run is active; exiting.')
+            return 0
+        try:
+            state_file = state_dir / 'state.json'
+            active_file = state_dir / 'active-run.json'
+            if active_file.exists():
+                raise RuntimeError('previous native attempt is unresolved; reconcile active-run.json before retrying')
+            state = json.loads(state_file.read_text(encoding='utf-8')) if state_file.exists() else {}
+            if not isinstance(state, dict) or (state and state.get('schema') != 'agent-ee.nightly-state/1'):
+                raise RuntimeError('unversioned nightly state requires baseline reconciliation')
+            if state and report_run(state, state_dir, repo, skip_plane, skip_gh_status):
+                return 1
+            git_output(root, 'fetch', 'origin', 'main')
+            origin_head = git_output(root, 'rev-parse', '--verify', 'origin/main^{commit}')
+            if not force and state.get('last_commit') == origin_head:
+                return report_run(state, state_dir, repo, skip_plane, skip_gh_status)
+            prepare_worktree(root, worktree_dir, origin_head)
+            run_id = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-%f')
+            run_dir = state_dir / 'runs' / f'{run_id}-{origin_head[:8]}'
+            run_dir.mkdir(parents=True)
+            write_json(active_file, {'commit': origin_head, 'run_dir': str(run_dir), 'started_at': run_id})
+            print(f'Starting full suite run on {origin_head[:8]} (weight={weight}, jobs={jobs})...')
+            new_problems = execute_suite(worktree_dir, run_dir, weight, jobs)
+            finish_time = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+            comp = compare_problems(state.get('last_problems', {}), new_problems)
+            write_json(run_dir / 'compare.json', comp)
+            write_json(state_dir / 'latest-compare.json', comp)
+            summary = format_compare_summary(comp)
+            (run_dir / 'compare.txt').write_text(summary, encoding='utf-8')
+            if comp['added']:
+                failures = {'commit': origin_head, 'timestamp': finish_time,
+                            'added': {k: new_problems[k] for k in comp['added']}}
+                write_json(run_dir / 'failures.json', failures)
+                write_json(state_dir / 'latest-failures.json', failures)
+            state = {
+                'schema': 'agent-ee.nightly-state/1', 'last_commit': origin_head,
+                'last_run_dir': str(run_dir), 'last_run_timestamp': finish_time,
+                'last_problems': new_problems, 'last_added_count': len(comp['added']),
+                'last_fixed_count': len(comp['fixed']), 'last_kept_count': len(comp['kept']),
+                'reporting': {'plane': not comp['added'], 'github': False},
+            }
+            write_json(state_file, state)
+            active_file.unlink()
+            print(f'Full suite run completed on {origin_head[:8]}: {summary.strip()}')
+            return report_run(state, state_dir, repo, skip_plane, skip_gh_status)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            print(f'Nightly suite failed: {error}', file=sys.stderr)
+            return 1
 
 
 def main(argv: list[str] | None = None) -> int:

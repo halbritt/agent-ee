@@ -546,155 +546,129 @@ class RequiredInputTests(unittest.TestCase):
 
 
 class WorkflowInputTests(unittest.TestCase):
-    """Project CI provisions exactly the pinned required inputs the tests read."""
+    """AGENTEE-619: GitHub checks recency; admitted local execution owns tests."""
     WORKFLOW = (ROOT / '.github/workflows/ci.yml').read_text()
 
-    def suite_step(self):
-        step = self.WORKFLOW.split('- name: Strict test suite, change-selected board renders, no skips', 1)[1]
-        return step.split('\n      - name: ', 1)[0]
-
     def full_gate_script(self):
-        """Extract the sole literal run block; unsupported YAML layouts fail closed."""
+        """Extract the sole recency command and reject extra executable YAML."""
         import re
-
         lines = self.WORKFLOW.splitlines()
         top = [line for line in lines if line and not line[0].isspace() and not line.startswith('#')]
-        self.assertEqual(len(top), 5, 'unexpected or duplicate top-level workflow keys')
+        self.assertEqual(len(top), 5)
         self.assertEqual({line.split(':', 1)[0] for line in top},
-                         {'name', 'on', 'permissions', 'concurrency', 'jobs'})
-        self.assertEqual(lines.count('jobs:'), 1, 'expected one jobs mapping')
+                         {'name', 'on', 'permissions', 'env', 'jobs'})
         jobs = lines[lines.index('jobs:') + 1:]
-        headers = [i for i, line in enumerate(jobs)
-                   if line.strip() and not line.lstrip().startswith('#') and len(line) - len(line.lstrip()) <= 2]
-        names = [jobs[i] for i in headers]
-        self.assertTrue(all(re.fullmatch(r'  [a-zA-Z0-9_-]+:', name) for name in names),
-                        'unsupported job mapping layout')
-        self.assertEqual(len(names), len(set(names)), 'duplicate job mapping')
-        self.assertEqual(names.count('  full-gate:'), 1, 'expected one full-gate job')
-        position = names.index('  full-gate:')
-        end = headers[position + 1] if position + 1 < len(headers) else len(jobs)
-        gate = jobs[headers[position] + 1:end]
-        for indent in (4, 8):
-            fields = [line for line in gate if line.strip() and not line.lstrip().startswith('#')
-                      and len(line) - len(line.lstrip()) == indent]
-            self.assertTrue(all(re.match(r' *[a-zA-Z0-9_-]+:', line) for line in fields),
-                            'unsupported gate mapping key')
-            keys = [line.strip().split(':', 1)[0] for line in fields]
-            self.assertEqual(len(keys), len(set(keys)), 'duplicate gate mapping key')
-            if indent == 8:
-                self.assertEqual(set(keys), {'env', 'run'}, 'unsupported step fields or shell override')
-        self.assertEqual(gate.count('    steps:'), 1, 'expected one steps sequence')
-        steps = [line for line in gate if line.startswith('      - ')]
-        self.assertEqual(len(steps), 1,
-                         'expected one full-gate step')
-        self.assertTrue(steps[0].startswith('      - name:'), 'unsupported step layout')
-        runs = [i for i, line in enumerate(gate)
-                if re.match(r'''\s*(?:run|'run'|"run")\s*:''', line)]
-        self.assertEqual(len(runs), 1, 'expected one run block')
-        self.assertEqual(gate[runs[0]], '        run: |', 'expected a literal run block')
-        body = []
-        for line in gate[runs[0] + 1:]:
-            if line.strip() and len(line) - len(line.lstrip()) <= 8:
-                break
-            self.assertTrue(not line.strip() or line.startswith('          '),
-                            'invalid run block indentation')
-            body.append(line[10:] if line.strip() else '')
-        self.assertTrue(any(line.strip() for line in body), 'empty run block')
-        return '\n'.join(body) + '\n'
+        self.assertEqual([line for line in jobs if line.strip() and not line.startswith('    ')],
+                         ['  recency:'])
+        fields = [line.strip().split(':', 1)[0] for line in jobs
+                  if line.strip() and len(line) - len(line.lstrip()) == 4]
+        self.assertEqual(sorted(fields), ['name', 'runs-on', 'steps', 'timeout-minutes'])
+        steps = [line for line in jobs if line.startswith('      - ')]
+        self.assertEqual(len(steps), 2)
+        self.assertTrue(steps[0].startswith('      - uses: actions/checkout@'))
+        self.assertEqual(steps[1], '      - name: Check local full-suite recency')
+        runs = [i for i, line in enumerate(jobs) if re.match(r"\s*(?:run|'run'|\"run\")\s*:", line)]
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(jobs[runs[0]], '        run: |')
+        fields = [line.strip().split(':', 1)[0] for line in jobs
+                  if line.strip() and len(line) - len(line.lstrip()) == 8]
+        self.assertEqual(sorted(fields), ['env', 'run'])
+        body = jobs[runs[0] + 1:]
+        self.assertTrue(body and any(line.strip() for line in body))
+        self.assertTrue(all(not line.strip() or line.startswith('          ') for line in body))
+        return '\n'.join(line[10:] if line.strip() else '' for line in body) + '\n'
 
     def test_full_gate_extraction_refuses_missing_ambiguous_or_unsupported_blocks(self):
         original = self.WORKFLOW
-        for broken in (original.replace('  full-gate:', '  other-gate:'),
-                       original + '\n  full-gate:\n    steps: []\n',
-                       original.replace('        run: |\n          [ "$CHEAP_RESULT"',
-                                        '        run: true\n          [ "$CHEAP_RESULT"'),
+        for broken in (original.replace('  recency:', '  other-job:'),
+                       original + '\n  recency:\n    steps: []\n',
+                       original.replace('        run: |', '        run: true'),
                        original + '        "run": |\n          exit 0\n',
-                       original + '    "steps": []\n',
                        original + '        shell: sh\n',
                        original + '      - run: exit 0\n',
-                       original.replace('          [ "$CHEAP_RESULT"', '         [ "$CHEAP_RESULT"')):
+                       original.replace('          python3', '         python3')):
             with self.subTest(workflow=broken[-200:]):
                 self.WORKFLOW = broken
-                with self.assertRaises(AssertionError):
+                with self.assertRaises((AssertionError, ValueError)):
                     self.full_gate_script()
         self.WORKFLOW = original
 
     def test_supported_triggers_default_to_full_and_affected_is_explicit(self):
-        self.assertIn('fetch-depth: 0', self.WORKFLOW)
         triggers = self.WORKFLOW.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
         self.assertIn('schedule:', triggers)
         self.assertIn('workflow_dispatch:', triggers)
-        for forbidden in ('push:', 'pull_request:', 'paths-ignore:'):
+        for forbidden in ('push:', 'pull_request:', 'paths-ignore:', 'inputs:'):
             self.assertNotIn(forbidden, triggers)
-        self.assertIn("GATE_MODE: ${{ inputs.gate || 'full' }}", self.WORKFLOW)
-        self.assertIn('--print-selection --change-base "$CHANGE_BASE"', self.WORKFLOW)
-        self.assertIn('--print-selection --full', self.WORKFLOW)
-        self.assertIn('suite_args=(--full)', self.suite_step())
-        self.assertIn('-e AGENT_EE_NATIVE_RENDER_MODE=run', self.suite_step())
-        self.assertIn('"${suite_args[@]}"', self.suite_step())
+        script = self.full_gate_script()
+        self.assertIn('scripts/check_full_suite_recency.py', script)
+        self.assertIn('--commit "${{ github.sha }}" --max-hours 36', script)
+        for forbidden in ('strict_suite.py', 'unittest', 'pytest', 'docker', 'ae-ci-exec'):
+            self.assertNotIn(forbidden, script)
 
     def test_cheap_checks_precede_native_setup_and_full_gate_refuses_non_success(self):
-        cheap = self.WORKFLOW.split('\n  checks:\n', 1)[1].split('\n  image:\n', 1)[0]
-        native = self.WORKFLOW.split('\n  image:\n', 1)[1].split('\n  full-gate:\n', 1)[0]
-        self.assertIn('run: python3 scripts/strict_suite.py --cheap-checks', cheap)
-        self.assertNotIn('docker', cheap)
-        self.assertIn('needs: checks', native)
-        self.assertIn("if: needs.checks.outputs.native_required == 'true'", native)
-        gate = self.WORKFLOW.split('\n  full-gate:\n', 1)[1]
-        self.assertIn("always() && (inputs.gate != 'affected' || needs.checks.outputs.mode == 'full')", gate)
-        self.assertIn('[ "$CHEAP_RESULT" = success ] && [ "$NATIVE_RESULT" = success ]', gate)
+        # Exercise the actual workflow command against a controllable GitHub API boundary.
+        from datetime import datetime, timedelta, timezone
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'scripts').mkdir()
+            (root / 'scripts/check_full_suite_recency.py').symlink_to(ROOT / 'scripts/check_full_suite_recency.py')
+            gh = root / 'gh'
+            gh.write_text('#!/bin/sh\ncat "$RECENCY_STATUSES"\n')
+            gh.chmod(0o755)
+            statuses = root / 'statuses.json'
+            script = self.full_gate_script().replace('${{ github.sha }}', 'a' * 40)
+            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
+                       RECENCY_STATUSES=str(statuses))
+            for hours, expected in ((2, 0), (48, 1)):
+                statuses.write_text(json.dumps([{
+                    'context': 'local-full-suite', 'state': 'success',
+                    'created_at': (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(),
+                }]))
+                proc = subprocess.run(['bash', '--noprofile', '--norc', '-e', '-c', script],
+                                      cwd=root, env=env, capture_output=True, text=True)
+                self.assertEqual(proc.returncode, expected, proc.stderr)
+            statuses.write_text('[]')
+            proc = subprocess.run(['bash', '--noprofile', '--norc', '-e', '-c', script],
+                                  cwd=root, env=env, capture_output=True, text=True)
+            self.assertNotEqual(proc.returncode, 0)
 
     def test_superseded_runs_cancel_within_gate_mode_and_cannot_accept_cancellation(self):
-        concurrency = self.WORKFLOW.split('\nconcurrency:\n', 1)[1].split('\njobs:', 1)[0]
-        self.assertIn("${{ github.workflow }}-${{ github.ref }}-${{ inputs.gate || 'full' }}", concurrency)
-        self.assertIn('cancel-in-progress: true', concurrency)
-        gate_run = self.full_gate_script()
-        for cheap in ('success', 'failure', 'cancelled', 'skipped'):
-            for native in ('success', 'failure', 'cancelled', 'skipped'):
-                with self.subTest(cheap=cheap, native=native):
-                    status = subprocess.run(['bash', '--noprofile', '--norc', '-e', '-c', gate_run],
-                                            env=dict(os.environ, CHEAP_RESULT=cheap, NATIVE_RESULT=native)).returncode
-                    self.assertEqual(status == 0, (cheap, native) == ('success', 'success'))
+        # Remote recency checks cannot cancel a local suite. Its real lock serializes starts.
+        import fcntl
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('nightly_lock_test', ROOT / 'scripts/nightly_full_suite.py')
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        self.assertNotIn('cancel-in-progress:', self.WORKFLOW)
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            with (state / 'job.lock').open('a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with patch.object(runner.subprocess, 'run', side_effect=AssertionError('overlapping run')):
+                    self.assertEqual(runner.run_nightly_suite(state, state_dir=state), 0)
 
     def test_fome_mc_fetch_is_the_tests_pin_without_credentials(self):
-        fetch = self.WORKFLOW.split('- name: Fetch the pinned fome-mc object store', 1)[1]
-        fetch = fetch.split('\n      - name: ', 1)[0]
-        # A plain anonymous full clone, not actions/checkout, which cannot run without a token.
-        for line in ("GIT_TERMINAL_PROMPT: '0'", 'GIT_CONFIG_GLOBAL: /dev/null', "GIT_CONFIG_NOSYSTEM: '1'"):
-            self.assertIn('\n          ' + line + '\n', fetch)
-        for line in ('git -c credential.helper= -c http.extraheader= clone --no-checkout '
-                     'https://github.com/halbritt/fome-mc "$FOME_MC_STORE"',
-                     'git -C "$FOME_MC_STORE" checkout --quiet --detach "$FOME_MC_COMMIT"'):
-            self.assertIn('\n          ' + line + '\n', fetch)
-        for absent in ('uses:', 'token', 'secrets.', 'Authorization', '--filter', '--depth', 'submodule'):
-            self.assertNotIn(absent, fetch)
-        # Only the agent-ee checkout uses actions/checkout, with the job's default token.
-        self.assertEqual(self.WORKFLOW.count('uses: actions/checkout@'), 2)
-        self.assertIn(f'\n      FOME_MC_COMMIT: {toolchain.FOME_MC_COMMIT}\n', self.WORKFLOW)
-        self.assertIn('\n      FOME_MC_STORE: build/external/fome-mc\n', self.WORKFLOW)
-        self.assertIn('if [ "$head" != "$FOME_MC_COMMIT" ]; then', self.WORKFLOW)
-        # Verified first, then owned by the image user that reads it; no Git trust override.
-        self.assertLess(self.WORKFLOW.index('- name: Verify the fome-mc store is the pinned commit'),
-                        self.WORKFLOW.index('sudo -n chown -R "$owner" "$FOME_MC_STORE"'))
-        self.assertNotIn('safe.directory', self.WORKFLOW)
-        # build/ never enters the image build context or the Git tree.
+        # Input declarations remain for ae-ci-exec until the runtime owner replaces its contract.
+        self.assertIn(f'\n  FOME_MC_COMMIT: {toolchain.FOME_MC_COMMIT}\n', self.WORKFLOW)
+        self.assertIn('\n  FOME_MC_STORE: build/external/fome-mc\n', self.WORKFLOW)
+        self.assertIn('  contents: read\n', self.WORKFLOW)
+        self.assertIn('  statuses: read\n', self.WORKFLOW)
+        self.assertEqual(self.WORKFLOW.count('uses: actions/checkout@'), 1)
+        for absent in ('secrets.', 'git clone', 'credential.helper', 'sudo', 'safe.directory'):
+            self.assertNotIn(absent, self.WORKFLOW)
         self.assertIn('build', (ROOT / '.dockerignore').read_text().split())
         self.assertIn('build/', (ROOT / '.gitignore').read_text().split())
 
     def test_j1_drawing_hash_is_the_decision_source_hash(self):
-        import json
         decision = json.loads((ROOT / 'fixtures/telemetry-pod/electrical/j1-placement-exclusion.json').read_text())
-        self.assertIn(f"\n      J1_DRAWING_SHA256: {decision['sources']['drawing']['sha256']}\n", self.WORKFLOW)
-        self.assertIn('| sha256sum --check --strict', self.WORKFLOW)
-        self.assertIn('--max-time 90 --max-filesize 10000000', self.WORKFLOW)
+        self.assertIn(f"\n  J1_DRAWING_SHA256: {decision['sources']['drawing']['sha256']}\n", self.WORKFLOW)
+        self.assertNotIn('Pinned external inputs', self.WORKFLOW)
 
     def test_j1_readme_acquisition_matches_the_workflow(self):
-        # The distributor stalls curl's default User-Agent; the documented command must send CI's.
         readme = (ROOT / 'fixtures/telemetry-pod/j1/README.md').read_text()
         command = readme.split('```sh\n', 1)[1].split('```', 1)[0]
         user_agent = "--user-agent 'Mozilla/5.0 (X11; Linux x86_64)'"
-        self.assertIn(user_agent, self.WORKFLOW)
-        self.assertIn('\n      J1_DRAWING_URL: https://www.farnell.com/cad/2916153.pdf\n', self.WORKFLOW)
+        self.assertIn('\n  J1_DRAWING_URL: https://www.farnell.com/cad/2916153.pdf\n', self.WORKFLOW)
         decision = 'fixtures/telemetry-pod/electrical/j1-placement-exclusion.json'
         sha256 = json.loads((ROOT / decision).read_text())['sources']['drawing']['sha256']
         for fragment in (user_agent, '--fail', "--proto '=https'", '--max-time 90 --max-filesize 10000000',
@@ -702,14 +676,24 @@ class WorkflowInputTests(unittest.TestCase):
             self.assertIn(fragment, command)
 
     def test_strict_suite_mounts_both_inputs_read_only_and_no_pod_override(self):
-        step = self.suite_step()
-        for fragment in ('-v "$store:/opt/fome-mc:ro" -e AGENT_EE_FOME_MC_CHECKOUT=/opt/fome-mc',
-                         '-v "$J1_DRAWING:/opt/j1/te-776228-1.pdf:ro" -e AGENT_EE_J1_DRAWING=/opt/j1/te-776228-1.pdf',
-                         'scripts/strict_suite.py --jobs 4', '|| status=$?', 'exit "$status"'):
-            self.assertIn(fragment, step)
-        self.assertNotIn('AGENT_EE_POD_INPUTS=', self.WORKFLOW)
-        self.assertNotIn('AGENT_EE_DECLARED_GAPS', self.WORKFLOW)
-        self.assertNotIn('continue-on-error', self.WORKFLOW)
+        # Mount/input custody is the runtime owner's contract; exercise the real delegation boundary.
+        try:
+            from nightly_support import nightly_fixture
+        except ImportError:
+            from tests.nightly_support import nightly_fixture
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('nightly_delegate_test', ROOT / 'scripts/nightly_full_suite.py')
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        with nightly_fixture() as case:
+            self.assertEqual(runner.run_nightly_suite(
+                case['root'], state_dir=case['state_dir'], worktree_dir=case['worktree_dir'],
+                skip_plane=True, skip_gh_status=True), 0)
+            self.assertEqual((case['base'] / 'runner-args').read_text().splitlines(), [
+                str(case['worktree_dir']), '--', 'python3', 'scripts/strict_suite.py', '--jobs=2', '--full'])
+            self.assertEqual((case['base'] / 'weights').read_text().splitlines(), ['2'])
+        for absent in ('AGENT_EE_POD_INPUTS=', 'AGENT_EE_DECLARED_GAPS', 'continue-on-error', 'docker'):
+            self.assertNotIn(absent, self.WORKFLOW)
 
 
 if __name__ == '__main__':

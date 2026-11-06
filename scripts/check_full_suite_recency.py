@@ -59,6 +59,8 @@ def check_recency(
 
     state = latest.get('state', 'unknown')
     desc = latest.get('description', '')
+    if state not in ('success', 'failure'):
+        return False, f'local-full-suite status does not record a completed suite (state={state})'
 
     if age_hours <= max_hours:
         return True, (
