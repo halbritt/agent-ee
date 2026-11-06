@@ -31,7 +31,7 @@ Production builds require a deterministic, pinned native EDA toolchain. Before i
 |---|---|---|
 | `AGENT_EE_RUST_PLANNER` | `/usr/local/libexec/agent-ee/agent-ee-placement` | Explicit override path for the compiled Rust placement engine executable. |
 | `AGENT_EE_KICAD_ROUTE_CHECKOUT` | `/opt/kicad-route` | Clean repository checkout of the `kicad-route` autorouting engine; each attempt records its commit. |
-| `PCBSCHEMAGEN_ROOT` | `~/git/PCBSchemaGen_v2` | Clean external verifier Git checkout, at any commit (Gate 1 records it); see [benchmark prerequisites](benchmarking-guide.md#executing-pcbschemagen-benchmarks). |
+| `PCBSCHEMAGEN_ROOT` | `/opt/agent-ee-inputs/pcbschemagen` | Clean external verifier Git checkout, at any commit (Gate 1 records it); see [benchmark prerequisites](benchmarking-guide.md#executing-pcbschemagen-benchmarks). |
 | `AGENT_EE_SKIP_VISUALS` | `0` | Set to `1` in headless CI jobs where 2D/3D visual snapshot generation is omitted to save time. |
 | `PYTHONPATH` | None | Must include `src` when running uninstalled from a repository checkout. |
 

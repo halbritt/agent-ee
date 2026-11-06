@@ -186,7 +186,7 @@ git -C "$PCBSCHEMAGEN_ROOT" pull --ff-only
 Install that checkout's `requirements.txt` in the Python environment used for
 the benchmark (`networkx>=3.0` and `pyyaml>=6.0`). Both CLIs also accept
 `--pcbschemagen-root DIR`; the default is `$PCBSCHEMAGEN_ROOT` or
-`~/git/PCBSchemaGen_v2`.
+`/opt/agent-ee-inputs/pcbschemagen`.
 
 Before each Gate 1 run the adapter reads the checkout's commit and requires:
 
