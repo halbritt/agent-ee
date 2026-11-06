@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TESTS = ROOT / 'tests'
 sys.path.insert(0, str(ROOT / 'scripts'))
 import strict_selection
+import strict_inputs
 RENDER_CHANGE_PATHS = {
     '.github/workflows/ci.yml', '.dockerignore', 'Dockerfile',
     'docker/apt-retry.sh', 'docker/kicad-10.0-releases.asc',
@@ -131,11 +132,16 @@ def render_mode_from_change_base(base):
     return 'omit'
 
 
-def run_module(module, scratch, timeout, render_mode='run'):
+def run_module(module, scratch, timeout, render_mode='run', input_selection=None):
     work = Path(tempfile.mkdtemp(prefix=module + '-', dir=scratch))
     tmp, out = work / 'tmp', work / 'result.json'
     tmp.mkdir()
     env = dict(os.environ, TMPDIR=str(tmp), PYTHONDONTWRITEBYTECODE='1')
+    try:
+        env = strict_inputs.for_module(module, env, modules(), selection=input_selection)
+    except strict_inputs.ModuleInputUnavailable as error:
+        return dict(module=module, exit='not executed', seconds=0.0, log=str(error) + '\n',
+                    required_input_setup={'variable': error.variable, 'reason': str(error)})
     started = time.monotonic()
     try:
         proc = subprocess.run([sys.executable, '-c', CHILD, module, str(out), render_mode], cwd=ROOT, env=env,
@@ -165,6 +171,10 @@ def judge(records):
     required input; each of them is also a problem."""
     problems, missing = [], []
     for record in records:
+        if setup := record.get('required_input_setup'):
+            missing.append((setup['variable'], record['module'], setup['reason']))
+            problems.append(f"NOT EXECUTED, required input {setup['variable']} missing: {record['module']}")
+            continue
         if 'problem' in record:
             problems.append(f"{record['module']}: {record['problem']}")
             continue
@@ -193,9 +203,13 @@ def verdict(records, problems, missing):
     if not problems:
         suffix = f'; {omitted} native 3D board render tests not selected' if omitted else ''
         return f'strict suite passed: {len(records)} modules, {run} tests, no skips{suffix}'
+    refused = sum('required_input_setup' in record for record in records)
+    known_missing = len(missing) - refused
+    suffix = (f'; {refused} required module setup(s) refused, unexecuted test count unknown'
+              if refused else '')
     return (f'strict suite FAILED: {len(records)} modules, {run} tests, {len(problems)} problem(s), '
-            f'{len(missing)} required test(s) not executed for missing inputs, '
-            f'{len(problems) - len(missing)} other problem(s)')
+            f'{known_missing} required test(s) not executed for missing inputs, '
+            f'{len(problems) - len(missing)} other problem(s)' + suffix)
 
 
 def summary_markdown(records, problems, missing, render_mode='run'):
@@ -207,10 +221,14 @@ def summary_markdown(records, problems, missing, render_mode='run'):
                          record.get('result', {}).get('excluded_native_board_render', []))
         lines += [f'### Native 3D board render tests not selected: {len(omitted)}', '']
         lines += [f'- `{test}`' for test in omitted] + ['']
-    for gap in REQUIRED_INPUTS:
+    setup_variables = sorted({g for g, _, _ in missing}.difference(REQUIRED_INPUTS))
+    for gap in (*REQUIRED_INPUTS, *setup_variables):
         named = [(test, reason) for g, test, reason in missing if g == gap]
         if named:
-            lines += [f'### Required input `{gap}` missing: {len(named)} required test(s) not executed', '']
+            label = (f'Required input `{gap}` missing: {len(named)} required test(s) not executed'
+                     if gap in REQUIRED_INPUTS else
+                     f'Required module setup `{gap}` refused: {len(named)} module(s); unexecuted test count unknown')
+            lines += ['### ' + label, '']
             lines += [f'- `{test}`: {reason}' for test, reason in named] + ['']
     other = [p for p in problems if not p.startswith('NOT EXECUTED, required input ')]
     if other:
@@ -295,6 +313,11 @@ def main(argv=None):
                         help='explicit native 3D board render selection (default: run)')
     parser.add_argument('modules', nargs='*', help='test modules (default: every tests/test_*.py)')
     args = parser.parse_args(argv)
+    try:
+        input_selection = strict_inputs.validate(os.environ, modules())
+    except (OSError, ValueError) as error:
+        print(f'strict suite FAILED: module input manifest refused: {error}', file=sys.stderr)
+        return 1
     if args.cheap_checks:
         if args.modules or args.full or args.change_base is not None or args.print_selection:
             parser.error('--cheap-checks cannot be combined with module selection')
@@ -347,7 +370,8 @@ def main(argv=None):
     lock, records = threading.Lock(), []
     with tempfile.TemporaryDirectory(prefix='agent-ee-strict-suite-') as scratch, \
             concurrent.futures.ThreadPoolExecutor(max(1, args.jobs)) as pool:
-        futures = [pool.submit(run_module, m, scratch, args.module_timeout, render_mode) for m in selected]
+        futures = [pool.submit(run_module, m, scratch, args.module_timeout, render_mode, input_selection)
+                   for m in selected]
         for future in concurrent.futures.as_completed(futures):
             record = future.result()
             with lock:

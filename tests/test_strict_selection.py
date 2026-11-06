@@ -102,7 +102,7 @@ class ChangeBaseTests(unittest.TestCase):
             (root / 'tests').mkdir()
             (root / 'src').mkdir()
             (root / 'tests/__init__.py').write_text('')
-            for name in ('strict_suite.py', 'strict_selection.py'):
+            for name in ('strict_suite.py', 'strict_selection.py', 'strict_inputs.py'):
                 shutil.copyfile(ROOT / 'scripts' / name, root / 'scripts' / name)
             (root / 'tests/test_example.py').write_text('''
 import unittest
@@ -115,6 +115,7 @@ class Example(unittest.TestCase):
 ''')
             env = dict(os.environ, AGENT_EE_REQUIRE_TOOLCHAIN='1',
                        AGENT_EE_NATIVE_RENDER_MODE='omit', PYTHONPATH=str(root))
+            env.pop('AGENT_EE_MODULE_ENV', None)
             command = [sys.executable, str(root / 'scripts/strict_suite.py'), '--jobs', '1']
             for mode in (['--full'], ['--change-base', 'unknown']):
                 with self.subTest(mode=mode):

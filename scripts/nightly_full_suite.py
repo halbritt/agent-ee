@@ -19,12 +19,38 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 
 
 DEFAULT_STATE_DIR = Path.home() / '.local/share/agent-ee-full-suite'
 DEFAULT_WORKTREE_DIR = Path.home() / '.cache/agent-worktrees/agent-ee/nightly-full-suite'
+SUITE_TIMEOUT_SECONDS = 7200
+SUITE_STOP_GRACE_SECONDS = 60
+
+
+def split_skip_identity(text: str) -> tuple[str, str]:
+    """The reason delimiter occurs outside unittest subtest brackets/quotes."""
+    stack, quote, escaped = [], None, False
+    for index, char in enumerate(text):
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif stack and char in ('\"', "'"):
+            quote = char
+        elif char in '([{':
+            stack.append(char)
+        elif char in ')]}':
+            if not stack or stack.pop() != {')': '(', ']': '[', '}': '{'}[char]:
+                raise ValueError('ambiguous strict-suite skip identity')
+        elif char == ':' and not stack and text[index:index + 2] == ': ':
+            return text[:index], text[index + 2:]
+    raise ValueError('strict-suite skip has no reason delimiter')
 
 
 def parse_problems_from_log(log_path: Path | str) -> dict[str, str]:
@@ -36,7 +62,8 @@ def parse_problems_from_log(log_path: Path | str) -> dict[str, str]:
     lines = Path(log_path).read_text(encoding='utf-8', errors='strict').splitlines()
     verdict_pattern = re.compile(
         r'strict suite FAILED: \d+ modules, \d+ tests, (\d+) problem\(s\), '
-        r'\d+ required test\(s\) not executed for missing inputs, \d+ other problem\(s\)')
+        r'\d+ required test\(s\) not executed for missing inputs, \d+ other problem\(s\)'
+        r'(?:; \d+ required module setup\(s\) refused, unexecuted test count unknown)?')
     verdicts = []
     for index, line in enumerate(lines):
         if re.fullmatch(r'strict suite passed: \d+ modules, \d+ tests, no skips', line):
@@ -58,8 +85,8 @@ def parse_problems_from_log(log_path: Path | str) -> dict[str, str]:
         if match := re.fullmatch(r'(FAILURE|ERROR|UNEXPECTED SUCCESS|EXPECTED FAILURE refused in strict mode): (.+)', line):
             kind, key = match.groups()
             kind = 'FAIL' if kind == 'FAILURE' else kind
-        elif match := re.fullmatch(r'SKIP refused in strict mode: (.+?): (.*)', line):
-            key, reason = match.groups()
+        elif line.startswith('SKIP refused in strict mode: '):
+            key, reason = split_skip_identity(line.removeprefix('SKIP refused in strict mode: '))
             kind = 'SKIP: ' + reason
         elif match := re.fullmatch(r'NOT EXECUTED, required input (\S+) missing: (.+)', line):
             gap, key = match.groups()
@@ -86,19 +113,29 @@ def compare_problems(old: dict[str, str], new: dict[str, str]) -> dict:
     new_set = set(new.keys())
     gone = sorted(old_set - new_set)
     added = sorted(new_set - old_set)
-    kept = sorted(old_set & new_set)
+    def kind_class(kind):
+        return kind.split(':', 1)[0] if kind.startswith(('SKIP:', 'MODULE:')) else kind.split(' ', 1)[0]
+    changed = sorted(key for key in old_set & new_set if kind_class(old[key]) != kind_class(new[key]))
+    kept = sorted((old_set & new_set).difference(changed))
     return {
         'old': old,
         'new': new,
         'fixed': gone,
         'added': added,
         'kept': kept,
+        'changed': changed,
     }
+
+
+def regressions(comp: dict) -> list[str]:
+    return sorted(set(comp['added']) | set(comp.get('changed', [])))
 
 
 def format_compare_summary(comp: dict) -> str:
     """Format human-readable comparison text matching baseline compare format."""
     old, new = comp['old'], comp['new']
+    if comp.get('baseline'):
+        return f'baseline {len(new)} problems; no prior run for comparison\n'
     gone, added, kept = comp['fixed'], comp['added'], comp['kept']
     lines = [
         f'old {len(old)} new {len(new)} fixed {len(gone)} added {len(added)} kept {len(kept)}'
@@ -108,6 +145,9 @@ def format_compare_summary(comp: dict) -> str:
         lines.append(f'ADDED by module: {dict(mods)}')
         for k in added:
             lines.append(f'  + {k} | {new.get(k, "FAIL")}')
+    if changed := comp.get('changed'):
+        lines.append(f'CHANGED kind: {len(changed)}')
+        lines += [f'  ! {key} | {old[key]} -> {new[key]}' for key in changed]
     if kept:
         kinds = collections.Counter(new.get(k, '').split(':')[0] for k in kept)
         lines.append(f'KEPT kinds: {dict(kinds)}')
@@ -201,7 +241,10 @@ def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int) -> dict
         'schema': 'agent-ee.nightly-execution/1', 'command': command,
         'commit': git_output(worktree, 'rev-parse', 'HEAD'),
         'tree': git_output(worktree, 'rev-parse', 'HEAD^{tree}'),
-        'weight': weight, 'jobs': jobs, 'timeout_seconds': 7200,
+        'weight': weight, 'jobs': jobs, 'timeout_seconds': SUITE_TIMEOUT_SECONDS,
+        'termination_grace_seconds': SUITE_STOP_GRACE_SECONDS,
+        'nightly_runner': str(Path(__file__).resolve()),
+        'nightly_runner_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'runner': runner,
         'runner_sha256': hashlib.sha256(Path(runner).read_bytes()).hexdigest() if runner else None,
         'started_at': datetime.now(timezone.utc).isoformat(),
@@ -209,8 +252,14 @@ def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int) -> dict
     write_json(run_dir / 'execution.json', receipt)
     try:
         with log_path.open('w', encoding='utf-8') as output:
-            proc = subprocess.run(command, env=dict(os.environ, AE_CI_WEIGHT=str(weight), AE_CI_KEEP_TMP='1'),
-                                  stdout=output, stderr=subprocess.STDOUT, text=True, timeout=7200)
+            with subprocess.Popen(command, env=dict(os.environ, AE_CI_WEIGHT=str(weight), AE_CI_KEEP_TMP='1'),
+                                  stdout=output, stderr=subprocess.STDOUT, text=True, start_new_session=True) as proc:
+                try:
+                    proc.wait(timeout=SUITE_TIMEOUT_SECONDS)
+                except (subprocess.TimeoutExpired, KeyboardInterrupt, SystemExit):
+                    stop_suite(proc)
+                    receipt['exit_code'] = proc.returncode
+                    raise
         receipt['exit_code'] = proc.returncode
         problems = parse_problems_from_log(log_path)
         if proc.returncode != (1 if problems else 0):
@@ -227,6 +276,20 @@ def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int) -> dict
         write_json(run_dir / 'execution.json', receipt)
 
 
+def stop_suite(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=SUITE_STOP_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+
+
 def report_run(state: dict, state_dir: Path, repo: str, skip_plane: bool, skip_gh_status: bool) -> int:
     """Resume unfinished reporting without repeating a completed native run."""
     run_dir = Path(state['last_run_dir'])
@@ -238,10 +301,14 @@ def report_run(state: dict, state_dir: Path, repo: str, skip_plane: bool, skip_g
             format_compare_summary(comp), 'agent-ee-nightly-suite', f"nightly-{state['last_commit']}")
         write_json(state_dir / 'state.json', state)
     if not done['github'] and not skip_gh_status:
-        description = (f"{state['last_run_timestamp']}: {len(comp['new'])} problems "
-                       f"(+{len(comp['added'])}, -{len(comp['fixed'])}, ={len(comp['kept'])})")
+        description = (f"strict-complete {state['last_commit']} {state['last_run_timestamp']} "
+                       f"problems={len(comp['new'])} +{len(comp['added'])} "
+                       f"~{len(comp.get('changed', []))} -{len(comp['fixed'])} ={len(comp['kept'])}")
+        if comp.get('baseline'):
+            description = (f"strict-complete {state['last_commit']} {state['last_run_timestamp']} "
+                           f"problems={len(comp['new'])} baseline")
         done['github'] = publish_github_status(
-            repo, state['last_commit'], 'failure' if comp['added'] else 'success', description)
+            repo, state['last_commit'], 'failure' if comp['new'] else 'success', description)
         write_json(state_dir / 'state.json', state)
     failed = (not skip_plane and not done['plane']) or (not skip_gh_status and not done['github'])
     if failed:
@@ -259,12 +326,14 @@ def run_nightly_suite(
     skip_plane: bool = False,
     skip_gh_status: bool = False,
     repo: str = 'halbritt/agent-ee',
+    initialize_baseline: bool = False,
 ) -> int:
     """Run moved main once; retain completed tests separately from reporting."""
     if weight < 1 or jobs < 1:
         raise ValueError('weight and jobs must be positive')
     state_dir.mkdir(parents=True, exist_ok=True)
     with (state_dir / 'job.lock').open('a') as lock_file:
+        origin_head, run_dir = None, None
         try:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -278,6 +347,10 @@ def run_nightly_suite(
             state = json.loads(state_file.read_text(encoding='utf-8')) if state_file.exists() else {}
             if not isinstance(state, dict) or (state and state.get('schema') != 'agent-ee.nightly-state/1'):
                 raise RuntimeError('unversioned nightly state requires baseline reconciliation')
+            if state and initialize_baseline:
+                raise RuntimeError('baseline already initialized; refusing to replace its history')
+            if not state and not initialize_baseline:
+                raise RuntimeError('nightly state is missing; lead must select a reviewed --initialize-baseline run')
             if state and report_run(state, state_dir, repo, skip_plane, skip_gh_status):
                 return 1
             git_output(root, 'fetch', 'origin', 'main')
@@ -289,31 +362,51 @@ def run_nightly_suite(
             run_dir = state_dir / 'runs' / f'{run_id}-{origin_head[:8]}'
             run_dir.mkdir(parents=True)
             write_json(active_file, {'commit': origin_head, 'run_dir': str(run_dir), 'started_at': run_id})
+            if not skip_gh_status:
+                publish_github_status(repo, origin_head, 'pending', 'Native full suite in progress; no complete verdict yet')
             print(f'Starting full suite run on {origin_head[:8]} (weight={weight}, jobs={jobs})...')
             new_problems = execute_suite(worktree_dir, run_dir, weight, jobs)
             finish_time = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
             comp = compare_problems(state.get('last_problems', {}), new_problems)
+            comp['baseline'] = not state
+            if comp['baseline']:
+                for field in ('added', 'fixed', 'kept', 'changed'):
+                    comp[field] = []
             write_json(run_dir / 'compare.json', comp)
             write_json(state_dir / 'latest-compare.json', comp)
             summary = format_compare_summary(comp)
             (run_dir / 'compare.txt').write_text(summary, encoding='utf-8')
-            if comp['added']:
+            if regressions(comp):
                 failures = {'commit': origin_head, 'timestamp': finish_time,
-                            'added': {k: new_problems[k] for k in comp['added']}}
+                            'added': {k: new_problems[k] for k in comp['added']},
+                            'changed': {k: {'old': comp['old'][k], 'new': new_problems[k]}
+                                        for k in comp.get('changed', [])}}
                 write_json(run_dir / 'failures.json', failures)
                 write_json(state_dir / 'latest-failures.json', failures)
             state = {
                 'schema': 'agent-ee.nightly-state/1', 'last_commit': origin_head,
                 'last_run_dir': str(run_dir), 'last_run_timestamp': finish_time,
-                'last_problems': new_problems, 'last_added_count': len(comp['added']),
-                'last_fixed_count': len(comp['fixed']), 'last_kept_count': len(comp['kept']),
-                'reporting': {'plane': not comp['added'], 'github': False},
+                'last_problems': new_problems,
+                'last_added_count': None if comp['baseline'] else len(comp['added']),
+                'last_fixed_count': None if comp['baseline'] else len(comp['fixed']),
+                'last_kept_count': None if comp['baseline'] else len(comp['kept']),
+                'last_changed_count': None if comp['baseline'] else len(comp.get('changed', [])),
+                'reporting': {'plane': not regressions(comp), 'github': False},
             }
             write_json(state_file, state)
             active_file.unlink()
             print(f'Full suite run completed on {origin_head[:8]}: {summary.strip()}')
             return report_run(state, state_dir, repo, skip_plane, skip_gh_status)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            failure = {'commit': origin_head, 'run_dir': str(run_dir) if run_dir else None,
+                       'timestamp': datetime.now(timezone.utc).isoformat(), 'status': 'incomplete',
+                       'error': str(error)}
+            if origin_head and not skip_gh_status:
+                failure['github_error_reported'] = publish_github_status(
+                    repo, origin_head, 'error', 'Native full suite did not complete; inspect local attempt failure evidence')
+            write_json(state_dir / 'latest-attempt-failure.json', failure)
+            if run_dir:
+                write_json(run_dir / 'attempt-failure.json', failure)
             print(f'Nightly suite failed: {error}', file=sys.stderr)
             return 1
 
@@ -333,6 +426,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument('--skip-gh-status', action='store_true', help='Skip updating GitHub commit status')
         p.add_argument('--repo', default='halbritt/agent-ee', help='GitHub repository name (owner/repo)')
         p.add_argument('--root', default='.', help='Repository root path')
+        p.add_argument('--initialize-baseline', action='store_true',
+                       help='Explicit first native run recording a baseline; refuses existing state')
 
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
@@ -349,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
         skip_plane=args.skip_plane,
         skip_gh_status=args.skip_gh_status,
         repo=args.repo,
+        initialize_baseline=args.initialize_baseline,
     )
 
 

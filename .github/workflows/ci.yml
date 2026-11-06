@@ -3,7 +3,7 @@ name: CI
 # Owner direction 2026-11-04 (AGENTEE-614 / Defect #42):
 # Full test suite runs locally on proximal nightly (~04:00 Pacific).
 # GitHub CI runs zero actual tests, validating only that a recent local
-# full suite run has completed within the last 36 hours.
+# full strict verdict exists for this exact commit. Completed unchanged commits do not expire.
 on:
   schedule:
     - cron: '0 12 * * *'
@@ -31,4 +31,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 scripts/check_full_suite_recency.py --commit "${{ github.sha }}" --max-hours 36
+          python3 scripts/check_full_suite_recency.py --commit "${{ github.sha }}"
