@@ -125,9 +125,11 @@ def observe_tool(ctx):
     from .checks import CheckError
     before = digest(TOOL)
     work = ctx.work / 'version'
-    record = ctx.run_native(native_run.Intent('check', [str(TOOL), '--version'], timeout=30),
-                            work=work)
+    intent = native_run.Intent('check', [str(TOOL), '--version'], timeout=30)
+    record = ctx.run_native(intent, work=work)
     ctx.evidence(*(f'version/{name}' for name in ('execution.json', 'console.log', 'stdout.log', 'stderr.log')))
+    if native_run.cut_by_deadline(record, intent):
+        raise CheckError('interrupted', 'review deadline exhausted during simulator version probe')
     if record['execution'] != 'ok':
         raise CheckError(record['execution'], 'simulator version probe failed')
     version = (work / 'console.log').read_text().strip()

@@ -63,10 +63,40 @@ analytic oracle. Retained evidence identifies the simulator actually used, and
 continuing a run requires its recorded runtime. Changing parser/model semantics
 or policy invalidates old qualification inputs and requires reviewing the change,
 updating the captured contract, and rerunning the owned native acceptance corpus.
+Do not merely edit hashes to imply qualification.
 
 `parser_sha256` covers the entire `agent_ee/checks.py` module, so changes to
 native-netlist prerequisites also require this process. If integration changes
 that module again, refresh and requalify against the final integrated bytes.
+
+### 2026-11-06 qualification review (AGENTEE-618)
+
+The stale parser checksum in the shipped fixture was traced to commit
+`b383dadbdf89befdec29c56c182e1b26ecb1952d`. Its entire change to `checks.py`
+adds `from .kelvin_routing import check_kelvin_routing`. The prior bytes have
+SHA-256 `a69d97986da5bd625089aac3046f85a84db7c01db97496a0da44495a34ca5773`;
+the reviewed bytes have SHA-256
+`23aa47f2acb9a915b019861813f1e8ae36f11ceaa7fa806d788a9e16179120e3`.
+All 36 existing top-level function and class definitions are unchanged. The
+import registers the Kelvin check; it neither runs a native tool at import time
+nor changes the passive-corner handler. The passive parser, netlist interpretation,
+stimulus construction and analytic comparison are unchanged by that parser
+checksum transition.
+
+AGENTEE-618 separately changes the passive-corner model to observe the installed
+simulator, retain its version and digest, and refuse drift. The model checksum
+in the qualification fixture identifies that implementation. The native
+`test_passive_corners` corpus passed on 2026-11-06: 13 tests in the execution
+image `sha256:f3fd32c44e23295b2c28e23babbae25240c734e3d3e124f96699ea420c425bec`.
+The accompanying strict gate passed ten modules and 138 tests with no skips.
+The tested model SHA-256 is `1e0c65127f378f84be30e4ded4812dd54ac8e1a9b2fcf57cc6602853215fbfa0`;
+the retained gate log SHA-256 is `e8b09385d036dcef71aecf6000bfb047d6d69579a79da31cac9d3c5942605fc5`.
+A full-suite gate and independent review of the final candidate are still required.
+The corpus exercises the control, defect and zero-tolerance outcomes, analytic bounds,
+complete ensemble coverage, source-identity mismatch, corrupt traces, empirical
+transfer refusal and sealed witnesses. Recorded-adapter tests also cover failed
+or malformed version probes, deadline truncation, and binary changes during
+identity capture and analysis. Hash equality does not replace these checks.
 
 If the scope carries empirical calibration, numerical corner evidence can remain
 as diagnostics but the check returns unsupported/unknown without acceptance

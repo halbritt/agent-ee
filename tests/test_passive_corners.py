@@ -68,6 +68,74 @@ from toolchain import require_toolchain
 REPO = Path(__file__).resolve().parents[1]
 
 
+class SimulatorIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / 'inputs').mkdir()
+        self.binary = self.root / 'ngspice'
+        self.binary.write_bytes(b'simulator build')
+        patched = patch.object(passive_corners, 'TOOL', self.binary)
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def context(self, name, seconds=120):
+        spec = {'id': name, 'kind': 'passive_corners'}
+        return checks.Ctx(self.root, {'candidate_id': 'case', 'scope': {'checks': [spec]}},
+                          spec, time.monotonic() + seconds)
+
+    def test_version_failure_and_probe_drift_refuse_identity_with_evidence(self):
+        from agent_ee import native_run
+        for failure, outcome, execution in (
+                ('failed', native_run.Outcome(exit_code=1), 'failed'),
+                ('empty', native_run.Outcome(), 'malformed'),
+                ('malformed', native_run.Outcome(stdout=b'wrong tool\n'), 'malformed'),
+                ('drift', native_run.Outcome(stdout=b'ngspice-47\n'), 'unsupported')):
+            with self.subTest(failure=failure):
+                ctx = self.context(failure)
+                def respond(call):
+                    if failure == 'drift':
+                        self.binary.write_bytes(b'replaced simulator')
+                    return outcome
+                with native_run.using(native_run.Recorded(respond)):
+                    with self.assertRaises(checks.CheckError) as caught:
+                        passive_corners.observe_tool(ctx)
+                self.assertEqual(caught.exception.execution, execution)
+                self.assertIn(f'work/{failure}/version/execution.json', ctx.result['evidence'])
+                self.assertNotIn('producer', ctx.result['details'])
+
+    def test_review_deadline_and_tool_timeout_remain_distinct(self):
+        from agent_ee import native_run
+        for seconds, expected in ((5, 'interrupted'), (120, 'timeout')):
+            with self.subTest(seconds=seconds):
+                ctx = self.context('timeout-' + str(seconds), seconds)
+                outcome = native_run.Outcome(execution='timeout', exit_code=None)
+                with native_run.using(native_run.Recorded(lambda call: outcome)):
+                    with self.assertRaises(checks.CheckError) as caught:
+                        passive_corners.observe_tool(ctx)
+                self.assertEqual(caught.exception.execution, expected)
+                self.assertEqual(read_json(ctx.work / 'version/execution.json')['execution'], 'timeout')
+
+    def test_binary_replaced_during_analysis_refuses_metrics(self):
+        from agent_ee import native_run
+        ctx = self.context('analysis')
+        ctx.corner_tool = {'sha256': digest(self.binary)}
+        ctx.corner_deadline = ctx.deadline
+        conn = conn_fixture()
+        params = {**copy.deepcopy(BASE_PARAMS), 'tolerances': {
+            'R1': [0, 0], 'C1': [0, 0]}, 'max_corners': 1}
+        analysis = passive_corners.plan(conn, params)['corners'][0]
+        def respond(call):
+            self.binary.write_bytes(b'replaced during analysis')
+            return native_run.Outcome()
+        with native_run.using(native_run.Recorded(respond)):
+            with self.assertRaisesRegex(checks.CheckError, 'changed during corner analysis'):
+                passive_corners.run_analysis(ctx, conn, params, analysis)
+        self.assertFalse((ctx.work / analysis['id'] / 'metrics.json').exists())
+        self.assertIn(f"work/analysis/{analysis['id']}/execution.json", ctx.result['evidence'])
+
+
 class NativeCornerTests(unittest.TestCase):
     agent = pipeline.NativeCapabilityPipelineTests.agent
 
