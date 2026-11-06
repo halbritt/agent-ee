@@ -131,6 +131,19 @@ class ModuleInputEnvironmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'must stay under'):
             self.validate()
 
+    def test_declared_source_unavailability_fails_only_its_module_even_if_target_exists(self):
+        self.write()
+        document = json.loads(self.manifest.read_text())
+        document['unavailable'] = {'test_historical': {
+            'AGENT_EE_ACQUISITION_INPUTS': 'retained historical input is absent'}}
+        self.manifest.write_text(json.dumps(document))
+        selection = self.validate()
+        with self.assertRaisesRegex(strict_inputs.ModuleInputUnavailable, 'retained historical input is absent'):
+            self.select('test_historical', selection=selection)
+        self.assertEqual(self.select('test_current', selection=selection)['AGENT_EE_ACQUISITION_INPUTS'],
+                         str(self.current))
+        self.assertEqual(set(selection.unavailable), {'test_historical'})
+
 
 if __name__ == '__main__':
     unittest.main()

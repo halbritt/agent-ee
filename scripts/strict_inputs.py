@@ -3,13 +3,10 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
-import re
 
 
 SCHEMA = 'agent-ee.module-env/1'
-RESERVED = {'AGENT_EE_REQUIRE_TOOLCHAIN', 'AGENT_EE_MODULE_ENV', 'AGENT_EE_RUN_INPUT_RECEIPT',
-            'AGENT_EE_EVIDENCE_DIR', 'AGENT_EE_FOME_MC_CHECKOUT', 'AGENT_EE_J1_DRAWING',
-            'AGENT_EE_KICAD_ROUTE_CHECKOUT', 'AGENT_EE_KICAD_HAPPY', 'AGENT_EE_RUST_PLANNER'}
+POLICY = json.loads(Path(__file__).with_name('native-input-policy.json').read_text())
 
 
 class ModuleInputUnavailable(ValueError):
@@ -48,7 +45,7 @@ def validate(base_env, known_modules, *, input_root=Path('/opt/agent-ee-inputs')
     if not selected or not Path(selected).is_absolute():
         raise ValueError('AGENT_EE_MODULE_ENV must name an absolute manifest path')
     document = json.loads(Path(selected).read_text(), object_pairs_hook=unique_object)
-    if (not isinstance(document, dict) or set(document) != {'schema', 'modules'}
+    if (not isinstance(document, dict) or not {'schema', 'modules'} <= set(document) <= {'schema', 'modules', 'unavailable'}
             or document['schema'] != SCHEMA or not isinstance(document['modules'], dict)):
         raise ValueError(f'expected {SCHEMA} with schema and modules fields')
     known = set(known_modules)
@@ -63,20 +60,29 @@ def validate(base_env, known_modules, *, input_root=Path('/opt/agent-ee-inputs')
             if not isinstance(bindings, dict):
                 raise ValueError(f'module {name} {kind} must be a variable-to-path map')
             for variable, value in bindings.items():
-                if (not re.fullmatch('AGENT_EE_[A-Z0-9_]+|PCBSCHEMAGEN_ROOT', variable)
-                        or variable in RESERVED or variable in seen):
-                    raise ValueError(f'invalid, reserved or repeated module input variable: {variable}')
+                if variable not in POLICY[kind] or variable in seen:
+                    raise ValueError(f'undeclared or repeated module input variable: {variable}')
                 if (not isinstance(value, str) or not Path(value).is_absolute()
                         or any(c in value for c in ('\0', '\n', '\r'))):
                     raise ValueError(f'module {name} variable {variable} needs an absolute path')
                 seen.add(variable)
         check_paths(name, selection, input_root, artifact_root, availability=False)
+    declared = document.get('unavailable', {})
+    if not isinstance(declared, dict):
+        raise ValueError('module unavailable declarations must be a map')
     unavailable = {}
+    for name, errors in declared.items():
+        if name not in document['modules'] or not isinstance(errors, dict) or not errors:
+            raise ValueError(f'invalid unavailable module declaration: {name}')
+        for variable, detail in errors.items():
+            if variable not in document['modules'][name]['inputs'] or not isinstance(detail, str) or not detail:
+                raise ValueError(f'invalid unavailable input declaration: {name}/{variable}')
+            unavailable.setdefault(name, ModuleInputUnavailable(name, variable, detail))
     for name, selection in document['modules'].items():
         try:
             check_paths(name, selection, input_root, artifact_root)
         except ModuleInputUnavailable as exc:
-            unavailable[name] = exc
+            unavailable.setdefault(name, exc)
     return Selection(document['modules'], unavailable)
 
 
