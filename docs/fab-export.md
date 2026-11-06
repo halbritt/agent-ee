@@ -158,6 +158,7 @@ The layout follows the fab lane interface contract v1, under `work/<id>/fab/`:
 | `cpl.csv` | Header `Designator,Mid X,Mid Y,Layer,Rotation` (verified against `fixtures/fab-export/jlc-cpl-template.csv`) |
 | `gerbers.zip` | Flat archive of `gerbers/` (sorted) then `drill/` (sorted). Each member has the date 1980-01-01, mode 0644, Unix create system and deflate level 9. |
 | `pcb_summary.json` | Native `pcb export stats` JSON, with only `metadata.date` normalised |
+| `via-treatment.txt` | Via-in-pad fabrication instructions, or an explicit no-sites note; its digest is recorded by `via_treatment` and `files` in the manifest. |
 | `manifest.json` | `agent-ee.fab-manifest/2`, written last |
 
 Native timestamps are normalised so that two runs on the same captured board
@@ -323,8 +324,15 @@ the output malformed and retains the files only in `fab.incomplete/`.
                  "excluded": [{"designator": "J1", "rule": "JLCPCB_Assembly=not_assembled"}],
                  "exclusion_rule": "JLCPCB_Assembly=not_assembled",
                  "mechanical": []},
+ "via_treatment": {"schema": "agent-ee.via-treatment/1", "status": "none", "count": 0,
+                   "note_file": "via-treatment.txt", "note_sha256": "<sha256>", "sites": []},
  "generated_utc": "2026-10-17T19:04:46Z"}
 ```
+
+The producer always emits `via_treatment` and `via-treatment.txt`. A package with
+no treatment sites has status `none`, count `0`, and an empty `sites` list; a
+package with sites has status `specified` and records their treatment instructions.
+The manifest reader also accepts older manifests without `via_treatment`.
 
 `files` holds the sha256 of every regular file in `fab/` except
 `manifest.json`, keyed by staging-relative path. `headers` records the verified
