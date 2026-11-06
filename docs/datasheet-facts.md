@@ -9,14 +9,19 @@ The source contains captured PDF `path`, lowercase SHA-256 `sha256`, physical
 PDF `page` (one-based), human `locator`, and an exact `quote`.
 See the [TJA1051 fact fixture](../fixtures/datasheet-pins/facts.json).
 
-`params.extractor` declares `path: "/usr/bin/pdftotext"`, its installed binary
-`sha256`, and the exact first line of `pdftotext -v` as `version`. Both extraction
-and version probing run in the existing networkless Bubblewrap sandbox.
-The binary hash is checked before and after extraction, and again by `verify`.
-The fixture scopes pin Poppler 24.02.0 from the demonstrated environment; other
-installations require an explicit new declaration and a fresh candidate.
-System shared libraries are provided by the host sandbox, not individually
-pinned by this adapter. Extractor outputs and invocation records are retained.
+`params.extractor` selects `{"path": "/usr/bin/pdftotext"}`. Candidate capture
+records the installed binary's `sha256` and the exact first line of
+`pdftotext -v` as `version` before computing the candidate and baseline identities.
+Each new run observes its installation; updating the image requires no fixture edits.
+Both version probing and extraction use the existing networkless Bubblewrap sandbox.
+The binary hash is checked across capture and before and after extraction.
+
+Retained candidates contain the full extractor identity. Existing explicit
+path/hash/version declarations remain fixed and are checked, never refreshed.
+Verification of a finished run uses its retained identity and reports host differences;
+continuing work on that run refuses a changed extractor. System shared libraries
+are provided by the host sandbox, not individually recorded by this adapter.
+Extractor outputs and invocation records are retained.
 
 Verification compares the PDF hash to the captured manifest, finds the exact
 quote on the cited physical page, and checks that the value occurs in the quote

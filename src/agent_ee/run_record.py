@@ -174,7 +174,7 @@ def pcbnew_extension(*, checkpoint=None, python='/usr/bin/python3'):
 
 def artifacts(run):
     found = {p.relative_to(run).as_posix(): digest(p) for parent in
-            ("inputs", "work", "checks", "reviews", "review-work", "review-executions", "review-attempts", "adjudication-judgments")
+            ("inputs", "capture", "work", "checks", "reviews", "review-work", "review-executions", "review-attempts", "adjudication-judgments")
             for p in sorted((run / parent).rglob("*")) if p.is_file()}
     for p in (run / "events").glob("*.json"):
         found[p.relative_to(run).as_posix()] = digest(p)

@@ -364,12 +364,49 @@ def verification_inputs(scope, inputs):
     return paths
 
 
-def validate_extractor(tool):
+def validate_extractor(tool, *, allow_selection=False):
+    if allow_selection and tool == {'path': EXTRACTOR}:
+        return
     if (not isinstance(tool, dict) or set(tool) != {'path', 'sha256', 'version'} or
             tool['path'] != EXTRACTOR or not isinstance(tool['version'], str) or
             not tool['version'].startswith('pdftotext version ') or
             not isinstance(tool['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', tool['sha256'])):
         raise ValueError('extractor requires /usr/bin/pdftotext, sha256 and version')
+
+
+def capture_extractor(tool, inputs, work):
+    """Resolve a source selector once; retained declarations remain fixed for replay."""
+    from . import native_run
+    validate_extractor(tool, allow_selection=True)
+    if set(tool) != {'path'}:
+        return copy.deepcopy(tool)
+    before = digest(EXTRACTOR)
+    intent = native_run.Intent('probe', [EXTRACTOR, '-v'], timeout=60)
+    record = native_run.run(intent, inputs=inputs, work=work)
+    if record['execution'] == 'interrupted' or native_run.cut_by_deadline(record, intent):
+        raise native_run.DeadlineExhausted('extractor identity capture exhausted or cancelled')
+    if record['execution'] != 'ok':
+        raise ValueError('pdftotext identity probe failed: ' + record['execution'])
+    lines = (work / 'console.log').read_text().splitlines()
+    if not lines:
+        raise ValueError('pdftotext returned no version')
+    captured = {'path': EXTRACTOR, 'sha256': before, 'version': lines[0]}
+    verify_extractor(captured)
+    return captured
+
+
+def capture_extractors(scope, inputs, work):
+    """Expand source selectors before the candidate and baseline identities are fixed."""
+    captured = None
+    for spec in scope.get('checks', []):
+        if spec.get('kind') != 'datasheet_facts':
+            continue
+        tool = spec['params']['extractor']
+        validate_extractor(tool, allow_selection=True)
+        if set(tool) == {'path'}:
+            if captured is None:
+                captured = capture_extractor(tool, inputs, work)
+            spec['params']['extractor'] = copy.deepcopy(captured)
 
 
 def verify_extractor(tool):
@@ -557,7 +594,7 @@ def describe_datasheet_facts(ctx):
         ctx.params.get('facts_check'), ('datasheet_facts',))
     source_params = source['params']
     ctx.captured(source_params['facts'], immutable=True)
-    validate_extractor(source_params['extractor'])
+    validate_extractor(source_params['extractor'], allow_selection=True)
     facts = load_facts(ctx.inputs, source_params['facts'])
     obligations = load_obligations(ctx.inputs, source_params['facts'])
     if obligations is not None:

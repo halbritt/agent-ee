@@ -91,6 +91,8 @@ def capture(scope_path, run_dir, profile_path=None):
         raise ValueError("source or scope changed during capture; use a new run")
     from .violation_waivers import capture_inputs
     capture_inputs(scope, before, inputs)
+    from .datasheet_facts import capture_extractors
+    capture_extractors(scope, inputs, run_dir / 'capture' / 'pdftotext-version')
     manifest = {"schema": "agent-ee.candidate/1", "scope": scope, "files": before,
                 "sources": sources, "source_revisions": revisions,
                 "scope_path": str(scope_path), "scope_sha256": digest(scope_path)}

@@ -52,9 +52,7 @@
       "params": {
         "facts": "facts.json",
         "extractor": {
-          "path": "/usr/bin/pdftotext",
-          "sha256": "88263e2333fa712d6eadfc69dd2daf826792a67abb14f4d2110673d5f195b154",
-          "version": "pdftotext version 24.02.0"
+          "path": "/usr/bin/pdftotext"
         }
       }
     },

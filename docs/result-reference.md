@@ -568,7 +568,7 @@ New reviews retain an `agent-ee.launch-expectation/1` object in
 `result.json.launch_expectation`, captured before deterministic checks. It binds
 run, candidate and baseline identities, profile and role definitions, the loaded
 policy/runtime inventories, native prerequisites of the declared checks and
-declared measurement and PDF extractor pins. `declared_installations` is empty
+declared measurement tools and the PDF extractor identity captured for this run. `declared_installations` is empty
 in new reviews: each kicad-happy check records the installation it used, and
 the run refuses an installation change before it completes; active SPICE
 requires the captured `/usr/bin/ngspice` binary, even when `PATH` resolves

@@ -79,8 +79,7 @@ class DatasheetFactsTests(unittest.TestCase):
             {'path': str(self.pdf), 'at': 'TJA1051.pdf'},
             {'path': str(self.root / 'facts.json'), 'at': 'facts.json'}],
             'checks': [{'id': 'facts', 'kind': 'datasheet_facts', 'params': {
-                'facts': 'facts.json', 'extractor': {'path': '/usr/bin/pdftotext',
-                    'sha256': digest('/usr/bin/pdftotext'), 'version': self.version}}}]}
+                'facts': 'facts.json', 'extractor': {'path': '/usr/bin/pdftotext'}}}]}
         if fixture:
             scope['inputs'].extend([
                 {'path': str(ROOT / 'fixtures/datasheet-pins' / fixture), 'at': 'project'},
@@ -105,6 +104,12 @@ class DatasheetFactsTests(unittest.TestCase):
         result = self.run_fact()
         self.assertEqual(result['execution'], 'ok', result)
         self.assertEqual(result['details']['facts'][0]['status'], 'verified')
+        recorded = read_json(self.run / 'candidate.json')['scope']['checks'][0]['params']['extractor']
+        self.assertEqual(recorded, {'path': '/usr/bin/pdftotext',
+                                   'sha256': digest('/usr/bin/pdftotext'), 'version': self.version})
+        self.assertEqual(result['details']['extractor'], recorded)
+        self.assertEqual(read_json(self.root / 'scope.json')['checks'][0]['params']['extractor'],
+                         {'path': '/usr/bin/pdftotext'})
 
     def test_citation_rejections_have_specific_reasons(self):
         cases = [('page', 3, 'quote_absent_from_page'),
@@ -420,13 +425,16 @@ class DatasheetFactsTests(unittest.TestCase):
                            'current': {'path': '/usr/bin/pdftotext', 'sha256': '0' * 64}}, observations)
             with self.assertRaisesRegex(ValueError, 'pdftotext hash changed'):
                 verify(out, current_host=True)
+        (out / 'capture/pdftotext-version/console.log').write_text('tampered version probe')
+        with self.assertRaisesRegex(ValueError, 'evidence changed'):
+            verify(out)
 
     def test_extractor_hash_and_version_mismatch_are_not_verified(self):
         self.run_fact()
         for key, value, message in [('sha256', '0' * 64, 'hash changed'),
                                     ('version', 'pdftotext version 0', 'version differs')]:
             with self.subTest(key=key):
-                scope = copy.deepcopy(self.scope)
+                scope = copy.deepcopy(read_json(self.run / 'candidate.json')['scope'])
                 scope['checks'][0]['params']['extractor'][key] = value
                 write_json(self.root / 'scope.json', scope)
                 run = self.root / ('bad-' + key)

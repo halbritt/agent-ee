@@ -248,7 +248,8 @@ Datasheet fact authors are untrusted. Citation verification establishes exact
 text occurrence in the captured PDF, not applicability or correct table/conditions
 selection. Engineer-owned check parameters select components and facts. Scope/2
 binds the facts and all referenced PDFs into immutable baseline files; the
-networkless installed extractor is hash/version declared and rechecked by verify.
+networkless installed extractor has its hash and version captured per run. Continuing
+work refuses extractor drift; finished-run verification reports host differences.
 See [datasheet facts](datasheet-facts.md) for its limits.
 
 ## Active SPICE model data
