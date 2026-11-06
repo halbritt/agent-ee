@@ -508,7 +508,7 @@ Deterministic Gate 1 topological and ERC verifier adapter. It translates candida
 - `--netlist, -n NETLIST`: Path to native KiCad XML netlist.
 - `--task-id, -t TASK_ID`: Task identifier (e.g. `104` or `BUCK_AUX_LOGIC`).
 - `--task-name TASK_NAME`: Optional human-readable task name.
-- `--pcbschemagen-root DIR`: Clean PCBSchemaGen Git checkout at any commit; the report records the commit as `verifier.commit` (default: `$PCBSCHEMAGEN_ROOT` or `~/git/PCBSchemaGen_v2`). See [benchmark prerequisites](benchmarking-guide.md#executing-pcbschemagen-benchmarks).
+- `--pcbschemagen-root DIR`: Clean PCBSchemaGen Git checkout at any commit; the report records the commit as `verifier.commit` (default: `$PCBSCHEMAGEN_ROOT` or `/opt/agent-ee-inputs/pcbschemagen`). See [benchmark prerequisites](benchmarking-guide.md#executing-pcbschemagen-benchmarks).
 - `--captures CAPTURES`: Path to captured KiCad symbols directory.
 - `--std-snapshot FILE`: Reference design snapshot JSON.
 - `--rules RULES`: Topological rules JSON file.

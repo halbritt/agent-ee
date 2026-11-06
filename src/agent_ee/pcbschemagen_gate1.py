@@ -24,7 +24,7 @@ import tempfile
 from typing import Any, Optional, Sequence, Union
 
 DEFAULT_PCBSCHEMAGEN_ROOT = Path(
-    os.environ.get("PCBSCHEMAGEN_ROOT", str(Path.home() / "git/PCBSchemaGen_v2"))
+    os.environ.get("PCBSCHEMAGEN_ROOT", "/opt/agent-ee-inputs/pcbschemagen")
 )
 PCBSCHEMAGEN_REPOSITORY = "https://github.com/HZou9/PCBSchemaGen_v2"
 REQUIRED_FILES = ('framework/topo/kg_loader.py', 'framework/task_config.yaml',
