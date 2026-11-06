@@ -18,6 +18,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from tests.artifact_retention import RetainedTemporaryDirectory, retain
 
 from agent_ee.pcbschemagen_benchmark import (
     CONCORDANT_FAIL,
@@ -278,6 +279,7 @@ class TestDualGateEvaluation(unittest.TestCase):
     def test_valid_tps54302_passes_both_gates(self):
         design = _make_valid_tps54302_design()
         res = evaluate_task(self.task6, design)
+        retain(self.id(), res.to_dict())
 
         self.assertEqual(res.score, ("PASS", "PASS"))
         self.assertEqual(res.dual_gate_status, "PASS")
@@ -294,6 +296,7 @@ class TestDualGateEvaluation(unittest.TestCase):
         design["nets"]["VIN"] = ["J1.1", "C1.1"]  # U1.3 missing
 
         res = evaluate_task(self.task6, design)
+        retain(self.id(), res.to_dict())
         self.assertEqual(res.score[0], "FAIL")
         self.assertFalse(res.gate1["passed"])
         self.assertEqual(res.dual_gate_status, "FAIL")
@@ -304,6 +307,7 @@ class TestDualGateEvaluation(unittest.TestCase):
         design["board"]["copper_layers"] = 4
 
         res = evaluate_task(self.task6, design)
+        retain(self.id(), res.to_dict())
         self.assertEqual(res.score[1], "FAIL")
         self.assertFalse(res.gate2["passed"])
         self.assertTrue(
@@ -321,6 +325,7 @@ class TestDualGateEvaluation(unittest.TestCase):
         design["nets"]["SW"] = ["L1.1", "C2.2"]
 
         res = evaluate_task(self.task6, design)
+        retain(self.id(), res.to_dict())
         self.assertEqual(res.score[0], "FAIL")
         self.assertEqual(res.score[1], "PASS")
         self.assertEqual(res.divergence_category, SEMANTIC_BYPASS)
@@ -333,6 +338,7 @@ class TestDualGateEvaluation(unittest.TestCase):
         design["connectors"] = []
 
         res = evaluate_task(self.task6, design)
+        retain(self.id(), res.to_dict())
         self.assertEqual(res.score[0], "PASS")
         self.assertEqual(res.score[1], "FAIL")
         self.assertEqual(res.divergence_category, PHYSICAL_BOTTLENECK)
@@ -394,6 +400,7 @@ class TestDualGateBenchmarkRunnerSuite(unittest.TestCase):
             candidates=candidates,
             task_ids=["5", "6"],
         )
+        retain(self.id(), report.to_dict())
 
         self.assertEqual(report.schema, SCHEMA)
         self.assertEqual(report.suite, "PCBSchemaGen-Tier1")
@@ -429,7 +436,7 @@ class TestDualGateBenchmarkRunnerSuite(unittest.TestCase):
         self.assertIn("BUCK_AUX_LOGIC", table)
 
     def test_cli_invocation(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        with RetainedTemporaryDirectory(self.id()) as tmp_dir:
             cand_path = Path(tmp_dir) / "6.json"
             write_json(cand_path, _make_valid_tps54302_design())
             out_path = Path(tmp_dir) / "report.json"
@@ -458,7 +465,7 @@ class TestDualGateBenchmarkRunnerSuite(unittest.TestCase):
 class TestBenchmarkVerifierBoundary(unittest.TestCase):
     def test_missing_verifier_is_not_scored_as_a_circuit_failure(self):
         task = Tier1Manifest.load().get_task('6')
-        with tempfile.TemporaryDirectory() as temp:
+        with RetainedTemporaryDirectory(self.id()) as temp:
             missing = Path(temp) / 'absent'
             with self.assertRaisesRegex(PCBSchemaGenUnavailable, 'PCBSchemaGen verifier missing'):
                 evaluate_task(task, _make_valid_tps54302_design(), pcbschemagen_root=missing)
@@ -473,7 +480,7 @@ class TestBenchmarkVerifierBoundary(unittest.TestCase):
             self.assertFalse(out.exists())
 
     def test_gate1_result_names_the_verifier_commit_that_scored_it(self):
-        with tempfile.TemporaryDirectory() as temp:
+        with RetainedTemporaryDirectory(self.id()) as temp:
             root = Path(temp) / 'verifier'
             commit = owned_verifier(root)
             result = run_isolated('''
@@ -483,7 +490,7 @@ class TestBenchmarkVerifierBoundary(unittest.TestCase):
                 from agent_ee.pcbschemagen_benchmark import evaluate_gate1_candidate
                 gate1 = evaluate_gate1_candidate(json.loads(sys.argv[2]), task_id='6', pcbschemagen_root=sys.argv[1])
                 print(json.dumps(gate1['verifier']))
-            ''', root, json.dumps(_make_valid_tps54302_design()))
+            ''', root, json.dumps(_make_valid_tps54302_design()), test_id=self.id())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {'repository': PCBSCHEMAGEN_REPOSITORY, 'commit': commit})
 
