@@ -159,7 +159,9 @@ class ModuleInputEnvironmentTests(unittest.TestCase):
         pins = alias / 'model-r1/input-pins.json'
         pins.write_text(json.dumps({'generated_files': {str(probe/'model.sub'): sha(probe/'model.sub')}}))
         execution = alias / 'model-r1/execution.json'
-        execution.write_text(json.dumps({'input_pins_sha256': sha(pins), 'outputs': {}}))
+        (probe/'result.raw').write_bytes(b'original output\n')
+        execution.write_text(json.dumps({'input_pins_sha256': sha(pins), 'outputs': {
+            'result.raw': {'bytes': 16, 'sha256': sha(probe/'result.raw')}}}))
         policy['layouts'] = {'film-model-r1': {'at': str(alias), 'env': 'AGENT_EE_FILM_RUN',
             'modules': ['test_historical'], 'pins_sha256': sha(pins), 'execution_sha256': sha(execution)}}
         policy_file = consumer_path.with_name('native-input-policy.json')
