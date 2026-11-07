@@ -128,9 +128,10 @@ def check_historical_view(module, variable, binding):
                 or files.get(path.relative_to(root).as_posix()) != sha):
             raise ValueError('historical input generated file is outside or missing from its snapshot')
     for relative, identity in execution['outputs'].items():
-        if (not isinstance(identity, dict) or not relative.startswith('probe/') or '..' in Path(relative).parts
-                or Path(relative).as_posix() != relative
-                or files.get('model-r1/' + relative) != identity.get('sha256')):
+        if (not isinstance(identity, dict) or relative in ('.', '..') or Path(relative).name != relative
+                or files.get('model-r1/probe/' + relative) != identity.get('sha256')
+                or type(identity.get('bytes')) is not int
+                or (root / 'model-r1/probe' / relative).stat().st_size != identity['bytes']):
             raise ValueError('historical input execution output is outside or missing from its snapshot')
 
 
