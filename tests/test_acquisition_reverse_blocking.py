@@ -4,9 +4,10 @@ import json
 import os
 from pathlib import Path
 import shutil
-import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+
+from tests.artifact_retention import RetainedTemporaryDirectory, retain
 
 from agent_ee.acquisition import reverse_blocking as variant
 from agent_ee import easyeda_footprint
@@ -106,7 +107,7 @@ class NativeFootprintTests(unittest.TestCase):
         supplier = easyeda_footprint.parse_package(raw, 'C2903961', 200)
         criteria = dict(threshold='0.98', pin_tolerance_nm='100000', refinement_levels=[2, 4, 8, 16])
         item = dict(registration=dict(translation='declared_origin', rotation='270', mirror=False), pin_aliases=None)
-        with tempfile.TemporaryDirectory() as tmp:
+        with RetainedTemporaryDirectory(self.id()) as tmp:
             root = Path(tmp)
             original = root / 'original.pretty'
             original.mkdir()
@@ -137,6 +138,7 @@ for case in ('control', 'omitted-via', 'wrong-drill', 'wrong-pin'):
             # Source and work must be disjoint for the normal executor.
             work = root.parent / (root.name + '-native')
             self.addCleanup(shutil.rmtree, work, True)
+            self.addCleanup(retain, self.id(), None, roots=[work])
             saved = executor.execute(root, work, ['/usr/bin/python3', '/candidate/generate.py', variant.FOOTPRINT],
                                      timeout=30)
             self.assertEqual(saved['execution'], 'ok', saved)
@@ -178,7 +180,7 @@ for case in ('control', 'omitted-via', 'wrong-drill', 'wrong-pin'):
         from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         import pcbnew
-        with tempfile.TemporaryDirectory() as tmp:
+        with RetainedTemporaryDirectory(self.id()) as tmp:
             library = Path(tmp) / 'AgentEE_Power.pretty'
             library.mkdir()
             (library / (variant.FOOTPRINT + '.kicad_mod')).write_bytes(
@@ -204,7 +206,7 @@ for case in ('control', 'omitted-via', 'wrong-drill', 'wrong-pin'):
         from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         import pcbnew
-        with tempfile.TemporaryDirectory() as tmp:
+        with RetainedTemporaryDirectory(self.id()) as tmp:
             library = Path(tmp) / 'AgentEE_Power.pretty'
             library.mkdir()
             (library / (variant.DIODE_FOOTPRINT + '.kicad_mod')).write_bytes(
@@ -247,7 +249,7 @@ class NativeAcquisitionTests(unittest.TestCase):
             footprint_table={variant.LIBRARY: '${KIPRJMOD}/' + variant.LIBRARY + '.pretty',
                 'Resistor_SMD': '${KIPRJMOD}/Resistor_SMD.pretty'})
         self.assertEqual(result['execution'], 'ok', result['findings'])
-        with tempfile.TemporaryDirectory() as tmp:
+        with RetainedTemporaryDirectory(self.id()) as tmp:
             root = Path(tmp)
             candidate = root / 'candidate'
             candidate.mkdir()

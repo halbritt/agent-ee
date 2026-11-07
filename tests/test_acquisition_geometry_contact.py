@@ -8,8 +8,9 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
+
+from tests.artifact_retention import RetainedTemporaryDirectory
 
 import pcbnew as k
 
@@ -131,7 +132,7 @@ class SavedBoardGeometryTests(unittest.TestCase):
         original = (NATIVE / 'project/acquisition.kicad_pcb').read_bytes()
         self.assertEqual(sha256(original).hexdigest(),
             '2040f20bd2eda776d37eb39a296bbc2c7429f61ff268aa0cbfe9b7df0cac38b1')
-        with tempfile.TemporaryDirectory() as directory:
+        with RetainedTemporaryDirectory(self.id()) as directory:
             root = Path(directory)
             shutil.copytree(NATIVE / 'project', root / 'project')
             shutil.copyfile(NATIVE / 'groups.json', root / 'groups.json')
@@ -141,6 +142,8 @@ class SavedBoardGeometryTests(unittest.TestCase):
             output = root / 'geometry.json'
             result = subprocess.run([sys.executable, str(root / 'analysis/geometry_model.py'),
                 str(root), str(output)], capture_output=True, text=True, timeout=30)
+            (root / 'geometry.stdout.txt').write_text(result.stdout, encoding='utf-8')
+            (root / 'geometry.stderr.txt').write_text(result.stderr, encoding='utf-8')
             self.assertEqual(result.returncode, 0, result.stderr)
             observed = json.loads(output.read_text())
             self.assertEqual(observed['metrics']['ground_transition_missing'],3)
@@ -171,7 +174,7 @@ class SeededGroundReferenceTests(unittest.TestCase):
     def setUp(self):
         from agent_ee.acquisition import ground_ties as ties
         self.ties = ties
-        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.root = Path(self.enterContext(RetainedTemporaryDirectory(self.id())))
         shutil.copytree(NATIVE / 'project', self.root / 'project')
         shutil.copyfile(NATIVE / 'groups.json', self.root / 'groups.json')
         (self.root / 'analysis').mkdir()
@@ -188,6 +191,8 @@ class SeededGroundReferenceTests(unittest.TestCase):
         output = self.root / 'geometry.json'
         result = subprocess.run([sys.executable, str(self.root / 'analysis/geometry_model.py'),
             str(self.root), str(output)], capture_output=True, text=True, timeout=60)
+        (self.root / 'geometry.stdout.txt').write_text(result.stdout, encoding='utf-8')
+        (self.root / 'geometry.stderr.txt').write_text(result.stderr, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(output.read_text())
 
