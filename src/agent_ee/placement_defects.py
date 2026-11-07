@@ -294,7 +294,18 @@ def _bundle(manifest, inputs, link):
             raise ValueError('carried placement receipt lacks required artifact')
     report = read_json(loaded[REPORT])
     board = manifest['scope']['board']
-    if (report.get('schema') != 'agent-ee.placed-candidate/1' or report.get('status') != 'placed' or
+    statuses = ('placed', 'repaired', 'unresolved') if artwork else ('placed',)
+    valid_status = report.get('status') in statuses
+    if artwork:
+        defects = report.get('open_defects')
+        expected_status = ('unresolved' if defects else 'repaired'
+                           if receipt['spec']['argv'][5:] == ['--discover-targets'] else 'placed')
+        valid_status = valid_status and report.get('status') == expected_status
+        if report.get('status') == 'unresolved':
+            valid_status = (isinstance(defects, list) and bool(defects) and
+                            all(isinstance(d, dict) and d.get('type') == 'placement_silkscreen_conflict'
+                                and d.get('status') == 'open' and d.get('verdict') == 'defect' for d in defects))
+    if (report.get('schema') != 'agent-ee.placed-candidate/1' or not valid_status or
             report.get('board_sha256') != digest(loaded[BOARD]) or
             report.get('board_sha256') != receipt['outputs'].get(board) or
             report.get('source_sha256') != receipt['inputs'].get(board) or

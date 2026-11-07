@@ -561,8 +561,15 @@ def record_iteration(root, state, run, config, *, host=None):
         # A refused capture leaves no candidate; report the run's own typed refusal.
         error = read_json(run / "result.json").get("error") or "no recorded error"
         raise ValueError(f"run {run.name} captured no candidate: {error}")
+    failed = read_json(run / "result.json")
     # The campaign is in progress on this host: the run must have used this host's tools.
-    result = verify(run, host=host, current_host=True)
+    try:
+        result = verify(run, host=host, current_host=True)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        if failed.get("state") == "incomplete" and failed.get("error"):
+            raise ValueError(f"run {run.name} incomplete: {failed['error']}; "
+                             f"verification: {type(exc).__name__}: {exc}") from exc
+        raise
     if ('max_schema_resubmissions' in state and
             result.get('max_schema_resubmissions') != state['max_schema_resubmissions']):
         raise ValueError('review resubmission bound differs from campaign configuration')

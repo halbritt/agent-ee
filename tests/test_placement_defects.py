@@ -2187,8 +2187,8 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         closure_scope['stages']['subjects']['routing'] = {'path': BOARD, 'kind': 'tracks', 'minimum': 1}
         status, state = fixture.campaign(fixture.declaration(), iterations=4,
             scope=closure_scope, steps=[route, artwork_step], name='anchored-artwork')
-        self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'no_monotonic_progress'),
-                         {key: state.get(key) for key in ('state', 'reason', 'error')})
+        self.assertEqual((status, state.get('state'), state.get('reason')), (1, 'escalated', 'no_monotonic_progress'),
+                         {key: state.get(key) for key in ('state', 'reason', 'error', 'history')})
         self.assertEqual(state['failed_criteria'], ['fab', 'verify'])
         for run in ('runs/3', 'runs/4'):
             for check_id in ('verify', 'fab'):
