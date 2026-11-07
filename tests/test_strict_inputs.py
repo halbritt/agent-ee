@@ -2,6 +2,7 @@
 
 import importlib.util
 from functools import partial
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -143,6 +144,86 @@ class ModuleInputEnvironmentTests(unittest.TestCase):
         self.assertEqual(self.select('test_current', selection=selection)['AGENT_EE_ACQUISITION_INPUTS'],
                          str(self.current))
         self.assertEqual(set(selection.unavailable), {'test_historical'})
+
+    def test_historical_path_requires_a_fresh_receipt_bound_to_policy_selection_and_exact_files(self):
+        # Execute the real consumer with a fixture-owned source policy, never an allow-prefix override.
+        import shutil
+        consumer_path = self.root / 'strict_inputs.py'
+        shutil.copy2(Path(strict_inputs.__file__), consumer_path)
+        policy = json.loads(Path(strict_inputs.__file__).with_name('native-input-policy.json').read_text())
+        alias = self.root / 'original-film'
+        probe = alias / 'model-r1/probe'
+        probe.mkdir(parents=True)
+        (probe/'model.sub').write_bytes(b'original model\n')
+        sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+        pins = alias / 'model-r1/input-pins.json'
+        pins.write_text(json.dumps({'generated_files': {str(probe/'model.sub'): sha(probe/'model.sub')}}))
+        execution = alias / 'model-r1/execution.json'
+        execution.write_text(json.dumps({'input_pins_sha256': sha(pins), 'outputs': {}}))
+        policy['layouts'] = {'film-model-r1': {'at': str(alias), 'env': 'AGENT_EE_FILM_RUN',
+            'modules': ['test_historical'], 'pins_sha256': sha(pins), 'execution_sha256': sha(execution)}}
+        policy_file = consumer_path.with_name('native-input-policy.json')
+        policy_file.write_text(json.dumps(policy))
+        spec = importlib.util.spec_from_file_location('layout_consumer', consumer_path)
+        consumer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(consumer)
+        self.mapping['test_historical']['inputs'] = {'AGENT_EE_FILM_RUN': str(alias)}
+        self.write()
+        canonical = self.input_root/'film-run'
+        shutil.copytree(alias, canonical)
+        files = {p.relative_to(alias).as_posix(): sha(p) for p in alias.rglob('*') if p.is_file()}
+        receipt = self.input_root/'receipt.json'
+        record = {'schema': 'agent-ee.native-inputs/1', 'status': 'prepared',
+            'policy_sha256': sha(policy_file), 'module_env_sha256': sha(self.manifest), 'inputs': [{
+                'name': 'film-run', 'env': 'AGENT_EE_FILM_RUN', 'modules': ['test_historical'],
+                'layout': 'film-model-r1', 'mount_path': '/opt/agent-ee-inputs/film-run',
+                'container_path': str(alias), 'read_only': True, 'files': files}]}
+        receipt.write_text(json.dumps(record))
+        self.base['AGENT_EE_RUN_INPUT_RECEIPT'] = str(receipt)
+        select = partial(consumer.for_module, base_env=self.base, known_modules=self.known,
+                         input_root=self.input_root, artifact_root=self.artifact_root)
+        self.assertEqual(select('test_historical')['AGENT_EE_FILM_RUN'], str(alias))
+        self.assertNotIn('AGENT_EE_FILM_RUN', select('test_current'))
+        before = pins.read_bytes()
+        for fault in ('selection', 'policy', 'readonly', 'scope', 'inventory', 'receipt-path', 'alias-link'):
+            with self.subTest(fault=fault):
+                changed = json.loads(json.dumps(record))
+                if fault == 'selection': changed['module_env_sha256'] = '0'*64
+                if fault == 'policy': changed['policy_sha256'] = '0'*64
+                if fault == 'readonly': changed['inputs'][0]['read_only'] = False
+                if fault == 'scope': changed['inputs'][0]['modules'] = ['test_current']
+                if fault == 'inventory': (probe/'model.sub').write_bytes(b'damaged\n')
+                if fault == 'receipt-path': self.base['AGENT_EE_RUN_INPUT_RECEIPT'] = str(self.root/'other.json')
+                if fault == 'alias-link':
+                    shutil.rmtree(alias)
+                    alias.symlink_to(canonical, target_is_directory=True)
+                receipt.write_text(json.dumps(changed))
+                with self.assertRaises(ValueError): select('test_historical')
+                if fault == 'inventory': (probe/'model.sub').write_bytes(b'original model\n')
+                if fault == 'receipt-path': self.base['AGENT_EE_RUN_INPUT_RECEIPT'] = str(receipt)
+                if fault == 'alias-link':
+                    alias.unlink()
+                    shutil.copytree(canonical, alias)
+        receipt.write_text(json.dumps(record))
+        selection = consumer.validate(self.base, self.known, input_root=self.input_root,
+                                      artifact_root=self.artifact_root)
+        receipt.write_text(json.dumps({**record, 'image': 'changed after dispatch'}))
+        with self.assertRaises(ValueError): select('test_historical', selection=selection)
+        self.assertEqual(pins.read_bytes(), before)
+        receipt.write_text(json.dumps(record))
+        shutil.rmtree(alias)
+        selection = consumer.validate(self.base, self.known, input_root=self.input_root,
+                                      artifact_root=self.artifact_root)
+        self.assertEqual(set(selection.unavailable), {'test_historical'})
+        self.assertEqual(select('test_current', selection=selection)['AGENT_EE_ACQUISITION_INPUTS'],
+                         str(self.current))
+        shutil.copytree(canonical, alias)
+        (alias/'model-r1/probe/model.sub').unlink()
+        (canonical/'model-r1/probe/model.sub').unlink()
+        del record['inputs'][0]['files']['model-r1/probe/model.sub']
+        receipt.write_text(json.dumps(record))
+        with self.assertRaisesRegex(ValueError, 'generated file'):
+            select('test_historical')
 
 
 if __name__ == '__main__':
