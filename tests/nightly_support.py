@@ -93,9 +93,22 @@ raise SystemExit(status)
 ''')
         (bins / 'ae-ci-outcome.py').write_text('# portable boundary double; no native execution\n')
         plane = bins / 'plane'
-        plane.write_text('#!/bin/sh\n'
-                         'printf "%s\\n" "$@" > "$NIGHTLY_PROBE/plane-args"\n'
-                         'exit "${NIGHTLY_PLANE_EXIT:-0}"\n')
+        plane.write_text('#!' + sys.executable + '\n' + '''
+import json, os, sys
+from pathlib import Path
+args = sys.argv[1:]
+(Path(os.environ['NIGHTLY_PROBE']) / 'plane-args').write_text('\\n'.join(args) + '\\n')
+status = int(os.environ.get('NIGHTLY_PLANE_EXIT', '0'))
+if status:
+    print(json.dumps({'ok': False, 'error': {'http_status': 400}}))
+else:
+    issue = json.loads(args[args.index('--data') + 1])
+    issue['id'] = 'owned-reporting-issue'
+    issue['assignees'] = ([args[args.index('--assignee') + 1]]
+        if '--assignee' in args and not os.environ.get('NIGHTLY_PLANE_IGNORE_ASSIGNEE') else [])
+    print(json.dumps({'ok': True, 'data': issue}))
+raise SystemExit(status)
+''')
         gh = bins / 'gh'
         gh.write_text('#!/bin/sh\n'
                       'printf "%s\\n" "$@" > "$NIGHTLY_PROBE/gh-args"\n'

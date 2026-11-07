@@ -55,9 +55,22 @@ Exit must agree: 0 for no problems, 1 for a completed suite with problems.
 
 Completed tests and external reporting are separate state. Unchanged completed
 main skips native work. Failed Plane/GitHub reporting returns nonzero and resumes
-from retained comparison before any later native attempt. Plane uses escaped
-`--description-html` and a commit external identity; a conflict requires looking
-up that exact identity. New IDs and changed problem kinds are regressions.
+from retained comparison before any later native attempt. Plane uses installed
+`--name`, escaped `--description-html` and a stable commit external identity.
+Creation must return a successful JSON envelope with the issue ID and matching
+external source/ID. A 409 must name the existing issue ID; lookup by the external
+identity must confirm that same ID. New IDs and changed problem kinds are regressions.
+
+`run --plane-assignee USER_UUID` explicitly selects a Plane accountability user.
+For the authorized campaign, halbritt is `a3f369ea-d8dd-42ed-bea3-db653abd632b`.
+The option also works before `run`; omission leaves assignment unspecified.
+Invalid or nil UUIDs refuse before state creation or execution. The option does
+not apply to `qualify` or `import-baseline`. Both creation and conflict lookup
+must confirm the requested assignee in the returned issue; an ignored flag or
+unassigned existing issue keeps reporting incomplete. This path does not change
+an existing issue's assignment. Reporting retries preserve the commit external
+identity and original suite finish time without rerunning the suite. Real filing
+and deduplication proof still require a separate operational authorization.
 
 When module setup prevents execution, its previous problem IDs/kinds remain
 `unexecuted_problems` with status unknown. Summary, Plane and integrator records

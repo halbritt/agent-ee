@@ -1,5 +1,6 @@
 """Tests for Full Suite Recency Check and Nightly Runner (AGENTEE-614 Parts 2 & 3)."""
 from datetime import datetime, timedelta, timezone
+import io
 import json
 import os
 from pathlib import Path
@@ -650,24 +651,145 @@ class NightlyLifecycleTests(unittest.TestCase):
 
 
 class PlaneFilingTests(unittest.TestCase):
+    ASSIGNEE = 'a3f369ea-d8dd-42ed-bea3-db653abd632b'
+
+    def test_cli_assignment_reaches_resumed_reporting_without_native_execution(self):
+        for position, ignored in (('before', False), ('after', False),
+                                  ('omitted', False), ('after', True)):
+            with self.subTest(position=position, ignored=ignored), nightly_fixture() as case:
+                run = case['state_dir'] / 'runs/completed'
+                run.mkdir(parents=True)
+                problem = 'test_mod.Case.test_a'
+                comparison = {'old': {}, 'new': {problem: 'ERROR'}, 'added': [problem],
+                              'fixed': [], 'kept': [], 'changed': [], 'unexecuted': {}}
+                (run / 'compare.json').write_text(json.dumps(comparison))
+                state = {'schema': 'agent-ee.nightly-state/1', 'last_commit': case['commit'],
+                    'last_run_dir': str(run), 'last_run_timestamp': '2026-11-06T00:00:00Z',
+                    'last_problems': comparison['new'], 'reporting': {'plane': False, 'github': True}}
+                (case['state_dir'] / 'state.json').write_text(json.dumps(state))
+                argv = ['run', '--root', str(case['root']), '--state-dir', str(case['state_dir']),
+                        '--worktree', str(case['worktree_dir']), '--skip-gh-status']
+                option = ['--plane-assignee', self.ASSIGNEE]
+                if position == 'before':
+                    argv = option + argv
+                elif position == 'after':
+                    argv += option
+                with patch.dict(os.environ, NIGHTLY_PLANE_IGNORE_ASSIGNEE='1' if ignored else ''):
+                    self.assertEqual(nightly_full_suite.main(argv), 1 if ignored else 0)
+                args = (case['base'] / 'plane-args').read_text().splitlines()
+                self.assertIn('--name', args)
+                self.assertEqual('--assignee' in args, position != 'omitted')
+                if position != 'omitted':
+                    self.assertEqual(args[args.index('--assignee') + 1], self.ASSIGNEE)
+                saved = json.loads((case['state_dir'] / 'state.json').read_text())
+                self.assertEqual(saved['reporting']['plane'], not ignored)
+                self.assertEqual(saved['last_run_timestamp'], state['last_run_timestamp'])
+                if ignored:
+                    self.assertEqual(nightly_full_suite.main(argv), 0)
+                    retried = (case['base'] / 'plane-args').read_text().splitlines()
+                    self.assertEqual(json.loads(retried[retried.index('--data') + 1]),
+                                     json.loads(args[args.index('--data') + 1]))
+                    saved = json.loads((case['state_dir'] / 'state.json').read_text())
+                    self.assertTrue(saved['reporting']['plane'])
+                    self.assertEqual(saved['last_run_timestamp'], state['last_run_timestamp'])
+                self.assertFalse((case['base'] / 'runner-args').exists())
+                self.assertFalse((case['base'] / 'gh-calls').exists())
+
+    def test_creation_confirms_the_requested_assignee(self):
+        for assignees, expected in (([self.ASSIGNEE], True),
+                                    ([{'id': self.ASSIGNEE}], True), ([], False),
+                                    (['00000000-0000-4000-8000-000000000001'], False)):
+            with self.subTest(assignees=assignees):
+                payload = {'ok': True, 'data': {'id': 'issue-a',
+                    'external_source': 'nightly', 'external_id': 'commit-a',
+                    'assignees': assignees}}
+                with patch.object(nightly_full_suite.subprocess, 'run', return_value=
+                        subprocess.CompletedProcess([], 0, json.dumps(payload), '')) as boundary:
+                    self.assertEqual(nightly_full_suite.file_plane_issue(
+                        'AGENTEE', 'Regression', 'test <value> & result', 'nightly', 'commit-a',
+                        assignee=self.ASSIGNEE), expected)
+                command = boundary.call_args.args[0]
+                self.assertEqual(command[command.index('--assignee') + 1], self.ASSIGNEE)
+
     def test_deduplication_requires_a_matching_external_identity(self):
-        conflict = json.dumps({'ok': False, 'error': {'http_status': 409}})
-        for payload, expected in (
-                ({'ok': True, 'data': {'external_source': 'nightly', 'external_id': 'commit-a'}}, True),
-                ({'ok': True, 'data': {'external_source': 'nightly', 'external_id': 'commit-b'}}, False),
-                ({'ok': False, 'error': {'http_status': 401}}, False)):
-            with self.subTest(payload=payload):
+        conflict = json.dumps({'ok': False, 'error': {'http_status': 409, 'details': {'id': 'issue-a'}}})
+        issue = {'id': 'issue-a', 'external_source': 'nightly', 'external_id': 'commit-a'}
+        for data, assignee, expected in (
+                (issue, None, True),
+                (dict(issue, external_id='commit-b'), None, False),
+                (dict(issue, external_source='other'), None, False),
+                (dict(issue, id='issue-b'), None, False),
+                (dict(issue, assignees=[self.ASSIGNEE]), self.ASSIGNEE, True),
+                (dict(issue, assignees=[]), self.ASSIGNEE, False)):
+            with self.subTest(data=data, assignee=assignee):
                 replies = [subprocess.CompletedProcess([], 5, conflict, ''),
-                           subprocess.CompletedProcess([], 0, json.dumps(payload), '')]
+                           subprocess.CompletedProcess([], 0, json.dumps({'ok': True, 'data': data}), '')]
                 with patch.object(nightly_full_suite.subprocess, 'run', side_effect=replies) as boundary:
                     self.assertEqual(nightly_full_suite.file_plane_issue(
-                        'AGENTEE', 'Regression', 'test <value> & result', 'nightly', 'commit-a'), expected)
+                        'AGENTEE', 'Regression', 'test <value> & result', 'nightly', 'commit-a',
+                        assignee=assignee), expected)
                 create = boundary.call_args_list[0].args[0]
                 self.assertIn('--description-html', create)
                 self.assertIn('<pre>test &lt;value&gt; &amp; result</pre>', create)
                 lookup = boundary.call_args_list[1].args[0]
                 self.assertIn('--external-source', lookup)
                 self.assertIn('--external-id', lookup)
+
+    def test_unconfirmed_creation_and_nonconflict_failures_stay_pending(self):
+        issue = {'id': 'issue-a', 'external_source': 'nightly', 'external_id': 'commit-a'}
+        for status, payload in (
+                (0, ''), (0, '[]'), (0, json.dumps({'ok': False, 'data': issue})),
+                (0, json.dumps({'ok': True, 'data': dict(issue, id='')})),
+                (0, json.dumps({'ok': True, 'data': dict(issue, external_id='commit-b')})),
+                (0, '{"ok":true,"ok":false,"data":{}}'),
+                (5, json.dumps({'ok': False, 'error': {'http_status': 400}})),
+                (5, json.dumps({'ok': False, 'error': {'http_status': 409}})),
+                (3, ''), (6, '')):
+            with self.subTest(status=status, payload=payload):
+                with patch.object(nightly_full_suite.subprocess, 'run', return_value=
+                        subprocess.CompletedProcess([], status, payload, '')) as boundary:
+                    self.assertFalse(nightly_full_suite.file_plane_issue(
+                        'AGENTEE', 'Regression', 'detail', 'nightly', 'commit-a'))
+                self.assertEqual(boundary.call_count, 1)
+
+    def test_conflict_lookup_failure_cannot_confirm_reporting(self):
+        conflict = json.dumps({'ok': False, 'error': {'http_status': 409, 'details': {'id': 'issue-a'}}})
+        for lookup in (subprocess.CompletedProcess([], 4, '{"ok":false}', ''),
+                       subprocess.CompletedProcess([], 0, 'not JSON', ''),
+                       subprocess.TimeoutExpired('plane issue get', 30)):
+            with self.subTest(lookup=lookup), patch.object(nightly_full_suite.subprocess, 'run',
+                    side_effect=[subprocess.CompletedProcess([], 5, conflict, ''), lookup]) as boundary:
+                self.assertFalse(nightly_full_suite.file_plane_issue(
+                    'AGENTEE', 'Regression', 'detail', 'nightly', 'commit-a'))
+                self.assertEqual(boundary.call_count, 2)
+
+    def test_invalid_assignment_refuses_before_any_external_command_or_state(self):
+        for value in ('halbritt', '', '00000000-0000-0000-0000-000000000000'):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as tmp:
+                state_dir = Path(tmp) / 'state'
+                with patch.object(nightly_full_suite.subprocess, 'run') as boundary:
+                    self.assertFalse(nightly_full_suite.file_plane_issue(
+                        'AGENTEE', 'Regression', 'detail', 'nightly', 'commit-a', assignee=value))
+                    with self.assertRaises(ValueError):
+                        nightly_full_suite.run_nightly_suite(Path(tmp), state_dir=state_dir,
+                                                            plane_assignee=value)
+                    with patch('sys.stderr', new_callable=io.StringIO), self.assertRaises(SystemExit) as error:
+                        nightly_full_suite.main(['run', '--plane-assignee', value])
+                    self.assertEqual(error.exception.code, 2)
+                boundary.assert_not_called()
+                self.assertFalse(state_dir.exists())
+
+    def test_assignment_is_rejected_for_nonreporting_commands(self):
+        for command in (
+                ['qualify', '--root', '.', '--commit', COMMIT, '--tree', COMMIT,
+                 '--evidence-dir', 'unused-evidence', '--runner', 'unused-runner'],
+                ['import-baseline', '--root', '.', '--state-dir', 'unused-state',
+                 '--selection', 'unused-selection']):
+            with self.subTest(command=command), patch.object(nightly_full_suite.subprocess, 'run') as boundary:
+                with patch('sys.stderr', new_callable=io.StringIO), self.assertRaises(SystemExit) as error:
+                    nightly_full_suite.main(['--plane-assignee', self.ASSIGNEE, *command])
+                self.assertEqual(error.exception.code, 2)
+                boundary.assert_not_called()
 
 
 

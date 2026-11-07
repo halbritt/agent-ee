@@ -187,32 +187,58 @@ def publish_github_status(repo: str, commit_sha: str, state: str, description: s
         return False
 
 
-def file_plane_issue(project: str, name: str, description: str, external_source: str, external_id: str) -> bool:
-    """File or deduplicate an issue in Plane via plane CLI."""
+def plane_assignee_uuid(value: str) -> str:
+    """Normalize a nonzero assignee UUID without resolving an account name."""
+    try:
+        selected = uuid.UUID(value)
+        if not selected.int:
+            raise ValueError('nil UUID')
+    except ValueError as error:
+        raise ValueError('Plane assignee must be a nonzero user UUID') from error
+    return str(selected)
+
+
+def file_plane_issue(project: str, name: str, description: str, external_source: str, external_id: str,
+                     *, assignee: str | None = None) -> bool:
+    """Confirm creation or the same conflict ID, including requested assignment."""
     data = json.dumps({'external_source': external_source, 'external_id': external_id})
     cmd = [
         'plane', 'issue', 'create',
         '-p', project,
-        '-n', name,
+        '--name', name,
         '--description-html', '<pre>' + html.escape(description) + '</pre>',
         '--data', data
     ]
     try:
+        if assignee is not None:
+            assignee = plane_assignee_uuid(assignee)
+            cmd += ['--assignee', assignee]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if proc.returncode == 0:
-            return True
+        conflict_id = None
         if proc.returncode == 5:
-            failure = json.loads(proc.stdout)
-            if isinstance(failure, dict) and isinstance(failure.get('error'), dict) and failure['error'].get('http_status') == 409:
-                found = subprocess.run(
-                    ['plane', 'issue', 'get', '-p', project, '--external-source', external_source,
-                     '--external-id', external_id], capture_output=True, text=True, timeout=30)
-                payload = json.loads(found.stdout)
-                issue = payload.get('data') if isinstance(payload, dict) else None
-                return (found.returncode == 0 and isinstance(issue, dict) and payload.get('ok') is True
-                        and issue.get('external_source') == external_source
-                        and issue.get('external_id') == external_id)
-        return False
+            failure = json.loads(proc.stdout, object_pairs_hook=unique_fields)
+            error = failure.get('error') if isinstance(failure, dict) else None
+            details = error.get('details') if isinstance(error, dict) else None
+            if (not isinstance(error, dict) or failure.get('ok') is not False
+                    or error.get('http_status') != 409 or not isinstance(details, dict)
+                    or not isinstance(details.get('id'), str) or not details['id']):
+                return False
+            conflict_id = details['id']
+            proc = subprocess.run(
+                ['plane', 'issue', 'get', '-p', project, '--external-source', external_source,
+                 '--external-id', external_id], capture_output=True, text=True, timeout=30)
+        if proc.returncode != 0:
+            return False
+        payload = json.loads(proc.stdout, object_pairs_hook=unique_fields)
+        issue = payload.get('data') if isinstance(payload, dict) else None
+        if (not isinstance(issue, dict) or payload.get('ok') is not True
+                or not isinstance(issue.get('id'), str) or not issue['id']
+                or (conflict_id is not None and issue['id'] != conflict_id)
+                or issue.get('external_source') != external_source or issue.get('external_id') != external_id):
+            return False
+        assigned = issue.get('assignees')
+        return assignee is None or (isinstance(assigned, list) and any(
+            (entry.get('id') if isinstance(entry, dict) else entry) == assignee for entry in assigned))
     except (ValueError, TypeError):
         return False
     except (subprocess.SubprocessError, OSError):
@@ -552,7 +578,8 @@ def qualify_gate(root: Path, run_dir: Path, commit: str, tree: str, runner: str,
         return 1
 
 
-def report_run(state: dict, state_dir: Path, repo: str, skip_plane: bool, skip_gh_status: bool) -> int:
+def report_run(state: dict, state_dir: Path, repo: str, skip_plane: bool, skip_gh_status: bool,
+               plane_assignee: str | None = None) -> int:
     """Resume unfinished reporting without repeating a completed native run."""
     run_dir = Path(state['last_run_dir'])
     comp = json.loads((run_dir / 'compare.json').read_text(encoding='utf-8'))
@@ -560,7 +587,8 @@ def report_run(state: dict, state_dir: Path, repo: str, skip_plane: bool, skip_g
     if not done['plane'] and not skip_plane:
         done['plane'] = file_plane_issue(
             'AGENTEE', f"Nightly suite regressions on {state['last_commit'][:8]}",
-            format_compare_summary(comp), 'agent-ee-nightly-suite', f"nightly-{state['last_commit']}")
+            format_compare_summary(comp), 'agent-ee-nightly-suite', f"nightly-{state['last_commit']}",
+            assignee=plane_assignee)
         write_json(state_dir / 'state.json', state)
     if not done['github'] and not skip_gh_status:
         description = (f"strict-complete {state['last_commit']} {state['last_run_timestamp']} "
@@ -593,10 +621,13 @@ def run_nightly_suite(
     fresh_worktree: bool = False,
     max_retained_runs: int = 7,
     max_retained_bytes: int = 20 * 1024 ** 3,
+    plane_assignee: str | None = None,
 ) -> int:
     """Run moved main once; retain completed tests separately from reporting."""
     if weight < 1 or jobs < 1:
         raise ValueError('weight and jobs must be positive')
+    if plane_assignee is not None:
+        plane_assignee = plane_assignee_uuid(plane_assignee)
     state_dir.mkdir(parents=True, exist_ok=True)
     with (state_dir / 'job.lock').open('a') as lock_file:
         origin_head, run_dir = None, None
@@ -617,12 +648,12 @@ def run_nightly_suite(
                 raise RuntimeError('baseline already initialized; refusing to replace its history')
             if not state and not initialize_baseline:
                 raise RuntimeError('nightly state is missing; lead must select a reviewed --initialize-baseline run')
-            if state and report_run(state, state_dir, repo, skip_plane, skip_gh_status):
+            if state and report_run(state, state_dir, repo, skip_plane, skip_gh_status, plane_assignee):
                 return 1
             git_output(root, 'fetch', 'origin', 'main')
             origin_head = git_output(root, 'rev-parse', '--verify', 'origin/main^{commit}')
             if not force and state.get('last_commit') == origin_head:
-                return report_run(state, state_dir, repo, skip_plane, skip_gh_status)
+                return report_run(state, state_dir, repo, skip_plane, skip_gh_status, plane_assignee)
             nightly_evidence.guard_retention(state_dir, max_retained_runs, max_retained_bytes)
             run_id = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-%f')
             selected_worktree = worktree_dir / run_id if fresh_worktree else worktree_dir
@@ -680,7 +711,7 @@ def run_nightly_suite(
             write_json(state_file, state)
             active_file.unlink()
             print(f'Full suite run completed on {origin_head[:8]}: {summary.strip()}')
-            return report_run(state, state_dir, repo, skip_plane, skip_gh_status)
+            return report_run(state, state_dir, repo, skip_plane, skip_gh_status, plane_assignee)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             failure = {'commit': origin_head, 'run_dir': str(run_dir) if run_dir else None,
                        'timestamp': datetime.now(timezone.utc).isoformat(), 'status': 'incomplete',
@@ -730,6 +761,9 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument('--weight', type=int, default=2, help='Admission weight (default: 2)')
         p.add_argument('--jobs', type=int, default=2, help='Parallel test jobs (default: 2)')
         p.add_argument('--skip-plane', action='store_true', help='Skip filing Plane issues')
+        # A subparser default must not erase an assignment supplied before "run".
+        p.add_argument('--plane-assignee', type=plane_assignee_uuid, default=argparse.SUPPRESS,
+                       help='Explicit Plane assignee user UUID; omission leaves assignment unspecified')
         p.add_argument('--skip-gh-status', action='store_true', help='Skip updating GitHub commit status')
         p.add_argument('--repo', default='halbritt/agent-ee', help='GitHub repository name (owner/repo)')
         p.add_argument('--root', default='.', help='Repository root path')
@@ -742,6 +776,9 @@ def main(argv: list[str] | None = None) -> int:
                        help='Refuse a new native attempt at this retained byte count; no automatic deletion')
 
     args = parser.parse_args(argv)
+    plane_assignee = getattr(args, 'plane_assignee', None)
+    if plane_assignee is not None and args.subcommand in ('import-baseline', 'qualify'):
+        parser.error('--plane-assignee applies only to nightly run reporting')
     root = Path(args.root).resolve()
     if args.subcommand == 'import-baseline':
         return import_baseline(root, Path(args.state_dir).expanduser().resolve(), Path(args.selection))
@@ -766,6 +803,7 @@ def main(argv: list[str] | None = None) -> int:
         fresh_worktree=args.fresh_worktree,
         max_retained_runs=args.max_retained_runs,
         max_retained_bytes=args.max_retained_bytes,
+        plane_assignee=plane_assignee,
     )
 
 
