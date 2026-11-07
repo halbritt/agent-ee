@@ -1,14 +1,28 @@
 """Pure custody controls for the authored AGENTEE-623 placement fixture."""
 import json
+import os
 import unittest
 import subprocess
 import sys
+from unittest.mock import patch
 
 from agent_ee import placement_intent, placement_job as job
 from portable_placement import command, contract, portable_fixture, verified
 
 
 class PortablePlacementSourceTests(unittest.TestCase):
+    def test_historical_clearance_gate_imports_and_refuses_missing_strict_sources(self):
+        from tests import placement_clearance_agreement as gate
+        with portable_fixture(self) as fixture:
+            with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': '1'}, clear=True), \
+                    patch.object(gate, 'require_toolchain', side_effect=AssertionError('native boundary reached')):
+                with self.assertRaisesRegex(AssertionError,
+                        '^AGENT_EE_ESP_PROG_PREPARED required for strict native agreement$') as refused:
+                    gate.EspProgClearanceTests.setUpClass()
+            (fixture['root'] / 'clearance-import-refusal.json').write_text(json.dumps({
+                'module': gate.__name__, 'historical_source_identity': gate.ESP_PROG,
+                'strict_refusal': str(refused.exception), 'native_operation': 'not reached'}, indent=2) + '\n')
+
     def test_malformed_text_keeps_original_diagnostic_bytes_and_refuses_decode(self):
         with portable_fixture(self) as fixture:
             with self.assertRaises(UnicodeDecodeError):

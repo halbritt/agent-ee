@@ -537,6 +537,8 @@ class EspProgCaptureTests(unittest.TestCase):
             self.assertEqual(len({row['uuid'] for row in rows}), 7)
             self.assertEqual(sum(row['role'] == 'silk_only' for row in rows), 2)
             self.assertEqual(sum(row['role'] == 'fixed_copper_mark' for row in rows), 2)
+            self.assertEqual([row['native_ref'] for row in rows if row['role'] == 'silk_only'], ['', ''])
+            self.assertEqual([row['native_ref'] for row in rows if row['role'] == 'fixed_copper_mark'], ['FID', 'FID'])
             movable = {row['native_ref']: row for row in rows if row['role'] == 'movable'}
             self.assertEqual(set(movable), {'R1', 'C1', 'U1'})
             for ref, rung in (('R1', 'fab+pads'), ('C1', 'fab+pads'), ('U1', 'silk+pads')):

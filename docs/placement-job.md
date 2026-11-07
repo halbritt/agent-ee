@@ -767,12 +767,16 @@ calculation, checks touching and exact-clearance boundaries, preserves the nativ
 U2 region, and kills limit-scale preparation at the controller deadline.
 
 `tests/test_placement_job.py`, `tests/test_placement_job_guards.py` (original
-synthetic boards built through pcbnew) and the `job::tests` Rust module. The
-esp_prog capture test reads the external AGENTEE-513 bundle by SHA-256 when
-`AGENT_EE_ESP_PROG_PREPARED` names it. Its absence fails under
-`AGENT_EE_REQUIRE_TOOLCHAIN=1`; only optional mode may skip it. The guard tests
-exercise both modes, coherent protected moves, native geometry/rule mutations,
-phase-boundary cancellation and live stalled-child termination.
+synthetic boards built through pcbnew) and the `job::tests` Rust module cover
+the job. The historical `EspProgCaptureTests` ID now uses the authored portable
+fixture in `tests/fixtures/portable-placement`; it requires no external
+AGENTEE-513 bundle. It checks seven distinct native UUIDs, three movable parts,
+two fixed marks both labelled `FID`, two silk-only footprints with empty labels,
+and labelled derived occupancy. These are authored controls, not historical
+captures or renewed ESP-Prog acceptance. Native generation and execution still
+require the admitted container runtime. The guard tests exercise coherent
+protected moves, native geometry/rule mutations, phase-boundary cancellation
+and live stalled-child termination.
 
 `tests/test_placement_job_clearance.py` checks each supported native pad shape,
 clearance overrides and refusal boundaries. `test_placement_job_reservations`
@@ -782,8 +786,9 @@ bodyless marks, Default clearance and a larger non-default netclass negative
 that both the search model and native DRC reject. `test_placement_job_rules`
 exercises native rule custody, a four-layer paired routing article, the build's
 actual placement-stage producer, rule violations and changed-rule resumption.
-The separate external esp_prog
-gate, `python3 -m unittest -fv tests.placement_clearance_agreement`, requires
+The separate historical external esp_prog gate,
+`python3 -m unittest -fv tests.placement_clearance_agreement`, retains its own
+frozen source identity in that module and requires
 `AGENT_EE_ESP_PROG_PREPARED`, `AGENT_EE_USB1_SCAN`,
 `AGENT_EE_USB1_SCAN_PROBLEM` and `AGENT_EE_CLEARANCE_EVIDENCE`. They retain the
 as-built full-feasibility gate, the original 50 deterministic seats from the
@@ -791,6 +796,11 @@ sealed scan enumeration, 10 deliberate pad intrusions, and 10 additional
 positive/boundary controls across x = 117.575–117.775 mm, each checked by native
 DRC. A separate control isolates USB1 drill-to-fiducial clearance. Complete
 native reports and separate copper-pair and full-engine matrices are retained.
+This explicitly invoked gate remains outside ordinary discovery; its missing
+inputs deliberately refuse in strict mode before native prerequisites are
+checked. The portable suite checks that import and refusal without running
+native operations. Keeping the historical gate does not restore ESP-Prog
+project obligations or include it in the portable fixture acceptance gate.
 The comparison is scoped to USB1 and the specified fiducial; it establishes
 neither whole-board placement legality nor AGENTEE-515 completion. The matrix
 separately scopes copper-pair feasibility (excluding mask/drill and unary

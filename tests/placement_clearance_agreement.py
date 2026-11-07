@@ -9,19 +9,26 @@ import unittest
 from agent_ee import placement_job as job
 from tests.toolchain import require_toolchain
 from tests.test_placement_job_clearance import evaluate, pair_items, pair_feasible
-from tests.test_placement_job import ESP_PROG
+
+
+# Historical identity belongs to this separate, explicitly invoked agreement
+# gate. Portable placement tests do not require or qualify this project.
+ESP_PROG = {'board.kicad_pcb': 'c9ed55ee7893be572e6dfea09d0cc9c3920f51ba39098b807c02c69b8df4828d',
+            'board.kicad_pro': '9a9ab694fc8a9a456a6791060d998c01a171e30308a170e1b4f97d864b2b6395',
+            'intent.json': '320cf961d58dab9aea164f34afc11099ae48f75fc0b100273a155d4d62330d3c',
+            'groups.json': 'd48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8'}
 
 
 class EspProgClearanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        require_toolchain(native=True)
         for key in ('AGENT_EE_ESP_PROG_PREPARED', 'AGENT_EE_USB1_SCAN',
                     'AGENT_EE_USB1_SCAN_PROBLEM', 'AGENT_EE_CLEARANCE_EVIDENCE'):
             if not os.environ.get(key):
                 if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
                     raise AssertionError(f'{key} required for strict native agreement')
                 raise unittest.SkipTest(f'{key} not configured')
+        require_toolchain(native=True)
         cls.source = Path(os.environ['AGENT_EE_ESP_PROG_PREPARED'])
         for name, expected in ESP_PROG.items():
             actual = hashlib.sha256((cls.source / name).read_bytes()).hexdigest()
