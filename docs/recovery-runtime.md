@@ -116,3 +116,33 @@ agent-ee console import is recognized. Migration preserves it as
 `~/.local/bin/agent-ee.uv-backup`; an existing backup or unrelated executable
 is refused. It does not uninstall uv, replace a regular executable, install
 Rust, or change machine-wide tool choices. Repeating supported setup is safe.
+
+
+## Per-module historical input layouts
+
+`scripts/strict_inputs.py` consumes the producer's explicit module environment.
+Ordinary input values remain confined to `/opt/agent-ee-inputs`; output leaves
+remain absent beneath `/artifacts/modules/<module>`. Distinct historical and
+public-control inputs may share a variable only in disjoint module scopes.
+
+The matching `scripts/native-input-policy.json` declares one named historical
+layout, `film-model-r1`. Its fixed read-only view preserves the original FILM
+`generated_files` absolute keys. A fresh authoritative run receipt must bind the
+same policy bytes and module-environment bytes, the exact original pins and
+execution hashes, complete regular-file inventories and explicit module scope.
+Both canonical and historical views are checked before dispatch. Receipt changes,
+symlinks, missing generated files and changed bytes refuse setup; a missing view
+is reported for its affected module. External tool paths recorded in historical
+pins remain metadata and are never followed to assemble inputs.
+
+The producer's optional finite-input `select` field chooses a confined descendant
+while retaining the complete bundle mount. Selecting `inputs` therefore keeps its
+sibling `build-plan.json` accessible without rewriting source receipts. The
+producer and agent-ee policy files must match exactly. The infra producer README
+specifies the manifest fields and fixed layout contract.
+
+Source-level producer/consumer tests do not establish live read-only mount or
+native execution acceptance. Compose the CI-owned strict-suite dispatch with the
+new source pair, review the finite manifest and close native artifact retention
+before requesting separately authorized validation. Existing accepted source and
+native receipts remain bound to their original identities.
