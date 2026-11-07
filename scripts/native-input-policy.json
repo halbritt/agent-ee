@@ -44,5 +44,18 @@
     "AGENT_EE_REVERSE_BLOCKING_ARTIFACTS",
     "AGENT_EE_STENCIL_ARTIFACTS",
     "AGENT_EE_VIA_QUALIFICATION_ARTIFACTS"
-  ]
+  ],
+  "layouts": {
+    "film-model-r1": {
+      "at": "/home/halbritt/.local/share/agent-ee/zeroasic-20261029-agent707/film-build-integration-r1",
+      "env": "AGENT_EE_FILM_RUN",
+      "modules": [
+        "test_acquisition_film",
+        "test_acquisition_film_loop",
+        "test_acquisition_film_removal"
+      ],
+      "pins_sha256": "781a40a84ab99daeb1afbecc43293149f695845a498fec2277f35d9270ffcfcd",
+      "execution_sha256": "2855949086fbf73988dcf3198fe596feea0bb66dfe5c895ff6f34f3af8054cf2"
+    }
+  }
 }
