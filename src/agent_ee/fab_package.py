@@ -205,14 +205,15 @@ def capability(params, scope, spec, prerequisite, captured):
     return predicates
 
 
-def rotation_record(run_dir, scope, candidate_id, manifest):
+def rotation_record(run_dir, scope, candidate_id, manifest, *, native_manifest=False):
     """The declared CPL correction this gate seals, recomputed from retained evidence.
 
     `{status: not_declared}` without a cpl_rotation check. Otherwise the check
     must have passed with complete coverage on this candidate and board, and
-    have corrected exactly the native cpl.csv in `manifest`; raises ValueError
-    on any disagreement. The record never upgrades the report's status; a status in
-    OBLIGATION_STATUSES carries its recomputed `preview_obligations`.
+    bind to the CPL in `manifest`; `native_manifest=True` verifies the original
+    export before replacement, otherwise the sealed corrected CPL is required.
+    Raises ValueError on any disagreement. The record never upgrades the report's
+    status; a status in OBLIGATION_STATUSES carries its recomputed `preview_obligations`.
     """
     run_dir = Path(run_dir)
     spec = declared_rotation(scope)
@@ -239,8 +240,9 @@ def rotation_record(run_dir, scope, candidate_id, manifest):
     manifest_cpl = manifest.get('files', {}).get('cpl.csv')
     corrected = report.get('cpl') or {}
     native_cpl = report.get('export', {}).get('cpl_sha256')
+    expected_cpl = native_cpl if native_manifest else corrected.get('sha256')
     if (report.get('candidate_id') != candidate_id or report.get('board_sha256') != manifest.get('board_sha256')
-            or not manifest_cpl or manifest_cpl != corrected.get('sha256')):
+            or not manifest_cpl or manifest_cpl != expected_cpl):
         raise ValueError(f"cpl_rotation {cid!r} did not correct this package's native cpl.csv")
     if corrected.get('path') != 'cpl/cpl.csv' or digest(cpl_path) != corrected.get('sha256'):
         raise ValueError(f'cpl_rotation {cid!r} corrected CPL differs from its report')
@@ -297,6 +299,15 @@ def artifact_record(run_dir, check):
     sealed = {e.get('path') if isinstance(e, dict) else e for e in check.get('evidence', [])}
     if rotation['status'] != 'not_declared' and rotation['cpl'] not in sealed:
         raise ValueError(f"fab_package {cid!r} did not seal {rotation['cpl']}")
+    if rotation['status'] != 'not_declared':
+        native_rel = f'work/{cid}/raw-native-cpl.csv'
+        native_path = run_dir / native_rel
+        if native_rel not in sealed:
+            raise ValueError(f"fab_package {cid!r} did not seal its native CPL {native_rel}")
+        if native_path.is_symlink() or not native_path.is_file():
+            raise ValueError(f"fab_package {cid!r} native CPL is missing or symlinked")
+        if digest(native_path) != rotation['native_cpl_sha256']:
+            raise ValueError(f"fab_package {cid!r} native CPL differs from its rotation source")
     extras = [rel for rel in ('via-treatment.txt',) if rel in listed]
     files = {}
     for rel in [*wanted, *extras, 'manifest.json']:
@@ -346,6 +357,13 @@ def check_fab_package(ctx):
         for rel in (f"work/{rotation['id']}/cpl-rotation.json", f"work/{rotation['id']}/cpl/cpl.csv"):
             if rel in prior.get('evidence', []) and rel not in ctx.result['evidence']:
                 ctx.result['evidence'].append(rel)
+        manifest_path = ctx.work / 'fab' / 'manifest.json'
+        try:
+            manifest = fab_export.load_verified_manifest(ctx.work / 'fab')['manifest']
+            rotation_record(ctx.run_dir, ctx.scope, ctx.manifest['candidate_id'], manifest,
+                            native_manifest=True)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            raise CheckError('malformed', f'fab artifacts do not verify: {exc}') from exc
         native_cpl_path = ctx.work / 'fab' / 'cpl.csv'
         raw_native_dest = ctx.work / 'raw-native-cpl.csv'
         if native_cpl_path.is_file():
@@ -357,12 +375,9 @@ def check_fab_package(ctx):
         if not corrected_cpl_src.is_file():
             raise CheckError('malformed', f"declared cpl_rotation {rotation['id']!r} corrected CPL missing")
         shutil.copyfile(corrected_cpl_src, native_cpl_path)
-        manifest_path = ctx.work / 'fab' / 'manifest.json'
-        if manifest_path.is_file():
-            manifest = read_json(manifest_path)
-            manifest['files']['cpl.csv'] = digest(native_cpl_path)
-            write_json(manifest_path, manifest)
-            details['manifest_sha256'] = digest(manifest_path)
+        manifest['files']['cpl.csv'] = digest(native_cpl_path)
+        write_json(manifest_path, manifest)
+        details['manifest_sha256'] = digest(manifest_path)
 
     sub_result = fab_consistency.gate(ctx, ctx.cid, ctx.spec, export_result, ctx.work / 'fab')
     details['consistency'] = sub_result['details']
@@ -497,6 +512,8 @@ def assess_orientation(ctx, rotation):
     from .catalog import strict_json
     from .checks import CheckError
     raw_native = ctx.work / 'raw-native-cpl.csv'
+    if rotation.get('status') != 'not_declared' and not raw_native.is_file():
+        raise CheckError('malformed', 'declared cpl_rotation has no retained native CPL')
     if raw_native.is_file():
         native_cpl = raw_native.read_text(encoding='utf-8')
     else:

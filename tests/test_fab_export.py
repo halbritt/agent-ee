@@ -993,7 +993,11 @@ class NativeFabExportTests(unittest.TestCase):
         self.assertEqual(manifest['designators']['mechanical'], [])
         self.assertEqual(set(manifest), {'schema', 'candidate_id', 'board_path', 'board_sha256', 'tool',
                                          'files', 'headers', 'copper_layers', 'enabled_fab_layers', 'drill',
-                                         'designators', 'generated_utc'})
+                                         'designators', 'generated_utc', 'via_treatment'})
+        self.assertEqual(manifest['via_treatment'], {
+            'schema': 'agent-ee.via-treatment/1', 'status': 'none', 'count': 0,
+            'note_file': 'via-treatment.txt', 'note_sha256': digest(fab / 'via-treatment.txt'), 'sites': []})
+        self.assertEqual(manifest['via_treatment']['note_sha256'], manifest['files']['via-treatment.txt'])
         self.assertEqual(manifest['headers'], header_records())
         self.assertEqual(result['details']['headers'], header_records())
         self.assertEqual(manifest['candidate_id'], candidate['candidate_id'])
