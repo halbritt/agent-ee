@@ -404,9 +404,9 @@ class AcquisitionPreparationTests(unittest.TestCase):
         declaration = json.loads((inputs / 'requirement-map.json').read_bytes())
         self.assertIn({'path':path, 'at':path}, declaration['scope']['inputs'])
         self.assertEqual(report['inputs'][path], storage.digest(inputs / path))
-        self.assertIn('agent_ee.acquisition_block_source', report['recipe']['helpers'])
         from agent_ee.acquisition import block_source as acquisition_block_source
-        self.assertEqual(report['recipe']['helpers']['agent_ee.acquisition_block_source'],
+        self.assertIn(acquisition_block_source.__name__, report['recipe']['helpers'])
+        self.assertEqual(report['recipe']['helpers'][acquisition_block_source.__name__],
                          storage.digest(Path(acquisition_block_source.__file__)))
         ledger = json.loads((inputs / 'preparation/edit-ledger.json').read_bytes())
         self.assertEqual(ledger['final_groups']['sha256'], report['inputs'][path])

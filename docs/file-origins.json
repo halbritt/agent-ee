@@ -4563,6 +4563,16 @@
     },
     {
       "paths": [
+        "fixtures/acquisition-film/executed-power-analysis.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Byte-exact historical agent-ee reader from 2c42f380:src/agent_ee/acquisition_power_analysis.py, retained under its executed SHA-256 for removal replay. Provenance is documented beside the artifact; no vendor CAD, models or raw responses are embedded."
+    },
+    {
+      "paths": [
         "src/agent_ee/acquisition/reverse_blocking.py"
       ],
       "kind": "owned-source",

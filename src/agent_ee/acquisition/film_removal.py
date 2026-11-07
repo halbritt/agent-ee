@@ -31,7 +31,8 @@ def attach(files, root):
     files.update(additions)
     files[AT + 'evidence-manifest.json'] = json_bytes(declaration)
     files[AT + 'replay.py'] = (DATA / 'removal_replay.py').read_bytes()
-    analysis = Path(__file__).with_name('power_analysis.py').read_bytes()
+    # Preserve the executed reader's identity across production package moves.
+    analysis = (DATA / 'executed-power-analysis.py').read_bytes()
     if sha256(analysis).hexdigest() != declaration['power_analysis_sha256']:
         raise ValueError('removal measurement reader differs from the executed investigation')
     files[AT + 'power_analysis.py'] = analysis
