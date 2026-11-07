@@ -30,7 +30,7 @@
       "original_test_id": "test_intent_dialect.RetainedEspProgTests.test_public_metrics_reports_every_declared_pad_edge_leg",
       "replacement_test_id": "test_intent_dialect.RetainedEspProgTests.test_public_metrics_reports_every_declared_pad_edge_leg",
       "identity_retained": true,
-      "required_behavior": "Run actual CLI on the same owned board with a deliberate edge-intent violation; require exit 1 while all pad-edge legs, source hashes and advisory authority are still reported.",
+      "required_behavior": "Run actual CLI on the same owned board with R1 declared east and nearest west; require the exact edge_identity violation with body:fab basis, coverage [edge_identity] and exit 1 while all four pad-edge legs, source hashes and advisory authority are still reported. A pure guard independently derives the nearest edge from the authored outline and R1 centre.",
       "fixture": "tests/fixtures/portable-placement; tests/portable_placement.py",
       "historical_assertions_replaced": "Historical board/intent/group digests, project references/counts, and measured distances identify retired captures. New fixed expectations describe authored geometry, not those captures."
     },

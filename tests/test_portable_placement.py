@@ -11,6 +11,25 @@ from portable_placement import command, contract, portable_fixture, verified
 
 
 class PortablePlacementSourceTests(unittest.TestCase):
+    def test_cli_negative_declares_an_edge_other_than_geometry_nearest(self):
+        with portable_fixture(self) as fixture:
+            geometry = json.loads(verified(fixture, 'geometry')[1])
+            intent = json.loads(verified(fixture, 'intent')[1])
+            x0, y0, x1, y1 = geometry['outline_mm']
+            x, y = geometry['poses_mm']['R1']
+            distances = {'west': x - x0, 'north': y - y0, 'east': x1 - x, 'south': y1 - y}
+            nearest = min(distances, key=distances.get)
+            self.assertEqual(nearest, 'west')
+            self.assertLess(distances['west'], min(value for edge, value in distances.items() if edge != 'west'))
+            connectors = intent['edge_connectors']
+            self.assertEqual([row['ref'] for row in connectors], ['R1'])
+            declared = connectors[0]['edge']
+            (fixture['root'] / 'edge-identity-blueprint.json').write_text(json.dumps({
+                'basis': 'authored outline and R1 centre; not native acceptance',
+                'centre_distances_mm': distances, 'nearest': nearest, 'declared': declared}, indent=2) + '\n')
+            self.assertNotEqual(declared, nearest, 'CLI negative must exercise the covered edge_identity mismatch')
+            self.assertEqual(declared, 'east')
+
     def test_historical_clearance_gate_imports_and_refuses_missing_strict_sources(self):
         from tests import placement_clearance_agreement as gate
         with portable_fixture(self) as fixture:

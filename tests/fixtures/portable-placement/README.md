@@ -46,8 +46,12 @@ at -0.1 mm. Final core-to-port interface gap is 3.2 mm after R1 moves. Rail
 sidecars bind the actual board and original group bytes; stale identities refuse.
 Measurements remain advisory with no automatic group pass.
 
-The public metrics CLI deliberately sees an edge-setback violation and must exit
-1 while still reporting every declared leg. Three distinct unsourced interface
+The public metrics CLI must report an `edge_identity` violation for R1: declared
+east, nearest west, with the `body:fab` basis, and exit 1 while reporting every
+declared leg. The authored outline and R1 centre give distances west=5, east=15,
+north=south=6 mm; a pure guard checks the unique nearest edge and the declared
+mismatch independently. The report covers edge identity, not setback compliance.
+Three distinct unsourced interface
 claims stay unresolved. Withheld decap distance, zone containment and overlap
 claims remain withheld. The raw dialect is classified rather than silently
 accepted by the direct native validator.
