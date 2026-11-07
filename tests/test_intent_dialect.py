@@ -1,20 +1,18 @@
 """AGENTEE-479 step 1-2: exact original-dialect adapter and upstream pad-edge metric."""
 import copy
-import hashlib
 import json
 import math
-import os
 from pathlib import Path
 import sys
 import unittest
+
+import portable_placement as portable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent_ee import placement_intent, placement_job as job, placement_problem
 
 ROOT = Path(__file__).resolve().parents[1]
-ESP = Path(os.environ.get('AGENT_EE_ESP_PROG_INPUTS', ROOT / 'build/agent545/inputs'))
-ESP_INTENT_SHA = '320cf961d58dab9aea164f34afc11099ae48f75fc0b100273a155d4d62330d3c'
 ESP_GROUPS_SHA = 'd48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8'
 ESP_BOARD_SHA = 'b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7'
 
@@ -346,78 +344,67 @@ class PadEdgeMetricTests(unittest.TestCase):
         self.assertEqual(result['pads_basis'], 'all_non_aperture')
 
 
-@unittest.skipUnless((ESP / 'intent.json').exists(), 'retained esp_prog inputs are not present on this host')
 class RetainedEspProgTests(unittest.TestCase):
+    """Historical test IDs retained; all inputs are authored portable controls."""
     def test_public_metrics_reports_every_declared_pad_edge_leg(self):
-        import subprocess
-        from toolchain import require_toolchain
-        require_toolchain(native=True)
-        board_path = ESP / 'board.kicad_pcb'
-        done = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'place', 'metrics',
-                               str(board_path), '--intent', str(ESP / 'intent.json'),
-                               '--groups', str(ESP / 'groups.json')],
-                              capture_output=True, text=True, timeout=30)
-        # This raw input has an edge-intent failure; measurement must still
-        # report all legs while preserving the unsuccessful exit status.
-        self.assertEqual(done.returncode, 1, done.stderr)
-        metrics = json.loads(done.stdout)
-        self.assertEqual(metrics['board_sha256'], ESP_BOARD_SHA)
-        rows = metrics['pad_edge_legs']
-        self.assertEqual([(r['ref'], r['near']) for r in rows],
-                         [('Y1', 'U1'), ('C2', 'Y1'), ('C4', 'Y1')])
-        seen = {(i, leg['subject_pad'], leg['partner_pad']): round(leg['gap_mm'], 4)
-                for i, row in enumerate(rows) for leg in row['legs']}
-        self.assertEqual(seen, {(0, '1', '9'): 2.9704, (0, '2', '10'): 3.3268,
-                                (1, '1', '2'): 0.658, (2, '1', '1'): -0.075})
-        self.assertTrue(all(r['status'] == 'measured' and r['authority'] == 'advisory_objective'
-                            for r in rows))
-        self.assertEqual(metrics['edge_intent']['status'], 'failed')
+        with portable.portable_fixture(self, native=True) as fixture:
+            board, _ = portable.verified(fixture, 'board')
+            done = portable.command(fixture, [sys.executable, '-m', 'agent_ee.cli', 'place', 'metrics',
+                str(board), '--intent', str(fixture['root'] / 'intent.json'),
+                '--groups', str(fixture['root'] / 'groups.json')], 'public-metrics')
+            self.assertEqual(done.returncode, 1, done.stderr)
+            metrics = json.loads(done.stdout)
+            self.assertEqual(metrics['board_sha256'], fixture['inputs']['board']['sha256'])
+            rows = metrics['pad_edge_legs']
+            self.assertEqual([(row['ref'], row['near']) for row in rows], [('C1', 'U1'), ('R1', 'C1'), ('R1', 'U1')])
+            expected = json.loads((fixture['root'] / 'geometry.json').read_bytes())['pad_edge_oracles']
+            seen = {(i, leg['subject_pad'], leg['partner_pad']): round(leg['gap_mm'], 4)
+                    for i, row in enumerate(rows) for leg in row['legs']}
+            self.assertEqual(seen, {(r['row'], r['subject_pad'], r['partner_pad']): r['gap_mm'] for r in expected})
+            self.assertTrue(all(row['status'] == 'measured' and row['authority'] == 'advisory_objective' for row in rows))
+            self.assertEqual(metrics['edge_intent']['status'], 'failed')
 
     def test_original_bytes_adapt_and_are_preserved(self):
-        intent_raw, groups_raw = (ESP / 'intent.json').read_bytes(), (ESP / 'groups.json').read_bytes()
-        self.assertEqual(hashlib.sha256(intent_raw).hexdigest(), ESP_INTENT_SHA)
-        self.assertEqual(hashlib.sha256(groups_raw).hexdigest(), ESP_GROUPS_SHA)
-        record = placement_intent.adapt_bytes(intent_raw, groups_raw)
-        self.assertEqual(record['source']['intent_sha256'], ESP_INTENT_SHA)
-        self.assertEqual(hashlib.sha256((ESP / 'intent.json').read_bytes()).hexdigest(), ESP_INTENT_SHA)
-        self.assertFalse(record['runnable'])
-        self.assertEqual(sorted(c['id'] for c in record['unresolved_claims']),
-                         ['interfaces[CON1].cable_envelope_mm', 'interfaces[CON2].cable_envelope_mm',
-                          'interfaces[USB1].cable_envelope_mm'])
-        self.assertEqual([r['ref'] for r in record['native_intent']['fixed_poses']], ['Ref*', 'Ref*~2'])
-        self.assertEqual([r['ref'] for r in record['native_intent']['edge_connectors']], ['CON1', 'CON2', 'USB1'])
-        self.assertEqual([(r['ref'], r['near']) for r in record['proximity_pad_edge']],
-                         [('Y1', 'U1'), ('C2', 'Y1'), ('C4', 'Y1')])
-        by_path = {d['path']: d for d in record['dispositions']}
-        self.assertTrue(all(by_path[f'intent.proximity[{i}]']['authority'] == 'advisory_objective' for i in range(3)))
-        self.assertEqual([g['name'] for g in record['native_groups']['groups']],
-                         ['usb_in', 'power', 'core', 'reset', 'target'])
-        self.assertEqual(set(record['withheld']), {'rules.decap_distance', 'rules.zone_containment',
-                                                   'withheld.overlap_area', 'budget.overlap_area'})
-        placement_intent.validate(record['native_intent'], record['native_groups'])
-        # The current validator still refuses the original directly, as 520 requires.
-        with self.assertRaises(ValueError):
-            placement_intent.validate(json.loads(intent_raw), json.loads(groups_raw))
+        with portable.portable_fixture(self) as fixture:
+            intent_path, intent_raw = portable.verified(fixture, 'intent')
+            groups_path, groups_raw = portable.verified(fixture, 'groups')
+            record = placement_intent.adapt_bytes(intent_raw, groups_raw)
+            portable.save(fixture, 'adapted.json', record)
+            self.assertEqual(record['source']['intent_sha256'], fixture['inputs']['intent']['sha256'])
+            self.assertEqual(record['source']['groups_sha256'], fixture['inputs']['groups']['sha256'])
+            self.assertEqual(intent_path.read_bytes(), intent_raw)
+            self.assertEqual(groups_path.read_bytes(), groups_raw)
+            self.assertFalse(record['runnable'])
+            self.assertEqual([row['id'] for row in record['unresolved_claims']], ['interfaces[R1].cable_envelope_mm', 'interfaces[R1].insertion_path_mm', 'interfaces[R1].mating_clearance_mm'])
+            self.assertEqual([row['ref'] for row in record['native_intent']['fixed_poses']], ['FID', 'FID~2'])
+            self.assertEqual([row['ref'] for row in record['native_intent']['edge_connectors']], ['R1'])
+            self.assertEqual([(row['ref'], row['near']) for row in record['proximity_pad_edge']], [('C1', 'U1'), ('R1', 'C1'), ('R1', 'U1')])
+            dispositions = {row['path']: row for row in record['dispositions']}
+            self.assertTrue(all(dispositions[f'intent.proximity[{i}]']['authority'] == 'advisory_objective' for i in range(3)))
+            self.assertEqual([g['name'] for g in record['native_groups']['groups']], ['core', 'port'])
+            self.assertEqual(set(record['withheld']), {'rules.decap_distance', 'rules.zone_containment', 'withheld.overlap_area', 'budget.overlap_area'})
+            placement_intent.validate(record['native_intent'], record['native_groups'])
+            with self.assertRaises(ValueError):
+                placement_intent.validate(json.loads(intent_raw), json.loads(groups_raw))
 
     def test_pad_edge_legs_replay_the_contract_measurements(self):
-        try:
-            import pcbnew  # noqa: F401
-        except ImportError:
-            self.skipTest('pcbnew is not importable in this interpreter')
-        board_path = ESP / 'board.kicad_pcb'
-        self.assertEqual(hashlib.sha256(board_path.read_bytes()).hexdigest(), ESP_BOARD_SHA)
-        intent = json.loads((ESP / 'intent.json').read_bytes())
-        # The evaluated problem uses capture's role rule: the duplicated Ref* marks are fixed only as declared.
-        rows = job.board_metrics(board_path, proximity=intent['proximity'],
-                                 fixed_poses=intent['fixed_poses'])['pad_edge_legs']
-        expected = {(0, '1', '9'): 2.9704, (0, '2', '10'): 3.3268, (1, '1', '2'): 0.658, (2, '1', '1'): -0.075}
-        seen = {}
-        for index, result in enumerate(rows):
-            self.assertEqual(result['status'], 'measured')
-            for leg in result['legs']:
-                seen[(index, leg['subject_pad'], leg['partner_pad'])] = round(leg['gap_mm'], 4)
-                self.assertEqual(leg['paired_by'], 'net')
-        self.assertEqual(seen, expected)
+        with portable.portable_fixture(self, native=True) as fixture:
+            board, before = portable.verified(fixture, 'board')
+            _, raw = portable.verified(fixture, 'intent')
+            intent = json.loads(raw)
+            metrics = job.board_metrics(board, proximity=intent['proximity'], fixed_poses=intent['fixed_poses'])
+            portable.save(fixture, 'pad-edge-metrics.json', metrics)
+            expected = json.loads((fixture['root'] / 'geometry.json').read_bytes())['pad_edge_oracles']
+            seen = {}
+            for index, row in enumerate(metrics['pad_edge_legs']):
+                self.assertEqual(row['status'], 'measured')
+                self.assertEqual(row['authority'], 'advisory_objective')
+                for leg in row['legs']:
+                    seen[index, leg['subject_pad'], leg['partner_pad']] = round(leg['gap_mm'], 4)
+                    self.assertEqual(leg['paired_by'], 'net')
+            self.assertEqual(seen, {(r['row'], r['subject_pad'], r['partner_pad']): r['gap_mm'] for r in expected})
+            self.assertEqual(board.read_bytes(), before)
+
 
 
 if __name__ == '__main__':
@@ -492,40 +479,41 @@ class GroupLinkTests(unittest.TestCase):
         self.assertEqual(self.measure(self.groups(), layout_q7, self.rails())['S1_complete_partition']['ungrouped_refs'], ['Q7'])
 
 
-ESP_FINAL = Path(os.environ.get('AGENT_EE_ESP_PROG_FINAL', ROOT / 'build/agent545/board-run-portfolio/final-a1'))
-ESP_FINAL_SHA = 'dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a1'
-
-
-@unittest.skipUnless((ESP_FINAL / 'board.kicad_pcb').exists() and (ESP / 'groups.json').exists()
-                     and (ESP / 'intent.json').exists(),
-                     'retained esp_prog final-a1 board is not present on this host')
 class RetainedGroupReplayTests(unittest.TestCase):
+    """Historical identity, measured on an authored and physically distinct final board."""
     def test_group_links_replay_the_contract_measurements(self):
-        try:
-            import pcbnew  # noqa: F401
-        except ImportError:
-            self.skipTest('pcbnew is not importable in this interpreter')
-        board_path = ESP_FINAL / 'board.kicad_pcb'
-        self.assertEqual(hashlib.sha256(board_path.read_bytes()).hexdigest(), ESP_FINAL_SHA)
-        groups = json.loads((ESP / 'groups.json').read_bytes())
-        rails = {'shared_rails': {'GND': 'ground return', '/+3.3V': 'groups.json power.why', 'Net-(C1-Pad1)': 'groups.json power.why'},
-                 'scoped': {'Net-(C1-Pad1)': {'intra_group': 'power', 'near_pairs': [['usb_in', 'power'], ['power', 'usb_in']]}}}
-        # The run's declared fixed poses: the evaluated problem fixes the duplicated Ref* marks only as declared.
-        fixed_poses = json.loads((ESP / 'intent.json').read_bytes())['fixed_poses']
-        report = job.board_metrics(board_path, groups['groups'], rails=rails, fixed_poses=fixed_poses)['group_links']
-        power = report['groups']['power']
-        self.assertEqual([(l['ref_a'], l['pad_a'], l['ref_b'], l['pad_b'], l['gap_mm']) for l in power['R2_intra_group_signal_links']],
-                         [('C1', '1', 'U2', '2', 4.592)])
-        self.assertEqual([(l['member'], l['member_pad'], l['anchor_pad'], l['shared_net'], l['gap_mm'])
-                          for l in power['R2_member_to_anchor_links']],
-                         [('C1', '1', '3', None, 3.642), ('C3', '1', '3', '/+3.3V', 5.242)])
-        usb = {l['to_group']: l for l in report['groups']['usb_in']['R1_declared_near_interfaces']}
-        self.assertEqual((usb['power']['from_pad'], usb['power']['to_ref'], usb['power']['to_pad'], usb['power']['gap_mm']),
-                         ('1', 'U2', '2', 2.1621))
-        self.assertEqual((usb['core']['from_pad'], usb['core']['to_ref'], usb['core']['to_pad'], usb['core']['net'], usb['core']['gap_mm']),
-                         ('2', 'U1', '7', '/D_N', 12.8095))
-        self.assertEqual(report['S2_shared_rails']['unknown_multi_group_nets'], [])
-        self.assertTrue(report['S1_complete_partition']['complete'])
+        with portable.portable_fixture(self, native=True) as fixture:
+            board, before = portable.verified(fixture, 'final')
+            _, groups_raw = portable.verified(fixture, 'groups')
+            _, intent_raw = portable.verified(fixture, 'intent')
+            groups, intent = json.loads(groups_raw), json.loads(intent_raw)
+            sidecar = portable.rails(fixture, 'final')
+            options = dict(board_sha256=fixture['inputs']['final']['sha256'], groups_sha256=fixture['inputs']['groups']['sha256'],
+                           group_names={'core', 'port'}, nets={'A', 'B', 'GND'},
+                           net_parts={'A': {'R1', 'C1', 'U1'}, 'B': {'C1', 'U1'}, 'GND': {'R1', 'U1'}})
+            rails = placement_intent.validate_rails(sidecar, **options)
+            metrics = job.board_metrics(board, groups['groups'], rails=rails, fixed_poses=intent['fixed_poses'])
+            portable.save(fixture, 'group-link-metrics.json', metrics)
+            portable.save(fixture, 'rails.json', sidecar)
+            report = metrics['group_links']
+            core = report['groups']['core']
+            self.assertEqual([(row['net'], row['ref_a'], row['pad_a'], row['ref_b'], row['pad_b'], round(row['gap_mm'], 4))
+                              for row in core['R2_intra_group_signal_links']],
+                             [('A', 'C1', '1', 'U1', '3', 3.0), ('B', 'C1', '2', 'U1', '1', -0.1)])
+            self.assertEqual([(row['member'], row['member_pad'], row['anchor_pad'], row['shared_net'], round(row['gap_mm'], 4))
+                              for row in core['R2_member_to_anchor_links']], [('C1', '2', '1', 'B', -0.1)])
+            link = core['R1_declared_near_interfaces'][0]
+            self.assertEqual((link['to_group'], link['from_ref'], link['from_pad'], link['to_ref'], link['to_pad'], link['net']),
+                             ('port', 'C1', '1', 'R1', '1', 'A'))
+            self.assertAlmostEqual(link['gap_mm'], 3.2)
+            self.assertEqual(report['S2_shared_rails']['unknown_multi_group_nets'], [])
+            self.assertTrue(report['S1_complete_partition']['complete'])
+            self.assertEqual(report['authority'], 'measurements and diagnostics only; no automatic group pass')
+            self.assertEqual(board.read_bytes(), before)
+            for field in ('board_sha256', 'groups_sha256'):
+                with self.subTest(stale=field), self.assertRaisesRegex(ValueError, 'different'):
+                    placement_intent.validate_rails(sidecar, **dict(options, **{field: '0' * 64}))
+
 
 
 class GroupRailsSidecarTests(unittest.TestCase):

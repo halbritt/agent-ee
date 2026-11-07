@@ -1,0 +1,187 @@
+{
+  "kind": "floorplan-intent",
+  "schema": 1,
+  "min_reader": 12,
+  "units": "mm",
+  "board": "board.kicad_pcb",
+  "assembly": {
+    "sides": "F",
+    "why": "authored synthetic fixture"
+  },
+  "blocks": [],
+  "keepouts": [],
+  "must_lock": [],
+  "decaps": {},
+  "defaults": {
+    "zone_tolerance_mm": 0.5
+  },
+  "context": {
+    "basis": {
+      "assembly.sides": "observed_baseline"
+    },
+    "cutouts": [],
+    "edge_contours": 0,
+    "file_locked": [],
+    "note": "n",
+    "budget_withheld": {
+      "overlap_area": "pile"
+    },
+    "brief": {
+      "consequences": [
+        {
+          "id": "interfaces[R1].cable_envelope_mm",
+          "ref": "R1",
+          "status": "unmeasured",
+          "value": null,
+          "why": "not measured by 2D placement"
+        },
+        {
+          "id": "interfaces[R1].insertion_path_mm",
+          "ref": "R1",
+          "status": "unmeasured",
+          "value": null,
+          "why": "not measured by 2D placement"
+        },
+        {
+          "id": "interfaces[R1].mating_clearance_mm",
+          "ref": "R1",
+          "status": "unmeasured",
+          "value": null,
+          "why": "not measured by 2D placement"
+        },
+        {
+          "id": "interfaces[R1].mount_mode",
+          "ref": "R1",
+          "status": "compiled",
+          "compiled_to": "edge_connectors[R1].max_setback_mm",
+          "value": 0.75,
+          "why": "w"
+        }
+      ]
+    }
+  },
+  "dispositions": {
+    "rules": {
+      "decap_distance": "none supplied",
+      "zone_containment": "withheld in authored fixture; not a package/board acceptance claim"
+    },
+    "withheld": {
+      "overlap_area": "pile"
+    }
+  },
+  "edge_connectors": [
+    {
+      "ref": "R1",
+      "edge": "west",
+      "side": "F",
+      "class": "edge_receptacle",
+      "max_setback_mm": 0.75,
+      "overhang_mm": {
+        "min": 0.0,
+        "max": 2.0
+      },
+      "source": "authored synthetic test requirement",
+      "context": {
+        "mount_mode": "edge_mount",
+        "cable_entry": "in_plane",
+        "role": "host"
+      }
+    }
+  ],
+  "envelope": {
+    "rect": [
+      0.0,
+      0.0,
+      20.0,
+      12.0
+    ],
+    "tolerance_mm": 0.5
+  },
+  "fixed_poses": [
+    {
+      "ref": "FID",
+      "x": 3.0,
+      "y": 3.0,
+      "rot": 0.0,
+      "side": "F",
+      "basis": "mechanical",
+      "why": "authored fixed mark"
+    },
+    {
+      "ref": "FID~2",
+      "x": 6.0,
+      "y": 3.0,
+      "rot": 0.0,
+      "side": "F",
+      "basis": "mechanical",
+      "why": "authored fixed mark"
+    }
+  ],
+  "legality_budget": {
+    "oob_count": 0
+  },
+  "proximity": [
+    {
+      "ref": "C1",
+      "near": "U1",
+      "max_mm": 4.0,
+      "basis": "pad_edge",
+      "pads": {
+        "C1": [
+          "1",
+          "2"
+        ],
+        "U1": [
+          "1",
+          "3"
+        ]
+      },
+      "context": {
+        "basis": "authored pad rectangle blueprint",
+        "limit": "derived_default",
+        "role": "synthetic",
+        "source": "tests/fixtures/portable-placement/geometry.json"
+      }
+    },
+    {
+      "ref": "R1",
+      "near": "C1",
+      "max_mm": 4.1,
+      "basis": "pad_edge",
+      "pads": {
+        "R1": [
+          "1"
+        ],
+        "C1": [
+          "1"
+        ]
+      },
+      "context": {
+        "basis": "authored pad rectangle blueprint",
+        "limit": "derived_default",
+        "role": "synthetic",
+        "source": "tests/fixtures/portable-placement/geometry.json"
+      }
+    },
+    {
+      "ref": "R1",
+      "near": "U1",
+      "max_mm": 4.0,
+      "basis": "pad_edge",
+      "pads": {
+        "R1": [
+          "2"
+        ],
+        "U1": [
+          "2"
+        ]
+      },
+      "context": {
+        "basis": "authored pad rectangle blueprint",
+        "limit": "derived_default",
+        "role": "synthetic",
+        "source": "tests/fixtures/portable-placement/geometry.json"
+      }
+    }
+  ]
+}

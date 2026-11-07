@@ -1,0 +1,72 @@
+{
+  "schema": "agent-ee.portable-placement-preservation/1",
+  "item": "AGENTEE-623",
+  "mapping": [
+    {
+      "original_test_id": "test_final_group_views.RetainedEspProgViewTests.test_final_a1_views_bind_the_retained_final_and_raw_input_boards",
+      "replacement_test_id": "test_final_group_views.RetainedEspProgViewTests.test_final_a1_views_bind_the_retained_final_and_raw_input_boards",
+      "identity_retained": true,
+      "required_behavior": "Generate owned raw/final boards and groups; verify final/input board hashes, group identity, members, top/bottom manifest and acceptance_assessed=false. Refuse changed/missing raw or final input and stale binding.",
+      "fixture": "tests/fixtures/portable-placement; tests/portable_placement.py",
+      "historical_assertions_replaced": "Historical board/intent/group digests, project references/counts, and measured distances identify retired captures. New fixed expectations describe authored geometry, not those captures."
+    },
+    {
+      "original_test_id": "test_intent_dialect.RetainedEspProgTests.test_original_bytes_adapt_and_are_preserved",
+      "replacement_test_id": "test_intent_dialect.RetainedEspProgTests.test_original_bytes_adapt_and_are_preserved",
+      "identity_retained": true,
+      "required_behavior": "Owned raw dialect intent/groups with fixed marks, interfaces and advisory proximity; verify exact source-byte hashes, original-byte preservation, unresolved cable-envelope claims, roles/dispositions/withheld claims and direct-validator refusal.",
+      "fixture": "tests/fixtures/portable-placement; tests/portable_placement.py",
+      "historical_assertions_replaced": "Historical board/intent/group digests, project references/counts, and measured distances identify retired captures. New fixed expectations describe authored geometry, not those captures."
+    },
+    {
+      "original_test_id": "test_intent_dialect.RetainedEspProgTests.test_pad_edge_legs_replay_the_contract_measurements",
+      "replacement_test_id": "test_intent_dialect.RetainedEspProgTests.test_pad_edge_legs_replay_the_contract_measurements",
+      "identity_retained": true,
+      "required_behavior": "Owned native board with analytically specified pad rectangles and shared-net pairs; check every measured gap, negative overlap and paired_by=net. Derive expected distances independently from fixture coordinates.",
+      "fixture": "tests/fixtures/portable-placement; tests/portable_placement.py",
+      "historical_assertions_replaced": "Historical board/intent/group digests, project references/counts, and measured distances identify retired captures. New fixed expectations describe authored geometry, not those captures."
+    },
+    {
+      "original_test_id": "test_intent_dialect.RetainedEspProgTests.test_public_metrics_reports_every_declared_pad_edge_leg",
+      "replacement_test_id": "test_intent_dialect.RetainedEspProgTests.test_public_metrics_reports_every_declared_pad_edge_leg",
+      "identity_retained": true,
+      "required_behavior": "Run actual CLI on the same owned board with a deliberate edge-intent violation; require exit 1 while all pad-edge legs, source hashes and advisory authority are still reported.",
+      "fixture": "tests/fixtures/portable-placement; tests/portable_placement.py",
+      "historical_assertions_replaced": "Historical board/intent/group digests, project references/counts, and measured distances identify retired captures. New fixed expectations describe authored geometry, not those captures."
+    },
+    {
+      "original_test_id": "test_intent_dialect.RetainedGroupReplayTests.test_group_links_replay_the_contract_measurements",
+      "replacement_test_id": "test_intent_dialect.RetainedGroupReplayTests.test_group_links_replay_the_contract_measurements",
+      "identity_retained": true,
+      "required_behavior": "Owned two/three-group board with shared and scoped rails; verify intra-group signal links, member-to-anchor links, near-group interface endpoints/gaps and complete partition. Changed-board/groups/rail bindings refuse old evidence.",
+      "fixture": "tests/fixtures/portable-placement; tests/portable_placement.py",
+      "historical_assertions_replaced": "Historical board/intent/group digests, project references/counts, and measured distances identify retired captures. New fixed expectations describe authored geometry, not those captures."
+    },
+    {
+      "original_test_id": "test_placement_job.EspProgCaptureTests.test_unchanged_esp_prog_capture_is_accepted_with_labelled_derived_occupancy",
+      "replacement_test_id": "test_placement_job.EspProgCaptureTests.test_unchanged_esp_prog_capture_is_accepted_with_labelled_derived_occupancy",
+      "identity_retained": true,
+      "required_behavior": "Capture the owned native board containing movable components, silk-only artwork and declared fixed copper marks; assert unique footprint UUIDs, role partition, derived_occupancy labels/rungs and original board-byte preservation. Missing/changed required sources fail explicitly.",
+      "fixture": "tests/fixtures/portable-placement; tests/portable_placement.py",
+      "historical_assertions_replaced": "Historical board/intent/group digests, project references/counts, and measured distances identify retired captures. New fixed expectations describe authored geometry, not those captures."
+    },
+    {
+      "original_test_id": "test_placement_job_complexity.RetainedProblemTests.test_retained_problem_prepares_and_evaluates_captured_poses",
+      "replacement_test_id": "test_placement_job_complexity.RetainedProblemTests.test_retained_problem_prepares_and_evaluates_captured_poses",
+      "identity_retained": true,
+      "required_behavior": "Serialize a problem from the owned capture and feed captured poses to the real placement engine; assert evaluated response and one evaluation, preserved source identities and native timing receipt; refuse missing/corrupted captures.",
+      "fixture": "tests/fixtures/portable-placement; tests/portable_placement.py",
+      "historical_assertions_replaced": "Historical board/intent/group digests, project references/counts, and measured distances identify retired captures. New fixed expectations describe authored geometry, not those captures."
+    }
+  ],
+  "preservation": [
+    "three distinct unmeasured claims remain unresolved; direct raw-dialect validation refuses",
+    "four withheld claim classes retained",
+    "seven unique native footprint UUIDs, repeated native labels,3movable/2fixed-copper/2silk roles",
+    "four signed pad-edge legs in3declarations, all net-paired, including negative overlap",
+    "intra-group scoped A/signal B, member-anchor and declared-near endpoints; complete partition; stale rail bindings refuse",
+    "physically distinct final/raw boards with separate immutable hashes, group identity, both views, acceptance_assessed=false",
+    "native captured problem serialized and verified, original poses prepared/evaluated once by real Rust executable; missing/changed problem refuses",
+    "pristine originals and damaged copies survive through runtime artifact_retention API before cleanup"
+  ]
+}

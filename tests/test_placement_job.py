@@ -1,9 +1,8 @@
 """AGENTEE-515 whole-board placement job: native capture, prepared Rust search,
 native materialization/reload, incumbent custody, cancellation and resume.
 
-Every board here is an original synthetic board built through pcbnew. The
-unchanged esp_prog input is external (AGENTEE-513 bundle, by SHA-256); its
-capture test runs when AGENT_EE_ESP_PROG_PREPARED names that directory.
+Every board here is an authored synthetic board built through pcbnew. Historical
+capture test IDs remain; they require no retired external project bundle.
 """
 import hashlib
 import json
@@ -14,16 +13,14 @@ import sys
 import tempfile
 import time
 import unittest
+
+import portable_placement as portable
 from unittest import mock
 
 from toolchain import require_kicad_route, require_toolchain
 
 from agent_ee import placement_job as job
 
-ESP_PROG = {'board.kicad_pcb': 'c9ed55ee7893be572e6dfea09d0cc9c3920f51ba39098b807c02c69b8df4828d',
-            'board.kicad_pro': '9a9ab694fc8a9a456a6791060d998c01a171e30308a170e1b4f97d864b2b6395',
-            'intent.json': '320cf961d58dab9aea164f34afc11099ae48f75fc0b100273a155d4d62330d3c',
-            'groups.json': 'd48e2a5d95f733be6d4bdee06736034a5e34acd68e6289edef00fe89b86837e8'}
 MM = 1_000_000
 
 
@@ -525,29 +522,32 @@ class EntryPointTests(Fixture):
 
 
 class EspProgCaptureTests(unittest.TestCase):
+    """Historical ID retained; captures an authored seven-footprint control."""
     def test_unchanged_esp_prog_capture_is_accepted_with_labelled_derived_occupancy(self):
-        if not os.environ.get('AGENT_EE_ESP_PROG_PREPARED'):
-            if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
-                self.fail('AGENT_EE_REQUIRE_TOOLCHAIN=1: external esp_prog bundle not mounted '
-                          '(AGENT_EE_ESP_PROG_PREPARED)')
-            self.skipTest('external esp_prog bundle not mounted')
-        require_toolchain(native=True)
-        root = Path(os.environ['AGENT_EE_ESP_PROG_PREPARED'])
-        for name, sha in ESP_PROG.items():
-            self.assertEqual(hashlib.sha256((root / name).read_bytes()).hexdigest(), sha, name)
-        problem, record = job.capture(root / 'board.kicad_pcb',
-                                      job.normalize_intent(json.loads((root / 'intent.json').read_text()),
-                                                           json.loads((root / 'groups.json').read_text())))
-        rows = problem['footprints']
-        self.assertEqual(len(rows), 21)
-        self.assertEqual(len({r['uuid'] for r in rows}), 21)
-        self.assertEqual(sum(r['native_ref'] == '' and r['role'] == 'silk_only' for r in rows), 3)
-        self.assertEqual(sum(r['native_ref'] == 'Ref*' and r['role'] == 'fixed_copper_mark' for r in rows), 2)
-        movable = [r for r in rows if r['role'] == 'movable']
-        self.assertEqual(len(movable), 16)
-        self.assertTrue(all(r['occupancy']['label'] == 'derived_occupancy' for r in movable))
-        self.assertTrue(all(r['occupancy']['rung'] in ('fab+pads', 'silk+pads', 'pads') for r in movable))
-        self.assertEqual(hashlib.sha256((root / 'board.kicad_pcb').read_bytes()).hexdigest(), ESP_PROG['board.kicad_pcb'])
+        with portable.portable_fixture(self, native=True) as fixture:
+            board, before = portable.verified(fixture, 'board')
+            _, intent_raw = portable.verified(fixture, 'intent')
+            _, groups_raw = portable.verified(fixture, 'groups')
+            normalized = job.normalize_intent(json.loads(intent_raw), json.loads(groups_raw))
+            problem, record = job.capture(board, normalized)
+            portable.save(fixture, 'captured-problem.json', problem)
+            portable.save(fixture, 'capture-record.json', record)
+            rows = problem['footprints']
+            self.assertEqual(len(rows), 7)
+            self.assertEqual(len({row['uuid'] for row in rows}), 7)
+            self.assertEqual(sum(row['role'] == 'silk_only' for row in rows), 2)
+            self.assertEqual(sum(row['role'] == 'fixed_copper_mark' for row in rows), 2)
+            movable = {row['native_ref']: row for row in rows if row['role'] == 'movable'}
+            self.assertEqual(set(movable), {'R1', 'C1', 'U1'})
+            for ref, rung in (('R1', 'fab+pads'), ('C1', 'fab+pads'), ('U1', 'silk+pads')):
+                self.assertEqual(movable[ref]['occupancy']['label'], 'derived_occupancy')
+                self.assertEqual(movable[ref]['occupancy']['rung'], rung)
+            self.assertEqual([row['id'] for row in problem['compatibility']['unresolved_claims']],
+                             ['interfaces[R1].cable_envelope_mm', 'interfaces[R1].insertion_path_mm', 'interfaces[R1].mating_clearance_mm'])
+            self.assertEqual(board.read_bytes(), before)
+            for key, raw in (('intent', intent_raw), ('groups', groups_raw)):
+                self.assertEqual(portable.verified(fixture, key)[1], raw)
+
 
 
 def _terminal_row():

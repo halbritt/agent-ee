@@ -1,20 +1,19 @@
 """AGENTEE-479 part 2: final_checks renders supplemental group views of the saved final board.
 
-Every board here is the synthetic native fixture of test_placement_job; the retained esp_prog
-final-a1 control runs only when AGENT_EE_ESP_PROG_INPUTS / AGENT_EE_ESP_PROG_FINAL name it.
+Every board here is an authored synthetic native fixture. Historical test IDs
+remain for coverage accounting; no retired ESP-Prog bundle is required.
 """
-import hashlib
 import json
-import os
 from pathlib import Path
 import unittest
+
+import portable_placement as portable
 
 from agent_ee import placement_job as job
 from agent_ee.storage import digest, identity
 from test_placement_job import Fixture, groups, intent
 from test_placement_job_guards import materialize
 import test_placement_job as fixtures
-from toolchain import require_toolchain
 
 
 class FinalGroupViewTests(Fixture):
@@ -147,32 +146,65 @@ class FinalGroupViewTests(Fixture):
         self.assertEqual(digest(Path(placed['board'])), before)
 
 
-ESP = Path(os.environ.get('AGENT_EE_ESP_PROG_INPUTS', '/nonexistent'))
-ESP_FINAL = Path(os.environ.get('AGENT_EE_ESP_PROG_FINAL', '/nonexistent'))
-
-
-@unittest.skipUnless((ESP / 'groups.json').exists() and (ESP_FINAL / 'board.kicad_pcb').exists(),
-                     'retained esp_prog inputs/final-a1 are not present on this host')
 class RetainedEspProgViewTests(unittest.TestCase):
+    """Historical ID retained; final/raw boards are authored portable inputs."""
     def test_final_a1_views_bind_the_retained_final_and_raw_input_boards(self):
-        import tempfile
-        require_toolchain(native=True)
-        self.assertEqual(digest(ESP_FINAL / 'board.kicad_pcb'), 'dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a1')
-        self.assertEqual(digest(ESP / 'board.kicad_pcb'), 'b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7')
-        groups_document = json.loads((ESP / 'groups.json').read_bytes())
-        with tempfile.TemporaryDirectory() as tmp:
-            result = job._group_views(ESP_FINAL / 'board.kicad_pcb', groups_document, Path(tmp) / 'views',
-                                      input_board=ESP / 'board.kicad_pcb', input_board_sha256=digest(ESP / 'board.kicad_pcb'),
-                                      clock=job.Clock(240))
+        with portable.portable_fixture(self, native=True) as fixture:
+            final_board, final_bytes = portable.verified(fixture, 'final')
+            raw_board, raw_bytes = portable.verified(fixture, 'board')
+            _, groups_raw = portable.verified(fixture, 'groups')
+            groups_document = json.loads(groups_raw)
+            self.assertNotEqual(final_bytes, raw_bytes)
+            result = job._group_views(final_board, groups_document, fixture['root'] / 'views',
+                input_board=raw_board, input_board_sha256=fixture['inputs']['board']['sha256'], clock=job.Clock(240))
+            portable.save(fixture, 'final-views.json', result)
             self.assertEqual(result['status'], 'rendered', result['problems'])
-            self.assertEqual(result['board_sha256'], 'dfffc042e9f4c60dce9da0a25523443dd63dd3ecf56ee50a0a744a6cbdde92a1')
-            self.assertEqual(result['input_board_sha256'], 'b4aa540d031e18283216d806aa6288cf51260e7328f9aaeb13b55d4eac93eef7')
+            self.assertEqual(result['board_sha256'], fixture['inputs']['final']['sha256'])
+            self.assertEqual(result['input_board_sha256'], fixture['inputs']['board']['sha256'])
             self.assertEqual(result['canonical_groups_sha256'], identity(groups_document))
-            self.assertEqual(result['members'], 16)
+            self.assertEqual(result['members'], 3)
             self.assertIs(result['acceptance_assessed'], False)
-            manifest = json.loads((Path(tmp) / 'views' / result['manifest']).read_bytes())
+            manifest = json.loads((fixture['root'] / 'views' / result['manifest']).read_bytes())
             self.assertEqual(sorted(manifest['views']), ['bottom', 'top'])
-            self.assertEqual(digest(ESP_FINAL / 'board.kicad_pcb'), result['board_sha256'])
+            self.assertEqual(manifest['board_sha256'], result['board_sha256'])
+            self.assertEqual(manifest['input_board_sha256'], result['input_board_sha256'])
+            self.assertEqual(manifest['canonical_groups_sha256'], identity(groups_document))
+            self.assertEqual({row['reference'] for row in manifest['members']}, {'R1', 'C1', 'U1'})
+            self.assertIs(manifest['acceptance_assessed'], False)
+            for side in ('top', 'bottom'):
+                path = fixture['root'] / 'views' / result['views'][side]['path']
+                self.assertEqual(digest(path), result['views'][side]['sha256'])
+                self.assertEqual(manifest['views'][side]['sha256'], result['views'][side]['sha256'])
+            self.assertEqual(raw_board.read_bytes(), raw_bytes)
+            self.assertEqual(final_board.read_bytes(), final_bytes)
+            changed_raw = fixture['root'] / 'changed-raw.kicad_pcb'
+            changed_raw.write_bytes(raw_bytes + b'\n')
+            refused = job._group_views(final_board, groups_document, fixture['root'] / 'changed-input-views',
+                input_board=changed_raw, input_board_sha256=fixture['inputs']['board']['sha256'], clock=job.Clock(60))
+            portable.save(fixture, 'changed-input-refusal.json', refused)
+            self.assertEqual(refused['status'], 'missing')
+            self.assertIn('does not match the captured input identity', refused['problems'][0])
+            self.assertFalse((fixture['root'] / 'changed-input-views').exists())
+            fixture['inputs']['missing_board'] = dict(fixture['inputs']['board'], path=str(fixture['root'] / 'missing-board.kicad_pcb'))
+            with self.assertRaises(FileNotFoundError):
+                portable.verified(fixture, 'missing_board')
+            changed_final = fixture['root'] / 'changed-final.kicad_pcb'
+            changed_final.write_bytes(final_bytes + b'\n')
+            fixture['inputs']['changed_final'] = dict(fixture['inputs']['final'], path=str(changed_final))
+            with self.assertRaisesRegex(job.JobRefusal, 'declared sha256'):
+                portable.verified(fixture, 'changed_final')
+            record = {'board': str(changed_final), 'board_sha256': result['board_sha256'], 'group_views': result}
+            self.assertEqual(job.verify_group_views(record), ['final board changed after its views were rendered'])
+            missing_final = fixture['root'] / 'missing-final.kicad_pcb'
+            fixture['inputs']['missing_final'] = dict(fixture['inputs']['final'], path=str(missing_final))
+            with self.assertRaises(FileNotFoundError):
+                portable.verified(fixture, 'missing_final')
+            record['board'] = str(missing_final)
+            self.assertEqual(job.verify_group_views(record), ['final board missing after its views were rendered'])
+            portable.save(fixture, 'negative-input-selections.json', fixture['inputs'])
+            self.assertEqual(raw_board.read_bytes(), raw_bytes)
+            self.assertEqual(final_board.read_bytes(), final_bytes)
+
 
 
 if __name__ == '__main__':

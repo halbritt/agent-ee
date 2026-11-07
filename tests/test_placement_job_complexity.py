@@ -9,12 +9,13 @@ import copy
 import hashlib
 import json
 import math
-import os
 from pathlib import Path
 import subprocess
 import tempfile
 import time
 import unittest
+
+import portable_placement as portable
 
 from agent_ee import placement_job as job
 
@@ -106,25 +107,46 @@ class ComplexityTests(unittest.TestCase):
 
 
 class RetainedProblemTests(unittest.TestCase):
+    """Historical ID retained; evaluate poses captured from the authored native board."""
     def test_retained_problem_prepares_and_evaluates_captured_poses(self):
-        path = os.environ.get('AGENT_EE_515_E2E_PROBLEM')
-        if not path:
-            if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
-                self.fail('AGENT_EE_REQUIRE_TOOLCHAIN=1: retained problem required (AGENT_EE_515_E2E_PROBLEM)')
-            self.skipTest('external retained problem not mounted')
-        raw = Path(path).read_bytes()
-        self.assertEqual(hashlib.sha256(raw).hexdigest(),
-                         '2ccd682b4bf36ea2aa2d2dcc8bca05f1770cd5927df6eb67142ba70bbf626f11')
-        p = json.loads(raw)
-        p['evaluate'] = [{}]
-        started = time.monotonic()
-        code, response = engine(p, timeout=120)
-        wall_s = time.monotonic() - started
-        self.assertEqual(code, 0, response)
-        self.assertEqual(response['status'], 'evaluated')
-        self.assertEqual(len(response['evaluations']), 1)
-        print(json.dumps({'case': 'retained-problem', 'prepare_s': response['timing']['prepare_s'],
-                          'process_wall_s': wall_s, 'timing': response['timing']}), flush=True)
+        with portable.portable_fixture(self, native=True) as fixture:
+            board, board_raw = portable.verified(fixture, 'board')
+            _, intent_raw = portable.verified(fixture, 'intent')
+            _, groups_raw = portable.verified(fixture, 'groups')
+            captured, record = job.capture(board, job.normalize_intent(json.loads(intent_raw), json.loads(groups_raw)))
+            portable.save(fixture, 'capture-record.json', record)
+            portable.save(fixture, 'problem.json', captured)
+            portable.save(fixture, 'captured-problem-original.json', captured)
+            fixture['inputs']['problem'] = portable.bind(fixture['root'] / 'problem.json')
+            _, raw = portable.verified(fixture, 'problem')
+            portable.save(fixture, 'problem-input-identity.json', fixture['inputs']['problem'])
+            payload = json.loads(raw)
+            self.assertEqual(payload['problem_sha256'], hashlib.sha256(job.canonical(
+                {key: value for key, value in payload.items() if key != 'problem_sha256'})).hexdigest())
+            payload['evaluate'] = [{}]
+            portable.save(fixture, 'evaluation-request.json', payload)
+            started = time.monotonic()
+            done = portable.command(fixture, [str(job.rust_executable())], 'captured-evaluation',
+                                    timeout=120, input_text=json.dumps(payload))
+            wall_s = time.monotonic() - started
+            self.assertEqual(done.returncode, 0, done.stderr)
+            response = json.loads(done.stdout)
+            self.assertEqual(response['status'], 'evaluated')
+            self.assertEqual(len(response['evaluations']), 1)
+            self.assertGreaterEqual(response['timing']['prepare_s'], 0)
+            portable.save(fixture, 'timing.json', {'process_wall_s': wall_s, 'timing': response['timing']})
+            self.assertEqual(board.read_bytes(), board_raw)
+            path = fixture['root'] / 'changed-problem.json'
+            path.write_bytes(raw + b'\n')
+            fixture['inputs']['changed_problem'] = dict(fixture['inputs']['problem'], path=str(path))
+            with self.assertRaisesRegex(job.JobRefusal, 'declared sha256'):
+                portable.verified(fixture, 'changed_problem')
+            fixture['inputs']['missing_problem'] = dict(fixture['inputs']['problem'], path=str(fixture['root'] / 'missing-problem.json'))
+            with self.assertRaises(FileNotFoundError):
+                portable.verified(fixture, 'missing_problem')
+            portable.save(fixture, 'negative-problem-selections.json', fixture['inputs'])
+            self.assertEqual((fixture['root'] / 'captured-problem-original.json').read_bytes(), raw)
+
 
 
 if __name__ == '__main__':

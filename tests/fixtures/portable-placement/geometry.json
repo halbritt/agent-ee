@@ -1,0 +1,80 @@
+{
+  "schema": "agent-ee.authored-placement-fixture/1",
+  "provenance": "synthetic-authored; not a historical capture or board acceptance",
+  "outline_mm": [
+    0,
+    0,
+    20,
+    12
+  ],
+  "poses_mm": {
+    "R1": [
+      5,
+      6
+    ],
+    "C1": [
+      10,
+      6
+    ],
+    "U1": [
+      11.5,
+      6
+    ]
+  },
+  "final_R1_mm": [
+    6,
+    6
+  ],
+  "roles": {
+    "movable": 3,
+    "fixed_copper_mark": 2,
+    "silk_only": 2
+  },
+  "pad_edge_oracles": [
+    {
+      "row": 0,
+      "subject_pad": "1",
+      "partner_pad": "3",
+      "gap_mm": 3.0
+    },
+    {
+      "row": 0,
+      "subject_pad": "2",
+      "partner_pad": "1",
+      "gap_mm": -0.1
+    },
+    {
+      "row": 1,
+      "subject_pad": "1",
+      "partner_pad": "1",
+      "gap_mm": 4.2
+    },
+    {
+      "row": 2,
+      "subject_pad": "2",
+      "partner_pad": "2",
+      "gap_mm": 3.85
+    }
+  ],
+  "group_oracles": {
+    "core_intra": [
+      {
+        "net": "A",
+        "gap_mm": 3.0
+      },
+      {
+        "net": "B",
+        "gap_mm": -0.1
+      }
+    ],
+    "member_to_anchor": {
+      "member": "C1",
+      "member_pad": "2",
+      "anchor_pad": "1",
+      "shared_net": "B",
+      "gap_mm": -0.1
+    },
+    "raw_core_port_gap_mm": 4.2,
+    "final_core_port_gap_mm": 3.2
+  }
+}
