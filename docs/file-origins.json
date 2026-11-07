@@ -679,6 +679,16 @@
     },
     {
       "paths": [
+        "tests/test_placement_carry_status.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-625 pure carry-status protocol fixtures. The minimal board with two silk lines, UUIDs, policy and receipt records are hand-authored for these tests. No upstream design or retained historical artifact bytes are copied; native qualification is separate."
+    },
+    {
+      "paths": [
         "src/agent_ee/native_netlist.py",
         "tests/test_placement_blocks_request.py"
       ],
