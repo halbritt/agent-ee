@@ -72,7 +72,7 @@
   "edge_connectors": [
     {
       "ref": "R1",
-      "edge": "west",
+      "edge": "east",
       "side": "F",
       "class": "edge_receptacle",
       "max_setback_mm": 0.75,

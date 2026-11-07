@@ -348,7 +348,7 @@ class RetainedEspProgTests(unittest.TestCase):
     """Historical test IDs retained; all inputs are authored portable controls."""
     def test_public_metrics_reports_every_declared_pad_edge_leg(self):
         with portable.portable_fixture(self, native=True) as fixture:
-            board, _ = portable.verified(fixture, 'board')
+            board, before = portable.verified(fixture, 'board')
             done = portable.command(fixture, [sys.executable, '-m', 'agent_ee.cli', 'place', 'metrics',
                 str(board), '--intent', str(fixture['root'] / 'intent.json'),
                 '--groups', str(fixture['root'] / 'groups.json')], 'public-metrics')
@@ -363,6 +363,15 @@ class RetainedEspProgTests(unittest.TestCase):
             self.assertEqual(seen, {(r['row'], r['subject_pad'], r['partner_pad']): r['gap_mm'] for r in expected})
             self.assertTrue(all(row['status'] == 'measured' and row['authority'] == 'advisory_objective' for row in rows))
             self.assertEqual(metrics['edge_intent']['status'], 'failed')
+            self.assertEqual(metrics['edge_intent']['coverage'], ['edge_identity'])
+            self.assertEqual(metrics['edge_intent']['violations'], [
+                {'kind': 'edge_identity', 'ref': 'R1', 'expected': 'east', 'actual': 'west', 'basis': 'body:fab'}])
+            self.assertEqual([(row['ref'], row['declared'], row['nearest'], row['basis'])
+                              for row in metrics['edge_intent']['connectors']], [('R1', 'east', 'west', 'body:fab')])
+            self.assertEqual(board.read_bytes(), before)
+            for key in ('intent', 'groups'):
+                self.assertEqual(portable.verified(fixture, key)[1],
+                                 (fixture['root'] / 'original-sources' / (key + '.json')).read_bytes())
 
     def test_original_bytes_adapt_and_are_preserved(self):
         with portable.portable_fixture(self) as fixture:
