@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "board": "board.kicad_pcb",
+  "groups": [
+    {
+      "name": "core",
+      "role": "core",
+      "anchor": "U1",
+      "refs": [
+        "U1",
+        "C1"
+      ],
+      "near": [
+        "port"
+      ],
+      "why": "authored signal group"
+    },
+    {
+      "name": "port",
+      "role": "interface",
+      "anchor": "R1",
+      "refs": [
+        "R1"
+      ],
+      "near": [
+        "core"
+      ],
+      "why": "authored edge-intent control"
+    }
+  ]
+}
