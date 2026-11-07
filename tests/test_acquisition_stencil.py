@@ -6,8 +6,9 @@ import os
 from pathlib import Path
 import re
 import shutil
-import tempfile
 import unittest
+
+from tests.artifact_retention import RetainedTemporaryDirectory, retain
 
 from agent_ee.acquisition import reverse_blocking as variant
 from agent_ee import executor
@@ -65,7 +66,7 @@ def ep_rectangles(gerber):
 class NativeStencilTests(unittest.TestCase):
     def test_exported_paste_is_segmented_and_clear_of_every_drill(self):
         require_toolchain(native=True)
-        with tempfile.TemporaryDirectory() as tmp:
+        with RetainedTemporaryDirectory(self.id()) as tmp:
             root = Path(tmp)
             lib = root / 'power.pretty'
             lib.mkdir()
@@ -101,6 +102,7 @@ subprocess.run(['kicad-cli', 'pcb', 'export', 'drill', '--output',
 ''')
             work = root.parent / (root.name + '-native')
             self.addCleanup(shutil.rmtree, work, True)
+            self.addCleanup(retain, self.id(), None, roots=[work])
             result = executor.execute(root, work,
                 ['/usr/bin/python3', '/candidate/export.py', variant.FOOTPRINT], timeout=45)
             capture = os.environ.get('AGENT_EE_STENCIL_ARTIFACTS')
