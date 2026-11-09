@@ -106,7 +106,7 @@ class GateImportTests(unittest.TestCase):
         # Companion native-input receipt and private outcome journal faults are gone with those
         # contracts (AGENTEE-619); an incomplete receipt and an exit/verdict disagreement replace them.
         faults = ('changed-log', 'missing-log', 'incomplete-receipt', 'exit-disagrees', 'input-receipt',
-                  'not-full', 'controller', 'main-sha', 'tree', 'active', 'state')
+                  'not-full', 'controller', 'inputs-controller', 'stock-controller', 'main-sha', 'tree', 'active', 'state')
         for fault in faults:
             with self.subTest(fault=fault), nightly_fixture() as case:
                 gate, selection = self.prepare(case)
@@ -120,11 +120,15 @@ class GateImportTests(unittest.TestCase):
                     bound.write_bytes(bound.read_bytes() + b'\n')
                     nightly_evidence.write_manifest(gate)
                     selection['output_manifest_sha256'] = nightly_evidence.digest(gate / 'output-manifest.json')
-                elif fault in ('incomplete-receipt', 'exit-disagrees', 'not-full', 'controller'):
+                elif fault in ('incomplete-receipt', 'exit-disagrees', 'not-full', 'controller', 'inputs-controller', 'stock-controller'):
                     path = gate / 'execution.json'
                     record = json.loads(path.read_text())
                     if fault == 'controller':
                         record['nightly_runner_sha256'] = '0' * 64
+                    elif fault == 'inputs-controller':
+                        record['nightly_inputs_sha256'] = '0' * 64
+                    elif fault == 'stock-controller':
+                        record['nightly_stock_prepare_sha256'] = '0' * 64
                     elif fault == 'not-full':
                         record['full_suite'] = False
                     elif fault == 'exit-disagrees':

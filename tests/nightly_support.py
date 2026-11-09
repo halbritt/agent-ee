@@ -34,7 +34,7 @@ def nightly_fixture():
         git('clone', '-q', str(remote), str(root))
         (root / 'owned.txt').write_text('owned nightly fixture\n')
         (root / 'scripts').mkdir()
-        for name in ('nightly_full_suite.py', 'nightly_evidence.py'):
+        for name in ('nightly_full_suite.py', 'nightly_evidence.py', 'nightly_inputs.py', 'nightly_stock_prepare.py'):
             shutil.copyfile(Path(__file__).resolve().parents[1] / 'scripts' / name, root / 'scripts' / name)
         git('-C', str(root), 'add', 'owned.txt', 'scripts')
         git('-C', str(root), '-c', 'user.name=agent-ee test', '-c', 'user.email=test@invalid',

@@ -537,7 +537,17 @@ class NightlyLifecycleTests(unittest.TestCase):
         """Controller boundary only: the producer/algebra are exercised for real in test_nightly_inputs."""
         with nightly_fixture() as case:
             config = case['base'] / 'stock-config.json'
-            config.write_text('{}')
+            context = case['base'] / 'stock-context.json'
+            context.write_text('{}')
+            config.write_text(json.dumps(dict(schema='agent-ee.nightly-stock-config/1',
+                source_root=str(case['base'] / 'owned-input'), context_path=str(context),
+                per_request_timeout_seconds=10, invocation_timeout_seconds=190,
+                min_interval_seconds=5, max_bytes=2097152)))
+            manifest = json.loads(case['manifest'].read_text())
+            manifest['inputs'][0]['env'] = 'AGENT_EE_ADDR_SOURCE'
+            manifest['inputs'].append(dict(name='context', env='AGENT_EE_ADDR_CONTEXT', path=str(context),
+                files={'.': nightly_full_suite.nightly_inputs.digest_file(context)}))
+            case['manifest'].write_text(json.dumps(manifest))
             with patch.object(nightly_full_suite.nightly_inputs, 'prepare_fresh_stock',
                               side_effect=RuntimeError('stock preparation failed: stock capture 1 failed: exit 2')) as prepare:
                 self.assertNotEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest'],

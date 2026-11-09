@@ -320,6 +320,8 @@ def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int,
         'nightly_runner': str(Path(__file__).resolve()),
         'nightly_runner_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'nightly_evidence_sha256': nightly_evidence.digest(Path(nightly_evidence.__file__)),
+        'nightly_inputs_sha256': nightly_evidence.digest(Path(nightly_inputs.__file__)),
+        'nightly_stock_prepare_sha256': nightly_evidence.digest(nightly_inputs.CHILD),
         'runner': str(runner_path),
         'runner_sha256': hashlib.sha256(runner_path.read_bytes()).hexdigest(),
         'command_sha256': hashlib.sha256(json.dumps(command).encode()).hexdigest(),
@@ -446,7 +448,9 @@ def import_baseline(root: Path, state_dir: Path, selection_file: Path) -> int:
                     or not receipt.get('image_ids')):
                 raise ValueError('gate lacks complete source/runtime lineage')
             for name, field in (('nightly_full_suite.py', 'nightly_runner_sha256'),
-                                ('nightly_evidence.py', 'nightly_evidence_sha256')):
+                                ('nightly_evidence.py', 'nightly_evidence_sha256'),
+                                ('nightly_inputs.py', 'nightly_inputs_sha256'),
+                                ('nightly_stock_prepare.py', 'nightly_stock_prepare_sha256')):
                 source = subprocess.run(['git', 'show', selection['commit'] + ':scripts/' + name],
                                         cwd=root, capture_output=True, check=True, timeout=60).stdout
                 if hashlib.sha256(source).hexdigest() != receipt.get(field):
@@ -538,7 +542,9 @@ def prepare_inputs(input_manifest: Path | None, stock_config: Path | None, workt
         return input_manifest
     if input_manifest is None:
         raise ValueError('stock preparation requires a selected --input-manifest to rebind')
+    nightly_inputs.validate_stock_selection(input_manifest, stock_config)
     prepared = nightly_inputs.prepare_fresh_stock(stock_config, worktree, run_dir / 'stock')
+    nightly_inputs.validate_stock_selection(input_manifest, stock_config)
     return nightly_inputs.rebind_manifest(input_manifest, run_dir / 'input-manifest.json', prepared)
 
 

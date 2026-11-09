@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -176,6 +177,57 @@ class StockPreparationContractTests(unittest.TestCase):
         prepared['replaced']['context_path'] = self.base / 'absent.json'
         with self.assertRaises(ValueError):
             nightly_inputs.rebind_manifest(manifest, self.base / 'another.json', prepared)
+
+    def test_duplicate_source_cannot_stand_in_for_the_context_binding(self):
+        source, context = self.base / 'new', self.base / 'new.json'
+        source.mkdir()
+        (source / 'owned').write_text('owned')
+        context.write_text('{}')
+        entry = {'name': 'source', 'path': '/old/source', 'files': {}}
+        manifest = self.base / 'manifest.json'
+        manifest.write_text(json.dumps({'schema': 'agent-ee.native-inputs/1', 'inputs': [entry, entry]}))
+        with self.assertRaisesRegex(ValueError, 'exactly once each'):
+            nightly_inputs.rebind_manifest(manifest, self.base / 'attempt.json', {
+                'source_root': source, 'context_path': context,
+                'replaced': {'source_root': Path('/old/source'), 'context_path': Path('/old/context')}})
+        self.assertFalse((self.base / 'attempt.json').exists())
+
+    def test_original_selection_drift_refuses_before_any_producer_call(self):
+        import nightly_full_suite
+        source, context = self.base / 'source', self.base / 'context.json'
+        source.mkdir()
+        original = source / 'owned'
+        original.write_bytes(b'original')
+        context.write_bytes(b'original context')
+        manifest = self.base / 'manifest.json'
+        entries = [dict(name='source', env='AGENT_EE_ADDR_SOURCE', path=str(source), files={'owned': sha(b'original')}),
+                   dict(name='context', env='AGENT_EE_ADDR_CONTEXT', path=str(context), files={'.': sha(b'original context')})]
+        manifest.write_text(json.dumps(dict(schema='agent-ee.native-inputs/1', inputs=entries)))
+        config = self.config()
+        nightly_inputs.validate_stock_selection(manifest, config)
+        for fault in ('changed-source', 'changed-context', 'extra-file', 'symlink', 'duplicate-source'):
+            with self.subTest(fault=fault):
+                original.write_bytes(b'original')
+                context.write_bytes(b'original context')
+                extra = source / 'extra'
+                if extra.exists() or extra.is_symlink():
+                    extra.unlink()
+                manifest.write_text(json.dumps(dict(schema='agent-ee.native-inputs/1', inputs=entries)))
+                if fault == 'changed-source':
+                    original.write_bytes(b'changed')
+                elif fault == 'changed-context':
+                    context.write_bytes(b'changed, even if internally consistent')
+                elif fault == 'extra-file':
+                    extra.write_bytes(b'outside the finite closure')
+                elif fault == 'symlink':
+                    extra.symlink_to(original)
+                else:
+                    manifest.write_text(json.dumps(dict(schema='agent-ee.native-inputs/1', inputs=[entries[0], entries[0]])))
+                with patch.object(nightly_inputs, 'prepare_fresh_stock') as producer:
+                    with self.assertRaises(ValueError):
+                        nightly_full_suite.prepare_inputs(manifest, config, ROOT, self.base / 'attempt')
+                    producer.assert_not_called()
+                self.assertFalse((self.base / 'attempt').exists())
 
 
 try:

@@ -183,19 +183,37 @@ def rebind_manifest(manifest: Path, destination: Path, prepared: dict) -> Path:
     if not isinstance(document, dict) or document.get('schema') != RECEIPT_SCHEMA or not isinstance(document.get('inputs'), list):
         raise ValueError('input manifest must be agent-ee.native-inputs/1 with an inputs list')
     old_source, old_context = str(prepared['replaced']['source_root']), str(prepared['replaced']['context_path'])
-    updated = []
+    updated = {'source': 0, 'context': 0}
     for item in document['inputs']:
         if not isinstance(item, dict):
             raise ValueError('input manifest entry must be an object')
         if item.get('path') == old_source:
             item['path'], item['files'] = str(prepared['source_root']), inventory(prepared['source_root'])
-            updated.append(item.get('name'))
+            updated['source'] += 1
         elif item.get('path') == old_context:
             item['path'], item['files'] = str(prepared['context_path']), {'.': digest_file(prepared['context_path'])}
-            updated.append(item.get('name'))
-    if len(updated) != 2:
+            updated['context'] += 1
+    if updated != {'source': 1, 'context': 1}:
         raise ValueError(f'input manifest must reference the replaced stock source root and context exactly once each; updated {updated}')
     if destination.exists() or destination.is_symlink():
         raise ValueError('per-attempt input manifest must start absent')
     destination.write_text(json.dumps(document, indent=2, sort_keys=True) + '\n')
     return destination
+
+
+def validate_stock_selection(manifest: Path, config_path: Path) -> None:
+    """Check the selected original bytes before spending any network requests."""
+    config = load_stock_config(config_path)
+    document = json.loads(manifest.read_bytes(), object_pairs_hook=unique_fields)
+    if not isinstance(document, dict) or document.get('schema') != RECEIPT_SCHEMA or not isinstance(document.get('inputs'), list):
+        raise ValueError('stock preparation needs a finite input manifest')
+    for field, variable in (('source_root', 'AGENT_EE_ADDR_SOURCE'), ('context_path', 'AGENT_EE_ADDR_CONTEXT')):
+        path = Path(config[field])
+        if path.resolve(strict=True) != path or path.is_symlink():
+            raise ValueError('selected stock input must not pass through aliases')
+        matches = [item for item in document['inputs'] if isinstance(item, dict) and item.get('path') == str(path)]
+        if len(matches) != 1 or matches[0].get('env') != variable or 'git' in matches[0] or 'select' in matches[0]:
+            raise ValueError('stock manifest must select the source root and context exactly once each')
+        actual = inventory(path) if field == 'source_root' else {'.': digest_file(path)}
+        if actual != matches[0].get('files'):
+            raise ValueError(f'selected stock {field} differs from its input manifest')
