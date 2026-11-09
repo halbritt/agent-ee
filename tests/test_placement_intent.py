@@ -55,7 +55,7 @@ class PlacementIntentTests(unittest.TestCase):
              {'groups': []}, 'intent.edge_connectors[0].overhang_mm.mx'),
             ({'fixed_poses': [{'ref': 'R1', 'x': True, 'y': 2}]},
              {'groups': []}, 'intent.fixed_poses[0].x'),
-            ({'fixed_poses': [{'ref': 'R1', 'x': 1, 'y': 2, 'rot': 45}]},
+            ({'fixed_poses': [{'ref': 'R1', 'x': 1, 'y': 2, 'rot': 'east'}]},
              {'groups': []}, 'intent.fixed_poses[0].rot'),
             ({'proximity': [{'ref': 'C1', 'near': 'U1', 'max_mm': 3, 'pads': {'C1': ['1']}}]},
              {'groups': []}, 'intent.proximity[0].pads.U1'),
@@ -70,6 +70,10 @@ class PlacementIntentTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(job.JobRefusal) as error:
                 job.validate_intent(intent, groups)
             self.assertIn(path, str(error.exception))
+
+    def test_fixed_pose_may_name_any_angle(self):
+        # AGENTEE-636: a fixed part is not required to sit at a quarter turn.
+        job.validate_intent({'fixed_poses': [{'ref': 'R1', 'x': 1, 'y': 2, 'rot': 45}]}, {'groups': []})
 
     def test_public_ignored_intent_refuses_before_native_capture_and_preserves_resume(self):
         cases = [

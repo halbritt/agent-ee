@@ -244,6 +244,43 @@ def prep(args):
     print(root)
 
 
+def reuse(args):
+    """Copy the prepared inputs of an earlier run, so a rerun uses the very same boards.
+
+    Both tool inputs (route-in, place-in) must still match the hashes their prep record
+    names. The normalized board only supplies the rule files and is recorded as found: a
+    later `prep --no-pours` of the same board saved it again."""
+    old = Path(args.source).expanduser() / 'boards' / args.name
+    root = RUNS / 'boards' / args.name
+    for name in ('norm', 'route-in', 'place-in', 'prep.json'):
+        if (root / name).exists():
+            raise SystemExit(f'{root / name} exists; a rerun never overwrites prepared inputs')
+        if (old / name).is_dir():
+            shutil.copytree(old / name, root / name)
+        else:
+            root.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(old / name, root / name)
+    record = json.loads((root / 'prep.json').read_text())
+    norm = root / 'norm' / f'{args.name}.kicad_pcb'
+    checks = {root / 'route-in' / norm.name: record['route_in_sha256'],
+              root / 'place-in' / norm.name: record['place_in_sha256']}
+    wrong = [str(path) for path, expected in checks.items() if sha256(path) != expected]
+    if wrong:
+        raise SystemExit('prepared inputs differ from their prep record: ' + ', '.join(wrong))
+    write_json(root / 'reused-from.json', {
+        'run': str(old), 'sha256': {str(k.relative_to(root)): v for k, v in checks.items()},
+        'normalized_sha256': sha256(norm), 'normalized_as_prep_record': sha256(norm) == record['normalized_sha256'],
+        'rule_files_sha256': {p.name: sha256(p) for p in companions(norm)}})
+    print(root)
+
+
+def checkout_version():
+    """The agent-ee commit this harness runs from, and whether the tree differs from it."""
+    def git(*argv):
+        return subprocess.run(['git', '-C', str(REPO), *argv], capture_output=True, text=True).stdout.strip()
+    return {'commit': git('rev-parse', 'HEAD'), 'dirty': bool(git('status', '--porcelain', '--untracked-files=no'))}
+
+
 # ---- the two tools ---------------------------------------------------------------------
 
 def krt_route(board_in, out_dir, rules_board):
@@ -291,6 +328,9 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
     shutil.copytree(stage, out_dir, symlinks=True)
     shutil.rmtree(stage)
     record['log'] = str(out_dir / 'run.log')
+    record['agent_ee'] = checkout_version()
+    image = re.search(r'ae-ci-exec: image (sha256:[0-9a-f]+)', Path(record['log']).read_text(errors='replace'))
+    record['ci_image'] = image.group(1) if image else None
     report_path = out_dir / 'job/job-report.json'
     if report_path.is_file():
         report = json.loads(report_path.read_text())
@@ -303,7 +343,20 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
         if final.get('board'):
             local = out_dir / Path(final['board']).relative_to(IN_IMAGE / tag)
             record['output'] = str(local) if local.is_file() else None
+        record.update(job_opens=final.get('opens'), job_errors=final.get('errors'),
+                      job_capture={k: v for k, v in (json.loads((out_dir / 'job/capture.json').read_text())
+                                                     if (out_dir / 'job/capture.json').is_file() else {}).items()
+                                   if k in ('routing_only', 'placement_model', 'outline', 'pour_zones', 'keepout_rule_areas')})
+        # The placement the job chose, also when its own route produced no board: the checked
+        # incumbent, else the best diagnostic candidate (which the engine or native DRC rejected).
+        for kind in ('incumbent', 'best-diagnostic'):
+            pointer = out_dir / 'job' / f'{kind}.json'
+            if pointer.is_file() and not record.get('placement'):
+                placed = out_dir / Path(json.loads(pointer.read_text())['board']).relative_to(IN_IMAGE / tag)
+                if placed.is_file():
+                    record.update(placement=str(placed), placement_kind=kind)
     record.setdefault('output', None)
+    record.setdefault('placement', None)
     logs = sorted(out_dir.glob('job/route-*/out/runs/*/*/*/work/krt.log'))
     if logs and not record['output']:                        # why the router failed, verbatim
         record['router_log_tail'] = tail(logs[-1], 12)
@@ -429,18 +482,20 @@ def place_arm(args):
         placed['agent-ee'] = record
     for tool, record in placed.items():                      # same stock KRT router on both placements
         key = f'{arm}-{tool}-then-krt-route'
-        if not record.get('output'):
+        # agent-ee's routed board when it has one (as in the first run), else the placement it chose.
+        source = record.get('output') or record.get('placement')
+        if not source:
             write_json(root / 'results' / f'{key}.json',
                        {'board': name, 'arm': arm, 'tool': f'{tool}-then-krt-route', 'score': None,
                         'placement': record, 'log_tail': tail(record['log'])})
             print(key, 'no placement', flush=True)
             continue
         bare = root / 'runs' / key / 'placement' / norm.name
-        edit_board(record['output'], bare, strip=True)
+        edit_board(source, bare, strip=True)
         routed = krt_route(bare, root / 'runs' / key, norm)
         result(root, name, arm, f'{tool}-then-krt-route', routed, norm,
                {'placement': {k: record.get(k) for k in ('wall_s', 'exit_code', 'timed_out', 'kept_seed', 'job_status',
-                                                         'job_elapsed_s', 'job_validity')},
+                                                         'job_elapsed_s', 'job_validity', 'placement_kind')},
                 'placement_only_score': score(bare, norm, root / 'score' / f'{key}-placement')})
 
 
@@ -510,8 +565,8 @@ def summary(_args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
-    for name, func in (('prep', prep), ('baseline', baseline), ('route', route_arm), ('place', place_arm),
-                       ('krt-spread', krt_spread), ('summary', summary)):
+    for name, func in (('prep', prep), ('reuse', reuse), ('baseline', baseline), ('route', route_arm),
+                       ('place', place_arm), ('krt-spread', krt_spread), ('summary', summary)):
         p = sub.add_parser(name)
         p.set_defaults(func=func)
         if name != 'summary':
@@ -519,6 +574,8 @@ def main():
             p.add_argument('--no-pours', action='store_true', help='the zone-fallback variant')
         if name == 'prep':
             p.add_argument('source')
+        if name == 'reuse':
+            p.add_argument('source', help='the earlier run directory whose prepared inputs to copy')
         if name == 'place':
             p.add_argument('--search-b', action='store_true', help="agent-ee only: the secondary search setting")
             p.add_argument('--seed-offset', type=int, default=0, help='agent-ee only: add to every seed number')

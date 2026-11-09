@@ -71,12 +71,13 @@ fn round4(x: f64) -> f64 {
     if r == 0.0 { 0.0 } else { r }
 }
 
-// Mirrored at the native capture boundary in placement_job.py; parity is tested.
+// Limits of one captured item. There is no limit on the whole problem: the
+// vertex total grows with the number of pads on the board, and a board is not
+// refused for its size (AGENTEE-636).
 pub const MAX_CONTOUR_VERTICES: usize = 2048;
 pub const MAX_ITEM_CONTOURS: usize = 16;
-pub const MAX_PROBLEM_CONTOUR_VERTICES: usize = 16384;
 
-fn contour_count(g: &Value, total: &mut usize) -> Result<()> {
+fn contour_count(g: &Value) -> Result<()> {
     let contours = g["polygons"].as_array().context("native copper polygons")?;
     ensure!(contours.len() <= MAX_ITEM_CONTOURS,
         "item contour count {} exceeds {}", contours.len(), MAX_ITEM_CONTOURS);
@@ -84,10 +85,6 @@ fn contour_count(g: &Value, total: &mut usize) -> Result<()> {
         let count = contour.as_array().context("native copper polygon")?.len();
         ensure!(count <= MAX_CONTOUR_VERTICES,
             "contour {i} vertex count {count} exceeds {MAX_CONTOUR_VERTICES}");
-        *total += count;
-        ensure!(*total <= MAX_PROBLEM_CONTOUR_VERTICES,
-            "contour {i} prepared contour vertex total {} exceeds {} (contour count {count})",
-            *total, MAX_PROBLEM_CONTOUR_VERTICES);
     }
     Ok(())
 }
@@ -146,6 +143,118 @@ pub fn rotate(x: i64, y: i64, q: i64) -> (i64, i64) {
         1 => (y, -x),
         2 => (-x, -y),
         _ => (-y, x),
+    }
+}
+
+/// A board outline that is not an axis-aligned rectangle (AGENTEE-636): one
+/// outer contour and its cut-outs, in nanometres. `Prepared::outline` is then
+/// the bounding box. Curves arrive as the segments the native capture made.
+#[derive(Clone, Debug)]
+pub struct Region {
+    outer: Vec<(f64, f64)>,
+    holes: Vec<Vec<(f64, f64)>>,
+    /// Bounds of every contour edge, to prove a rectangle clear of the boundary quickly.
+    edges: Vec<Rect>,
+}
+
+/// Areas below this are float rounding of the clipped polygon, not an excursion (1 um^2).
+const REGION_AREA_EPSILON_NM2: f64 = 1_000_000.0;
+
+impl Region {
+    fn parse(outline: &Value) -> Result<Self> {
+        let contour = |v: &Value, what: &str| -> Result<Vec<(i64, i64)>> {
+            let points = v.as_array().with_context(|| format!("{what} must be a list of [x, y]"))?
+                .iter().map(|p| {
+                    let p = p.as_array().filter(|p| p.len() == 2).with_context(|| format!("{what} point must be [x, y]"))?;
+                    Ok((p[0].as_i64().with_context(|| format!("{what} needs integer nanometres"))?,
+                        p[1].as_i64().with_context(|| format!("{what} needs integer nanometres"))?))
+                }).collect::<Result<Vec<_>>>()?;
+            ensure!(points.len() >= 3, "{what} needs at least 3 points");
+            Ok(points)
+        };
+        let outer = contour(&outline["polygon_nm"], "outline polygon")?;
+        let holes = match outline.get("holes_nm") {
+            Some(v) => v.as_array().context("outline holes must be a list")?.iter()
+                .map(|h| contour(h, "outline hole")).collect::<Result<Vec<_>>>()?,
+            None => Vec::new(),
+        };
+        let float = |c: &Vec<(i64, i64)>| c.iter().map(|&(x, y)| (x as f64, y as f64)).collect::<Vec<_>>();
+        let mut edges = Vec::new();
+        for c in std::iter::once(&outer).chain(holes.iter()) {
+            for i in 0..c.len() {
+                let (a, b) = (c[i], c[(i + 1) % c.len()]);
+                edges.push(Rect { x0: a.0.min(b.0), y0: a.1.min(b.1), x1: a.0.max(b.0), y1: a.1.max(b.1) });
+            }
+        }
+        let region = Self { outer: float(&outer), holes: holes.iter().map(float).collect(), edges };
+        ensure!(Self::area(&region.outer).abs() > REGION_AREA_EPSILON_NM2, "outline polygon has no area");
+        Ok(region)
+    }
+
+    fn area(points: &[(f64, f64)]) -> f64 {
+        let mut twice = 0.0;
+        for i in 0..points.len() {
+            let (a, b) = (points[i], points[(i + 1) % points.len()]);
+            twice += a.0 * b.1 - b.0 * a.1;
+        }
+        twice / 2.0
+    }
+
+    /// Area of `contour` inside `r`. Sutherland-Hodgman against the four sides of
+    /// the box, in coordinates relative to the box so the products stay exact
+    /// enough; a concave contour gives coincident edges whose areas cancel.
+    fn clipped_area(contour: &[(f64, f64)], r: &Rect) -> f64 {
+        let (w, h) = ((r.x1 - r.x0) as f64, (r.y1 - r.y0) as f64);
+        let mut points: Vec<(f64, f64)> = contour.iter().map(|&(x, y)| (x - r.x0 as f64, y - r.y0 as f64)).collect();
+        for side in 0..4 {
+            if points.is_empty() { return 0.0; }
+            let inside = |p: &(f64, f64)| match side { 0 => p.0 >= 0.0, 1 => p.0 <= w, 2 => p.1 >= 0.0, _ => p.1 <= h };
+            let cross = |a: &(f64, f64), b: &(f64, f64)| match side {
+                0 => (0.0, a.1 + (b.1 - a.1) * (0.0 - a.0) / (b.0 - a.0)),
+                1 => (w, a.1 + (b.1 - a.1) * (w - a.0) / (b.0 - a.0)),
+                2 => (a.0 + (b.0 - a.0) * (0.0 - a.1) / (b.1 - a.1), 0.0),
+                _ => (a.0 + (b.0 - a.0) * (h - a.1) / (b.1 - a.1), h),
+            };
+            let mut next = Vec::with_capacity(points.len() + 4);
+            for i in 0..points.len() {
+                let (a, b) = (&points[i], &points[(i + 1) % points.len()]);
+                match (inside(a), inside(b)) {
+                    (true, true) => next.push(*b),
+                    (true, false) => next.push(cross(a, b)),
+                    (false, true) => { next.push(cross(a, b)); next.push(*b); }
+                    (false, false) => {}
+                }
+            }
+            points = next;
+        }
+        Self::area(&points).abs()
+    }
+
+    fn contains(contour: &[(f64, f64)], x: f64, y: f64) -> bool {
+        let mut inside = false;
+        for i in 0..contour.len() {
+            let (a, b) = (contour[i], contour[(i + 1) % contour.len()]);
+            if (a.1 > y) != (b.1 > y) && x < a.0 + (b.0 - a.0) * (y - a.1) / (b.1 - a.1) {
+                inside = !inside;
+            }
+        }
+        inside
+    }
+
+    /// Area of `r` that is not board: outside the outer contour or inside a cut-out.
+    fn outside(&self, r: &Rect) -> i128 {
+        let total = (r.x1 - r.x0) as f64 * (r.y1 - r.y0) as f64;
+        if total <= 0.0 { return 0; }
+        if !self.edges.iter().any(|e| e.x0 <= r.x1 && r.x0 <= e.x1 && e.y0 <= r.y1 && r.y0 <= e.y1) {
+            // No contour edge reaches the box, so the box is wholly board or wholly not.
+            let (x, y) = ((r.x0 + r.x1) as f64 / 2.0, (r.y0 + r.y1) as f64 / 2.0);
+            let board = Self::contains(&self.outer, x, y) && !self.holes.iter().any(|h| Self::contains(h, x, y));
+            return if board { 0 } else { total as i128 };
+        }
+        let inside = Self::clipped_area(&self.outer, r)
+            - self.holes.iter().map(|h| Self::clipped_area(h, r)).sum::<f64>();
+        let outside = total - inside;
+        if outside < REGION_AREA_EPSILON_NM2 { 0 } else { outside as i128 }
     }
 }
 
@@ -233,7 +342,7 @@ impl Copper {
         } else { default_clearance };
         ensure!(clearance >= 0, "negative copper clearance");
         let polygons = if let Some(g) = value.get("geometry") {
-            contour_count(g, &mut 0)?;
+            contour_count(g)?;
             ensure!(g["status"] == "conservative_native_polygon", "unsupported copper geometry status");
             ensure!(matches!(text(g, "kind")?, "circle" | "rect" | "oval" | "roundrect" | "custom" | "hole"),
                 "unsupported copper geometry kind");
@@ -468,12 +577,19 @@ pub struct Weights {
     pub decoupling: i64,
 }
 
+/// Fixed obstacles that are not parts: declared board text and keep-out rule areas.
+fn obstacle_ref(native_ref: &str) -> bool {
+    native_ref.starts_with("board-text:") || native_ref.starts_with("rule-area:")
+}
+
 /// Immutable, validated problem. Built once per job input.
 #[derive(Debug)]
 pub struct Prepared {
     pub identity: String,
     pub footprints: Vec<Footprint>,
     pub outline: Rect,
+    /// The real board area when the outline is not a rectangle; `outline` is its bounds.
+    pub region: Option<Region>,
     pub copper_edge_nm: i64,
     pub clearance_nm: i64,
     pub mask_web_nm: i64,
@@ -589,7 +705,16 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     let identity = text(input, "problem_sha256")?.to_string();
     ensure!(identity.len() == 64, "problem_sha256 must be a full SHA-256");
     let outline = Rect::parse(&input["outline"]["rect_nm"], "outline")?;
-    ensure!(input["outline"]["kind"] == "rectangle", "only a proven rectangular board outline is supported");
+    let region = match input["outline"]["kind"].as_str() {
+        Some("rectangle") => None,
+        Some("polygon") => {
+            let region = Region::parse(&input["outline"])?;
+            let bounds = region.edges.iter().fold(None, |b: Option<Rect>, e| Some(b.map_or(*e, |b| b.union(e))));
+            ensure!(bounds == Some(outline), "outline rect_nm must be the bounds of the outline polygon");
+            Some(region)
+        }
+        _ => bail!("unsupported board outline kind"),
+    };
     let rules = &input["rules"];
     let clearance_nm = int(rules, "copper_clearance_nm")?;
     let copper_edge_nm = int(rules, "copper_edge_clearance_nm")?;
@@ -601,12 +726,11 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     ensure!(hole_to_hole_nm >= 0, "negative hole-to-hole clearance");
     ensure!(clearance_nm >= 0 && copper_edge_nm >= 0 && mask_web_nm >= 0, "negative rule");
     let rows = input["footprints"].as_array().context("footprints must be an array")?;
-    let mut vertices = 0;
     for row in rows {
         for key in ["copper_local_nm", "holes_local_nm"] {
             for item in row[key].as_array().into_iter().flatten() {
                 if let Some(g) = item.get("geometry") {
-                    contour_count(g, &mut vertices).with_context(|| format!(
+                    contour_count(g).with_context(|| format!(
                         "{} ({}) pad {}", row["native_ref"], row["uuid"], g["pad_uuid"]))?;
                 }
             }
@@ -742,13 +866,17 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         let native_ref = text(row, "native_ref")?.to_string();
         if role != Role::SilkOnly {
             let named = ref_index.entry(native_ref.clone()).or_default();
-            // Mark labels are display text; their UUIDs still identify distinct obstacles.
-            ensure!(named.is_empty() || (role == Role::FixedCopperMark
-                    && named.iter().all(|&other| footprints[other].role == Role::FixedCopperMark)),
+            // A reference is display text; UUIDs identify footprints. Real boards repeat the
+            // reference of fixed parts (mounting holes, logos, fiducials), which nothing has to
+            // tell apart: a group, proximity or edge row that names a repeated reference is
+            // refused as ambiguous where it is resolved. Two parts of which one can move must
+            // still differ, because every report names a moved part by its reference.
+            ensure!(named.is_empty() || (role != Role::Movable
+                    && named.iter().all(|&other| footprints[other].role != Role::Movable)),
                 "duplicate physical reference {native_ref}");
             named.push(i);
         }
-        let source_body = if mechanics.is_some() && !native_ref.starts_with("board-text:") {
+        let source_body = if mechanics.is_some() && !obstacle_ref(&native_ref) {
             ensure!(matches!(role, Role::Movable | Role::FixedBody), "unsupported mechanics owner role");
             let body = Rect::parse(&row["source_body_local_nm"], "source body")?;
             let model = &source_model["packages"][native_ref.as_str()];
@@ -768,7 +896,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         let access = match row.get("access_local_nm").filter(|v| !v.is_null()) {
             Some(v) => Some(Rect::parse(v, "source access")?), None => None
         };
-        if mechanics.is_some() && !native_ref.starts_with("board-text:") {
+        if mechanics.is_some() && !obstacle_ref(&native_ref) {
             let connector = access_owners.contains(&native_ref);
             ensure!(access == if connector { source_body.map(|r| r.grown(500_000)) } else { None },
                     "source access differs from exact connector body expansion");
@@ -781,7 +909,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     let physical_reference = |reference: &str, context: &str| -> Result<usize> {
         let named = ref_index.get(reference)
             .with_context(|| format!("{context}: unknown physical reference {reference}"))?;
-        ensure!(named.len() == 1, "{context}: ambiguous physical reference {reference} ({} fixed copper marks)", named.len());
+        ensure!(named.len() == 1, "{context}: ambiguous physical reference {reference} ({} fixed footprints)", named.len());
         Ok(named[0])
     };
     let is_evaluate = input.get("evaluate").is_some();
@@ -982,7 +1110,30 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     };
     let movable = (0..footprints.len()).filter(|&i| footprints[i].role == Role::Movable).collect();
     let rails_raw = input.get("rails").cloned().unwrap_or(Value::Null);
-    Ok(Prepared { identity, footprints, outline, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, groups_raw, rails_raw, proximity, links, locality, decoupling, weights, movable, legacy })
+    ensure!(region.is_none() || footprints.iter().all(|f| f.edge.is_none()),
+        "declared edge connectors need a rectangular board outline");
+    Ok(Prepared { identity, footprints, outline, region, copper_edge_nm, clearance_nm, mask_web_nm, hole_to_hole_nm, nets, net_pads, groups, groups_raw, rails_raw, proximity, links, locality, decoupling, weights, movable, legacy })
+}
+
+impl Prepared {
+    /// Area of a body outside its allowed area. A rectangular board keeps the
+    /// box arithmetic; another outline is measured against its real contour.
+    fn body_outside(&self, body: &Rect, allowed: &Rect) -> i128 {
+        match &self.region {
+            None => body.outside(allowed),
+            Some(region) => region.outside(body),
+        }
+    }
+
+    /// Area of a copper box closer to the board edge than the edge clearance.
+    /// On another outline the box grown by the clearance must be board, which
+    /// is the same test on straight edges and stricter at convex corners.
+    fn copper_outside(&self, copper: &Rect) -> i128 {
+        match &self.region {
+            None => copper.outside(&self.outline.grown(-self.copper_edge_nm)),
+            Some(region) => region.outside(&copper.grown(self.copper_edge_nm)),
+        }
+    }
 }
 
 /// Integer cost breakdown. `hard` is the exact infeasibility measure: the sum
@@ -1073,7 +1224,7 @@ fn body_mechanics(p: &Prepared, poses: &[Pose], mut defects: Option<&mut Vec<Val
         .collect();
     for a in 0..bodies.len() {
         let (idx_a, x) = bodies[a];
-        let outside = x.outside(&p.outline);
+        let outside = p.body_outside(&x, &p.outline);
         if outside > 0 {
             t.hard += outside; t.hard_count += 1;
             if let Some(out) = defects.as_deref_mut() {
@@ -1215,7 +1366,7 @@ fn unary_terms(p: &Prepared, f: usize, at: &Placed) -> Terms {
     }
     if let Some(body) = &at.body {
         let allowed = p.footprints[f].edge.as_ref().map(|e| e.occupancy_outline(&p.outline)).unwrap_or(p.outline);
-        let o = body.outside(&allowed);
+        let o = p.body_outside(body, &allowed);
         if o > 0 {
             t.hard += o;
             t.hard_count += 1;
@@ -1234,12 +1385,15 @@ fn unary_terms(p: &Prepared, f: usize, at: &Placed) -> Terms {
             t.edge += setback.max(0) as i128;
         }
     }
-    let inner = p.outline.grown(-p.copper_edge_nm);
-    for c in &at.copper {
-        let o = c.bounds.outside(&inner);
-        if o > 0 {
-            t.hard += o;
-            t.hard_count += 1;
+    // One test of all the copper proves the usual case, a part well inside the board.
+    let all = at.copper.iter().map(|c| c.bounds).reduce(|a, b| a.union(&b));
+    if all.is_some_and(|all| p.copper_outside(&all) > 0) {
+        for c in &at.copper {
+            let o = p.copper_outside(&c.bounds);
+            if o > 0 {
+                t.hard += o;
+                t.hard_count += 1;
+            }
         }
     }
     t
@@ -1600,7 +1754,7 @@ pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
             let named = |kind: &str, detail: Value| json!({"ref": fp.native_ref, "uuid": fp.uuid, "kind": kind, "detail": detail});
             if let Some(body) = &at[a].body {
                 let allowed = fp.edge.as_ref().map(|e| e.occupancy_outline(&p.outline)).unwrap_or(p.outline);
-                if body.outside(&allowed) > 0 {
+                if p.body_outside(body, &allowed) > 0 {
                     out.push(named("occupancy_outside_outline", json!(body.as_value())));
                 }
                 if let Some(rule) = &fp.edge {
@@ -1613,8 +1767,7 @@ pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
                     }
                 }
             }
-            let inner = p.outline.grown(-p.copper_edge_nm);
-            if at[a].copper.iter().any(|c| c.bounds.outside(&inner) > 0) {
+            if at[a].copper.iter().any(|c| p.copper_outside(&c.bounds) > 0) {
                 out.push(named("copper_edge_clearance", Value::Null));
             }
         }
@@ -2714,15 +2867,76 @@ mod tests {
         Copper::parse(&native_item(json!(vec![triangle.clone(); MAX_ITEM_CONTOURS])), 0).unwrap();
         assert_eq!(Copper::parse(&native_item(json!(vec![triangle.clone(); MAX_ITEM_CONTOURS + 1])), 0)
             .unwrap_err().to_string(), format!("item contour count {} exceeds {}", MAX_ITEM_CONTOURS + 1, MAX_ITEM_CONTOURS));
+        // No limit on the whole problem (AGENTEE-636): many pads, each within the item limits.
         let mut i = input(vec![]);
-        let count = MAX_PROBLEM_CONTOUR_VERTICES / MAX_CONTOUR_VERTICES;
-        i["footprints"][0]["copper_local_nm"] = json!([native_item(json!(vec![star(MAX_CONTOUR_VERTICES); count]))]);
-        prepare(&i).unwrap();
-        i["footprints"][0]["copper_local_nm"][0]["geometry"]["polygons"][count - 1] = star(MAX_CONTOUR_VERTICES - 2);
+        i["footprints"][0]["copper_local_nm"] = json!(vec![native_item(json!(vec![star(MAX_CONTOUR_VERTICES); 8])); 2]);
         i["footprints"][0]["copper_local_nm"].as_array_mut().unwrap().push(native_item(json!([triangle])));
-        let message = format!("{:#}", prepare(&i).unwrap_err());
-        assert!(message.contains(&format!("prepared contour vertex total {} exceeds {}",
-            MAX_PROBLEM_CONTOUR_VERTICES + 1, MAX_PROBLEM_CONTOUR_VERTICES)), "{message}");
+        prepare(&i).unwrap();
+    }
+
+    fn l_board(mut raw: Value) -> Value {
+        // The 12 x 10 mm test board with its lower-right 6 x 5 mm quadrant cut away.
+        raw["outline"] = json!({"kind": "polygon", "rect_nm": [0, 0, 12_000_000, 10_000_000],
+            "polygon_nm": [[0, 0], [12_000_000, 0], [12_000_000, 5_000_000], [6_000_000, 5_000_000],
+                           [6_000_000, 10_000_000], [0, 10_000_000]]});
+        raw
+    }
+
+    #[test]
+    fn polygon_outline_measures_the_real_board_area() {
+        let p = prepare(&l_board(input(vec![]))).unwrap();
+        let region = p.region.as_ref().unwrap();
+        let rect = |x0, y0, x1, y1| Rect { x0, y0, x1, y1 };
+        assert_eq!(region.outside(&rect(1_000_000, 1_000_000, 2_000_000, 2_000_000)), 0);
+        assert_eq!(region.outside(&rect(7_000_000, 6_000_000, 8_000_000, 7_000_000)), 1_000_000_000_000);
+        // Half of a box that straddles the notch edge is off the board.
+        assert_eq!(region.outside(&rect(5_000_000, 6_000_000, 7_000_000, 7_000_000)), 1_000_000_000_000);
+        // A box that touches the boundary from inside is on the board.
+        assert_eq!(region.outside(&rect(0, 0, 6_000_000, 10_000_000)), 0);
+        assert_eq!(region.outside(&rect(-1_000_000, 0, 1_000_000, 1_000_000)), 1_000_000_000_000);
+        // Copper needs the edge clearance to the notch as well as to the bounds.
+        assert_eq!(p.copper_outside(&rect(1_000_000, 1_000_000, 2_000_000, 2_000_000)), 0);
+        assert!(p.copper_outside(&rect(5_000_000, 6_000_000, 5_900_000, 7_000_000)) > 0);
+        let mut holed = l_board(input(vec![]));
+        holed["outline"]["holes_nm"] = json!([[[1_000_000, 1_000_000], [3_000_000, 1_000_000], [3_000_000, 3_000_000], [1_000_000, 3_000_000]]]);
+        let p = prepare(&holed).unwrap();
+        let region = p.region.as_ref().unwrap();
+        assert_eq!(region.outside(&rect(1_500_000, 1_500_000, 2_500_000, 2_500_000)), 1_000_000_000_000);
+        assert_eq!(region.outside(&rect(2_000_000, 2_000_000, 4_000_000, 4_000_000)), 1_000_000_000_000);
+        assert_eq!(region.outside(&rect(3_500_000, 3_500_000, 4_500_000, 4_500_000)), 0);
+    }
+
+    #[test]
+    fn polygon_outline_keeps_movable_parts_on_the_board() {
+        let raw = l_board(input(vec![]));
+        let p = prepare(&raw).unwrap();
+        let out = run(&raw).unwrap();
+        assert_eq!(out["status"], "completed");
+        let shortlist = out["shortlist"].as_array().unwrap();
+        assert!(!shortlist.is_empty(), "no feasible placement on the L-shaped board: {out}");
+        for candidate in shortlist {
+            for row in candidate["poses"].as_array().unwrap() {
+                let f = p.footprints.iter().position(|f| f.uuid == row["uuid"].as_str().unwrap()).unwrap();
+                if p.footprints[f].role != Role::Movable { continue; }
+                let pose = Pose { x: row["x_nm"].as_i64().unwrap(), y: row["y_nm"].as_i64().unwrap(),
+                                  q: row["quarter_turns"].as_i64().unwrap() };
+                let body = place_rect(&p.footprints[f].occupancy.unwrap(), &pose);
+                assert!(!(body.x1 > 6_000_000 && body.y1 > 5_000_000), "{} placed in the notch: {body:?}", p.footprints[f].native_ref);
+            }
+        }
+    }
+
+    #[test]
+    fn polygon_outline_input_is_validated() {
+        let mut raw = l_board(input(vec![]));
+        raw["outline"]["rect_nm"] = json!([0, 0, 12_000_000, 11_000_000]);
+        assert!(format!("{:#}", prepare(&raw).unwrap_err()).contains("bounds of the outline polygon"));
+        let mut raw = l_board(input(vec![]));
+        raw["outline"]["kind"] = json!("circle");
+        assert!(format!("{:#}", prepare(&raw).unwrap_err()).contains("unsupported board outline kind"));
+        let mut raw = l_board(input(vec![]));
+        raw["footprints"][0]["edge"] = json!({"edge": "west", "max_setback_nm": null});
+        assert!(format!("{:#}", prepare(&raw).unwrap_err()).contains("need a rectangular board outline"));
     }
 
     #[test]
@@ -3111,7 +3325,13 @@ mod tests {
             raw = repeated_marks();
             raw["footprints"][0]["native_ref"] = json!("FID");
             raw["footprints"][0]["role"] = json!(role);
-            assert!(prepare(&raw).unwrap_err().to_string().contains("duplicate physical reference FID"));
+            if role == "movable" {
+                assert!(prepare(&raw).unwrap_err().to_string().contains("duplicate physical reference FID"));
+            } else {
+                // Fixed footprints may repeat a reference (AGENTEE-636); nothing here names it.
+                raw["groups"] = json!([]);
+                prepare(&raw).unwrap();
+            }
         }
         let mut raw = repeated_marks();
         raw["footprints"][5]["uuid"] = raw["footprints"][4]["uuid"].clone();

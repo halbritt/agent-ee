@@ -92,7 +92,7 @@ keys, nonfinite values and malformed declarations refuse as well.
 
 | Intent field | Supported meaning |
 | --- | --- |
-| `fixed_poses[]` | `ref`, `x`, `y` identify an existing native pose in mm; optional `rot` (quarter-turn degrees) and `side` (`F`/`B`) must match that pose. The part stays fixed. `basis` and `why` are text evidence, not additional constraints. |
+| `fixed_poses[]` | `ref`, `x`, `y` identify an existing native pose in mm; optional `rot` (degrees, any angle) and `side` (`F`/`B`) must match that pose. The part stays fixed. `basis` and `why` are text evidence, not additional constraints. |
 | `edge_connectors[]` | Required `ref`, `edge` (`west`/`east`/`north`/`south`); optional `max_setback_mm` and `overhang_mm` (`min`/`max`) retain existing native and solver enforcement. `class` accepts `edge_receptacle` or `connector_affinity`; `context.mount_mode` accepts `edge_mount` or `top_mount` and selects the existing seat calculation. `note`/`source` are text evidence. |
 | `proximity[]` | Required `ref`, `near`, nonnegative finite `max_mm`, and `pads` mapping exactly those two refs to nonempty lists of distinct pad numbers. Each of `ref` and `near` names one physical footprint, as in the engine: movable or fixed, not silk-only. A fixed part keeps its pose, so the score moves the other part. Missing native pads refuse. This scores minimum Chebyshev distance between pad centres; it is a preference. `basis: "pad_edge"` refuses because the engine does not measure pad edges. Optional `basis` prose and `context` text fields (`limit`, `basis`, `role`, `source`) retain descriptive evidence; they cannot change this metric or establish a hard limit. |
 | `electrical_locality` | The existing `agent-ee.electrical-locality/1` validator, provenance classification, Rust feasibility and final native checks remain authoritative. Unknown nested fields refuse; a label alone does not establish a hard limit. |
@@ -372,8 +372,8 @@ This checks nominal authored timing, not physical model calibration or signal
 integrity. Profile values need engineering substantiation and explicit review
 when stackup/geometry changes; KiCad does not refresh them automatically. The
 layered qualification uses a stated Er=4 assumption and calculations, not a
-supplier-qualified stackup. Native input pours remain outside the placement
-model; declare planes in `inputs.planes` for the normal plane producer.
+supplier-qualified stackup. Native input pours are kept and refilled (see
+"Order of work"); declare new planes in `inputs.planes` for the plane producer.
 
 Optional `router.pair_impedance` requests nominal differential impedance
 synthesis with an explicit target and verification limits:
@@ -455,13 +455,66 @@ rules, including stricter coupling limits, always remain in force.
      native pad clearance, never a body.
    - `silk_only`: padless, zone-free, every graphic on a silkscreen layer. Only
      these are excluded from packing.
-   **Native routing keepouts:** board-level rule areas that allow footprints
-   and pads and have no placement-area restriction are preserved through the
-   job. Their routing restrictions are enforced by the router and native DRC.
-   Placement-restricting areas and ordinary copper pours, filled or unfilled,
-   are refused before solving. Footprint zones and rule areas remain refused.
-   Native checks after routing do not make an ignored placement obstacle safe;
-   this job has no placement zone engine. Declared `inputs.planes`
+   **Zones (AGENTEE-635).** A board that carries zones is accepted.
+   - *Copper pours* stay on the board and do not constrain where a part may
+     sit. `materialize` refills them after the footprints are in place, the
+     final check refills them around the routed copper and saves the board,
+     and every native DRC of the job runs with `--refill-zones`. The saved
+     fill is derived data: the integrity comparisons ignore `filled_polygon`,
+     `fill_segments` and the filled flag, and still compare every zone's
+     outline, net, layers and settings.
+   - *Rule areas that forbid footprints or pads* become fixed bodies
+     (`native_ref` `rule-area:<uuid>`): the bounding box of the area, on every
+     side. That is larger than an area that is not a rectangle or that forbids
+     only pads; native DRC on the saved board judges the real rule.
+   - *Other rule areas* (tracks, vias, pours) are preserved; the router and
+     native DRC enforce them.
+   - *Zones inside a footprint* move with it; their bounds join the
+     footprint's occupancy (`sources` gains `footprint-zones`).
+   The capture record counts `pour_zones` and `keepout_rule_areas`.
+
+   **Outline (AGENTEE-636).** A proven axis-aligned rectangle is passed as
+   `{"kind": "rectangle", "rect_nm": [...]}`. Any other board uses KiCad's own
+   outline builder (`GetBoardPolygonOutlines`): one closed contour of lines and
+   arcs with any cut-outs becomes `{"kind": "polygon", "rect_nm": <bounds>,
+   "polygon_nm": [...], "holes_nm": [...], "arc_max_error_nm": N}`. KiCad
+   turns arcs into segments within the board's maximum error (`m_MaxError`,
+   5 µm by default), which is the stated tolerance. The engine measures a
+   body against the real contour (area outside the outer contour or inside a
+   cut-out), and copper as its box grown by the copper-to-edge clearance; that
+   is the same test on straight edges and stricter at convex corners. Areas
+   below 1 µm² are treated as rounding. A board with no closed outline, or
+   with several separate outlines, is refused (`board outline is not one
+   closed contour`). Declared `edge_connectors` need a rectangular outline and
+   are refused on any other.
+
+   **Rotation (AGENTEE-636).** A footprint may sit at any angle. Its
+   orientation is split into quarter turns and a rest in [0, 90) degrees
+   (`placement_problem.split_turns`). The engine still turns parts by quarter
+   turns; the rest stays with the part, fixed or movable, so a part drawn at
+   45 degrees is placed at 45, 135, 225 or 315. Its occupancy, mask and hole
+   boxes are the bounds of the rotated shapes, which are larger than the
+   shapes; pad copper polygons are exact. For a moved part at such an angle
+   KiCad rounds each pad after a floating-point rotation, so the integrity
+   check allows a pad 2 nm from the engine's exact turn; quarter-turn parts
+   remain exact.
+
+   **Routing-only jobs (AGENTEE-636).** When every footprint is natively
+   locked or has a declared fixed pose, nothing can move and the capture
+   record says `routing_only: true`. Unless the intent declares a check that
+   reads body geometry (`edge_connectors`, electrical locality, mechanics or a
+   block contract), no placement model is built (`placement_model: not built
+   (routing-only job)`): footprints carry their pads, nets and poses only, and
+   the board is not refused for a pad shape, padstack, drill, courtyard or
+   outline the model cannot represent. An outline that is not closed is then
+   replaced by the bounding box, which nothing is checked against. The job
+   routes the board as it is and native DRC judges the saved result.
+
+   Fixed footprints may repeat a reference (mounting holes, logos, fiducials);
+   a group, proximity or edge row that names a repeated reference is refused
+   as ambiguous. Two footprints of which one can move must still differ.
+
+   Declared `inputs.planes`
    are produced after placement and may be outer or enabled inner copper layers.
    Final verification requires their declared `island_removal` to be `always`.
    Search conservatively uses the largest declared netclass clearance, the
@@ -590,11 +643,14 @@ rules, including stricter coupling limits, always remain in force.
    restored next to it, and it is reloaded. Integrity requires the same UUID set,
    refs, sides, locks, FPIDs, pad UUIDs/numbers/nets and graphics; every saved pose
    equal to the engine pose; every native pad exactly where the engine transform
-   put it; unchanged fixed parts; and unchanged non-footprint board content (the
-   only normalization: SaveBoard's standard layer user names). Native DRC
-   (`kicad-cli pcb drc --severity-all`) errors are split into **pre-existing**
-   (all items in one footprint and the same finding on the unchanged input) and
-   **placement-introduced**.
+   put it; unchanged fixed parts; and unchanged non-footprint board content (two
+   normalizations: SaveBoard's standard layer user names, and zone fill results).
+   Native DRC (`kicad-cli pcb drc --severity-all --refill-zones`) errors are
+   split into **pre-existing** (the same finding on the unchanged input, with
+   all items in one footprint or none of them in a footprint this candidate
+   moved) and **placement-introduced**. On a board where nothing moved, every
+   error the input already had is therefore pre-existing. Pre-existing errors
+   still make the final board `INELIGIBLE`; the split only says who caused them.
    Before writing, `materialize(..., normalized=...)` derives protected UUIDs from
    source-board native locks and the captured fixed intent. Any protected x, y,
    rotation or side difference, or a protected `moved: true` row, refuses the
@@ -737,12 +793,13 @@ and is still replaced only by a strictly better checked candidate.
 
 ### Native contour complexity
 
-The whole-board job admits at most **2,048 raw vertices per contour**, **16
-contours per copper/drill item**, and **16,384 contour vertices per problem**.
-`job.rs` declares these bounds; native Python capture mirrors them, with a parity
-test. Capture refuses excess geometry with the reference, footprint UUID, pad
-UUID, contour index/count and applicable bound. Rust independently validates the
-same limits before preparing geometry. The older general planner's 512-vertex
+The whole-board job admits at most **2,048 raw vertices per contour** and **16
+contours per copper/drill item**. `job.rs` declares these bounds and refuses
+excess geometry with the reference, footprint UUID, pad UUID, contour index and
+applicable bound. There is no limit on the vertex total of a problem
+(AGENTEE-636 removed the former 16,384): the total grows with the number of
+pads, and a real 92-footprint board carried 16,440. The controller deadline
+bounds preparation time. The older general planner's 512-vertex
 contract is unchanged.
 
 These limits admit the retained esp_prog input's 4,328 vertices in 111 contours,
@@ -758,7 +815,7 @@ On the retained input, the limit-only repair took 53.817 seconds to evaluate its
 saved poses. The prepared-geometry repair measured 0.042 seconds preparation and
 0.022 seconds evaluation in the release Rust test on proximal (2026-10-24).
 This measures geometry evaluation, not placement quality or routing throughput.
-An original synthetic case at the 16,384-vertex total limit (eight 2,048-vertex
+An original synthetic case of 16,384 vertices, the former total limit (eight 2,048-vertex
 concave stars across two overlapping items) measured 1.238 seconds preparation
 and 0.031 seconds evaluation. These are measured cases, not worst-case latency
 guarantees; the controller deadline still bounds preparation and evaluation.

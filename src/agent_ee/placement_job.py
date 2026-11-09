@@ -35,7 +35,7 @@ import time
 
 from . import native_run, placement_problem
 from .placement_problem import (INPUT_SCHEMA, OUTPUT_SCHEMA, JobRefusal, escape_hints,  # noqa: F401
-                                quarter_turns as _quarter_turns, rule_mm as _rule_mm)
+                                rule_mm as _rule_mm)
 from .storage import canonical, digest, read_json, write_json
 from .run_record import policy_files
 
@@ -414,7 +414,9 @@ def _evaluate_board_native(path, *, fixed_poses=(), edges=(), groups=(), rails=N
         import pcbnew
         board = pcbnew.LoadBoard(str(path))
     facts = extract(path, board=board, before=before)
-    description = _describe_board(board, facts)
+    # The same choice of model as capture made for this board and intent.
+    description = _describe_board(board, facts, geometry=(
+        bool(edges) or mechanics_binding is not None or not routing_only(facts['footprints'], list(fixed_poses))))
     if mechanics_binding is not None:
         from .source_mechanics import attach
         attach(description, mechanics_binding, facts)
@@ -492,14 +494,13 @@ def classify_footprint(fp, captured):
         _mask_graphic_bbox(g) for g in graphics if pcbnew.LayerName(g.GetLayer()) in ('F.Mask', 'B.Mask')]
     fab = [g for g in graphics if pcbnew.LayerName(g.GetLayer()) == FAB[side] and g.GetClass() == 'PCB_SHAPE']
     silk = [g for g in graphics if pcbnew.LayerName(g.GetLayer()) == SILK_OF[side] and g.GetClass() == 'PCB_SHAPE']
-    facts = {'silk_only': False, 'mark_eligible': False, 'occupancy': None, 'refusal': None, 'diagnostics': [],
+    facts = {'silk_only': False, 'mark_eligible': False, 'bodiless': False, 'occupancy': None, 'refusal': None,
+             'diagnostics': [],
              'mask': mask, 'classified_layers': classified,
              'seats': {'body:fab': _union([_bbox(g) for g in fab]) if fab else None,
                        'body:silk': _union([_bbox(g) for g in silk]) if silk else None}}
     if not pads and not zones and graphics and set(layers) <= set(SILK):
         return dict(facts, silk_only=True, mask=[])
-    if zones:
-        raise JobRefusal(f'{uuid}: footprint rule areas/zones are not supported by the job model')
     body_layers = {FAB[side], SILK_OF[side], f'{side}.CrtYd'} & set(layers)
     facts['mark_eligible'] = bool(pads) and not body_layers and all(not p.GetNetname() for p in pads)
     courtyards = captured['courtyards']
@@ -522,7 +523,10 @@ def classify_footprint(fp, captured):
     elif pad_boxes:
         rung, source = 'pads', []
     else:
-        return dict(facts, refusal=f'{uuid}: no courtyard, fab, silk or pad geometry for derived occupancy')
+        # Nothing to pack: a graphic on another layer (a mask logo, say). Fixed, it is no body;
+        # movable, there is no shape to place, so the role rule refuses it.
+        return dict(facts, bodiless=True,
+                    refusal=f'{uuid}: no courtyard, fab, silk or pad geometry for derived occupancy')
     boxes = [_bbox(g) for g in source] + pad_boxes
     diagnostics.append(f'courtyard missing (metadata gap): derived_occupancy rung {rung}')
     return dict(facts, diagnostics=diagnostics,
@@ -531,8 +535,63 @@ def classify_footprint(fp, captured):
                            'note': 'derived envelope; separation is not proof of package body separation'})
 
 
-def _describe_board(board, facts):
-    """Read a loaded native board into the description ``placement_problem`` builds from (no intent)."""
+ROUTING_ONLY = {'status': 'none', 'reason': 'routing-only job: every footprint is fixed, no placement model is built'}
+
+
+def routing_only(footprints, fixed_poses):
+    """Whether nothing can move: every footprint is natively locked or has a declared fixed pose."""
+    owners = placement_problem.fixed_pose_owners(fixed_poses, footprints)
+    return bool(footprints) and all(f['locked'] or f['uuid'] in owners for f in footprints)
+
+
+def keepout_obstacles(board):
+    """Board rule areas that forbid footprints or pads, as fixed bodies for the engine.
+
+    The body is the bounding box of the rule area on every side, which is
+    larger than an area that is not a rectangle or that forbids only pads.
+    Native DRC on the saved board remains the judge of the real rule.
+    """
+    rows = []
+    for zone in board.Zones():
+        if not zone.GetIsRuleArea() or not (zone.GetDoNotAllowFootprints() or zone.GetDoNotAllowPads()):
+            continue
+        uid, box = zone.m_Uuid.AsString(), _bbox(zone)
+        rows.append(dict(uuid=uid, native_ref='rule-area:' + uid, role='fixed_body',
+                         pose=dict(x_nm=box[0], y_nm=box[1], quarter_turns=0),
+                         occupancy=dict(status='derived', label='derived_occupancy', rung='courtyard',
+                                        local_rect_nm=[0, 0, box[2] - box[0], box[3] - box[1]]),
+                         copper_local_nm=[], mask_local_nm=[], holes_local_nm=[], pads=[], rotations=[0]))
+    return sorted(rows, key=lambda r: r['uuid'])
+
+
+def _board_obstacles(board):
+    """Fixed obstacles that are not footprints, and the text boxes attached to footprints."""
+    from .board_text import placement_regions
+    text_obstacles, attached_text = placement_regions(board)
+    return sorted([*text_obstacles, *keepout_obstacles(board)], key=lambda r: r['uuid']), attached_text
+
+
+def pour_zones(board):
+    """Copper pours: zones that are neither rule areas nor teardrops."""
+    return [z for z in board.Zones() if not z.GetIsRuleArea() and not z.IsTeardropArea()]
+
+
+def refill_pours(board):
+    """Refill every zone of a loaded board after its footprints or copper changed."""
+    import pcbnew
+    board.BuildConnectivity()
+    if not pcbnew.ZONE_FILLER(board).Fill(board.Zones()):
+        raise JobRefusal('native zone fill failed')
+
+
+def _describe_board(board, facts, *, geometry=True):
+    """Read a loaded native board into the description ``placement_problem`` builds from (no intent).
+
+    ``geometry=False`` is the routing-only description: nothing can move, so no
+    occupancy, copper, hole or mask model is read and no footprint or outline
+    is refused for what that model cannot represent. Pads keep their nets and
+    positions, which the net, group and proximity measurements use.
+    """
     import pcbnew
     by_uuid = {f['uuid']: f for f in facts['footprints']}
     if len(by_uuid) != len(facts['footprints']):
@@ -540,26 +599,46 @@ def _describe_board(board, facts):
     settings = board.GetDesignSettings()
     native_class = settings.m_NetSettings.GetDefaultNetclass()
     clearance = _clearance(settings)
-    from .board_text import placement_regions
-    text_obstacles, attached_text = placement_regions(board)
+    text_obstacles, attached_text = _board_obstacles(board)
     footprints = []
     for fp in board.GetFootprints():
         uuid = fp.m_Uuid.AsString()
         captured = by_uuid[uuid]
-        q = _quarter_turns(captured['rotation_deg'], uuid)
+        q, residual = placement_problem.split_turns(captured['rotation_deg'])
         origin = captured['position_nm']
+        if not geometry:
+            footprints.append({
+                'uuid': uuid, 'ref': captured['ref'], 'side': captured['side'], 'locked': captured['locked'],
+                'position_nm': origin, 'rotation_deg': captured['rotation_deg'], 'quarter_turns': q,
+                'residual_deg': residual, 'silk_only': False, 'mark_eligible': False,
+                'occupancy': dict(ROUTING_ONLY), 'occupancy_refusal': None, 'occupancy_diagnostics': [],
+                'occupancy_local_nm': None, 'classified_layers': {}, 'copper_local_nm': [], 'mask_local_nm': [],
+                'holes_local_nm': [],
+                'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),
+                          'local_nm': list(_unrotate(int(p.GetPosition().x) - origin[0],
+                                                     int(p.GetPosition().y) - origin[1], q)),
+                          'half_nm': _pad_half(p, origin, q)}
+                         for p in fp.Pads()],
+                'seats_local_nm': {'body:fab': None, 'body:silk': None, 'body:occupancy': None}})
+            continue
         native = classify_footprint(fp, captured)
         seat_occupancy = (native['occupancy'] or {}).get('box')
-        if uuid in attached_text and native['occupancy'] is not None:
-            native['occupancy'] = dict(native['occupancy'],
-                status='derived', label='derived_occupancy',
-                box=_union([native['occupancy']['box'], *attached_text[uuid]]),
-                sources=[*native['occupancy'].get('sources', []), 'declared-board-text'])
+        # Declared text and the footprint's own zones (keep-outs, antenna areas) move with the part.
+        attached = [(attached_text.get(uuid, []), 'declared-board-text'),
+                    ([_bbox(z) for z in fp.Zones()], 'footprint-zones')]
+        for boxes, source in attached:
+            if boxes and native['occupancy'] is not None:
+                native['occupancy'] = dict(native['occupancy'],
+                    status='derived', label='derived_occupancy',
+                    box=_union([native['occupancy']['box'], *boxes]),
+                    sources=[*native['occupancy'].get('sources', []), source])
         box = (native['occupancy'] or {}).get('box')
         footprints.append({
             'uuid': uuid, 'ref': captured['ref'], 'side': captured['side'], 'locked': captured['locked'],
             'position_nm': origin, 'rotation_deg': captured['rotation_deg'], 'quarter_turns': q,
+            'residual_deg': residual,
             'silk_only': native['silk_only'], 'mark_eligible': native['mark_eligible'],
+            'bodiless': native['bodiless'],
             'occupancy': native['occupancy'], 'occupancy_refusal': native['refusal'],
             'occupancy_diagnostics': native['diagnostics'],
             'occupancy_local_nm': _local_rect(box, origin, q) if box else None,
@@ -577,7 +656,9 @@ def _describe_board(board, facts):
                      for p in fp.Pads()],
             'seats_local_nm': {basis: _local_rect(rect, origin, q) if rect else None
                                for basis, rect in {**native['seats'], 'body:occupancy': seat_occupancy}.items()}})
-    return {'outline_rect_nm': _rectangle(facts['outline']),
+    outline = board_outline(board, facts, required=geometry)
+    return {'outline_rect_nm': outline['rect_nm'],
+            **({'outline': outline} if outline['kind'] != 'rectangle' else {}),
             'rules': {'copper_clearance_nm': clearance,
                       'hole_to_hole_clearance_nm': int(settings.m_HoleToHoleMin),
                       'copper_edge_clearance_nm': int(settings.m_CopperEdgeClearance),
@@ -588,14 +669,66 @@ def _describe_board(board, facts):
             'footprints': footprints, 'text_obstacles': text_obstacles}
 
 
-def _rectangle(outline):
-    if outline.get('status') != 'proven' or len(outline['polygons']) != 1:
-        raise JobRefusal('board outline is not one proven contour')
-    points = outline['polygons'][0]
+def _rectangle(points):
+    """[x0, y0, x1, y1] when the contour is an axis-aligned rectangle, else None."""
     xs, ys = sorted({p[0] for p in points}), sorted({p[1] for p in points})
     if len(xs) != 2 or len(ys) != 2 or len(points) != 4:
-        raise JobRefusal('only a rectangular board outline is supported by this job model')
+        return None
     return [xs[0], ys[0], xs[1], ys[1]]
+
+
+def board_outline(board, facts, *, required=True):
+    """The engine's outline record: a rectangle, or any closed contour with its cut-outs.
+
+    A proven axis-aligned rectangle is passed as before. Every other board uses
+    KiCad's own outline builder, which joins lines and arcs into closed contours;
+    it turns arcs into segments within the board's maximum error, recorded as
+    ``arc_max_error_nm``. A board with no closed outline, or with several
+    separate boards, is refused when a placement needs the outline. A
+    routing-only job (``required=False``) then uses the bounding box, which
+    nothing is checked against because nothing moves.
+    """
+    import pcbnew
+    proven = facts['outline']
+    if proven.get('status') == 'proven' and len(proven['polygons']) == 1:
+        rect = _rectangle(proven['polygons'][0])
+        if rect is not None:
+            return {'kind': 'rectangle', 'rect_nm': rect}
+    polygons = pcbnew.SHAPE_POLY_SET()
+    closed = board.GetBoardPolygonOutlines(polygons, False)
+
+    def contour(chain):
+        points = []
+        for index in range(chain.PointCount()):
+            point = [int(chain.CPoint(index).x), int(chain.CPoint(index).y)]
+            if not points or points[-1] != point:
+                points.append(point)
+        if len(points) > 1 and points[0] == points[-1]:
+            points.pop()
+        return points
+
+    if closed and polygons.OutlineCount() == 1:
+        outer = contour(polygons.Outline(0))
+        holes = [contour(polygons.Hole(0, index)) for index in range(polygons.HoleCount(0))]
+        if len(outer) >= 3 and all(len(hole) >= 3 for hole in holes):
+            rect = _rectangle(outer)
+            if rect is not None and not holes:
+                return {'kind': 'rectangle', 'rect_nm': rect}
+            return {'kind': 'polygon',
+                    'rect_nm': [min(p[0] for p in outer), min(p[1] for p in outer),
+                                max(p[0] for p in outer), max(p[1] for p in outer)],
+                    'polygon_nm': outer, 'holes_nm': holes,
+                    'source': 'native board outline (GetBoardPolygonOutlines)',
+                    'arc_max_error_nm': int(board.GetDesignSettings().m_MaxError)}
+    if required:
+        raise JobRefusal('board outline is not one closed contour (native outlines: '
+                         f'{polygons.OutlineCount() if closed else "not closed"})')
+    box = board.GetBoardEdgesBoundingBox()
+    if box.GetWidth() <= 0 or box.GetHeight() <= 0:
+        box = board.ComputeBoundingBox(False)
+    if box.GetWidth() <= 0 or box.GetHeight() <= 0:
+        raise JobRefusal('board has no extent')
+    return {'kind': 'rectangle', 'rect_nm': [int(box.GetLeft()), int(box.GetTop()), int(box.GetRight()), int(box.GetBottom())]}
 
 
 def _clearance(settings):
@@ -784,12 +917,14 @@ def _capture_native(board_path, normalized):
     board = pcbnew.LoadBoard(str(board_path))
     facts = extract(board_path, board=board, before=before)
     dialect_checks = _check_dialect_native(board, facts, dialect) if dialect else []
-    for zone in board.Zones():
-        if (not zone.GetIsRuleArea() or zone.GetDoNotAllowFootprints() or zone.GetDoNotAllowPads()
-                or zone.GetPlacementAreaEnabled()):
-            raise JobRefusal('board-level zones with pours or placement constraints are unsupported; '
-                             'routing-only rule areas must allow footprints and pads')
-    description = _describe_board(board, facts)
+    # Copper pours stay on the board: they are refilled after a move and after routing, and native
+    # DRC judges the saved result. Rule areas that forbid footprints or pads are fixed obstacles.
+    fixed = routing_only(facts['footprints'], intent.get('fixed_poses', []))
+    # Declared edge, locality, mechanics and block checks read the placement model; a plain
+    # routing-only job does not, so it is not held to what that model can represent.
+    geometry = (not fixed or bool(intent.get('edge_connectors')) or 'electrical_locality' in intent
+                or 'mechanics' in normalized or 'block_contract' in normalized)
+    description = _describe_board(board, facts, geometry=geometry)
     if Path(board_path).read_bytes() != before:
         raise JobRefusal('input board changed during capture')
     if 'electrical_locality' in intent:
@@ -808,6 +943,10 @@ def _capture_native(board_path, normalized):
         from .placement_contract import bind
         strict['block_contract'] = bind(facts, normalized['block_contract'], normalized, records)
     return problem, {'schema': 'agent-ee.placement-job-capture/1', 'board_sha256': sha256_bytes(before), **strict, **mechanics,
+                     'routing_only': fixed, 'placement_model': 'built' if geometry else 'not built (routing-only job)',
+                     'outline': {k: v for k, v in problem['outline'].items() if k not in ('polygon_nm', 'holes_nm')},
+                     'pour_zones': len(pour_zones(board)),
+                     'keepout_rule_areas': len(keepout_obstacles(board)),
                      'pcbnew_version': facts['pcbnew_version'], 'footprints': records,
                      'native': {f['uuid']: {'ref': f['ref'], 'side': f['side'], 'locked': f['locked']}
                                 for f in description['footprints']},
@@ -1099,19 +1238,22 @@ def _key(v):
     return (v['type'], tuple(sorted(i.get('uuid', '') for i in v.get('items', []))))
 
 
-def classify_errors(report, owners, baseline_keys, placed_keys=None):
+def classify_errors(report, owners, baseline_keys, placed_keys=None, moved=None):
     """Split native errors into pre-existing / placement-introduced / routing-introduced.
 
-    Pre-existing: every item belongs to one footprint and the unchanged input
-    reports the same (type, items). Placement-introduced: any other error present
-    on the placed board. Routing-introduced: new relative to the placed board."""
+    Pre-existing: the unchanged input reports the same (type, items), and either
+    every item belongs to one footprint or, when ``moved`` (the UUIDs of the
+    footprints this placement moved) is known, no item belongs to a moved
+    footprint. Placement-introduced: any other error present on the placed
+    board. Routing-introduced: new relative to the placed board."""
     split = {'pre_existing': [], 'placement_introduced': [], 'routing_introduced': []}
     for v in report['violations']:
         if v.get('severity') != 'error':
             continue
         key = _key(v)
         footprints = {owners.get(i.get('uuid')) for i in v.get('items', [])}
-        if len(footprints) == 1 and None not in footprints and key in baseline_keys:
+        if key in baseline_keys and ((len(footprints) == 1 and None not in footprints)
+                                     or (moved is not None and not footprints & set(moved))):
             split['pre_existing'].append(v)
         elif placed_keys is None or key in placed_keys:
             split['placement_introduced'].append(v)
@@ -1148,9 +1290,12 @@ def native_inventory(board):
 def _non_footprint_nodes(data, *, include_footprints=False, routing_owned=False, owned_zones=()):
     """Top-level board nodes other than footprints, for rule/geometry identity.
 
-    The only normalization: native SaveBoard writes each standard layer's user
+    Two normalizations. Native SaveBoard writes each standard layer's user
     name as a fourth `layers` element; entries are compared on ordinal, canonical
-    name and type, and any other user name difference is still reported."""
+    name and type, and any other user name difference is still reported. A zone
+    is compared without its fill result (`filled_polygon`, `fill_segments` and
+    the filled flag): the fill is recomputed from the zone's outline and
+    settings, which are compared, whenever footprints or copper change."""
     import pcbnew
     from .symbol_library import parse_sexpr
     tree = parse_sexpr(data)
@@ -1164,6 +1309,11 @@ def _non_footprint_nodes(data, *, include_footprints=False, routing_owned=False,
                 isinstance(child, list) and child[:1] == ['uuid'] and child[1] in owned_zones
                 for child in node[1:]):
             continue
+        if node[0] == 'zone':
+            node = [(['fill'] + [part for part in child[1:] if part not in ('yes', 'no')]
+                     if isinstance(child, list) and child[:1] == ['fill'] else child)
+                    for child in node
+                    if not (isinstance(child, list) and child[:1] in (['filled_polygon'], ['fill_segments']))]
         if node[0] == 'layers':
             # The file ordinal is the native layer id; its standard name is pcbnew.LayerName(id).
             node = ['layers'] + [entry[:3] if len(entry) == 4 and entry[0].isdigit()
@@ -1186,16 +1336,15 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
         raise JobRefusal('native custom rules differ from captured rules')
     board = pcbnew.LoadBoard(str(source))
     before = native_inventory(board)
-    from .board_text import placement_regions
-    obstacles, _ = placement_regions(board)
+    obstacles, _ = _board_obstacles(board)
     reserved = {row['uuid']: row for row in obstacles}
     obstacle_poses = [row for row in poses if row['uuid'] in reserved]
     if len(obstacle_poses) != len(reserved) or len({r['uuid'] for r in obstacle_poses}) != len(reserved):
-        raise JobRefusal('candidate pose vector omits or repeats a board text obstacle')
+        raise JobRefusal('candidate pose vector omits or repeats a board text or rule-area obstacle')
     for row in obstacle_poses:
         expected = reserved[row['uuid']]['pose']
         if row['moved'] or any(row[key] != expected[key] for key in ('x_nm', 'y_nm', 'quarter_turns')):
-            raise JobRefusal('candidate moved a fixed board text obstacle')
+            raise JobRefusal('candidate moved a fixed board text or rule-area obstacle')
     poses = [row for row in poses if row['uuid'] not in reserved]
     captured = [dict(uuid=u, ref=r['ref'], position_nm=[r['x_nm'], r['y_nm']], side=r['side'],
                      rotation_deg=r['rotation_deg'])
@@ -1208,7 +1357,7 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
     for uuid in protected:
         row, old = target[uuid], before[uuid]
         if row['moved'] or (row['x_nm'], row['y_nm'], row['quarter_turns'], row.get('side', old['side'])) != (
-                old['x_nm'], old['y_nm'], _quarter_turns(old['rotation_deg'], uuid), old['side']):
+                old['x_nm'], old['y_nm'], placement_problem.split_turns(old['rotation_deg'])[0], old['side']):
             raise JobRefusal(f'{uuid}: protected footprint pose or moved flag differs from frozen input')
     destination.mkdir(parents=True)
     for fp in board.GetFootprints():
@@ -1216,7 +1365,12 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
         if not row['moved']:
             continue
         fp.SetPosition(pcbnew.VECTOR2I(int(row['x_nm']), int(row['y_nm'])))
-        fp.SetOrientationDegrees(90.0 * row['quarter_turns'])
+        # A part at another angle than a quarter turn keeps that offset (placement_problem.split_turns).
+        fp.SetOrientationDegrees(90.0 * row['quarter_turns']
+                                 + placement_problem.split_turns(before[fp.m_Uuid.AsString()]['rotation_deg'])[1])
+    if pour_zones(board):
+        # The saved fill belongs to the input placement and copper; the router and DRC get a current one.
+        refill_pours(board)
     out = destination / 'board.kicad_pcb'
     if not pcbnew.SaveBoard(str(out), board):
         raise JobRefusal('native SaveBoard failed')
@@ -1248,11 +1402,16 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
         row = target[uuid]
         if (new['x_nm'], new['y_nm']) != (row['x_nm'], row['y_nm']):
             problems.append(f'{uuid}: saved position differs from the engine pose')
-        if _quarter_turns(new['rotation_deg'], uuid) != row['quarter_turns']:
+        residual = placement_problem.split_turns(old['rotation_deg'])[1]
+        turns, saved_residual = placement_problem.split_turns(new['rotation_deg'])
+        if turns != row['quarter_turns'] or abs(saved_residual - residual) > 1e-6:
             problems.append(f'{uuid}: saved orientation differs from the engine pose')
+        # Quarter turns are exact. At any other angle KiCad rounds each pad after a
+        # floating-point rotation, so a moved pad may differ from the engine's exact turn by rounding.
+        slack = 2 if residual and row['moved'] else 0
         for pad in row['pads']:
             q = new['pads'].get(pad['uuid'])
-            if q is None or (q['x_nm'], q['y_nm']) != (pad['x_nm'], pad['y_nm']):
+            if q is None or abs(q['x_nm'] - pad['x_nm']) > slack or abs(q['y_nm'] - pad['y_nm']) > slack:
                 problems.append(f'{uuid}: pad {pad["uuid"]} native position differs from the engine transform')
         if not row['moved'] and (new['x_nm'], new['y_nm'], new['rotation_deg']) != (
                 old['x_nm'], old['y_nm'], old['rotation_deg']):
@@ -1260,7 +1419,8 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
     if _non_footprint_nodes(Path(source).read_bytes()) != _non_footprint_nodes(out.read_bytes()):
         problems.append('non-footprint board content (setup, rules, nets, outline, drawings) changed')
     return {'board': str(out), 'board_sha256': digest(out), 'problems': problems,
-            'integrity': 'preserved' if not problems else 'violated', 'inventory': after}
+            'integrity': 'preserved' if not problems else 'violated', 'inventory': after,
+            'moved': sorted(row['uuid'] for row in poses if row['moved'])}
 
 
 # ---------------------------------------------------------------- incumbent
@@ -2021,7 +2181,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     with clock.phase('judge'):
         _check_stop(clock, job_dir)
         (job_dir / f'input-drc-a{attempt}').mkdir()
-        base_report, base_exec = drc(board_path, job_dir / f'input-drc-a{attempt}', label='native-drc',
+        # Every DRC of this job refills zones, so a board with pours is judged on a current fill.
+        base_report, base_exec = drc(board_path, job_dir / f'input-drc-a{attempt}', refill=True, label='native-drc',
                                      clock=clock, cancel_dir=job_dir)
         base_keys = {_key(v) for v in base_report['violations'] if v.get('severity') == 'error'}
         def judge_candidate(cand, index):
@@ -2040,10 +2201,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 check = materialize(board_path, cand['poses'], directory, project_bytes,
                                     normalized=normalized, rules_bytes=rules_bytes)
                 _check_stop(clock, job_dir)
-                report_, exec_ = drc(directory / 'board.kicad_pcb', directory, label='native-drc',
+                report_, exec_ = drc(directory / 'board.kicad_pcb', directory, refill=True, label='native-drc',
                                      clock=clock, cancel_dir=job_dir)
-                split = classify_errors(report_, owners, base_keys)
+                split = classify_errors(report_, owners, base_keys, moved=check.get('moved'))
                 entry.update(status='checked', integrity=check['integrity'], integrity_problems=check['problems'],
+                             moved_footprints=check.get('moved'),
                              mechanics=check_mechanics(directory / 'board.kicad_pcb', normalized, clock=clock, cancel_dir=job_dir),
                              block_contract=check_block_contract(directory / 'board.kicad_pcb', normalized,
                                                                   clock=clock, cancel_dir=job_dir),
@@ -2511,6 +2673,23 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
             board.with_suffix(suffix).write_bytes(expected)
         rule_files[suffix] = {'authored_sha256': sha256_bytes(expected) if expected is not None else None,
                               'routed_sha256': sha256_bytes(actual) if actual is not None else None}
+    native_board = pcbnew.LoadBoard(str(board))
+    if planes is None and pour_zones(native_board):
+        # The input's own pours: refill them around the routed copper and save, so the
+        # board that is judged and handed on holds a current fill. The authored rule
+        # files are put back because SaveBoard rewrites the project beside the board.
+        try:
+            refill_pours(native_board)
+            if not pcbnew.SaveBoard(str(board), native_board):
+                raise JobRefusal('native SaveBoard failed after zone refill')
+        except JobRefusal as exc:
+            problems.append(str(exc))
+        for suffix in ('.kicad_pro', '.kicad_dru'):
+            authored = Path(incumbent['directory']) / ('board' + suffix)
+            if authored.exists():
+                board.with_suffix(suffix).write_bytes(authored.read_bytes())
+        board.with_suffix('.kicad_prl').unlink(missing_ok=True)
+    del native_board
     plane_fill = None
     if planes is not None:
         # Refill and save through the existing zone-only producer. Its strict
@@ -2614,7 +2793,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
                 or ac_result.get('requirement') != ac_match):
             ac_result['status'] = 'FAIL'
             ac_result.setdefault('defects', []).append('final AC result does not bind the saved board and requirement')
-    split = classify_errors(report_, owners, base_keys, placed_keys)
+    split = classify_errors(report_, owners, base_keys, placed_keys, moved=incumbent.get('moved_footprints'))
     edge_intent = check_edge_intent(board, normalized, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, normalized, clock=clock, cancel_dir=cancel_dir)
     block_result = check_block_contract(board, normalized, clock=clock, cancel_dir=cancel_dir)

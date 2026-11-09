@@ -157,8 +157,6 @@ def validate(intent, groups):
         for key in ('x', 'y', 'rot'):
             if key in row:
                 _number(row[key], path + '.' + key)
-        if 'rot' in row and row['rot'] % 90 != 0:
-            raise ValueError(path + '.rot: expected a quarter turn')
         if 'side' in row and row['side'] not in ('F', 'B'):
             raise ValueError(path + '.side: expected F or B; side changes are unsupported')
         _notes(row, path)

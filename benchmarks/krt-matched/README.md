@@ -58,6 +58,12 @@ other seeds; `place NAME --tools agent-ee --search-b` uses the search setting
 of `docs/benchmarks/placement-job-2026-10-24.md` (12 seeds, 10,000 steps,
 shortlist 6).
 
+A rerun of one side after a tool change uses the very same prepared boards as
+the run it is compared with: `KRT_BENCH_RUNS=NEW python3 $B reuse NAME OLD`
+copies `norm`, `route-in`, `place-in` and `prep.json` from the earlier run
+directory `OLD` and checks every board against the hashes in `prep.json`;
+then run `baseline`, `route --tools agent-ee` and `place --tools agent-ee`.
+
 `--tools krt` or `--tools agent-ee` reruns one side. `KRT_BENCH_BUDGET_S`
 (default 900) is the wall-clock budget of each routing or placement run.
 Each cell writes `boards/NAME/results/<arm>-<tool>.json`; logs and boards are
@@ -87,7 +93,13 @@ Nothing is keyed on a board. Every rule below applies to every board.
   design compiler's default search (4 clustered seeds, 100,000 steps,
   shortlist 4), `router.checkout` and the budget. No `router.*` option.
 - **Placement arm routing**: both chosen placements are stripped of copper
-  and routed by the same stock KRT `route.py`.
+  and routed by the same stock KRT `route.py`. agent-ee's placement is its
+  routed board when the job produced one; otherwise the placement the job
+  chose (`incumbent.json`, else `best-diagnostic.json`), recorded as
+  `placement_kind`.
+- **Versions**: every agent-ee cell records the agent-ee commit (and whether
+  the tree was dirty), the CI image ID, and the job's own preflight record
+  (engine binary hash, router commit, pcbnew and kicad-cli versions).
 - **Zone fallback**: `--no-pours` removes every pour zone and reruns both
   tools; reported separately.
 - **Score**: `kicad-cli pcb drc --format json --severity-all --refill-zones`,

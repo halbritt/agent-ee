@@ -8,7 +8,9 @@ one weights table and one refusal path. This module never touches pcbnew;
 
 A board description is a plain dict:
 
-* ``outline_rect_nm`` and ``rules`` (``copper_clearance_nm``,
+* ``outline_rect_nm`` (the bounds of the board outline), optional ``outline``
+  (the engine's ``polygon`` outline record when the board is not an
+  axis-aligned rectangle) and ``rules`` (``copper_clearance_nm``,
   ``hole_to_hole_clearance_nm``, ``copper_edge_clearance_nm``,
   ``mask_min_web_nm``), the native settings the engine checks against;
 * ``pair``: the native default differential pair ``width_nm`` and ``gap_nm``
@@ -17,8 +19,10 @@ A board description is a plain dict:
   bodies for the existing engine; these are not extra native PCB footprints;
 * ``footprints``: one entry per native footprint with ``uuid``, ``ref``,
   ``side``, ``locked``, ``position_nm``, ``rotation_deg``, ``quarter_turns``,
-  the native classification ``silk_only`` and ``mark_eligible`` (pads, all
-  unnetted, no body drawing), ``occupancy`` (record form, or None) with
+  optional ``residual_deg`` (see :func:`split_turns`),
+  the native classification ``silk_only``, ``mark_eligible`` (pads, all
+  unnetted, no body drawing) and optional ``bodiless`` (no pads and no body
+  drawing at all), ``occupancy`` (record form, or None) with
   ``occupancy_local_nm``, ``occupancy_refusal`` and ``occupancy_diagnostics``,
   ``classified_layers``, ``copper_local_nm``, ``mask_local_nm``,
   ``holes_local_nm``, ``pads`` and ``seats_local_nm`` (``body:fab`` and
@@ -34,6 +38,7 @@ then validates the converted values at its own input boundary.
 """
 from collections import defaultdict
 import hashlib
+import math
 
 from .storage import canonical
 
@@ -43,6 +48,7 @@ NM = 1_000_000
 WEIGHTS = {'wire': 1, 'group': 1, 'proximity': 4, 'link': 1, 'edge': 4, 'hard': 50, 'escape': 20, 'decoupling': 4}
 SILK_ONLY = {'status': 'none', 'reason': 'silk-only non-electrical graphic'}
 COPPER_MARK = {'status': 'none', 'reason': 'fixed copper mark: copper obstacle, not a body'}
+BODILESS = {'status': 'none', 'reason': 'fixed footprint without pads, courtyard, fab or silk drawing: no body'}
 
 
 class JobRefusal(ValueError):
@@ -61,11 +67,20 @@ def rule_mm(value, what):
         raise JobRefusal(f'{what}: {exc}') from exc
 
 
-def quarter_turns(degrees, what):
-    q = degrees / 90.0
-    if abs(q - round(q)) > 1e-9:
-        raise JobRefusal(f'{what}: orientation {degrees} is not a quarter turn')
-    return int(round(q)) % 4
+def split_turns(degrees):
+    """A native orientation as whole quarter turns plus the rest, in [0, 90) degrees.
+
+    The engine turns parts by quarter turns only. A part at another angle keeps
+    the rest as a fixed offset: its local frame is the native frame turned back
+    by the quarter turns, so its captured boxes are the bounds of the rotated
+    shapes (larger than the shapes) and its captured polygons are exact.
+    """
+    turns = degrees / 90.0
+    whole = round(turns)
+    if abs(turns - whole) > 1e-9:
+        whole = math.floor(turns)
+    residual = degrees - 90.0 * whole
+    return int(whole) % 4, (0.0 if abs(residual) <= 1e-7 else residual)
 
 
 def identity(document):
@@ -112,8 +127,7 @@ def fixed_pose_owners(fixed_poses, footprints):
         if len(matches) != 1:
             raise JobRefusal(f'intent.fixed_poses[{index}]: fixed pose {row["ref"]} '
                              f'matches {len(matches)} native footprints')
-        if 'rot' in row and quarter_turns(row['rot'], row['ref']) != quarter_turns(
-                matches[0]['rotation_deg'], row['ref']):
+        if 'rot' in row and abs((row['rot'] - matches[0]['rotation_deg'] + 180.0) % 360.0 - 180.0) > 1e-7:
             raise JobRefusal(f'intent.fixed_poses[{index}].rot: differs from the fixed native rotation')
         if matches[0]['uuid'] in owners:
             raise JobRefusal(f'intent.fixed_poses[{index}].ref: duplicates a fixed native footprint')
@@ -227,6 +241,9 @@ def _document(board, *, fixed_poses, edges, groups, rails):
     """The parts capture and evaluation share: geometry, roles, edges, groups, rails and weights."""
     owners = fixed_pose_owners(fixed_poses, board['footprints'])
     rules = edge_rules(edges, board['footprints'])
+    outline = board.get('outline') or {'kind': 'rectangle', 'rect_nm': board['outline_rect_nm']}
+    if rules and outline['kind'] != 'rectangle':
+        raise JobRefusal('declared edge connectors need a rectangular board outline')
     declared_edges = {row['ref']: (order, row) for order, row in enumerate(edges)}
     pair = board['pair']
     rows, records = [], []
@@ -236,13 +253,16 @@ def _document(board, *, fixed_poses, edges, groups, rails):
             occupancy = dict(SILK_ONLY)
         elif kind == 'fixed_copper_mark':
             occupancy = dict(COPPER_MARK)
+        elif kind == 'fixed_body' and fp.get('bodiless'):
+            occupancy = dict(BODILESS)
         elif fp['occupancy_refusal']:
             raise JobRefusal(fp['occupancy_refusal'])
         else:
             occupancy = fp['occupancy']
         q = fp['quarter_turns']
         row = {'uuid': fp['uuid'], 'native_ref': fp['ref'], 'role': kind,
-               'pose': {'x_nm': fp['position_nm'][0], 'y_nm': fp['position_nm'][1], 'quarter_turns': q},
+               'pose': {'x_nm': fp['position_nm'][0], 'y_nm': fp['position_nm'][1], 'quarter_turns': q,
+                        **({'residual_deg': fp['residual_deg']} if fp.get('residual_deg') else {})},
                'occupancy': ({k: v for k, v in occupancy.items() if k in ('status', 'label', 'rung')}
                              | ({'local_rect_nm': fp['occupancy_local_nm']} if 'box' in occupancy else {})),
                'copper_local_nm': fp['copper_local_nm'], 'mask_local_nm': fp['mask_local_nm'],
@@ -266,7 +286,7 @@ def _document(board, *, fixed_poses, edges, groups, rails):
                         'diagnostics': fp['occupancy_diagnostics'] if kind in ('movable', 'fixed_body') else [],
                         'fixed_pose': owners.get(fp['uuid']), 'routing_preferences': row['escape_local_nm']})
     document = {'schema': INPUT_SCHEMA,
-                'outline': {'kind': 'rectangle', 'rect_nm': board['outline_rect_nm']},
+                'outline': outline,
                 'rules': dict(board['rules']),
                 'footprints': sorted([*rows, *board.get('text_obstacles', [])], key=lambda r: r['uuid']),
                 'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in groups],

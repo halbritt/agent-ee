@@ -1,4 +1,4 @@
-"""Fresh-native rule agreement and a zone-free placement capture boundary."""
+"""Fresh-native rule agreement and the capture of boards that carry zones."""
 import importlib.util
 import json
 import os
@@ -260,7 +260,7 @@ class BoardZoneTests(Fixture):
         k.SaveBoard(str(self.board), board)
         return self.board
 
-    def test_native_negative_keepout_old_admits_new_refuses(self):
+    def test_native_negative_keepout_is_a_fixed_obstacle(self):
         path = self.zone_board('keepout')
         report, execution = job.drc(path, self.dir)
         self.assertEqual(execution['exit_code'], 0)
@@ -275,23 +275,55 @@ class BoardZoneTests(Fixture):
             result = evaluate(problem, [{}])[0]
             self.assertTrue(result['feasible'], result)
             print('OLD_KEEPOUT_FALSE_FEASIBLE ' + json.dumps(result), flush=True)
-        with self.assertRaisesRegex(job.JobRefusal, 'board-level zones'):
-            job.capture(path, job.normalize_intent({}, {'groups': []}))
-        print('KEEPOUT_CONTROL ' + json.dumps({'native': violations, 'exit': execution['exit_code'],
-                                             'new': 'refused before solve'}), flush=True)
+        # AGENTEE-635: the board is accepted and the keep-out is a fixed body, so the
+        # engine agrees with native DRC that the part cannot stay where it is.
+        problem, record = job.capture(path, job.normalize_intent({}, {'groups': []}))
+        self.assertEqual(record['keepout_rule_areas'], 1)
+        areas = [r for r in problem['footprints'] if r['native_ref'].startswith('rule-area:')]
+        self.assertEqual([(r['role'], r['occupancy']['local_rect_nm']) for r in areas],
+                         [('fixed_body', [0, 0, 6 * MM, 6 * MM])])
+        result = evaluate(problem, [{}])[0]
+        self.assertFalse(result['feasible'], result)
+        self.assertEqual([(v['kind'], {v['ref'], v['with']}) for v in result['violations']],
+                         [('pair', {'R1', areas[0]['native_ref']})])
+        moved = next(r['uuid'] for r in problem['footprints'] if r['native_ref'] == 'R1')
+        self.assertTrue(evaluate(problem, [{moved: [3 * MM, 6 * MM, 0]}])[0]['feasible'])
 
-    def test_copper_and_rule_area_refuse(self):
-        for kind in ('copper', 'rule-area'):
+    def test_copper_pour_and_routing_rule_area_are_accepted(self):
+        def routing_only_area(k, board):
+            # A new native rule area forbids pads until told otherwise.
+            for zone in board.Zones():
+                zone.SetDoNotAllowPads(False)
+                zone.SetDoNotAllowTracks(True)
+        for kind, pours in (('copper', 1), ('rule-area', 0)):
             with self.subTest(kind=kind):
+                import pcbnew as k
                 build_board(self.board)
                 self.zone_board(kind)
-                with self.assertRaisesRegex(job.JobRefusal, 'board-level zones'):
-                    job.capture(self.board, job.normalize_intent({}, {'groups': []}))
+                if kind == 'rule-area':
+                    board = k.LoadBoard(str(self.board))
+                    routing_only_area(k, board)
+                    k.SaveBoard(str(self.board), board)
+                problem, record = job.capture(self.board, job.normalize_intent({}, {'groups': []}))
+                self.assertEqual((record['pour_zones'], record['keepout_rule_areas']), (pours, 0))
+                # Neither constrains where a part may sit: the pour is refilled around it.
+                self.assertEqual([r['native_ref'] for r in problem['footprints']], ['R1'])
+                self.assertTrue(evaluate(problem, [{}])[0]['feasible'])
 
-    def test_footprint_zone_refusal_is_preserved(self):
+    def test_pad_keepout_is_a_fixed_obstacle(self):
+        self.zone_board('rule-area')            # footprints allowed, pads forbidden (the native default)
+        problem, record = job.capture(self.board, job.normalize_intent({}, {'groups': []}))
+        self.assertEqual(record['keepout_rule_areas'], 1)
+        self.assertFalse(evaluate(problem, [{}])[0]['feasible'])
+
+    def test_footprint_zone_joins_the_occupancy_of_its_footprint(self):
         self.zone_board('keepout', footprint=True)
-        with self.assertRaisesRegex(job.JobRefusal, 'footprint rule areas/zones'):
-            job.capture(self.board, job.normalize_intent({}, {'groups': []}))
+        problem, record = job.capture(self.board, job.normalize_intent({}, {'groups': []}))
+        row = next(r for r in problem['footprints'] if r['native_ref'] == 'R1')
+        # Courtyard 8..12 x 4..8 mm joined with the zone 7..13 x 3..9 mm, about R1 at (10, 6).
+        self.assertEqual(row['occupancy']['local_rect_nm'], [-3 * MM, -3 * MM, 3 * MM, 3 * MM])
+        self.assertEqual(row['occupancy']['label'], 'derived_occupancy')
+        self.assertIn('footprint-zones', record['footprints'][0]['occupancy']['sources'])
 
     def test_zero_zone_positive(self):
         problem, _ = self.problem()

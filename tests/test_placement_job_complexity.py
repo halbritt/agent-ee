@@ -22,7 +22,8 @@ from agent_ee import placement_job as job
 # Accepted geometry boundaries: exactly at the limit succeeds; one beyond it refuses.
 MAX_CONTOUR_VERTICES = 2048
 MAX_ITEM_CONTOURS = 16
-MAX_PROBLEM_CONTOUR_VERTICES = 16384
+# The former whole-problem limit (AGENTEE-636 removed it): the scale the deadline test prepares.
+FORMER_PROBLEM_CONTOUR_VERTICES = 16384
 
 
 def contour(n):
@@ -83,19 +84,19 @@ class ComplexityTests(unittest.TestCase):
         self.check_engine(problem([triangle] * (MAX_ITEM_CONTOURS + 1)),
                         f'item contour count {MAX_ITEM_CONTOURS + 1} exceeds {MAX_ITEM_CONTOURS}')
 
-    def test_total_vertices_boundary(self):
+    def test_no_limit_on_the_vertex_total_of_a_problem(self):
+        # A board is not refused for the number of pads it carries (AGENTEE-636): two
+        # items, each at both item limits' scale, total twice the former problem limit.
         p = problem([contour(MAX_CONTOUR_VERTICES)] *
-                    (MAX_PROBLEM_CONTOUR_VERTICES // MAX_CONTOUR_VERTICES))
-        self.check_engine(p)
-        # Keep each contour within its own bound while crossing only the problem bound.
-        p['footprints'][0]['copper_local_nm'][0]['geometry']['polygons'][-1] = contour(MAX_CONTOUR_VERTICES - 2)
+                    (FORMER_PROBLEM_CONTOUR_VERTICES // MAX_CONTOUR_VERTICES))
+        p['footprints'][0]['copper_local_nm'].append(
+            item([contour(MAX_CONTOUR_VERTICES)] * (FORMER_PROBLEM_CONTOUR_VERTICES // MAX_CONTOUR_VERTICES)))
         p['footprints'][0]['copper_local_nm'].append(item([[[0, 0], [100, 0], [0, 100]]]))
-        self.check_engine(p, f'prepared contour vertex total {MAX_PROBLEM_CONTOUR_VERTICES + 1} '
-                        f'exceeds {MAX_PROBLEM_CONTOUR_VERTICES}')
+        self.check_engine(p)
 
     def test_limit_scale_prepare_is_killed_by_controller_deadline(self):
         p = problem([contour(MAX_CONTOUR_VERTICES)] *
-                    (MAX_PROBLEM_CONTOUR_VERTICES // MAX_CONTOUR_VERTICES))
+                    (FORMER_PROBLEM_CONTOUR_VERTICES // MAX_CONTOUR_VERTICES))
         p.pop('evaluate')
         with tempfile.TemporaryDirectory() as tmp:
             started = time.monotonic()
