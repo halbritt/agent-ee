@@ -1,9 +1,11 @@
 """Nightly input receipt binding and fresh-stock preparation consumer contract (AGENTEE-619/621)."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -380,6 +382,58 @@ class StockPreparationEndToEndTests(unittest.TestCase):
                 self.assertIn(expected, record['failure'])
                 self.assertFalse((stock_dir / 'addr-current-context.json').exists())
                 self.assertTrue(record['invocations'], 'the real producer ran before the refusal')
+                self.assert_originals_unchanged()
+
+    def test_inner_outer_deadlines_and_interruption_leave_no_capture_processes(self):
+        real_popen = nightly_inputs.subprocess.Popen
+        for boundary in ('inner', 'outer', 'interrupted'):
+            with self.subTest(boundary=boundary):
+                server = self.fresh_server(C25804='slow')
+                config = self.config(server)
+                if boundary == 'inner':
+                    document = json.loads(config.read_text())
+                    document.update(per_request_timeout_seconds=0.8, invocation_timeout_seconds=1.6)
+                    config.write_text(json.dumps(document))
+                children = []
+
+                def launch(*args, **kwargs):
+                    child = real_popen(*args, **kwargs)
+                    children.append(child)
+                    communicate, first = child.communicate, True
+
+                    def communicate_at_boundary(*args, **kwargs):
+                        nonlocal first
+                        if first:
+                            first = False
+                            if boundary == 'outer':
+                                kwargs['timeout'] = 1.6  # accelerate only this real outer wait
+                            elif boundary == 'interrupted':
+                                deadline = time.monotonic() + 5
+                                while len(server.requests) < 2 and time.monotonic() < deadline:
+                                    time.sleep(0.01)
+                                self.assertEqual(len(server.requests), 2)
+                                raise KeyboardInterrupt('owned test interruption during fetch')
+                        return communicate(*args, **kwargs)
+
+                    child.communicate = communicate_at_boundary
+                    return child
+
+                stock_dir = self.base / ('stock-' + boundary)
+                expected = KeyboardInterrupt if boundary == 'interrupted' else RuntimeError
+                with patch.object(nightly_inputs.subprocess, 'Popen', side_effect=launch):
+                    with self.assertRaises(expected):
+                        nightly_inputs.prepare_fresh_stock(config, ROOT, stock_dir)
+                self.assertEqual(len(children), 1)
+                self.assertIsNotNone(children[0].returncode)
+                with self.assertRaises(ProcessLookupError):
+                    os.killpg(children[0].pid, 0)
+                count = len(server.requests)
+                self.assertEqual(count, 2, 'the deadline must interrupt an actual second fetch')
+                time.sleep(0.1)
+                self.assertEqual(len(server.requests), count)
+                self.assertTrue((stock_dir / 'record.json').is_file())
+                self.assertTrue((stock_dir / 'parent-1.log').is_file())
+                self.assertFalse((stock_dir / 'addr-current-context.json').exists())
                 self.assert_originals_unchanged()
 
 

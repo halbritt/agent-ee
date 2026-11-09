@@ -23,8 +23,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 
 import nightly_stock_prepare  # config contract shared with the child; no agent_ee import here
 
@@ -162,15 +164,49 @@ def prepare_fresh_stock(config_path: Path, worktree: Path, stock_dir: Path, *, p
     env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8',
            'PYTHONPATH': str(worktree / 'src'), 'PYTHONSAFEPATH': '1', 'PYTHONDONTWRITEBYTECODE': '1'}
     budget = 2 * config['invocation_timeout_seconds'] + 60
-    try:
-        completed = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=budget)
-    except subprocess.TimeoutExpired as error:
-        raise RuntimeError('stock preparation exceeded its bounded time') from error
-    if completed.returncode != 0:
-        detail = completed.stderr.strip().splitlines()[-1] if completed.stderr.strip() else f'exit {completed.returncode}'
+    with subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          text=True, start_new_session=True) as child:
+        failure = None
+        try:
+            stdout, stderr = child.communicate(timeout=budget)
+        except subprocess.TimeoutExpired as error:
+            failure = RuntimeError('stock preparation exceeded its bounded time')
+            raise failure from error
+        except BaseException as error:
+            failure = error
+            raise
+        finally:
+            # The producer's own timeout can leave a fetch worker behind even
+            # after this helper exits. All capture descendants inherit this group.
+            try:
+                for sig in (signal.SIGTERM, signal.SIGKILL):
+                    try:
+                        os.killpg(child.pid, sig)
+                    except ProcessLookupError:
+                        break
+                    deadline = time.monotonic() + 1
+                    while time.monotonic() < deadline:
+                        child.poll()  # reap our child; init reaps its orphaned fetches
+                        try:
+                            os.killpg(child.pid, 0)
+                        except ProcessLookupError:
+                            break
+                        time.sleep(0.01)
+                    else:
+                        continue
+                    break
+                else:
+                    raise RuntimeError('owned stock preparation group did not exit after SIGKILL')
+                child.communicate(timeout=1)
+            except Exception as cleanup_error:
+                if failure is not None:
+                    raise RuntimeError(f'{failure}; stock preparation cleanup failed: {cleanup_error}') from failure
+                raise
+    if child.returncode != 0:
+        detail = stderr.strip().splitlines()[-1] if stderr.strip() else f'exit {child.returncode}'
         raise RuntimeError(f'stock preparation failed: {detail}')
     try:
-        result = json.loads(completed.stdout, object_pairs_hook=unique_fields)
+        result = json.loads(stdout, object_pairs_hook=unique_fields)
     except ValueError as error:
         raise RuntimeError('stock preparation produced no readable result') from error
     for key in ('context_path', 'source_root'):
