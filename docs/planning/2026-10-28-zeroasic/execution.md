@@ -1,11 +1,11 @@
 # Requirements-to-board execution record — 2026-10-28
 
-Coordinator/integrator: **agent-688**. Independent gate verifier: **agent-699, Argon High**. Baseline: `9e4f241a0850e9d1e116e60727ea785609b10fc8` (includes previous fleet landing `09bd4e74`). This record activates the [campaign plan](../../research/2026-10-28-zeroasic-campaign-plan.md), preserving its engineering gates.
+Coordinator/integrator: **agent-688**. Independent gate verifier: **agent-699, Argon High**. Baseline: `9e4f241a0850e9d1e116e60727ea785609b10fc8` (includes previous fleet landing `09bd4e74`). This record activates the [campaign plan](../../history/2026-10-28-zeroasic-campaign-plan.md), preserving its engineering gates.
 
 ## Current scope and resumption — 2026-10-29
 
 Direct owner instruction: **"remove the ESP-Prog requirements"**. The
-[amended campaign plan](../../research/2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
+[amended campaign plan](../../history/2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
 excludes ESP-Prog from campaign deliverables, dispatches and acceptance gates.
 Only acquisition-applicable qualification, negative/resume evidence and shared
 regressions remain dependencies; broader AGENTEE-515/M1 closure is not required.

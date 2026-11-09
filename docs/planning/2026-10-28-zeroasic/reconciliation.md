@@ -6,7 +6,7 @@ Source inspected: 9e4f241a0850e9d1e116e60727ea785609b10fc8. Live project snapsho
 ## Campaign scope correction — 2026-10-29
 
 Direct owner instruction: **"remove the ESP-Prog requirements"**. The
-[campaign scope amendment](../../research/2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
+[campaign scope amendment](../../history/2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
 limits campaign dependencies on AGENTEE-515 and other shared recovery items to
 acquisition-applicable qualification. Their broader M1/ESP-Prog obligations and
 historical status below remain separate work, not blockers for this campaign.

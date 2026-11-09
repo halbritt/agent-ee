@@ -3,7 +3,7 @@
 Source: direct owner instructions to agent-529, 2026-10-23. The quoted change
 request below defines required behavior and acceptance, not a claim that the
 current tool implements it. Tracking: AGENTEE-472. Execution order and current
-evidence belong in the [delivery plan](telemetry-pod-delivery-plan.md).
+evidence belong in the [delivery plan](history/telemetry-pod-delivery-plan.md).
 
 The owner subsequently activated this goal:
 

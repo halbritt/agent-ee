@@ -3,11 +3,11 @@
 Drafted 2026-10-28 against agent-ee
 `09bd4e74bdb5383d4de1da3cfb329783d43dc30a`.
 Context and pinned code examples: [research report](2026-10-28-zeroasic-autonomy.md).
-[Campaign order, Plane setup and acceptance gates](2026-10-28-zeroasic-campaign-plan.md)
+[Campaign order, Plane setup and acceptance gates](../history/2026-10-28-zeroasic-campaign-plan.md)
 were added 2026-10-28. The campaign splits ZA-03 into qualification and
 composition slices so ZA-02 can consume qualified reference entries.
 
-The direct [owner scope amendment of 2026-10-29](2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
+The direct [owner scope amendment of 2026-10-29](../history/2026-10-28-zeroasic-campaign-plan.md#owner-scope-amendment--2026-10-29)
 excludes ESP-Prog from all campaign work and acceptance dependencies. References
 to M1 below mean acquisition-applicable obligations, not closure of the broader
 recovery programme. The owner's subsequent instruction to resume applies to
@@ -386,7 +386,7 @@ item is warranted only for a distinct remaining deliverable.
 
 The first integrated deliverable is ZA-02 plus ZA-10 on the validated reference
 from ZA-01 and qualified entries from ZA-03a, with ZA-05's final group gate.
-Follow the [campaign plan](2026-10-28-zeroasic-campaign-plan.md) for Plane setup,
+Follow the [campaign plan](../history/2026-10-28-zeroasic-campaign-plan.md) for Plane setup,
 implementation order and the frozen acceptance series. Tournament and
 mixed-signal research do not block that path. Broader pod execution, supplier
 uploads, orders and physical qualification keep their existing authority and

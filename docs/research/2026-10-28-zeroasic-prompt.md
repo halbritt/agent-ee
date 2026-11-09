@@ -18,6 +18,6 @@ Publication instruction, direct, same session:
 
 Deliverables: [research](2026-10-28-zeroasic-autonomy.md),
 [local work items](2026-10-28-zeroasic-work-items.md) and
-[implementation campaign plan](2026-10-28-zeroasic-campaign-plan.md).
+[implementation campaign plan](../history/2026-10-28-zeroasic-campaign-plan.md).
 These requests authorize research, local planning and Git publication; the
 documents do not report implemented features or completed board qualification.

@@ -10,7 +10,7 @@ owner-reserved. Elsewhere in
 this file, read 529 as 531, 449 as 530 and 519 and 532 as 542 for current responsibilities;
 dated decisions keep their historical names. Detailed investigation and implementation stay
 delegated. The current [delivery plan](telemetry-pod-delivery-plan.md) and
-[owner placement request](functional-block-placement-request.md) govern the work.
+[owner placement request](../functional-block-placement-request.md) govern the work.
 
 ## Target scoreboard and dispatch
 

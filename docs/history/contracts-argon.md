@@ -2,7 +2,7 @@
 
 > Historical design, review or evaluation record. Status and proposed actions
 > describe the recorded work, not the current implementation. Use the
-> [current manual](README.md) for supported contracts and commands.
+> [current manual](../README.md) for supported contracts and commands.
 
 Implemented in `src/agent_ee/findings.py` with tests in `tests/test_findings.py`.
 

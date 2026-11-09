@@ -1,5 +1,8 @@
 # Stage receipts
 
+*Status 2026-11-09: this describes existing code. Do not add receipts to new
+stages or extend this mechanism ([AGENTS.md](../AGENTS.md)).*
+
 A stage receipt records one writer-side generation step that the coordinator ran
 itself: the exact argv, the tool identity, the input and output file hashes, the exit
 status, the timing and the sandbox profile. Receipts are provenance (decisions 5 and 6 in

@@ -8,17 +8,17 @@ independent review. No production file is changed by this delivery.
 
 ## Existing boundaries
 
-[run_record.verify_records](../src/agent_ee/run_record.py) selects
+[run_record.verify_records](../../src/agent_ee/run_record.py) selects
 `candidate.verify_snapshot` when `current_source=False`. Since 2026-11-03 it
 verifies a finished run against its recorded policy and runtime fingerprints:
 a different implementation or tool on this checkout is an observation, and
 `current_host=True` restores the refusal for work continuing on the run
 (adjudication, corrections, campaigns in progress, bench transactions).
-[The CLI](../src/agent_ee/cli.py) maps `verify --snapshot-only` to this argument
+[The CLI](../../src/agent_ee/cli.py) maps `verify --snapshot-only` to this argument
 and prints `fresh` followed by the stored outcome on success. That flag is not
 an implemented non-accepting historical-integrity mode.
 
-[retained_run.snapshot](../src/agent_ee/retained_run.py) already checks the
+[retained_run.snapshot](../../src/agent_ee/retained_run.py) already checks the
 captured source inventory, completed stage identities and final candidate
 selection without observing today's policy or native runtime.
 `verify_retained` adds captured-plan and judgment-inventory custody checks.
@@ -27,10 +27,10 @@ v7 has no captured `build-plan.json`; `verify_retained` returns `None` for it.
 Its historical `accepted:true` field is retained unchanged and does not acquire
 current authority through these reads.
 
-[kicad_route_attempt.verify_state](../src/agent_ee/kicad_route_attempt.py)
+[kicad_route_attempt.verify_state](../../src/agent_ee/kicad_route_attempt.py)
 already compares installed source with the pinned checkout's `engine.SOURCE_ROOT`,
 checks the installation record's source/module identities and recomputes manifest
-drift. [Existing generation tests](../tests/test_kicad_route_generations.py)
+drift. [Existing generation tests](../../tests/test_kicad_route_generations.py)
 cover an internally healthy stale generation being refused against that source.
 Router `statemanifest.verify` itself compares installed files with their own
 manifest; it takes no explicit expected-release identity argument at inspected
@@ -95,7 +95,7 @@ the retained image inspection records the image ID and build-input digest.
 
 ## Tests and limits
 
-[test_historical_integrity_526.py](../tests/test_historical_integrity_526.py)
+[test_historical_integrity_526.py](../../tests/test_historical_integrity_526.py)
 uses real captured files and the existing public verification API, with supplied
 filesystem/runtime observations and no internal mocks. Six tests cover unchanged
 incomplete history, changed live requirements, unrelated/required policy drift,

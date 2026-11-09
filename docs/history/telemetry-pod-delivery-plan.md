@@ -2,7 +2,7 @@
 
 Revision 12 — 2026-10-23. Role assignments were removed from this plan on 2026-10-26; the campaign is held.
 
-**CURRENT DIRECTION (2026-10-24 ~03:32Z): TOOLING ONLY, NO POD ATTEMPTS.** Owner, relayed verbatim via agent-538 and chief 531 (fd230a3d@1; chief plan revision 69d407ee@2): "At this point I'm expecting the focus to be on the tooling and no attempts on the pod." Earlier owner directions, relayed by the chief: "stay focused on each incremental step, and avoid churn on non-productive areas" and "stick to the plan and achieve success on each step before proceeding". This supersedes the pod-attempt scheduling below and in [placement-routing-plan.md](placement-routing-plan.md). Both programme outcomes remain INCOMPLETE.
+**CURRENT DIRECTION (2026-10-24 ~03:32Z): TOOLING ONLY, NO POD ATTEMPTS.** Owner, relayed verbatim via agent-538 and chief 531 (fd230a3d@1; chief plan revision 69d407ee@2): "At this point I'm expecting the focus to be on the tooling and no attempts on the pod." Earlier owner directions, relayed by the chief: "stay focused on each incremental step, and avoid churn on non-productive areas" and "stick to the plan and achieve success on each step before proceeding". This supersedes the pod-attempt scheduling below and in [placement-routing-plan.md](../placement-routing-plan.md). Both programme outcomes remain INCOMPLETE.
 - Tooling milestone = AGENTEE-515 AND AGENTEE-516 accepted on simple reproducible boards. That needs correctness, native qualification, matched quality/time evidence against stock KRT v0.23.7, routing-feedback repair, bounded lifecycle, and independent review. It is not the same as pod readiness.
 - 515 is LIVE but INCOMPLETE:
   - 515 and 515r (H1-H4 repair) LANDED on main b3a1a29d as reviewed input only.
@@ -23,14 +23,14 @@ interim revision's observed results are kept in the integrator record below.
 
 ## Two required outcomes
 
-Placement/routing work now follows the chief's recorded plan [placement-routing-plan.md](placement-routing-plan.md) (AGENTEE-512..518, owner-requested 2026-10-24): an esp_prog baseline with stock KRT 0.23.7 and a KRT-mining architecture decision first, then one integrated workflow, routing-guided repair, representative pod cases, and the complete pod on a qualified release. The 485 stack and its evidence are preserved, not discarded or accepted.
+Placement/routing work now follows the chief's recorded plan [placement-routing-plan.md](../placement-routing-plan.md) (AGENTEE-512..518, owner-requested 2026-10-24): an esp_prog baseline with stock KRT 0.23.7 and a KRT-mining architecture decision first, then one integrated workflow, routing-guided repair, representative pod cases, and the complete pod on a qualified release. The 485 stack and its evidence are preserved, not discarded or accepted.
 
 Deliver a manufacturing-ready telemetry pod PCB and useful, reusable agent-ee
 capability for agent-driven PCB creation. The telemetry pod is the real-board
 acceptance case. A one-off layout correction does not complete the tool outcome;
 passing tool fixtures do not complete the PCB outcome.
 
-The full [direct owner change request](functional-block-placement-request.md)
+The full [direct owner change request](../functional-block-placement-request.md)
 defines required block behavior and placement acceptance. The [campaign process](campaign-process.md) records the historical process.
 No current agent is owner delegate or holds owner-reserved authority.
 

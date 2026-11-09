@@ -13,7 +13,7 @@ This file is the repository copy of the chief's recorded plan. Source:
 request (2026-10-24, verbatim via the chief): "make a plan, record it, share it
 with the others, plane work items and all that, make it happen". Plane items
 AGENTEE-512 (programme) and AGENTEE-513..518. The two
-programme outcomes in [telemetry-pod-delivery-plan.md](telemetry-pod-delivery-plan.md)
+programme outcomes in [telemetry-pod-delivery-plan.md](history/telemetry-pod-delivery-plan.md)
 remain required. Dependent items are backlog until their dependencies are
 accepted (the dispatcher enforces the dependencies).
 

@@ -3,9 +3,55 @@
 The original decisions below describe the bounded standalone-review release.
 The current scope/2 extension is documented in the [closed-loop overview](closed-loop.md),
 with [implementation review dispositions](closed-loop-review.md) and
-[decision provenance](closed-loop-doctrine.md). Those additions introduce explicit
+[decision provenance](history/closed-loop-doctrine.md). Those additions introduce explicit
 single-writer campaigns and empirical re-review while preserving the original
 candidate/reviewer/adjudicator information boundary.
+
+## Direction 2026-11-09: capability over machinery
+
+Direct owner instructions, 2026-11-09, verbatim, given to agent-1347 after an
+assessment of the repository the owner requested:
+
+> My guess is that the agents created a process that was overly rigid or
+> possibly robust. I can't tell which, which is where you come in.
+
+> "better than KRT" was the goal. See if we achieved it and whether the
+> bullshit is justified.
+
+> Whatever structure or guidance that lives in the repo that is causing agents
+> to over-focus on machinery needs to be excavated
+
+The assessment found no real-board comparison against stock KRT, and found
+that about a quarter of the source and about a third of the commits since
+2026-10-25 served custody, review-process or test-runner machinery. The owner
+then directed that its recommendations become Plane work items (AGENTEE-627 to
+AGENTEE-634) and that the work start.
+
+What follows is the recording agent's application of that instruction. It is
+not owner wording, and the owner can amend it.
+
+- [AGENTS.md](../AGENTS.md) is the current guidance. Progress is measured by
+  board outcomes on boards the tool was not tuned for.
+- Decision 5 in [Generator direction](#generator-direction-2026-10-17) ("The
+  evidence model is non-negotiable ... Every new stage inherits it") is shown
+  in this file as an owner quotation. On 2026-11-09 the owner was shown that
+  passage and its planned narrowing and answered, verbatim: "that's all
+  agent-authored interpretation". It is therefore not an owner directive and
+  places no obligation on new work. What new work keeps, as engineering
+  practice: record tool versions, treat a tool failure as a failure, and let
+  native checks on the saved board decide.
+- [Done requires each stage through its declared step](#done-requires-each-stage-through-its-declared-step-amends-decision-1)
+  stays true of the existing campaign code. It is not a pattern for new work:
+  new stages do not add receipts.
+- The rule that an objection to the generator direction is filed as a Plane
+  item and never made as a change is withdrawn. Decisions are revised by a
+  newer dated entry here.
+- The relayed 2026-10-22 ruling that deliberate agent forgery is outside the
+  threat model
+  ([relayed decisions](#decisions-relayed-2026-10-22-agent-519-quiz-answers-and-agent-509-relays))
+  governs. Material written to defend against agents forging records is
+  history, not design guidance.
+- Retired process documents moved to [history](history/README.md).
 
 ## ADR: accept the campaign architecture (2026-10-27, AGENTEE-556)
 
@@ -202,8 +248,8 @@ says "go" and receives a JLCPCB-ready package in which every step is
 tool-verified. The coordinator (`agent-423`) recorded the decisions; the
 [generator roadmap](generator-roadmap.md) turns them into stages, a benchmark
 ladder and Plane epics AGENTEE-78 to AGENTEE-84. The owner directive is the
-authority for these decisions. An objection is filed as a Plane item for the
-owner, not made as an edit to this section or as a change of direction in code.
+authority for these decisions. (The 2026-11-09 direction above withdrew the
+rule that an objection may only be filed as a Plane item.)
 
 Each decision below quotes the owner directive, then states what it preserves
 and what it excludes.
@@ -267,6 +313,10 @@ Excludes a placement optimizer whose own score accepts a board, and placement
 inside the routing tool.
 
 ### 5. The evidence model is non-negotiable
+
+*Status 2026-11-09: the owner states that the passage below is agent-authored
+interpretation, not owner wording. It is not a directive and new work does not
+inherit it. See the [2026-11-09 direction](#direction-2026-11-09-capability-over-machinery).*
 
 > The evidence model is non-negotiable: hashed inputs, recorded tool versions,
 > sandboxed execution, independent reviewers, adjudication gated on tool
@@ -437,6 +487,9 @@ routing decisions. Excludes a byte-identical criterion and a writer-side
 normalization requirement.
 
 ### Done requires each stage through its declared step (amends decision 1)
+
+*Status 2026-11-09: describes existing campaign code; not a pattern for new work
+([2026-11-09 direction](#direction-2026-11-09-capability-over-machinery)).*
 
 > Yes, require stage receipts for done
 

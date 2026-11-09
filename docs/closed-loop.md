@@ -90,6 +90,6 @@ used. No physical prototype qualification is claimed.
 
 [Independent review dispositions](closed-loop-review.md) record Fable and Argon's
 implementation findings and the evidence-based fixes or refusals.
-[Decision provenance](closed-loop-doctrine.md) and the
+[Decision provenance](history/closed-loop-doctrine.md) and the
 [structured decision receipt](closed-loop-decision.json) preserve the bounded
 architectural rationale; they do not enlarge the engineering claims above.

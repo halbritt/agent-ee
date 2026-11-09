@@ -154,8 +154,7 @@ artifact verification. Do not expose a shortcut as equivalent operator closure.
    missing, unsupported, malformed or failed work. Do not make an unreadable
    report an empty passing report or substitute an ideal active-device model.
 6. Exercise an applicable success, a meaningful engineering defect and execution
-   failure cases. Then perform a fresh actual agent review; record what the
-   reviewers saw and omitted. Update the scope/check/operator documentation.
+   failure cases. Update the scope/check/operator documentation.
 
 Cross-check dependencies must be explicit. The current check order is not an
 automatic dependency scheduler. New native versions/report formats require
@@ -207,13 +206,13 @@ runtime output schemas, CLI projection, tests, examples and manual.
 There is no automatic migration of accepted evidence. Declare changed criteria,
 requirements, model interpretation and exclusions; rerun the needed review.
 
-Before publishing a change, verify documentation links/commands against source,
-run checks appropriate to the change, review actual evidence/limitations, and
-preserve useful failed iterations. Record consequential decisions in
-[decisions.md](decisions.md). Keep the [acceptance index](../evidence/README.md)
-clear about which implementation and which candidate each demonstration used.
+Before publishing a change, run the tests for what you changed and check the
+documentation links and commands against source. Record an owner decision in
+[decisions.md](decisions.md) when there is one.
 
 ## Evidence packaging
+
+*Status 2026-11-09: describes existing code. Do not extend it or copy it into new work ([AGENTS.md](../AGENTS.md)).*
 
 Expanded `inputs/`, native scratch `home/`, and generated `kicad-config/` are
 ignored under `evidence/`; the complete bytes are retained in compressed archives.
@@ -233,6 +232,8 @@ than overwriting prior evidence. Restore/replay caveats and commands are in
 [evidence reproduction](reproducing-evidence.md).
 
 ## Closed-loop seams and preservation rules
+
+*Status 2026-11-09: describes existing code. Do not extend it or copy it into new work ([AGENTS.md](../AGENTS.md)).*
 
 The baseline and campaign additions are explicit interfaces with separate ownership:
 
@@ -284,6 +285,8 @@ Maintain these boundaries when extending behavior:
   valid under nested campaign operations and interruptions.
 
 ## Closed-loop test protection
+
+*Status 2026-11-09: describes existing code. Do not extend it or copy it into new work ([AGENTS.md](../AGENTS.md)).*
 
 | Test module | Observable contract |
 | --- | --- |

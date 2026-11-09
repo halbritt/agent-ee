@@ -1,9 +1,9 @@
 # Requirements-to-board implementation campaign
 
 Proposed 2026-10-28 against `2bd25070819113240148ef0196e73ba08e196a8a`.
-[Owner request](2026-10-28-zeroasic-prompt.md) ·
-[Research](2026-10-28-zeroasic-autonomy.md) ·
-[Detailed work items](2026-10-28-zeroasic-work-items.md)
+[Owner request](../research/2026-10-28-zeroasic-prompt.md) ·
+[Research](../research/2026-10-28-zeroasic-autonomy.md) ·
+[Detailed work items](../research/2026-10-28-zeroasic-work-items.md)
 
 This plan turns the research into an ordered campaign with acceptance gates.
 Plane reconciliation and implementation are future execution steps. No Plane
@@ -95,7 +95,7 @@ This is a small domain demonstration; report the sample size and supported envel
 
 When execution starts, read current repository and tracker evidence before
 dispatching work. Follow the [recovery choices](../planning/2026-10-25-recovery/recovery-plan.md)
-and [campaign process](../campaign-process.md). An old unassigned/pause snapshot
+and [campaign process](campaign-process.md). An old unassigned/pause snapshot
 or a historical green run does not establish current readiness. The accepted
 architecture in [decisions](../decisions.md) remains the implementation base:
 `build_workflow`, prepared Rust placement, the owned kicad-route adapter and the

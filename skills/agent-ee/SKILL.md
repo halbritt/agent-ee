@@ -1,9 +1,15 @@
 ---
 name: agent-ee
-description: Runs candidate-bound adversarial PCB and electrical engineering reviews with native KiCad checks, independent agent judgments, explicit evidence and correction closure. Use when reviewing a KiCad design, evaluating circuit or board defects, or verifying an authorized electrical repair.
+description: Generates KiCad boards from engineering requirements (parts, schematic, placement, routing, checks, fabrication package) and reviews existing KiCad designs with native ERC, DRC and simulation checks. Use when building a board from requirements or a captured design, or when checking a KiCad design for circuit or board defects.
 ---
 
 # agent-ee
+
+To generate a board, use `agent-ee design generate REQUIREMENTS` (requirements
+document to design statement), `agent-ee design compile` and
+`agent-ee build run PLAN --out RUN`; see the [README](../../README.md) for what
+these support today. The rest of this skill covers reviewing an existing
+design, which is one stage of the generator and the older of the two uses.
 
 Use the installed `agent-ee` CLI. Source and scope examples live at
 `~/git/agent-ee`; read its [README](../../README.md) for setup and scope authoring.

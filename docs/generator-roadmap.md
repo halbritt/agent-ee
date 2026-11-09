@@ -386,9 +386,13 @@ kicad-route's validation is diagnostic for agent-ee. Acceptance comes only from
 agent-ee's own fresh checks on the captured proposal: DRC with parity and no
 unconnected items, `copper-width/1`, and compiled routing rules (AGENTEE-63).
 
-## Obligations every new stage inherits
+## What the existing stages do
 
-From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-boundaries):
+*Status 2026-11-09: this list describes the stages built so far. It is not a
+set of obligations on new stages; see [AGENTS.md](../AGENTS.md) and the
+[2026-11-09 direction](decisions.md#direction-2026-11-09-capability-over-machinery).
+A new stage records its tool versions, fails when its tool fails, and is judged
+by native checks on the saved board. It does not add receipts or reviewers.*
 
 - Inputs are captured and hashed; a stage reads captured bytes, never a live
   checkout, catalogue or network source.
@@ -405,8 +409,6 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 - Initial reviewers are independent; only sealed coordinator check findings
   become accepted scope/2 defects.
 - The writer's output counts only after capture; its summary is not evidence.
-- A stage that cannot meet these is not a verified stage and cannot satisfy a
-  requirement.
 
 ## Licence posture
 

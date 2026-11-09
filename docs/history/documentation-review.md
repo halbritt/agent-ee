@@ -2,26 +2,26 @@
 
 This audit describes the current worktree on 2026-10-17. It updates the operator
 and maintainer manual for the scope/2 implementation without changing runtime
-code. The earlier [implementation review](closed-loop-review.md) and historical
+code. The earlier [implementation review](../closed-loop-review.md) and historical
 acceptance records remain separate evidence.
 
 ## Coverage
 
 | Surface | Authoritative documentation |
 | --- | --- |
-| Installation, prerequisites and routing | [Installation](installation.md), [reviewer profiles](reviewer-profiles.md) |
-| All eleven CLI commands, flags, exit codes and budgets | [CLI reference](cli-reference.md) |
-| Ordinary review, correction closure and continuation choice | [Operator guide](operator-guide.md) |
-| Scope fields, immutable baseline, packet ordering and migration | [Scope reference](scope-reference.md) |
-| Native checks, parameter validation and engineering limits | [Check reference](check-reference.md) |
-| Pinned producer, parser request/report, coupled metrics and bounds | [Measurement adapters](measurement-adapters.md) |
-| Results, witnesses, evidence seal and durable state schemas | [Result reference](result-reference.md) |
-| Single-writer configuration, convergence order, leases and history | [Campaign guide](campaign-guide.md) |
-| Bench samples, residual arithmetic, epochs and failure recovery | [Bench feedback](bench-feedback.md) |
-| Modules, orchestration, sandbox reads/writes and trust boundaries | [Architecture](architecture.md), [security](security.md) |
-| Refusals, partial writes and diagnostic recovery | [Troubleshooting](troubleshooting.md) |
-| Extension interfaces, tests and reproduction | [Maintainer guide](maintainer-guide.md), [evidence reproduction](reproducing-evidence.md) |
-| Invariant mapping and demonstrated limits | [Closed-loop overview](closed-loop.md), [coverage](coverage.md) |
+| Installation, prerequisites and routing | [Installation](../installation.md), [reviewer profiles](../reviewer-profiles.md) |
+| All eleven CLI commands, flags, exit codes and budgets | [CLI reference](../cli-reference.md) |
+| Ordinary review, correction closure and continuation choice | [Operator guide](../operator-guide.md) |
+| Scope fields, immutable baseline, packet ordering and migration | [Scope reference](../scope-reference.md) |
+| Native checks, parameter validation and engineering limits | [Check reference](../check-reference.md) |
+| Pinned producer, parser request/report, coupled metrics and bounds | [Measurement adapters](../measurement-adapters.md) |
+| Results, witnesses, evidence seal and durable state schemas | [Result reference](../result-reference.md) |
+| Single-writer configuration, convergence order, leases and history | [Campaign guide](../campaign-guide.md) |
+| Bench samples, residual arithmetic, epochs and failure recovery | [Bench feedback](../bench-feedback.md) |
+| Modules, orchestration, sandbox reads/writes and trust boundaries | [Architecture](../architecture.md), [security](../security.md) |
+| Refusals, partial writes and diagnostic recovery | [Troubleshooting](../troubleshooting.md) |
+| Extension interfaces, tests and reproduction | [Maintainer guide](../maintainer-guide.md), [evidence reproduction](../reproducing-evidence.md) |
+| Invariant mapping and demonstrated limits | [Closed-loop overview](../closed-loop.md), [coverage](../coverage.md) |
 
 Nine embedded Mermaid diagrams cover orchestration, sandbox information flow,
 baseline identity, campaign sequence/state, producer/parser evidence, witness
@@ -61,7 +61,7 @@ Neither reviewer wrote the documentation during this task.
 - The retained final native control still passed `verify` after documentation
   edits. Its `incomplete` outcome is expected for checks-only execution.
 
-The checker is [scripts/check_docs.py](../scripts/check_docs.py). It does not
+The checker is [scripts/check_docs.py](../../scripts/check_docs.py). It does not
 fetch external links, run the examples, render Mermaid or establish prose truth.
 Rendered build outputs are ignored local artifacts; the embedded Mermaid sources
 are the maintained diagrams.
@@ -79,7 +79,7 @@ implementation behavior. Both observations were subsequently corrected:
    parameters, and omitted `step_v` completes with the 1.0 V default. Native
    regression tests compare the measured response against the analytic RC
    response and preserve historical explicit condition spellings. See
-   [coverage](coverage.md) for identity and observation compatibility.
+   [coverage](../coverage.md) for identity and observation compatibility.
 2. **Correction:** standalone `bench-review` preserves external profiles too.
    `capture` embeds their parsed content in `candidate.json` under
    `scope.review_profile`; `bench_review` copies that scope into the new review.

@@ -149,7 +149,7 @@ specifies 0.035 mm outer copper, 0.0152 mm inner copper, two 0.2104 mm 7628
 prepreg layers and a 1.065 mm core. It contains no loss value. The separate
 [RF capture](../fixtures/telemetry-pod/rf-source-capture.json) records 7628
 prepreg permittivity 4.4; it does not supply a core permittivity or loss.
-The [later RF calculation](telemetry-pod-delivery-plan.md)'s
+The [later RF calculation](history/telemetry-pod-delivery-plan.md)'s
 `T1 = 0.04064 mm` (1.6 mil) is a calculation input,
 not authority to replace the captured 0.035 mm fabrication copper.
 

@@ -1,8 +1,9 @@
 # agent-ee manual
 
 This manual describes the current agent-ee worktree (package version 0.1.0),
-including scope/2 campaigns and empirical feedback. Package version alone does
-not identify a compatible evidence policy; recorded Python/runtime hashes do. The implementation is a Python CLI and an
+including scope/2 campaigns and empirical feedback. Guidance for agents working
+on the tool is in [AGENTS.md](../AGENTS.md); retired process documents are under
+[history](history/README.md). The implementation is a Python CLI and an
 agent discovery skill. Native KiCad files are the design authority. Review
 outputs apply to a captured candidate and declared criteria, not to an entire
 product's hardware qualification.
@@ -10,7 +11,7 @@ product's hardware qualification.
 | Task | Read |
 | --- | --- |
 | Get started with a 5-minute build and 3D preview | [Quickstart guide](quickstart.md) |
-| Operate the 7-stage build in production (staging, checkpoints, resumption, custody) | [Operator runbook](operator-runbook.md) |
+| Operate the 7-stage build in production (staging, checkpoints, resumption) | [Operator runbook](operator-runbook.md) |
 | Understand the 7-stage generative synthesis pipeline and candidate immutability | [Architecture & pipeline guide](architecture-pipeline.md) |
 | Benchmark generator, emitter, and dual-gate benchmark performance | [Benchmarking guide](benchmarking-guide.md) |
 | Resolve stage-by-stage errors (ERC, placement timeouts, unrouted nets, DRC) | [Generator troubleshooting & FAQ](troubleshooting-faq.md) |
@@ -34,7 +35,7 @@ product's hardware qualification.
 | Render top, bottom and isometric board images | [Native 3D renders](pcb-renders.md) |
 | Read the ticket-by-ticket record of implemented capabilities | [Capability log](capability-log.md) |
 | Read the independent audits and their corrective plans | [Audits](audit/README.md) |
-| Follow the reconciled recovery sequence and planned Plane backlog | [Recovery plan](planning/2026-10-25-recovery/recovery-plan.md), [finding register](planning/2026-10-25-recovery/findings.md), [backlog](planning/2026-10-25-recovery/backlog.md) |
+| Read the 2026-10-25 recovery plan (historical record, not current guidance) | [Recovery plan](planning/2026-10-25-recovery/recovery-plan.md), [finding register](planning/2026-10-25-recovery/findings.md), [backlog](planning/2026-10-25-recovery/backlog.md) |
 | Build a captured design through the seven stages to a fabrication package | [Build workflow](build-workflow.md), [system acceptance map](system-acceptance.md) |
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
@@ -72,7 +73,7 @@ product's hardware qualification.
 | Correct JLCPCB CPL midpoints and rotations against the supplier footprint | [CPL rotation](cpl-rotation.md) |
 | Estimate JLCPCB fab and assembly cost with a Basic/Extended breakdown (information, not a quote) | [JLCPCB cost estimate](jlc-cost-estimate.md) |
 
-| Gate generation "done" on a passing, hash-sealed fab package | [Fab package done gate](fab-package.md) |
+| Check and export the fabrication package | [Fab package done gate](fab-package.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
 | See how ERC coordinates and BOM variant names are guarded across KiCad 10.0.x | [KiCad report-format quirk guards](kicad-quirks.md) |
 | Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
@@ -81,9 +82,9 @@ product's hardware qualification.
 | Assess permissions, inference data exposure and trust | [Security and trust](security.md) |
 | Diagnose a refusal, incomplete run or tool failure | [Troubleshooting](troubleshooting.md) |
 | Change checks, adapters, schemas or tests | [Maintainer guide](maintainer-guide.md) |
-| Audit manual coverage, peer review and documentation checks | [Documentation review](documentation-review.md) |
+| Audit manual coverage, peer review and documentation checks | [Documentation review](history/documentation-review.md) |
 | Plan generation from an empty candidate: stages, benchmark ladder and epics | [Generator roadmap](generator-roadmap.md) |
-| Apply Zero ASIC's design automation ideas to requirements-to-board generation | [Research and code examples](research/2026-10-28-zeroasic-autonomy.md), [local work items](research/2026-10-28-zeroasic-work-items.md), [implementation campaign](research/2026-10-28-zeroasic-campaign-plan.md) |
+| Apply Zero ASIC's design automation ideas to requirements-to-board generation | [Research and code examples](research/2026-10-28-zeroasic-autonomy.md), [local work items](research/2026-10-28-zeroasic-work-items.md), [implementation campaign](history/2026-10-28-zeroasic-campaign-plan.md) |
 | Record a board's outline, stackup, keepouts and fixed connectors before generation | [Board envelope](board-envelope.md) |
 | Record coordinator-run writer-side steps and their exact applicability | [Stage receipts](stage-receipts.md) |
 | Prepare and run synthetic seeded controls/variants | [Seeded benchmark](seeded-benchmark.md) |
@@ -115,10 +116,10 @@ The following are builder records, not the current operator reference:
 
 - [Original implementation agreement](contracts.md).
 - [Fable assessment](fable-assessment.md) and [Argon assessment](argon-assessment.md).
-- [Argon module agreement](contracts-argon.md) and [integration review](integration-review-argon.md).
+- [Argon module agreement](history/contracts-argon.md) and [integration review](integration-review-argon.md).
 - [Via-query correction](via-probe-correction.md), including actual measured evidence.
-- [AGENTEE-526 historical integrity audit](AGENTEE-526-historical-integrity.md).
-- [AGENTEE-479 schematic emitter development progress](agentee-479-progress.md).
+- [AGENTEE-526 historical integrity audit](history/AGENTEE-526-historical-integrity.md).
+- [AGENTEE-479 schematic emitter development progress](history/agentee-479-progress.md).
 - [AGENTEE-492 schematic emitter development notes](agentee-492/README.md).
 - [Four-way benchmark scoring method](benchmarks/scorer-four-way-method-2026-10-22.md).
 - [AGENTEE-524 package contract](planning/2026-10-25-recovery/contracts/AGENTEE-524-package.md) and [AGENTEE-524 Part B verification](planning/2026-10-25-recovery/contracts/AGENTEE-524-partB-verification.md).

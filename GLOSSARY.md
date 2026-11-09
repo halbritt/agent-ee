@@ -1,6 +1,6 @@
 # agent-ee
 
-The language of agent-ee: a captured, checked, evidence-bound path from engineering requirements to a reviewed board, with explicit refusals at every step. Terms here name concepts, not modules; `docs/architecture.md` and `docs/decisions.md` say how and why they are built.
+The language of agent-ee, a tool that turns engineering requirements into a manufacturable KiCad board. Many terms below name the evidence and review machinery of earlier campaigns; they describe existing code and are not a model for new work (see `AGENTS.md`). Terms here name concepts, not modules; `docs/architecture.md` and `docs/decisions.md` say how and why they are built.
 
 The _Avoid_ lists name loose synonyms to keep out of prose. Existing identifiers, schema names, file names and document titles keep their names; this glossary never authorizes a rename.
 
