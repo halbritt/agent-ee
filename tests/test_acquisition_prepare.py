@@ -316,6 +316,15 @@ class AcquisitionPreparationTests(unittest.TestCase):
         self.assertEqual(report['accounting']['obligations']['judgment'], 14)
         self.assertEqual((inputs / 'analysis/geometry_model.py').read_bytes(),
                          (BASE / 'analysis/geometry_model.py').read_bytes())
+        from agent_ee import qualification
+        spec_raw = (inputs / 'spec.md').read_bytes()
+        verified_record = spec_record.verify((inputs / 'spec-record.json').read_bytes(), spec_raw)
+        scope, receipts = requirement_map.account_requirements(
+            storage.read_json(inputs / 'requirement-map.json'), verified_record, spec_raw,
+            files=requirement_map.input_inventory(inputs), inputs=inputs,
+            obligations=requirement_map.load_obligations((inputs / 'obligations.json').read_bytes(),
+                                                         verified_record, spec_raw))
+        qualification.manufacturing_coverage(storage.read_json(out / 'build-plan.json'), scope, receipts)
 
     def test_unknown_missing_or_duplicate_review_source_reference_refuses(self):
         path = ROOT / 'fixtures/acquisition-typed/overlay.json'

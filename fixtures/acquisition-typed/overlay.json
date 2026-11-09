@@ -94,6 +94,14 @@
      ]
     },
     "stage": "verification"
+   },
+   {
+    "id": "roundtrip",
+    "kind": "fab_roundtrip",
+    "params": {
+     "package_check": "fab"
+    },
+    "stage": "verification"
    }
   ],
   "params": {
@@ -364,7 +372,8 @@
       "dfm",
       "fab-export",
       "cpl",
-      "fab"
+      "fab",
+      "roundtrip"
      ],
      "id": "ACQ-DELIV-1-FILES",
      "mode": "checks"

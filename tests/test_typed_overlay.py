@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 POD = ROOT / 'fixtures/telemetry-pod'
 ACQUISITION_OVERLAY = ROOT / 'fixtures/acquisition-typed/overlay.json'
 RETAINED = Path(os.environ.get('AGENT_EE_ACQUISITION_INPUTS', ROOT / 'build/acquisition-release/inputs'))
+PLAN = Path(os.environ.get('AGENT_EE_ACQUISITION_PLAN', RETAINED.parent / 'build.json'))
 CPL_SOURCE = Path(os.environ.get('AGENT_EE_ACQUISITION_CPL_INPUTS', ROOT / 'build/acquisition-release/cpl-inputs'))
 TEXT_SOURCE = Path(os.environ.get('AGENT_EE_ACQUISITION_TEXT_INPUTS', ROOT / 'build/acquisition-release/manufacturer-text'))
 # The committed overlay pins agent-566's cpl-inputs-rev3 (24 rev2 files + polarity/C83152.polarity.json).
@@ -307,7 +308,8 @@ class PreservationTests(PodOverlayTests):
                          {k: v for k, v in second['derived'].items() if k != 'added_inputs'})
 
 
-@unittest.skipUnless((RETAINED / 'spec.md').exists() and (CPL_SOURCE / 'assembly-profile.json').exists()
+@unittest.skipUnless(PLAN.is_file() and (RETAINED / 'spec.md').exists()
+                     and (CPL_SOURCE / 'assembly-profile.json').exists()
                      and (TEXT_SOURCE / 'manifest.json').exists(),
                      'retained acquisition inputs or additive CPL/text captures are not present on this host')
 class AcquisitionOverlayTests(unittest.TestCase):
@@ -338,11 +340,24 @@ class AcquisitionOverlayTests(unittest.TestCase):
                              ['obligations.json'] + sorted(at + '/' + n for at, declaration in
                                  overlay['added_inputs'].items() for n in declaration['files']))
             derived_map = read_json(derived / 'requirement-map.json')
+            from agent_ee import qualification, requirement_map
+            spec_raw = (derived / 'spec.md').read_bytes()
+            record = verify((derived / 'spec-record.json').read_bytes(), spec_raw)
+            scope, receipts = requirement_map.account_requirements(
+                derived_map, record, spec_raw,
+                files=requirement_map.input_inventory(derived),
+                inputs=derived,
+                obligations=load_obligations((derived / 'obligations.json').read_bytes(), record, spec_raw))
+            qualification.manufacturing_coverage({**read_json(PLAN), 'schema': 'agent-ee.build-plan/2'},
+                                                 scope, receipts)
             deliv = next(e for e in derived_map['requirements'] if e['id'] == 'ACQ-DELIV-1')
             ids = [c['id'] for c in deliv['spans'][0]['mapping']['checks']]
-            self.assertEqual(ids[-3:], ['fab-export', 'cpl', 'fab'])
+            self.assertEqual(ids[-4:], ['fab-export', 'cpl', 'fab', 'roundtrip'])
             fab = next(c for c in deliv['spans'][0]['mapping']['checks'] if c['id'] == 'fab')
             self.assertEqual(fab['params']['assembly_profile'], 'cpl/assembly-profile.json')
+            roundtrip = next(c for c in deliv['spans'][0]['mapping']['checks'] if c['id'] == 'roundtrip')
+            self.assertEqual(roundtrip['kind'], 'fab_roundtrip')
+            self.assertEqual(roundtrip['params'], {'package_check': 'fab'})
             cpl = next(c for c in deliv['spans'][0]['mapping']['checks'] if c['id'] == 'cpl')
             self.assertEqual(cpl['params']['polarity_evidence'], ['cpl/polarity/C83152.polarity.json'])
             self.assertEqual((derived / 'cpl/polarity/C83152.polarity.json').read_bytes(),
