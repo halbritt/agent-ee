@@ -20,10 +20,10 @@ that guidance steering agents toward process machinery be removed
 | [AGENTEE-526-historical-integrity.md](AGENTEE-526-historical-integrity.md) | Integrity record for historical evidence |
 | [agentee-479-progress.md](agentee-479-progress.md) | Progress file of one work item |
 
-The reviewer-class rule in the delivery plan ("reviewer class differs from
-implementer") was written by an agent and labelled as an owner rule; the
+The delivery plan calls "reviewer class differs from implementer" an owner
+rule without quoting the owner; the
 [2026-10-25 process audit](../audit/2026-10-25-process-convergence.md) records
-that. It is not an owner rule.
+that. Whether it is a standing owner rule is for the owner to say.
 
 Other dated records stay where they are because tests or scripts read them:
 `docs/planning/`, `docs/evaluation-plan.md`, `docs/qualification/` and
