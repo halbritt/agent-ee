@@ -27,6 +27,9 @@ BUDGET_S = int(os.environ.get('KRT_BENCH_BUDGET_S', 900))
 LOCK_PREFIXES = ('J', 'P', 'CN', 'CON', 'USB', 'H', 'MH', 'SW')
 SEARCH = {'seeds': [{'seed': i, 'start': 'clustered'} for i in range(4)],
           'steps_per_seed': 100000, 'shortlist': 4}   # design_compile.py defaults
+# Secondary setting, the one documented in docs/benchmarks/placement-job-2026-10-24.md.
+SEARCH_B = {'seeds': [{'seed': i, 'start': 'scattered' if i < 6 else 'clustered'} for i in range(12)],
+            'steps_per_seed': 10000, 'shortlist': 6}
 
 
 def sha256(path):
@@ -258,7 +261,7 @@ def krt_route(board_in, out_dir, rules_board):
     return record
 
 
-def agent_ee_job(board_in, rules_board, groups, tag, out_dir):
+def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
     """agent-ee place run in the CI image (ae-ci-exec), where its router checkout lives."""
     stage = STAGE / tag
     if stage.exists():
@@ -277,7 +280,7 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir):
     config = {'schema': 'agent-ee.placement-job-config/1', 'budget_s': BUDGET_S,
               'inputs': {key: {'path': str(IN_IMAGE / tag / 'inputs' / value), 'sha256': sha256(inputs / value)}
                          for key, value in names.items()},
-              'search': SEARCH, 'router': {'checkout': '/opt/kicad-route'}}
+              'search': search, 'router': {'checkout': '/opt/kicad-route'}}
     write_json(stage / 'config.json', config)
     record = run(['ae-ci-exec', REPO, '--', 'python3', '-m', 'agent_ee.cli', 'place', 'run',
                   IN_IMAGE / tag / 'config.json', '--out', IN_IMAGE / tag / 'job'],
@@ -385,9 +388,9 @@ def krt_place(place_in, groups_path, out_dir):
     order = []
     if judge.is_file():
         named = json.loads(judge.read_text())
-        record['judge'] = named
-        found = re.findall(r's(\d+)\.kicad_pcb', json.dumps(named))
-        order = [int(s) for s in found] or [int(s) for s in named.get('seeds', []) if isinstance(s, int)]
+        record['judge'] = {key: named.get(key) for key in ('judge', 'illegal', 'illegal_why', 'refused')}
+        order = [int(seed) for seed in named.get('judge', [])]
+        record['kept_by'] = 'first seed named in judge.json'
     if not order:                                            # fallback: lowest reported cost
         costs = []
         for path in out_dir.glob('s*.json'):
@@ -410,15 +413,18 @@ def place_arm(args):
     norm = root / 'norm' / f'{name}.kicad_pcb'
     place_in = root / f'place-in{suffix}' / norm.name
     groups_path = place_in.parent / 'groups.json'
-    arm = 'place' + suffix
+    arm = 'place' + suffix + ('-searchB' if args.search_b else '') + (f'-seeds{args.seed_offset}' if args.seed_offset else '')
+    search = SEARCH_B if args.search_b else SEARCH
+    if args.seed_offset:                                     # spread: the same search on other seeds
+        search = dict(search, seeds=[dict(row, seed=row['seed'] + args.seed_offset) for row in search['seeds']])
     placed = {}
-    if 'krt' in args.tools:
+    if 'krt' in args.tools and arm == 'place' + suffix:      # the variants change only agent-ee's side
         record = krt_place(place_in, groups_path, root / 'runs' / f'{arm}-krt')
         write_json(root / 'results' / f'{arm}-krt-placement.json', {'board': name, 'run': record})
         placed['krt'] = record
     if 'agent-ee' in args.tools:
         record = agent_ee_job(place_in, norm, json.loads(groups_path.read_text()), f'{name}-{arm}',
-                              root / 'runs' / f'{arm}-agent-ee')
+                              root / 'runs' / f'{arm}-agent-ee', search)
         result(root, name, arm, 'agent-ee-own-route', record, norm)     # agent-ee's own routed result
         placed['agent-ee'] = record
     for tool, record in placed.items():                      # same stock KRT router on both placements
@@ -438,6 +444,31 @@ def place_arm(args):
                 'placement_only_score': score(bare, norm, root / 'score' / f'{key}-placement')})
 
 
+def krt_spread(args):
+    """Route every seed KRT's placer wrote (not only the kept one) with stock KRT: the seed spread."""
+    name, suffix = args.name, '-nopours' if args.no_pours else ''
+    root = RUNS / 'boards' / name
+    norm = root / 'norm' / f'{name}.kicad_pcb'
+    for placed in sorted((root / 'runs' / f'place{suffix}-krt').glob('s*.kicad_pcb'), key=lambda p: int(p.stem[1:])):
+        key = f'place{suffix}-krt-seed{placed.stem[1:]}-then-krt-route'
+        bare = root / 'runs' / key / 'placement' / norm.name
+        edit_board(placed, bare, strip=True)
+        result(root, name, f'place{suffix}-spread', f'krt-seed{placed.stem[1:]}-then-krt-route',
+               krt_route(bare, root / 'runs' / key, norm), norm)
+
+
+def baseline(args):
+    """Score the unrouted routing-arm input, so pre-existing findings can be told from new ones."""
+    root = RUNS / 'boards' / args.name
+    norm = root / 'norm' / f'{args.name}.kicad_pcb'
+    for suffix in ('', '-nopours'):
+        board = root / f'route-in{suffix}' / norm.name
+        if board.is_file():
+            write_json(root / 'results' / f'baseline-route-in{suffix}.json',
+                       {'board': args.name, 'arm': 'route' + suffix, 'tool': 'unrouted input',
+                        'score': score(board, norm, root / 'score' / f'baseline-route-in{suffix}')})
+
+
 def rescore(_args):
     """Add the score under the project file the tool itself wrote beside its output, where one exists.
 
@@ -448,7 +479,7 @@ def rescore(_args):
         output = (data.get('run') or {}).get('output')
         if not output or 'score_tool_rules' in data or not Path(output).with_suffix('.kicad_pro').is_file():
             continue
-        if 'krt' not in data['tool'] or data['tool'].startswith('agent-ee-own'):
+        if 'krt' not in data.get('tool', '') or data['tool'].startswith('agent-ee-own'):
             continue
         data['score_tool_rules'] = score(output, output, path.parents[1] / 'score' / (path.stem + '-tool-rules'))
         write_json(path, data)
@@ -479,7 +510,8 @@ def summary(_args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
-    for name, func in (('prep', prep), ('route', route_arm), ('place', place_arm), ('summary', summary)):
+    for name, func in (('prep', prep), ('baseline', baseline), ('route', route_arm), ('place', place_arm),
+                       ('krt-spread', krt_spread), ('summary', summary)):
         p = sub.add_parser(name)
         p.set_defaults(func=func)
         if name != 'summary':
@@ -487,6 +519,9 @@ def main():
             p.add_argument('--no-pours', action='store_true', help='the zone-fallback variant')
         if name == 'prep':
             p.add_argument('source')
+        if name == 'place':
+            p.add_argument('--search-b', action='store_true', help="agent-ee only: the secondary search setting")
+            p.add_argument('--seed-offset', type=int, default=0, help='agent-ee only: add to every seed number')
         if name in ('route', 'place'):
             p.add_argument('--tools', nargs='+', default=['krt', 'agent-ee'], choices=['krt', 'agent-ee'])
     args = parser.parse_args()
