@@ -44,12 +44,19 @@ image mounts the checkout) and copied to the output directory afterwards.
 B=benchmarks/krt-matched/bench.py
 S=~/.cache/agent-ee-krt-bench
 python3 $B prep  NAME $S/<source from boards.json>   # normalize, strip, lock, unplace
+python3 $B baseline NAME                             # score the unrouted input
 python3 $B route NAME                                # routing arm, both tools
 python3 $B place NAME                                # placement arm, both tools
 python3 $B summary                                   # table + summary.json
 # zone fallback, only for a board agent-ee refused because of its pours:
 python3 $B prep NAME SOURCE --no-pours && python3 $B route NAME --no-pours && python3 $B place NAME --no-pours
 ```
+
+Optional extras: `krt-spread NAME` routes every seed KRT's placer wrote;
+`place NAME --tools agent-ee --seed-offset N` repeats agent-ee's search on
+other seeds; `place NAME --tools agent-ee --search-b` uses the search setting
+of `docs/benchmarks/placement-job-2026-10-24.md` (12 seeds, 10,000 steps,
+shortlist 6).
 
 `--tools krt` or `--tools agent-ee` reruns one side. `KRT_BENCH_BUDGET_S`
 (default 900) is the wall-clock budget of each routing or placement run.
@@ -76,7 +83,7 @@ Nothing is keyed on a board. Every rule below applies to every board.
   --emit-intent` then `place_simple.py` with its default seeds (`--jobs 1`),
   keeping the first seed its `judge.json` names.
 - **agent-ee**: `place run` with paths and hashes, the groups file, an intent
-  holding only the schema line and a fixed pose per locked footprint, the
+  holding only the schema line and a fixed pose per locked, named footprint, the
   design compiler's default search (4 clustered seeds, 100,000 steps,
   shortlist 4), `router.checkout` and the budget. No `router.*` option.
 - **Placement arm routing**: both chosen placements are stripped of copper
@@ -85,6 +92,10 @@ Nothing is keyed on a board. Every rule below applies to every board.
   tools; reported separately.
 - **Score**: `kicad-cli pcb drc --format json --severity-all --refill-zones`,
   plus via count and track length read with pcbnew, plus wall-clock time.
+  KRT outputs get a second score beside the project file KRT wrote
+  (`score_tool_rules`), because KRT lowers rule minimums to what it routed.
+- **Refusal**: when `place run` refuses a routing-arm board, `kicad-route run`
+  is run directly with the adapter's base flags as a labelled secondary cell.
 
 ## Limits
 
