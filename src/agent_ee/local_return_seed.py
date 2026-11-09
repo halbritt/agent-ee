@@ -391,9 +391,6 @@ def produce(candidate_dir, destination, *, expected_inputs, mechanics_binding, p
         # Only authenticated acquisition revisions may select the historical loops.
         model = recipe.get('model', {})
         has_loops = mechanics.known_revision(recipe['declaration']['sources']['analysis/geometry-model.json'])
-        current = source
-        baseline_raw = local._report_bytes(current)
-        baseline = strict_json(baseline_raw)
         loops = None
         if has_loops:
             try:
@@ -404,8 +401,23 @@ def produce(candidate_dir, destination, *, expected_inputs, mechanics_binding, p
             record['loops'] = loops
             current = Path(loops['output'])
             local.verify_seed(current / FILES[0], loops, clock=clock, cancel_dir=cancel_dir)
+            baseline_dir = current
             baseline_raw = local._report_bytes(current)
             baseline = strict_json(baseline_raw)
+        else:
+            current = source
+            baseline_dir = destination / 'baseline'
+            baseline_dir.mkdir()
+            for name, raw in _capture(source).items():
+                if raw is not None:
+                    (baseline_dir / name).write_bytes(raw)
+            baseline, baseline_execution = drc(baseline_dir / FILES[0], baseline_dir,
+                                               clock=clock, cancel_dir=cancel_dir)
+            baseline_sha = local._raw_report(baseline_dir, baseline, baseline_execution)
+            if not local._legal(baseline):
+                raise JobRefusal('local routing: fresh baseline has forbidden native DRC findings')
+            record['baseline'] = dict(execution=baseline_execution, report_sha256=baseline_sha)
+            baseline_raw = local._report_bytes(baseline_dir)
         captured = _capture(current)
         board = captured[FILES[0]]
 
@@ -438,7 +450,7 @@ def produce(candidate_dir, destination, *, expected_inputs, mechanics_binding, p
         if loops is not None:
             local.verify_seed(trial / FILES[0], loops, clock=clock, cancel_dir=cancel_dir)
         if (_capture(trial) != expected or _capture(current) != captured
-                or local._report_bytes(current) != baseline_raw):
+                or local._report_bytes(baseline_dir) != baseline_raw):
             raise JobRefusal('local routing: reservation/source/report drift')
         pending = destination / '.accepted'
         shutil.copytree(trial, pending)
@@ -471,7 +483,9 @@ def verify(board_path, record, *, clock, cancel_dir=None):
     import importlib
     try:
         routing = importlib.import_module("agent_ee.acquisition.local_routing")
-        if hasattr(routing, "verify"):
+        if hasattr(routing, "verify") and (
+                record.get("schema") != SCHEMA
+                or getattr(routing.verify, "__module__", None) != routing.__name__):
             return routing.verify(board_path, record, clock=clock, cancel_dir=cancel_dir)
     except (ImportError, ModuleNotFoundError, AttributeError):
         pass
@@ -495,7 +509,15 @@ def verify(board_path, record, *, clock, cancel_dir=None):
         if record['loops'].get('reference', local.ORIGINAL_REFERENCE) != power_reference(record['recipe']):
             raise JobRefusal('local routing: loop electrical reference differs from captured mechanics')
         loops = local.verify_seed(board_path, record['loops'], clock=clock, cancel_dir=cancel_dir)
-    prior = _capture(Path(record['loops']['output'])) if 'loops' in record and record['loops'] else _capture(source)
+        prior_dir = Path(record['loops']['output'])
+    else:
+        prior_dir = receipt.parent / 'baseline'
+        baseline_rec = record.get('baseline')
+        if (not isinstance(baseline_rec, dict)
+                or _identity(_capture(prior_dir)) != record['inputs']
+                or _sha(local._report_bytes(prior_dir)) != baseline_rec.get('report_sha256')):
+            raise JobRefusal('local routing: retained baseline/report changed')
+    prior = _capture(prior_dir)
     expected = prior[FILES[0]]
     ground_check = None
     model = record['recipe']['model']
@@ -503,8 +525,7 @@ def verify(board_path, record, *, clock, cancel_dir=None):
     if (policy is not None) != ('ground_ties' in record):
         raise JobRefusal('local routing: ground-tie receipt coverage differs')
     if policy is not None:
-        loops_out = Path(record['loops']['output']) if 'loops' in record and record['loops'] else source
-        expected, replayed = seed_ground_ties(loops_out / FILES[0], expected, policy)
+        expected, replayed = seed_ground_ties(prior_dir / FILES[0], expected, policy)
         if replayed != record['ground_ties']:
             raise JobRefusal('local routing: generated ground-tie provenance changed')
         ground_check = ground.verify(board_path, record['ground_ties'])
