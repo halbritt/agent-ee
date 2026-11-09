@@ -25,6 +25,7 @@ import sys
 import uuid
 
 import nightly_evidence
+import nightly_inputs
 
 
 DEFAULT_STATE_DIR = Path.home() / '.local/share/agent-ee-full-suite'
@@ -291,7 +292,7 @@ def completed_problems(log_path: Path, exit_code: int) -> dict[str, str]:
 
 
 def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int,
-                  attempt_id: str, runner: str) -> dict[str, str]:
+                  attempt_id: str, runner: str, input_manifest: Path | None = None) -> dict[str, str]:
     """Run the installed runner once; a complete verdict and agreeing exit establish completion.
 
     The installed ae-ci-exec offers an ordinary command/exit/log contract: it
@@ -326,6 +327,11 @@ def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int,
         'started_at': datetime.now(timezone.utc).isoformat(),
         'completion': 'started',
     }
+    evidence_dir = run_dir / 'native'
+    if input_manifest is not None:
+        receipt['input_manifest'] = str(input_manifest)
+        receipt['input_manifest_sha256'] = nightly_inputs.digest_file(input_manifest)
+        receipt['native_evidence_dir'] = str(evidence_dir)
     write_json(run_dir / 'execution.json', receipt)
     try:
         if run_dir.resolve().is_relative_to(worktree.resolve()):
@@ -333,6 +339,14 @@ def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int,
         if log_path.exists() or log_path.is_symlink():
             raise RuntimeError('suite log already exists before this attempt')
         env = dict(os.environ, AE_CI_WEIGHT=str(weight), AE_CI_KEEP_TMP='1')
+        # An ambient manifest/evidence selection must never leak into an attempt that did not select one.
+        env.pop('AE_CI_INPUT_MANIFEST', None)
+        env.pop('AE_CI_EVIDENCE_DIR', None)
+        if input_manifest is not None:
+            if evidence_dir.exists():
+                raise RuntimeError('native evidence directory already exists before this attempt')
+            evidence_dir.mkdir()
+            env.update(AE_CI_INPUT_MANIFEST=str(input_manifest), AE_CI_EVIDENCE_DIR=str(evidence_dir))
         with log_path.open('w', encoding='utf-8') as output:
             with subprocess.Popen(command, env=env,
                                   stdout=output, stderr=subprocess.STDOUT, text=True, start_new_session=True) as proc:
@@ -352,6 +366,17 @@ def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int,
         except RuntimeError as error:
             receipt['incomplete_reason'] = str(error)
             raise
+        if input_manifest is not None:
+            content = log_path.read_bytes()
+            image_ids = sorted(set(re.findall(r'ae-ci-exec: image (sha256:[0-9a-f]{64})',
+                                              content.decode('utf-8', errors='replace'))))
+            try:
+                receipt['input_receipt'] = nightly_inputs.bind_receipt(
+                    content, manifest=input_manifest, evidence_dir=evidence_dir, commit=receipt['commit'],
+                    tree=receipt['tree'], runner_sha256=receipt['runner_sha256'], image_ids=image_ids)
+            except (OSError, ValueError) as error:
+                receipt['incomplete_reason'] = f'native input receipt not bound: {error}'
+                raise RuntimeError(receipt['incomplete_reason']) from error
         receipt['problem_count'] = len(problems)
         receipt['full_suite'] = True
         receipt['completion'] = 'complete'
@@ -388,9 +413,9 @@ def stop_suite(process: subprocess.Popen) -> None:
 def import_baseline(root: Path, state_dir: Path, selection_file: Path) -> int:
     """Record one reviewed gate's original completion; never execute or publish.
 
-    The installed runner writes no native input receipt the controller could
-    read, so the selection's input_manifest_sha256 is recorded as the reviewer's
-    explicit identity rather than cross-checked against a companion record.
+    The gate must carry the runner's native input receipt bound by execute_suite;
+    the selection's input_manifest_sha256 is cross-checked against that binding,
+    not accepted as reviewer attestation.
     """
     state_dir.mkdir(parents=True, exist_ok=True)
     with (state_dir / 'job.lock').open('a') as lock_file:
@@ -432,6 +457,10 @@ def import_baseline(root: Path, state_dir: Path, selection_file: Path) -> int:
             problems = parse_problems_from_log(log)
             if receipt.get('problem_count') != len(problems) or receipt.get('exit_code') != (1 if problems else 0):
                 raise ValueError('gate verdict/count/exit disagree')
+            binding = receipt.get('input_receipt')
+            if not isinstance(binding, dict) or receipt.get('input_manifest_sha256') != binding.get('manifest_sha256'):
+                raise ValueError('gate has no bound native input receipt; a full gate requires selected inputs')
+            nightly_inputs.verify_bound_receipt(binding, manifest_sha256=selection['input_manifest_sha256'])
             run_dir = state_dir / 'runs' / ('import-' + str(uuid.uuid4()))
             run_dir.mkdir(parents=True)
             comp = compare_problems({}, problems)
@@ -458,10 +487,13 @@ def import_baseline(root: Path, state_dir: Path, selection_file: Path) -> int:
 
 
 def qualify_gate(root: Path, run_dir: Path, commit: str, tree: str, runner: str,
-                 weight: int, jobs: int, repo: str, skip_gh_status: bool) -> int:
+                 weight: int, jobs: int, repo: str, skip_gh_status: bool,
+                 input_manifest: Path | None = None, stock_config: Path | None = None) -> int:
     """Capture one candidate full gate before landing; baseline import is separate."""
     created = False
     try:
+        if input_manifest is None:
+            raise ValueError('full qualification requires an explicit --input-manifest')
         if (weight < 1 or jobs < 1 or git_output(root, 'rev-parse', 'HEAD') != commit
                 or git_output(root, 'rev-parse', 'HEAD^{tree}') != tree
                 or git_output(root, 'status', '--porcelain', '--untracked-files=all', '--ignored=matching')):
@@ -474,9 +506,10 @@ def qualify_gate(root: Path, run_dir: Path, commit: str, tree: str, runner: str,
         write_json(run_dir / 'attempt.json', {'schema': 'agent-ee.nightly-attempt/1',
             'attempt_id': attempt, 'commit': commit, 'tree': tree, 'run_dir': str(run_dir),
             'started_at': datetime.now(timezone.utc).isoformat(), 'purpose': 'pre-landing full qualification'})
+        input_manifest = prepare_inputs(input_manifest, stock_config, root, run_dir)
         if not skip_gh_status:
             publish_github_status(repo, commit, 'pending', 'Native full qualification in progress; no complete verdict yet')
-        problems = execute_suite(root, run_dir, weight, jobs, attempt, runner)
+        problems = execute_suite(root, run_dir, weight, jobs, attempt, runner, input_manifest)
         receipt = json.loads((run_dir / 'execution.json').read_text())
         write_json(run_dir / 'problem-inventory.json', {'commit': commit, 'tree': tree, 'problems': problems})
         reporting = {'required': not skip_gh_status, 'published': False}
@@ -492,6 +525,21 @@ def qualify_gate(root: Path, run_dir: Path, commit: str, tree: str, runner: str,
                 'timestamp': datetime.now(timezone.utc).isoformat()})
         print(f'Full qualification failed: {error}', file=sys.stderr)
         return 1
+
+
+def prepare_inputs(input_manifest: Path | None, stock_config: Path | None, worktree: Path, run_dir: Path) -> Path | None:
+    """Refresh stock for this selected attempt and return the manifest the runner receives.
+
+    Runs only when a native attempt is about to execute (never for unchanged-main
+    or reporting retries). Any failure raises before native work; the controller
+    retains the reason and advances nothing.
+    """
+    if stock_config is None:
+        return input_manifest
+    if input_manifest is None:
+        raise ValueError('stock preparation requires a selected --input-manifest to rebind')
+    prepared = nightly_inputs.prepare_fresh_stock(stock_config, worktree, run_dir / 'stock')
+    return nightly_inputs.rebind_manifest(input_manifest, run_dir / 'input-manifest.json', prepared)
 
 
 def report_run(state: dict, state_dir: Path, repo: str, skip_plane: bool, skip_gh_status: bool,
@@ -548,6 +596,8 @@ def run_nightly_suite(
     max_retained_runs: int | None = None,
     max_retained_bytes: int | None = None,
     plane_assignee: str | None = None,
+    input_manifest: Path | None = None,
+    stock_config: Path | None = None,
 ) -> int:
     """Run moved main once; retain completed tests separately from reporting.
 
@@ -593,6 +643,9 @@ def run_nightly_suite(
             prepare_worktree(root, selected_worktree, origin_head)
             run_dir = state_dir / 'runs' / f'{run_id}-{origin_head[:8]}'
             run_dir.mkdir(parents=True)
+            # Fresh stock only now: lock held, main moved, reporting complete, no unresolved attempt,
+            # exact source checked out. A failure here leaves no marker and starts no native work.
+            selected_manifest = prepare_inputs(input_manifest, stock_config, selected_worktree, run_dir)
             attempt_id = str(uuid.uuid4())
             active = {'schema': 'agent-ee.nightly-attempt/1', 'attempt_id': attempt_id,
                       'commit': origin_head, 'tree': git_output(selected_worktree, 'rev-parse', 'HEAD^{tree}'),
@@ -604,7 +657,7 @@ def run_nightly_suite(
             if not skip_gh_status:
                 publish_github_status(repo, origin_head, 'pending', 'Native full suite in progress; no complete verdict yet')
             print(f'Starting full suite run on {origin_head[:8]} (weight={weight}, jobs={jobs})...')
-            new_problems = execute_suite(selected_worktree, run_dir, weight, jobs, attempt_id, runner)
+            new_problems = execute_suite(selected_worktree, run_dir, weight, jobs, attempt_id, runner, selected_manifest)
             finish_time = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
             comp = compare_problems(state.get('last_problems', {}), new_problems, state.get('unexecuted_problems', {}))
             comp['baseline'] = not state
@@ -692,6 +745,10 @@ def main(argv: list[str] | None = None) -> int:
     gate_parser.add_argument('--jobs', type=int, default=2)
     gate_parser.add_argument('--skip-gh-status', action='store_true')
     gate_parser.add_argument('--repo', default='halbritt/agent-ee')
+    gate_parser.add_argument('--input-manifest', required=True,
+                             help='Selected agent-ee.native-inputs/1 manifest passed to the runner as AE_CI_INPUT_MANIFEST')
+    gate_parser.add_argument('--stock-config', default=None,
+                             help='Optional agent-ee.nightly-stock-config/1; refreshes the stock context for this attempt')
 
     for p in (parser, run_parser):
         p.add_argument('--force', action='store_true', help='Force run even if origin/main has not moved')
@@ -714,6 +771,10 @@ def main(argv: list[str] | None = None) -> int:
                        help='Optional: refuse a new native attempt at this retained run count (default: no limit)')
         p.add_argument('--max-retained-bytes', type=int, default=None,
                        help='Optional: refuse a new native attempt at this retained byte count; no automatic deletion')
+        p.add_argument('--input-manifest', default=None,
+                       help='Selected agent-ee.native-inputs/1 manifest passed to the runner as AE_CI_INPUT_MANIFEST')
+        p.add_argument('--stock-config', default=None,
+                       help='Optional agent-ee.nightly-stock-config/1; refreshes the stock context before a new native attempt')
 
     args = parser.parse_args(argv)
     plane_assignee = getattr(args, 'plane_assignee', None)
@@ -724,7 +785,9 @@ def main(argv: list[str] | None = None) -> int:
         return import_baseline(root, Path(args.state_dir).expanduser().resolve(), Path(args.selection))
     if args.subcommand == 'qualify':
         return qualify_gate(root, Path(args.evidence_dir).expanduser().resolve(), args.commit, args.tree,
-                            args.runner, args.weight, args.jobs, args.repo, args.skip_gh_status)
+                            args.runner, args.weight, args.jobs, args.repo, args.skip_gh_status,
+                            Path(args.input_manifest).expanduser().resolve(),
+                            Path(args.stock_config).expanduser().resolve() if args.stock_config else None)
     state_dir = Path(args.state_dir).expanduser().resolve()
     worktree_dir = Path(args.worktree).expanduser().resolve()
 
@@ -744,6 +807,8 @@ def main(argv: list[str] | None = None) -> int:
         max_retained_runs=args.max_retained_runs,
         max_retained_bytes=args.max_retained_bytes,
         plane_assignee=plane_assignee,
+        input_manifest=Path(args.input_manifest).expanduser().resolve() if args.input_manifest else None,
+        stock_config=Path(args.stock_config).expanduser().resolve() if args.stock_config else None,
     )
 
 

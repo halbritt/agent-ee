@@ -357,7 +357,7 @@ class NightlyLifecycleTests(unittest.TestCase):
 
     def test_imported_baseline_preserves_gate_time_without_native_execution_or_reporting(self):
         with nightly_fixture() as case:
-            self.assertEqual(self.run_case(case, initialize_baseline=True), 0)
+            self.assertEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest']), 0)
             gate = next((case['state_dir'] / 'runs').iterdir())
             receipt = json.loads((gate / 'execution.json').read_text())
             manifest = nightly_full_suite.nightly_evidence.write_manifest(gate)
@@ -366,7 +366,8 @@ class NightlyLifecycleTests(unittest.TestCase):
                 'schema': 'agent-ee.baseline-import/1', 'gate_directory': str(gate),
                 'commit': receipt['commit'], 'tree': receipt['tree'],
                 'output_manifest_sha256': nightly_full_suite.nightly_evidence.digest(manifest),
-                'input_manifest_sha256': 'b' * 64, 'review_reference': 'owned-test-review@1'}))
+                'input_manifest_sha256': nightly_full_suite.nightly_inputs.digest_file(case['manifest']),
+                'review_reference': 'owned-test-review@1'}))
             before = (case['base'] / 'runner-args').read_bytes()
             gh_before = (case['base'] / 'gh-calls').read_bytes()
             imported = case['base'] / 'imported-state'
@@ -462,6 +463,75 @@ class NightlyLifecycleTests(unittest.TestCase):
             self.assertEqual(receipt['completion'], 'complete')
             for absent in ('outcome_file', 'supervisor_sha256', 'runner_files', 'outcome_sha256'):
                 self.assertNotIn(absent, receipt)
+
+    def test_selected_manifest_reaches_the_runner_and_its_receipt_is_bound(self):
+        with nightly_fixture() as case:
+            self.assertEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest'],
+                                           skip_plane=True, skip_gh_status=True), 0)
+            run = next((case['state_dir'] / 'runs').iterdir())
+            receipt = json.loads((run / 'execution.json').read_text())
+            digest = nightly_full_suite.nightly_inputs.digest_file(case['manifest'])
+            self.assertEqual(receipt['input_manifest_sha256'], digest)
+            self.assertEqual(receipt['native_evidence_dir'], str(run / 'native'))
+            bound = receipt['input_receipt']
+            self.assertEqual(bound['manifest_sha256'], digest)
+            self.assertEqual(bound['image'], 'sha256:' + 'a' * 64)
+            self.assertEqual([item['name'] for item in bound['inputs']], ['owned-input'])
+            self.assertTrue(Path(bound['path']).is_relative_to(run / 'native'))
+            self.assertEqual(bound['sha256'], nightly_full_suite.nightly_inputs.digest_file(Path(bound['path'])))
+            seen = (case['base'] / 'inputs-env').read_text().splitlines()
+            self.assertEqual(seen, [repr((str(case['manifest']), str(run / 'native')))])
+            self.assertEqual(receipt['completion'], 'complete')
+
+    def test_receipt_faults_leave_the_attempt_incomplete_without_state(self):
+        for fault in ('silent', 'twice', 'manifest', 'image', 'commit', 'status', 'writable'):
+            with self.subTest(fault=fault), nightly_fixture() as case:
+                with patch.dict(os.environ, NIGHTLY_RECEIPT_FAULT=fault):
+                    self.assertNotEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest'],
+                                                      skip_plane=True, skip_gh_status=True), 0)
+                self.assertFalse((case['state_dir'] / 'state.json').exists())
+                receipt = json.loads(next((case['state_dir'] / 'runs').glob('*/execution.json')).read_text())
+                self.assertEqual(receipt['completion'], 'incomplete')
+                self.assertTrue(receipt['incomplete_reason'].startswith('native input receipt not bound'), receipt)
+                self.assertNotIn('input_receipt', receipt)
+
+    def test_ambient_manifest_selection_never_leaks_into_an_unselected_attempt(self):
+        with nightly_fixture() as case:
+            with patch.dict(os.environ, AE_CI_INPUT_MANIFEST=str(case['manifest']), AE_CI_EVIDENCE_DIR=str(case['base']),
+                            NIGHTLY_RECEIPT_FAULT='unselected'):
+                self.assertEqual(self.run_case(case, initialize_baseline=True, skip_plane=True, skip_gh_status=True), 0)
+            self.assertEqual((case['base'] / 'inputs-env').read_text().splitlines(), [repr((None, None))])
+            receipt = json.loads(next((case['state_dir'] / 'runs').glob('*/execution.json')).read_text())
+            self.assertEqual(receipt['completion'], 'complete')
+            for absent in ('input_receipt', 'input_manifest', 'native_evidence_dir'):
+                self.assertNotIn(absent, receipt)
+
+    def test_import_refuses_an_unbound_gate_or_a_different_manifest(self):
+        with nightly_fixture() as case:
+            self.assertEqual(self.run_case(case, initialize_baseline=True, skip_plane=True, skip_gh_status=True), 0)
+            gate = next((case['state_dir'] / 'runs').iterdir())
+            receipt = json.loads((gate / 'execution.json').read_text())
+            manifest = nightly_full_suite.nightly_evidence.write_manifest(gate)
+            intent = case['base'] / 'baseline-import.json'
+            selection = {'schema': 'agent-ee.baseline-import/1', 'gate_directory': str(gate),
+                         'commit': receipt['commit'], 'tree': receipt['tree'],
+                         'output_manifest_sha256': nightly_full_suite.nightly_evidence.digest(manifest),
+                         'input_manifest_sha256': 'b' * 64, 'review_reference': 'owned-test-review@1'}
+            intent.write_text(json.dumps(selection))
+            self.assertNotEqual(nightly_full_suite.import_baseline(case['root'], case['base'] / 'unbound', intent), 0)
+        with nightly_fixture() as case:
+            self.assertEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest'],
+                                           skip_plane=True, skip_gh_status=True), 0)
+            gate = next((case['state_dir'] / 'runs').iterdir())
+            receipt = json.loads((gate / 'execution.json').read_text())
+            manifest = nightly_full_suite.nightly_evidence.write_manifest(gate)
+            intent = case['base'] / 'baseline-import.json'
+            intent.write_text(json.dumps({'schema': 'agent-ee.baseline-import/1', 'gate_directory': str(gate),
+                         'commit': receipt['commit'], 'tree': receipt['tree'],
+                         'output_manifest_sha256': nightly_full_suite.nightly_evidence.digest(manifest),
+                         'input_manifest_sha256': '0' * 64, 'review_reference': 'owned-test-review@1'}))
+            self.assertNotEqual(nightly_full_suite.import_baseline(case['root'], case['base'] / 'other', intent), 0)
+            self.assertFalse((case['base'] / 'other/state.json').exists())
 
     def test_missing_state_requires_explicit_initialization(self):
         with nightly_fixture() as case:
@@ -815,7 +885,8 @@ class PlaneFilingTests(unittest.TestCase):
     def test_assignment_is_rejected_for_nonreporting_commands(self):
         for command in (
                 ['qualify', '--root', '.', '--commit', COMMIT, '--tree', COMMIT,
-                 '--evidence-dir', 'unused-evidence', '--runner', 'unused-runner'],
+                 '--evidence-dir', 'unused-evidence', '--runner', 'unused-runner',
+                 '--input-manifest', 'unused-manifest'],
                 ['import-baseline', '--root', '.', '--state-dir', 'unused-state',
                  '--selection', 'unused-selection']):
             with self.subTest(command=command), patch.object(nightly_full_suite.subprocess, 'run') as boundary:

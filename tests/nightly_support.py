@@ -1,5 +1,7 @@
 """Real Git fixtures; executable doubles at native and reporting boundaries."""
 from contextlib import contextmanager, nullcontext
+import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -39,6 +41,12 @@ def nightly_fixture():
             'commit', '-q', '-m', 'owned fixture')
         git('-C', str(root), 'push', '-q', 'origin', 'HEAD:main')
         (base / 'report').write_text('strict suite passed: 1 modules, 1 tests, no skips\n')
+        (base / 'owned-input').mkdir()
+        (base / 'owned-input/owned.txt').write_text('owned finite input\n')
+        manifest = base / 'input-manifest.json'
+        manifest.write_text(json.dumps({'schema': 'agent-ee.native-inputs/1', 'inputs': [
+            {'name': 'owned-input', 'env': 'AGENT_EE_ACQUISITION_INPUTS', 'path': str(base / 'owned-input'),
+             'files': {'owned.txt': hashlib.sha256(b'owned finite input\n').hexdigest()}}]}, indent=2) + '\n')
         runner = bins / 'ae-ci-exec'
         # Double of the INSTALLED runner contract only: arguments, AE_CI_WEIGHT, an image
         # line on stderr, the command's output and its exit status. No companion program and
@@ -51,10 +59,46 @@ with (base / 'runner-args').open('a') as out:
     out.write('\\n'.join(sys.argv[1:]) + '\\n')
 with (base / 'weights').open('a') as out:
     out.write(os.environ['AE_CI_WEIGHT'] + '\\n')
+with (base / 'inputs-env').open('a') as out:
+    out.write(repr((os.environ.get('AE_CI_INPUT_MANIFEST'), os.environ.get('AE_CI_EVIDENCE_DIR'))) + '\\n')
 status = int(os.environ.get('NIGHTLY_SUITE_EXIT', '0'))
-print('ae-ci-exec: image sha256:' + 'a' * 64, file=sys.stderr)
+image = 'sha256:' + 'a' * 64
+print('ae-ci-exec: image ' + image, file=sys.stderr)
 if os.environ.get('NIGHTLY_KEPT_SCRATCH'):
     print('ae-ci-exec: kept scratch ' + os.environ['NIGHTLY_KEPT_SCRATCH'], file=sys.stderr)
+if 'AE_CI_INPUT_MANIFEST' in os.environ:
+    # Installed-runner input contract (U4 A): the runner-invoked helper prepares snapshots under
+    # AE_CI_EVIDENCE_DIR, binds the resolved image into one receipt and the runner announces it.
+    import hashlib, json, subprocess
+    manifest = Path(os.environ['AE_CI_INPUT_MANIFEST'])
+    evidence = Path(os.environ['AE_CI_EVIDENCE_DIR'])
+    run = evidence / 'run-owned'
+    (run / 'inputs').mkdir(parents=True)
+    (run / 'output').mkdir()
+    source = Path(sys.argv[1])
+    def git(ref):
+        return subprocess.check_output(['git', '-C', str(source), 'rev-parse', ref], text=True).strip()
+    fault = os.environ.get('NIGHTLY_RECEIPT_FAULT')
+    record = {'schema': 'agent-ee.native-inputs/1', 'status': 'failed' if fault == 'status' else 'prepared',
+              'manifest': str(manifest),
+              'manifest_sha256': '0' * 64 if fault == 'manifest' else hashlib.sha256(manifest.read_bytes()).hexdigest(),
+              'image': 'sha256:' + 'b' * 64 if fault == 'image' else image,
+              'agent_ee': {'path': str(source), 'commit': '0' * 40 if fault == 'commit' else git('HEAD'),
+                           'tree': git('HEAD^{tree}'), 'clean': True},
+              'runner': {'path': __file__, 'sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
+              'preparer': {'path': 'native-inputs.py', 'sha256': 'c' * 64},
+              'policy_sha256': 'd' * 64, 'module_env_sha256': 'e' * 64, 'output_directory': str(run / 'output'),
+              'inputs': [{'name': 'owned-input', 'env': 'AGENT_EE_ACQUISITION_INPUTS', 'read_only': fault != 'writable',
+                          'files': {'owned.txt': 'f' * 64}, 'snapshot': str(run / 'inputs/owned-input'),
+                          'container_path': '/opt/agent-ee-inputs/owned-input', 'modules': ['*']}]}
+    receipt = run / 'native-inputs.json'
+    receipt.write_text(json.dumps(record, indent=2) + '\n')
+    if fault != 'silent':
+        print('ae-ci-exec: native input receipt ' + str(receipt), file=sys.stderr)
+    if fault == 'twice':
+        print('ae-ci-exec: native input receipt ' + str(receipt), file=sys.stderr)
+elif os.environ.get('NIGHTLY_RECEIPT_FAULT') == 'unselected':
+    print('ae-ci-exec: native input receipt /nonexistent/receipt.json', file=sys.stderr)
 print((base / 'report').read_text(), end='')
 raise SystemExit(status)
 ''')
@@ -84,5 +128,5 @@ raise SystemExit(status)
             command.chmod(0o755)
         with patch.dict(os.environ, dict(env, PATH=str(bins) + os.pathsep + env['PATH'],
                                         NIGHTLY_PROBE=str(base))):
-            yield dict(base=base, root=root, state_dir=base / 'state', worktree_dir=base / 'worktree',
+            yield dict(base=base, root=root, state_dir=base / 'state', worktree_dir=base / 'worktree', manifest=manifest,
                        commit=git('-C', str(root), 'rev-parse', 'HEAD'), git=git)

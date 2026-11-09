@@ -76,10 +76,10 @@ class GateImportTests(unittest.TestCase):
         tree = case['git']('-C', str(case['root']), 'rev-parse', 'HEAD^{tree}')
         self.assertEqual(nightly.main(['qualify', '--root', str(case['root']), '--commit', case['commit'],
             '--tree', tree, '--evidence-dir', str(gate), '--runner', str(case['base'] / 'bin/ae-ci-exec'),
-            '--skip-gh-status']), 0)
+            '--skip-gh-status', '--input-manifest', str(case['manifest'])]), 0)
         selection = {'schema': 'agent-ee.baseline-import/1', 'gate_directory': str(gate),
             'commit': case['commit'], 'tree': tree, 'review_reference': 'owned-test-review@1',
-            'input_manifest_sha256': 'b' * 64,
+            'input_manifest_sha256': hashlib.sha256(case['manifest'].read_bytes()).hexdigest(),
             'output_manifest_sha256': hashlib.sha256((gate / 'output-manifest.json').read_bytes()).hexdigest()}
         return gate, selection
 
@@ -105,7 +105,7 @@ class GateImportTests(unittest.TestCase):
     def test_corrupt_missing_and_mismatched_gate_evidence_is_refused(self):
         # Companion native-input receipt and private outcome journal faults are gone with those
         # contracts (AGENTEE-619); an incomplete receipt and an exit/verdict disagreement replace them.
-        faults = ('changed-log', 'missing-log', 'incomplete-receipt', 'exit-disagrees',
+        faults = ('changed-log', 'missing-log', 'incomplete-receipt', 'exit-disagrees', 'input-receipt',
                   'not-full', 'controller', 'main-sha', 'tree', 'active', 'state')
         for fault in faults:
             with self.subTest(fault=fault), nightly_fixture() as case:
@@ -115,6 +115,11 @@ class GateImportTests(unittest.TestCase):
                         stream.write('changed after review\n')
                 elif fault == 'missing-log':
                     (gate / 'suite.log').unlink()
+                elif fault == 'input-receipt':
+                    bound = Path(json.loads((gate / 'execution.json').read_text())['input_receipt']['path'])
+                    bound.write_bytes(bound.read_bytes() + b'\n')
+                    nightly_evidence.write_manifest(gate)
+                    selection['output_manifest_sha256'] = nightly_evidence.digest(gate / 'output-manifest.json')
                 elif fault in ('incomplete-receipt', 'exit-disagrees', 'not-full', 'controller'):
                     path = gate / 'execution.json'
                     record = json.loads(path.read_text())

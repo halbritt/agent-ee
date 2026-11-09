@@ -140,6 +140,40 @@ freshness. The original gate owns completion publication. Missing, changed,
 incomplete or mismatched evidence refuses. Preparing the operation selects no
 baseline and executes no gate.
 
+## Selected inputs, the runner's receipt and fresh stock (U4 B/C)
+
+The controller passes one selected `agent-ee.native-inputs/1` manifest
+(`--input-manifest`) to the installed runner as `AE_CI_INPUT_MANIFEST`, with a
+unique external `AE_CI_EVIDENCE_DIR` under the attempt's `runs/<id>/native/`. The
+runner's own helper prepares read-only snapshots, binds the resolved image into
+one receipt and announces `ae-ci-exec: native input receipt /absolute/path` in
+the log. After completion validation the controller binds that single receipt to
+the attempt: status `prepared`, manifest bytes, source commit/tree, runner hash
+and announced image must all match, every input must be read-only with a file or
+Git identity, and the receipt must lie inside this attempt's evidence directory.
+Any mismatch leaves the attempt `incomplete` ("native input receipt not bound").
+An ambient `AE_CI_INPUT_MANIFEST` never leaks into an attempt that did not select
+one. `qualify` requires `--input-manifest`; `import-baseline` requires the gate's
+bound receipt and cross-checks the selection's `input_manifest_sha256` against
+it, replacing reviewer attestation. Mount policy and confinement belong to the
+runner-invoked helper and to `strict_inputs`; the controller validates neither.
+
+`--stock-config` (schema `agent-ee.nightly-stock-config/1`: `context_path`,
+`source_root`, `per_request_timeout_seconds`, `invocation_timeout_seconds`,
+`min_interval_seconds`, `max_bytes`, optional `endpoint`) refreshes the
+acquisition stock context before an actually selected native attempt, after the
+lock, unchanged-main, reporting, unresolved-attempt and source checks. Requested
+IDs come from the current context's two retained parent catalogs; the existing
+`agent_ee.jlc_stock_capture` producer runs once per parent with bounded time, no
+retry and no backdating; part identities must match the previous catalog; the
+existing `alternative_context` union/admission algebra builds and checks the new
+closure; raw bytes and provenance are retained under `runs/<id>/stock/`. The
+per-attempt manifest `runs/<id>/input-manifest.json` replaces exactly the stock
+source root and context entries. Unchanged-main skips and reporting retries never
+capture. Any failed preparation is retained with its reason and starts no native
+work and advances no baseline; there is no cached stale fallback. The 24 h
+acceptance rule is evaluated by the tests at real run time and is unchanged.
+
 ## Module input setup and preserved coverage
 
 `strict_suite.py` validates the entire inventory with runtime `strict_inputs.py`
