@@ -5,6 +5,7 @@ import inspect
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -14,6 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from agent_ee import placement_job as job
+from artifact_retention import RetainedTemporaryDirectory
 import test_placement_job as fixtures
 from test_placement_job import Fixture, intent, groups, MM
 
@@ -612,14 +614,43 @@ class ChildCancellationTests(Fixture):
 
 
 class RequiredFixtureTests(unittest.TestCase):
-    def test_missing_fixture_fails_strict_but_skips_optional(self):
+    def test_portable_capture_requires_intact_sources_in_both_modes(self):
         name = 'test_unchanged_esp_prog_capture_is_accepted_with_labelled_derived_occupancy'
         for strict in ('1', '0'):
-            with self.subTest(strict=strict), patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}):
-                with patch.dict(os.environ):
+            for fault in ('intact', 'missing', 'changed'):
+                with self.subTest(strict=strict, fault=fault), \
+                        RetainedTemporaryDirectory(self.id(), prefix='portable-contract-') as tmp, \
+                        patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}):
                     os.environ.pop('AGENT_EE_ESP_PROG_PREPARED', None)
+                    root = Path(tmp)
+                    # Preserve committed originals and the selected bytes for each real invocation.
+                    shutil.copytree(fixtures.portable.SOURCES, root / 'original')
+                    selected = root / 'selected'
+                    shutil.copytree(root / 'original', selected)
+                    source = selected / 'intent.json'
+                    if fault == 'missing':
+                        source.unlink()
+                    elif fault == 'changed':
+                        source.write_bytes(source.read_bytes() + b'\n')
                     result = unittest.TestResult()
-                    fixtures.EspProgCaptureTests(name).run(result)
-                    self.assertEqual(len(result.failures), int(strict == '1'))
-                    self.assertEqual(len(result.skipped), int(strict != '1'))
-                    self.assertEqual(result.errors, [])
+                    target = fixtures.EspProgCaptureTests(name)
+                    with patch.object(fixtures.portable, 'SOURCES', selected):
+                        target.run(result)
+                    (root / 'result.json').write_text(json.dumps({
+                        'strict': strict, 'fault': fault, 'target': target.id(),
+                        'tests_run': result.testsRun,
+                        'failures': [detail for _, detail in result.failures],
+                        'errors': [detail for _, detail in result.errors],
+                        'skipped': [reason for _, reason in result.skipped],
+                    }, indent=2) + '\n')
+                    self.assertEqual(result.testsRun, 1)
+                    self.assertEqual(result.failures, [])
+                    self.assertEqual(result.skipped, [])
+                    if fault == 'intact':
+                        self.assertEqual(result.errors, [])
+                    else:
+                        self.assertEqual(len(result.errors), 1)
+                        diagnostic = result.errors[0][1]
+                        self.assertIn('intent.json', diagnostic)
+                        self.assertIn('FileNotFoundError' if fault == 'missing' else
+                                      'ValueError: authored fixture source changed: intent.json', diagnostic)

@@ -39,6 +39,14 @@ State defaults to `~/.local/share/agent-ee-full-suite`. Each attempt has a
 or unknown prior problem also produces integrator failure records. These local
 artifacts are not files to commit or upload.
 
+The suite has a 10,800-second aggregate deadline, including admission waiting;
+the per-module deadline stays 3,600 seconds. The installed service has a
+210-minute outer limit for stock preparation, checkout, reporting and cleanup.
+A measured two-worker run exhausted the former 7,200-second limit after
+393 of 451 modules, without a per-module timeout. The increased aggregate
+budget preserves two workers, weight 2 and strict verdict requirements. That
+incomplete attempt remains retained; it cannot establish a passing baseline.
+
 On timeout or Ctrl-C, the controller sends SIGTERM to its process group, waits
 60 seconds, then uses SIGKILL if needed, and records the attempt as incomplete
 with `termination` set. Killing the controller itself can leave a child running

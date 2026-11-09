@@ -8,6 +8,19 @@ historical test IDs to their portable behavior. Their names remain for full-suit
 comparison; no external ESP-Prog environment variables or former campaign paths
 are needed.
 
+The full recovery run also exposed an indirect consumer in
+`test_placement_job_guards.RequiredFixtureTests`: its old
+`test_missing_fixture_fails_strict_but_skips_optional` method still demanded
+the retired external-bundle failure/skip behavior. The replacement
+`test_portable_capture_requires_intact_sources_in_both_modes` invokes the real
+capture test with intact, missing and changed portable sources in both runtime
+modes. Intact sources execute without a skip; missing or changed required bytes
+produce the specific source-custody error in either mode. Each variant retains
+the committed originals, selected copies and nested test result. These two
+newly exposed subtest failures are recorded separately from the original seven
+fixture-dependent cases and the original 152-problem baseline. The supplemental
+mapping in `coverage.json` preserves their old and replacement identities.
+
 `sources.json` binds the authored intent, groups and geometry byte strings.
 `portable_placement.py` verifies those bytes before staging them. The original
 JSON sources are retained alongside working copies. Native boards are generated

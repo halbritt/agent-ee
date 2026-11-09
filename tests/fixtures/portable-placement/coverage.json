@@ -68,5 +68,25 @@
     "physically distinct final/raw boards with separate immutable hashes, group identity, both views, acceptance_assessed=false",
     "native captured problem serialized and verified, original poses prepared/evaluated once by real Rust executable; missing/changed problem refuses",
     "pristine originals and damaged copies survive through runtime artifact_retention API before cleanup"
+  ],
+  "indirect_consumers": [
+    {
+      "original_test_id": "test_placement_job_guards.RequiredFixtureTests.test_missing_fixture_fails_strict_but_skips_optional",
+      "original_failing_subtests": [
+        "test_placement_job_guards.RequiredFixtureTests.test_missing_fixture_fails_strict_but_skips_optional (strict='1')",
+        "test_placement_job_guards.RequiredFixtureTests.test_missing_fixture_fails_strict_but_skips_optional (strict='0')"
+      ],
+      "replacement_test_id": "test_placement_job_guards.RequiredFixtureTests.test_portable_capture_requires_intact_sources_in_both_modes",
+      "identity_retained": false,
+      "discovered_on": "deed7e0a77a134cf5eab93e49e481a4dead71c79",
+      "original_152_problem_member": false,
+      "required_behavior": "Invoke the real portable capture target once per intact/missing/changed source variant in both strict modes with the retired ESP-Prog selection absent. Intact committed bytes execute with no failures/errors/skips. Missing intent.json raises FileNotFoundError; changed bytes raise the authored-source ValueError. Both negatives execute once with one specific error, no failures and no skips. Retain pristine originals, selected bytes and per-variant diagnostics.",
+      "existing_negative_controls": [
+        "test_portable_placement.PortablePlacementSourceTests.test_changed_and_missing_sources_refuse_without_a_replacement",
+        "test_portable_placement.PortablePlacementSourceTests.test_missing_problem_is_not_substituted_for_an_evaluation",
+        "test_portable_placement.PortablePlacementSourceTests.test_changed_problem_refuses_its_original_capture_identity"
+      ],
+      "historical_assertions_replaced": "An absent retired ESP-Prog environment variable is no longer missing required data for this authored portable target. Its former strict-failure/optional-skip expectation is replaced explicitly; genuine missing/damaged portable sources still refuse in both modes. The seven original AGENTEE-623 identities and their native assertions are unchanged."
+    }
   ]
 }

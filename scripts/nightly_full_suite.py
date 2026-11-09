@@ -30,7 +30,7 @@ import nightly_inputs
 
 DEFAULT_STATE_DIR = Path.home() / '.local/share/agent-ee-full-suite'
 DEFAULT_WORKTREE_DIR = Path.home() / '.cache/agent-worktrees/agent-ee/nightly-full-suite'
-SUITE_TIMEOUT_SECONDS = 7200
+SUITE_TIMEOUT_SECONDS = 10800
 SUITE_STOP_GRACE_SECONDS = 60
 
 
