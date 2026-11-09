@@ -1205,6 +1205,34 @@ class AddrPreparationTests(unittest.TestCase):
         info=stock._verify_jlc_capture(source,actual['catalog'],catalog)
         with self.assertRaisesRegex(ValueError,'stale'):stock._capture_gate(info,stock.validate_params(actual),set())
 
+    def test_current_stock_supports_both_authored_r6_revisions_without_repinning(self):
+        from artifact_retention import retain
+        from agent_ee import assembly_readiness
+        from agent_ee.acquisition import power_repair
+        from datetime import datetime, timezone
+        output620 = self.root / 'current620'
+        self.addCleanup(retain, self.id(), roots=[self.seed, output620])
+        original = {name: power_repair.read(Path(os.environ[name]))
+                    for name in ('AGENT_EE_ADDR_POWER', 'AGENT_EE_ADDR_POWER620')}
+        sources = {**self.options['added_sources'], 'power-repair': Path(os.environ['AGENT_EE_ADDR_POWER620'])}
+        acquisition_prepare.prepare(self.brief, PLAN, output620, **{**self.options, 'added_sources': sources})
+        for out, lcsc in ((self.seed, 'C114669'), (output620, 'C137695')):
+            with self.subTest(selected=lcsc):
+                inputs = out / 'inputs'
+                decision = json.loads((inputs / power_repair.PREFIX / 'decision.json').read_bytes())
+                self.assertEqual(decision['selected'], lcsc)
+                catalog = json.loads((inputs / decision['catalog']['path']).read_bytes())
+                params = acquisition_prepare.acquisition_alternative._assembly_check(
+                    json.loads((inputs / 'requirement-map.json').read_bytes()))['params']
+                policy = assembly_readiness.validate_params({**params, 'as_of': datetime.now(timezone.utc).isoformat()})
+                info = assembly_readiness._verify_jlc_capture(inputs, decision['catalog']['path'], catalog)
+                assembly_readiness._capture_gate(info, policy, set())
+                derivation = json.loads((inputs / decision['catalog_derivation']['path']).read_bytes())
+                self.assertEqual(derivation['stock_parent'], decision['catalog'])
+                self.assertNotEqual(derivation['historical_parent']['path'], decision['catalog']['path'])
+        for name, captured in original.items():
+            self.assertEqual(power_repair.read(Path(os.environ[name])), captured)
+
     def test_context_filesystem_drift_or_existing_output_preserves_originals(self):
         context=self.root/'owned-context.json';context.write_bytes((self.seed/'preparation.json').read_bytes())
         write=Path.write_bytes

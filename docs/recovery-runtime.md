@@ -1,9 +1,13 @@
 # Captured workflow runtime
 
-AGENTEE-519 qualifies runtime access for the captured acquisition and imported
-esp_prog articles. The default run stops acquisition after schematic emission
+This page records the historical AGENTEE-519 runtime exercise for captured
+acquisition and imported esp_prog articles. ESP-Prog was retired from ZeroASIC
+deliverables and acceptance/dependency gates by the owner's 2026-10-29 instruction
+to "remove the ESP-Prog requirements" (recorded in AGENTEE-512/559). Its captures
+and commands below are historical replay material, not current release requirements.
+The default historical run stops acquisition after schematic emission
 and deliberately cancels esp_prog after native capture and runtime preflight.
-Neither result is file-release acceptance. Full M1 acceptance remains AGENTEE-515.
+Neither result is file-release acceptance. AGENTEE-515 is not reopened by this replay.
 
 ## Inputs and access
 
@@ -89,7 +93,7 @@ of that esp_prog refusal.
 complete workflows. It records the current results, including failures, while
 leaving historical success and the harness's `acceptance: false` intact. A failed
 esp_prog preflight prevents its full search. Full mode was not executed for
-AGENTEE-519; it belongs to later release qualification. The default checkpoint
+AGENTEE-519; it does not authorize a later ESP-Prog release qualification. The default checkpoint
 does not establish routing, artwork, sealed-package or engineering acceptance.
 
 ## Host launcher diagnosis

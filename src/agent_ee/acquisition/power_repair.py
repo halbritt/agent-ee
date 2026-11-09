@@ -120,14 +120,40 @@ def _write(root, name, raw):
     return dict(path=name, sha256=identity_bytes(raw))
 
 
-def _catalog(root, captures, old_blob):
+def _catalog(root, captures, old_blob, selected):
+    """Keep historical design provenance separate from a selected current stock observation."""
+    lcsc, _ = _part(selected)
     old = json.loads(parts_manifest._read_blob(root, old_blob))
     new = json.loads(captures['catalog/catalog.json'])
-    if old['source'] != new['source'] or set(old['parts']) & set(new['parts']):
-        raise ValueError('R6 catalog parents overlap or source contracts differ')
+    if old['source'] != new['source']:
+        raise ValueError('R6 catalog source contracts differ')
+    if set(new['parts']) != {lcsc} or [r['lcsc'] for r in new['requests']] != [lcsc]:
+        raise ValueError('R6 historical catalog has unexpected overlap or a different selected part')
     for parent, reader in ((old, lambda n: parts_manifest.read_captured(root, str(Path(old_blob['path']).parent / n))),
                            (new, lambda n: captures['catalog/' + n])):
         jlc_stock_capture.validate_capture(parent, reader)
+    observed = next((r for r in old['requests'] if r['lcsc'] == lcsc), None)
+    if observed is not None:
+        if observed['status'] != 'found' or lcsc not in old['parts']:
+            raise ValueError('current R6 observation failed or was not found; historical fallback refused')
+        if any(old['parts'][lcsc][field] != new['parts'][lcsc][field]
+               for field in ('mpn', 'mfr', 'package', 'library_tier')):
+            raise ValueError('current R6 identity/package/library tier differs from the selected historical part')
+        # Reuse the admitted current blob and its raw responses. The historical
+        # response has the same basename, so retain it under a distinct directory.
+        historical = PREFIX + '/catalog/historical-r6/'
+        for request in new['requests']:
+            name = request['response']['path']
+            _write(root, historical + name, captures['catalog/' + name])
+        parent = _write(root, historical + 'parent-r6.json', captures['catalog/catalog.json'])
+        _write(root, PREFIX + '/catalog/derivation.json', json_bytes(dict(
+            kind='Current context stock observation; historical R6 observation retained as design provenance only',
+            selected=lcsc, stock_parent=old_blob, historical_parent=parent, parents=[old_blob, parent])))
+        return old_blob, old
+    # Legacy contexts never observed R6. Their conservative historical union and
+    # original freshness window remain unchanged; this cannot make stale stock fresh.
+    for parent, reader in ((old, lambda n: parts_manifest.read_captured(root, str(Path(old_blob['path']).parent / n))),
+                           (new, lambda n: captures['catalog/' + n])):
         for request in parent['requests']:
             _write(root, PREFIX + '/catalog/' + request['response']['path'], reader(request['response']['path']))
     union = dict(schema=jlc_stock_capture.SCHEMA, as_of=min(old['as_of'], new['as_of']),
@@ -354,7 +380,7 @@ def apply(root, overlay, captures, as_of):
     mapping = json.loads((root / 'requirement-map.json').read_bytes())
     check = acquisition_alternative._assembly_check(mapping)
     old_catalog = dict(path=check['params']['catalog'], sha256=check['params']['catalog_sha256'])
-    catalog, union = _catalog(root, captures, old_catalog)
+    catalog, union = _catalog(root, captures, old_catalog, selected)
     policy = assembly_readiness.validate_params({**check['params'], 'as_of': as_of})
     info = assembly_readiness._verify_jlc_capture(root, catalog['path'], union)
     assembly_readiness._capture_gate(info, policy, set())
@@ -365,7 +391,9 @@ def apply(root, overlay, captures, as_of):
     datasheets = _datasheet(root, captures)
     decision = _write(root, PREFIX + '/decision.json', json_bytes(dict(
         activation=AT + '/activation.txt', activation_sha256=identity_bytes(captures['activation.txt']),
-        catalog=catalog, original_inventory=original, selected=lcsc, part='R6',
+        catalog=catalog, catalog_derivation=dict(path=PREFIX + '/catalog/derivation.json',
+            sha256=digest(root / PREFIX / 'catalog/derivation.json')),
+        original_inventory=original, selected=lcsc, part='R6',
         qualification='Explicit soleR6 exception; source-only unverified repair, not supplier/native acceptance',
         parts=[dict(id=p['id'], lcsc=lcsc if p['id']=='R6' else p['lcsc'], instances=p['instances']) for p in document['parts']])))
     for part in document['parts']:

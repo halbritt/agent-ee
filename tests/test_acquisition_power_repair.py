@@ -9,6 +9,107 @@ from decimal import Decimal
 
 from agent_ee.acquisition import power_repair as repair, mechanics
 from agent_ee.storage import json_bytes
+from agent_ee import assembly_readiness, jlc_stock_capture as stock
+from tests.test_jlc_stock_capture import row, search
+
+
+class CurrentStockTests(unittest.TestCase):
+    """Authored producer-format bytes test selection; live source coverage is in preparation."""
+    CURRENT = '2026-11-09T00:00:00+00:00'
+    HISTORICAL = '2026-10-01T00:00:00+00:00'
+
+    def capture(self, ids, stamp, *, status='found', changed=None):
+        document = dict(schema=stock.SCHEMA, as_of=stamp, completed_at=stamp, stale_before=None,
+            source=dict(endpoint=stock.DEFAULT_ENDPOINT, method='POST', parser=stock.PARSER,
+                        request_body=stock.request_body('{lcsc}').decode(), min_interval_seconds=5),
+            requests=[], parts={})
+        files = {}
+        for lcsc in ids:
+            mpn = {'C114669': 'RC0603FR-07470RL', 'C137695': 'RC0603FR-07620RL'}.get(lcsc, 'AUTHORED-ADC')
+            values = dict(componentModelEn=mpn, componentBrandEn='YAGEO', componentSpecificationEn='0603')
+            values.update(changed or {})
+            raw = search(row(lcsc, 100, **values)) if status == 'found' else search()
+            name = 'responses/' + lcsc + '.json'
+            files['catalog/' + name] = raw
+            document['requests'].append(dict(lcsc=lcsc, fetched_at=stamp, status=status,
+                http_status=503 if status == 'failed' else 200, reason='HTTP 503' if status == 'failed' else None,
+                response=dict(path=name, sha256=repair.identity_bytes(raw), size_bytes=len(raw))))
+            if status == 'found':
+                _, parsed = stock.parse_search_response(raw, lcsc)
+                document['parts'][lcsc] = {**parsed, 'last_seen': stamp}
+        files['catalog/catalog.json'] = json_bytes(document)
+        return files
+
+    def current(self, root, captures):
+        for name, raw in captures.items():
+            repair._write(root, 'current/' + name, raw)
+        return dict(path='current/catalog/catalog.json', sha256=repair.identity_bytes(captures['catalog/catalog.json']))
+
+    def gate(self, root, blob, document, when=CURRENT):
+        info = assembly_readiness._verify_jlc_capture(root, blob['path'], document)
+        assembly_readiness._capture_gate(info, dict(as_of=when, max_age_hours=24,
+            max_stock_age_days=None, stale_before=None), set())
+
+    def test_both_revisions_use_current_bytes_and_retain_historical_bytes_separately(self):
+        for selected, lcsc in [('470', 'C114669'), ('620', 'C137695')]:
+            with self.subTest(selected=selected), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                current = self.capture(['C37593', 'C114669', 'C137695'], self.CURRENT)
+                historical = self.capture([lcsc], self.HISTORICAL)
+                before = dict(historical)
+                original = self.current(root, current)
+                blob, document = repair._catalog(root, historical, original, selected)
+                self.assertEqual(blob, original)
+                self.gate(root, blob, document)
+                derivation = json.loads((root / repair.PREFIX / 'catalog/derivation.json').read_bytes())
+                self.assertEqual(derivation['stock_parent'], original)
+                self.assertIn('design provenance only', derivation['kind'])
+                parent = root / derivation['historical_parent']['path']
+                self.assertEqual(parent.read_bytes(), historical['catalog/catalog.json'])
+                self.assertEqual((parent.parent / ('responses/' + lcsc + '.json')).read_bytes(),
+                                 historical['catalog/responses/' + lcsc + '.json'])
+                self.assertEqual(historical, before)
+                for name, raw in current.items():
+                    self.assertEqual((root / 'current' / name).read_bytes(), raw)
+                for when in ('2026-11-11T00:00:00+00:00', '2026-11-08T23:59:59+00:00'):
+                    with self.assertRaisesRegex(ValueError, 'stale'):
+                        self.gate(root, blob, document, when)
+
+    def test_never_requested_keeps_historical_union_and_refuses_stale_stock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = self.current(root, self.capture(['C37593'], self.CURRENT))
+            blob, document = repair._catalog(root, self.capture(['C114669'], self.HISTORICAL), original, '470')
+            self.assertEqual(document['as_of'], self.HISTORICAL)
+            with self.assertRaisesRegex(ValueError, 'stale'):
+                self.gate(root, blob, document)
+
+    def test_failed_not_found_and_wrong_identity_never_use_historical_fallback(self):
+        cases = [('failed', {}), ('not_found', {})]
+        cases += [('found', {field: value}) for field, value in [
+            ('componentModelEn', 'WRONG'), ('componentBrandEn', 'WRONG'),
+            ('componentSpecificationEn', '0805'), ('library', 'expand')]]
+        for status, changed in cases:
+            with self.subTest(status=status, changed=changed), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                original = self.current(root, self.capture(['C114669'], self.CURRENT, status=status, changed=changed))
+                with self.assertRaisesRegex(ValueError, 'current R6'):
+                    repair._catalog(root, self.capture(['C114669'], self.HISTORICAL), original, '470')
+                self.assertFalse((root / repair.PREFIX).exists())
+
+    def test_changed_raw_and_unexpected_historical_overlap_refuse(self):
+        for fault in ('current-raw', 'historical-raw', 'overlap'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                original = self.current(root, self.capture(['C37593', 'C114669'], self.CURRENT))
+                historical = self.capture(['C114669', 'C37593'] if fault == 'overlap' else ['C114669'], self.HISTORICAL)
+                if fault == 'current-raw':
+                    (root / 'current/catalog/responses/C114669.json').write_bytes(b'changed')
+                elif fault == 'historical-raw':
+                    historical['catalog/responses/C114669.json'] = b'changed'
+                with self.assertRaises(ValueError):
+                    repair._catalog(root, historical, original, '470')
+                self.assertFalse((root / repair.PREFIX).exists())
 
 
 class PowerRepairTests(unittest.TestCase):

@@ -1991,6 +1991,8 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         fixture = OwnedCarryCampaign()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
+        from artifact_retention import retain
+        self.addCleanup(retain, self.id(), roots=[fixture.root, fixture.base.parent])
         import _pcbnew
         # The campaign's supplied runtime, with the real native pcbnew identity the carry check reads.
         fixture.host['runtime_files'] = {**fixture.host['runtime_files'],
