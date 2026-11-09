@@ -98,7 +98,7 @@ if 'AE_CI_INPUT_MANIFEST' in os.environ:
     if fault == 'unvalidated':
         del record['validated_at']
     receipt = run / 'native-inputs.json'
-    receipt.write_text(json.dumps(record, indent=2) + '\n')
+    receipt.write_text(json.dumps(record, indent=2) + '\\n')
     if fault != 'silent':
         print('ae-ci-exec: native input receipt ' + str(receipt), file=sys.stderr)
     if fault == 'twice':
