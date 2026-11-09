@@ -613,6 +613,9 @@ class WorkflowInputTests(unittest.TestCase):
             self.assertNotIn(forbidden, script)
 
     def test_cheap_checks_precede_native_setup_and_full_gate_refuses_non_success(self):
+        """Retained baseline ID (AGENTEE-619). The hosted cheap-check/native/full-gate jobs no
+        longer exist; what remains hosted is the recency monitor, so this now proves that monitor
+        refuses every non-success evidence shape and accepts only exact completed evidence."""
         # Exercise the actual workflow command against a controllable GitHub API boundary.
         from datetime import datetime, timedelta, timezone
         with tempfile.TemporaryDirectory() as tmp:
@@ -643,6 +646,9 @@ class WorkflowInputTests(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
 
     def test_superseded_runs_cancel_within_gate_mode_and_cannot_accept_cancellation(self):
+        """Retained baseline ID (AGENTEE-619). Hosted cancellation is gone with the hosted gate;
+        the local nightly serializes starts with its own lock, so the workflow must declare no
+        cancel-in-progress and the controller must still complete an admitted run."""
         # Remote recency checks cannot cancel a local suite. Its real lock serializes starts.
         import fcntl
         import importlib.util
@@ -658,9 +664,11 @@ class WorkflowInputTests(unittest.TestCase):
                     self.assertEqual(runner.run_nightly_suite(state, state_dir=state), 0)
 
     def test_fome_mc_fetch_is_the_tests_pin_without_credentials(self):
-        # Input declarations remain for ae-ci-exec until the runtime owner replaces its contract.
+        # The installed ae-ci-exec reads FOME_MC_COMMIT, J1_DRAWING_URL and J1_DRAWING_SHA256 from
+        # this workflow (ci_env) and refuses without them; they stay until the runtime owner
+        # replaces that contract. FOME_MC_STORE had no reader anywhere and is gone (AGENTEE-619).
         self.assertIn(f'\n  FOME_MC_COMMIT: {toolchain.FOME_MC_COMMIT}\n', self.WORKFLOW)
-        self.assertIn('\n  FOME_MC_STORE: build/external/fome-mc\n', self.WORKFLOW)
+        self.assertNotIn('FOME_MC_STORE', self.WORKFLOW)
         self.assertIn('  contents: read\n', self.WORKFLOW)
         self.assertIn('  statuses: read\n', self.WORKFLOW)
         self.assertEqual(self.WORKFLOW.count('uses: actions/checkout@'), 1)
@@ -686,7 +694,10 @@ class WorkflowInputTests(unittest.TestCase):
             self.assertIn(fragment, command)
 
     def test_strict_suite_mounts_both_inputs_read_only_and_no_pod_override(self):
-        # Mount/input custody is the runtime owner's contract; exercise the real delegation boundary.
+        """Retained baseline ID (AGENTEE-619). Mounts and input custody belong to the installed
+        runner, not the workflow; this proves the controller delegates exactly the supported
+        runner command (worktree, --, env ATTEMPT, strict_suite --full) at the declared weight and
+        that the workflow carries no pod/input override of its own."""
         try:
             from nightly_support import nightly_fixture
         except ImportError:

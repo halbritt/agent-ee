@@ -360,13 +360,6 @@ class NightlyLifecycleTests(unittest.TestCase):
             self.assertEqual(self.run_case(case, initialize_baseline=True), 0)
             gate = next((case['state_dir'] / 'runs').iterdir())
             receipt = json.loads((gate / 'execution.json').read_text())
-            native = gate / 'native/native-inputs-actual'
-            native.mkdir(parents=True)
-            (native / 'native-inputs.json').write_text(json.dumps({
-                'schema': 'agent-ee.native-inputs/1', 'status': 'prepared',
-                'agent_ee': {'commit': receipt['commit'], 'tree': receipt['tree'], 'clean': True},
-                'runner': {'sha256': receipt['runner_sha256']}, 'image': 'sha256:' + 'a' * 64,
-                'manifest_sha256': 'b' * 64}))
             manifest = nightly_full_suite.nightly_evidence.write_manifest(gate)
             intent = case['base'] / 'baseline-import.json'
             intent.write_text(json.dumps({
@@ -398,59 +391,77 @@ class NightlyLifecycleTests(unittest.TestCase):
             self.assertEqual(stale.read_bytes(), b'owned prior output\n')
             self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
 
-    def test_unproven_no_start_never_clears_or_retries_an_attempt(self):
-        faults = ('missing', 'malformed', 'stale', 'future', 'runner', 'supervisor', 'command', 'token',
-                  'incomplete', 'exit', 'missing-fields', 'duplicate-fields', 'not-a-bool')
-        for fault in faults:
-            with self.subTest(fault=fault), nightly_fixture() as case:
-                with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75', NIGHTLY_START_STATE='not_started',
-                                NIGHTLY_JOURNAL_FAULT=fault):
-                    self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
-                self.assertTrue((case['state_dir'] / 'active-run.json').exists())
-                before = (case['base'] / 'runner-args').read_bytes()
-                self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
-                self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
-                self.assertFalse((case['state_dir'] / 'state.json').exists())
-
-    def test_bound_no_start_proof_cannot_be_changed_after_sealing(self):
+    def test_observed_failed_attempt_is_retained_cleared_and_allows_a_later_attempt(self):
+        """Replaces the journal-based no-start proof (AGENTEE-619): the installed runner offers only
+        an exit status, so an attempt whose exit the controller observed is finalized as incomplete,
+        its marker is cleared, nothing is published as complete, and a later run may try again."""
         with nightly_fixture() as case:
-            with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75', NIGHTLY_START_STATE='not_started'):
-                self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
-            run = next((case['state_dir'] / 'runs').iterdir())
-            # Simulate a crash after the receipt was bound, before marker removal.
-            active = case['state_dir'] / 'active-run.json'
-            active.write_bytes((run / 'attempt.json').read_bytes())
-            journal = run / 'outcome.json'
-            journal.write_bytes(journal.read_bytes() + b'\n')
-            before = (case['base'] / 'runner-args').read_bytes()
-            self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
-            self.assertTrue(active.exists())
-            self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
-
-    def test_interrupted_or_started_attempts_never_get_no_start_clearance(self):
-        for state in ('interrupted', 'started_or_uncertain'):
-            with self.subTest(state=state), nightly_fixture() as case:
-                with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75', NIGHTLY_START_STATE=state):
-                    self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
-                self.assertTrue((case['state_dir'] / 'active-run.json').exists())
-                before = (case['base'] / 'runner-args').read_bytes()
-                self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
-                self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
-
-    def test_proven_no_start_is_retained_and_allows_a_later_attempt(self):
-        with nightly_fixture() as case:
-            with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75', NIGHTLY_START_STATE='not_started'):
+            (case['base'] / 'report').write_text('')
+            with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75'):
                 self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
             self.assertFalse((case['state_dir'] / 'active-run.json').exists())
             self.assertFalse((case['state_dir'] / 'state.json').exists())
             run = next((case['state_dir'] / 'runs').iterdir())
-            self.assertEqual(json.loads((run / 'reconciliation.json').read_text())['reason'], 'proven_not_started')
-            self.assertTrue((run / 'outcome.json').exists())
+            receipt = json.loads((run / 'execution.json').read_text())
+            self.assertEqual((receipt['completion'], receipt['exit_code']), ('incomplete', 75))
+            self.assertIn('no complete strict-suite verdict', receipt['incomplete_reason'])
+            self.assertEqual(json.loads((run / 'reconciliation.json').read_text())['reason'], 'exit_observed_incomplete')
+            self.assertEqual(json.loads((run / 'attempt-failure.json').read_text())['status'], 'incomplete')
+            self.assertIn('state=error', (case['base'] / 'gh-args').read_text())
             self.assertNotIn('strict-complete', (case['base'] / 'gh-args').read_text())
+            (case['base'] / 'report').write_text('strict suite passed: 1 modules, 1 tests, no skips\n')
             self.assertEqual(self.run_case(case, initialize_baseline=True), 0)
             self.assertEqual(len(list((case['state_dir'] / 'runs').iterdir())), 2)
             receipts = [json.loads(path.read_text()) for path in (case['state_dir'] / 'runs').glob('*/execution.json')]
             self.assertEqual(len({r['command_sha256'] for r in receipts}), 2)
+            self.assertEqual(sorted(r['completion'] for r in receipts), ['complete', 'incomplete'])
+
+    def test_unobserved_exit_marker_blocks_until_reconciled(self):
+        """A marker whose attempt never recorded an observed exit (controller crash) is never cleared
+        automatically, even with --force, because the native process may still be running."""
+        with nightly_fixture() as case:
+            self.assertEqual(self.run_case(case, initialize_baseline=True), 0)
+            run = next((case['state_dir'] / 'runs').iterdir())
+            active = case['state_dir'] / 'active-run.json'
+            active.write_bytes((run / 'attempt.json').read_bytes())
+            receipt = json.loads((run / 'execution.json').read_text())
+            del receipt['exit_code']
+            (run / 'execution.json').write_text(json.dumps(receipt))
+            before = (case['base'] / 'runner-args').read_bytes()
+            self.advance_main(case)
+            for force in (False, True):
+                with self.subTest(force=force):
+                    self.assertNotEqual(self.run_case(case, force=force), 0)
+                    self.assertTrue(active.exists())
+                    self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
+
+    def test_truncated_inventory_or_duplicate_verdict_is_incomplete(self):
+        """Parser strictness reaches the controller: a verdict naming more problems than it lists,
+        or two verdicts, cannot complete the attempt or advance state."""
+        trailer = ('strict suite FAILED: 1 modules, 2 tests, 2 problem(s), '
+                   '0 required test(s) not executed for missing inputs, 2 other problem(s)\n')
+        reports = {'truncated': 'ERROR: test_mod.Case.test_a\n' + trailer,
+                   'duplicate': 'strict suite passed: 1 modules, 1 tests, no skips\n' * 2}
+        for name, report in reports.items():
+            with self.subTest(report=name), nightly_fixture() as case:
+                (case['base'] / 'report').write_text(report)
+                with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='1' if name == 'truncated' else '0'):
+                    self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
+                self.assertFalse((case['state_dir'] / 'state.json').exists())
+                receipt = json.loads(next((case['state_dir'] / 'runs').glob('*/execution.json')).read_text())
+                self.assertEqual(receipt['completion'], 'incomplete')
+                self.assertNotIn('problem_count', receipt)
+
+    def test_runner_image_and_kept_scratch_lines_are_bound_from_the_log(self):
+        with nightly_fixture() as case:
+            with patch.dict(os.environ, NIGHTLY_KEPT_SCRATCH='/owned/scratch/run-1'):
+                self.assertEqual(self.run_case(case, initialize_baseline=True, skip_plane=True, skip_gh_status=True), 0)
+            receipt = json.loads(next((case['state_dir'] / 'runs').glob('*/execution.json')).read_text())
+            self.assertEqual(receipt['image_ids'], ['sha256:' + 'a' * 64])
+            self.assertEqual(receipt['retained_scratch'], ['/owned/scratch/run-1'])
+            self.assertEqual(receipt['completion'], 'complete')
+            for absent in ('outcome_file', 'supervisor_sha256', 'runner_files', 'outcome_sha256'):
+                self.assertNotIn(absent, receipt)
 
     def test_missing_state_requires_explicit_initialization(self):
         with nightly_fixture() as case:
@@ -545,10 +556,12 @@ class NightlyLifecycleTests(unittest.TestCase):
                 receipt = json.loads(next((case['state_dir'] / 'runs').glob('*/execution.json')).read_text())
                 self.assertEqual(receipt['exit_code'], int(exit_code))
                 self.assertIn('suite_log_sha256', receipt)
+                self.assertEqual(receipt['completion'], 'incomplete')
+                self.assertFalse((case['state_dir'] / 'active-run.json').exists())
+                # Without explicit initialization the missing state still refuses a native attempt.
                 before = (case['base'] / 'runner-args').read_bytes()
                 self.assertNotEqual(self.run_case(case), 0)
                 self.assertEqual((case['base'] / 'runner-args').read_bytes(), before)
-                self.assertTrue((case['state_dir'] / 'active-run.json').exists())
 
     def test_failed_fetch_does_not_fall_back_to_local_head(self):
         with nightly_fixture() as case:
@@ -646,8 +659,10 @@ class NightlyLifecycleTests(unittest.TestCase):
             self.assertEqual((case['base'] / 'term-cleanup').read_text(), 'cleaned')
             receipt = json.loads(next((case['state_dir'] / 'runs').glob('*/execution.json')).read_text())
             self.assertEqual(receipt['exit_code'], 124)
+            self.assertEqual((receipt['completion'], receipt['termination']), ('incomplete', 'timeout'))
             self.assertEqual(len(receipt['nightly_runner_sha256']), 64)
-            self.assertTrue((case['state_dir'] / 'active-run.json').exists())
+            self.assertFalse((case['state_dir'] / 'active-run.json').exists())
+            self.assertFalse((case['state_dir'] / 'state.json').exists())
 
 
 class PlaneFilingTests(unittest.TestCase):

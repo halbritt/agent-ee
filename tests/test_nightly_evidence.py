@@ -18,11 +18,14 @@ import nightly_full_suite as nightly
 
 
 class GateImportTests(unittest.TestCase):
-    def test_failed_no_start_counts_toward_retained_admission_threshold(self):
+    def test_failed_attempt_counts_toward_an_explicit_retained_admission_threshold(self):
+        """Renamed from the journal-based no-start variant (AGENTEE-619): an observed failed exit is
+        an incomplete attempt that still occupies retained history when a threshold is selected."""
         with nightly_fixture() as case:
             options = dict(root=case['root'], state_dir=case['state_dir'], worktree_dir=case['worktree_dir'],
                            max_retained_runs=1, skip_gh_status=True, skip_plane=True, initialize_baseline=True)
-            with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75', NIGHTLY_START_STATE='not_started'):
+            (case['base'] / 'report').write_text('')
+            with patch.dict(os.environ, NIGHTLY_SUITE_EXIT='75'):
                 self.assertNotEqual(nightly.run_nightly_suite(**options), 0)
             self.assertFalse((case['state_dir'] / 'active-run.json').exists())
             before = (case['base'] / 'runner-args').read_bytes()
@@ -47,7 +50,7 @@ class GateImportTests(unittest.TestCase):
                     with next((case['state_dir'] / 'runs').glob('*/execution.json')).open('a') as stream:
                         stream.write('\n')
                 with self.assertRaises(ValueError):
-                    nightly_evidence.guard_retention(case['state_dir'], 7, 20 * 1024 ** 3)
+                    nightly_evidence.guard_retention(case['state_dir'])
                 check = json.loads((case['state_dir'] / 'retention-check.json').read_text())
                 self.assertEqual(check['decision'], 'hold')
                 self.assertIsNone(check['runs'])
@@ -71,10 +74,9 @@ class GateImportTests(unittest.TestCase):
     def prepare(self, case):
         gate = case['base'] / 'reviewed-gate'
         tree = case['git']('-C', str(case['root']), 'rev-parse', 'HEAD^{tree}')
-        with patch.dict(os.environ, NIGHTLY_CAPTURE_INPUTS='1'):
-            self.assertEqual(nightly.main(['qualify', '--root', str(case['root']), '--commit', case['commit'],
-                '--tree', tree, '--evidence-dir', str(gate), '--runner', str(case['base'] / 'bin/ae-ci-exec'),
-                '--skip-gh-status']), 0)
+        self.assertEqual(nightly.main(['qualify', '--root', str(case['root']), '--commit', case['commit'],
+            '--tree', tree, '--evidence-dir', str(gate), '--runner', str(case['base'] / 'bin/ae-ci-exec'),
+            '--skip-gh-status']), 0)
         selection = {'schema': 'agent-ee.baseline-import/1', 'gate_directory': str(gate),
             'commit': case['commit'], 'tree': tree, 'review_reference': 'owned-test-review@1',
             'input_manifest_sha256': 'b' * 64,
@@ -101,8 +103,10 @@ class GateImportTests(unittest.TestCase):
             self.assertNotEqual(self.invoke(case, selection), 0)
 
     def test_corrupt_missing_and_mismatched_gate_evidence_is_refused(self):
-        faults = ('changed-log', 'missing-log', 'input-source', 'missing-input-receipt',
-                  'input-manifest', 'incomplete-outcome', 'not-full', 'controller', 'main-sha', 'tree', 'active', 'state')
+        # Companion native-input receipt and private outcome journal faults are gone with those
+        # contracts (AGENTEE-619); an incomplete receipt and an exit/verdict disagreement replace them.
+        faults = ('changed-log', 'missing-log', 'incomplete-receipt', 'exit-disagrees',
+                  'not-full', 'controller', 'main-sha', 'tree', 'active', 'state')
         for fault in faults:
             with self.subTest(fault=fault), nightly_fixture() as case:
                 gate, selection = self.prepare(case)
@@ -111,30 +115,17 @@ class GateImportTests(unittest.TestCase):
                         stream.write('changed after review\n')
                 elif fault == 'missing-log':
                     (gate / 'suite.log').unlink()
-                elif fault in ('input-source', 'missing-input-receipt', 'input-manifest'):
-                    path = next((gate / 'native').glob('*/native-inputs.json'))
-                    if fault == 'missing-input-receipt':
-                        path.unlink()
-                    else:
-                        record = json.loads(path.read_text())
-                        if fault == 'input-source': record['agent_ee']['commit'] = '0' * 40
-                        else: record['manifest_sha256'] = '0' * 64
-                        path.write_text(json.dumps(record))
-                    nightly_evidence.write_manifest(gate)
-                    selection['output_manifest_sha256'] = nightly_evidence.digest(gate / 'output-manifest.json')
-                elif fault in ('incomplete-outcome', 'not-full', 'controller'):
+                elif fault in ('incomplete-receipt', 'exit-disagrees', 'not-full', 'controller'):
                     path = gate / 'execution.json'
                     record = json.loads(path.read_text())
                     if fault == 'controller':
                         record['nightly_runner_sha256'] = '0' * 64
                     elif fault == 'not-full':
                         record['full_suite'] = False
+                    elif fault == 'exit-disagrees':
+                        record['exit_code'] = 1
                     else:
-                        journal = gate / 'outcome.json'
-                        outcome = json.loads(journal.read_text())
-                        outcome['complete'] = False
-                        journal.write_text(json.dumps(outcome))
-                        record['outcome_sha256'] = nightly_evidence.digest(journal)
+                        record['completion'] = 'incomplete'
                     path.write_text(json.dumps(record))
                     nightly_evidence.write_manifest(gate)
                     selection['output_manifest_sha256'] = nightly_evidence.digest(gate / 'output-manifest.json')

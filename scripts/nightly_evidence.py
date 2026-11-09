@@ -140,7 +140,7 @@ def history_usage(state_dir: Path) -> tuple[int, int]:
             raise ValueError('retained run must be an owned directory, not a link or file')
         entry = index['entries'][run.name]
         if (not isinstance(entry, dict) or entry.get('state') not in (
-                'preparing', 'complete', 'not_started', 'incomplete', 'imported')
+                'preparing', 'complete', 'incomplete', 'imported')
                 or not isinstance(entry.get('scratch'), list)):
             raise ValueError('retained attempt index entry is malformed')
         attempt = entry.get('attempt_id')
@@ -158,7 +158,7 @@ def history_usage(state_dir: Path) -> tuple[int, int]:
                 raise ValueError('selected retained worktree is missing or aliased')
             worktrees.add(path)
         receipt = run / 'execution.json'
-        if entry['state'] in ('complete', 'not_started') and not entry.get('execution_sha256'):
+        if entry['state'] == 'complete' and not entry.get('execution_sha256'):
             raise ValueError('completed retained attempt has no bound execution receipt')
         if entry.get('execution_sha256') and (not receipt.is_file() or digest(receipt) != entry['execution_sha256']):
             raise ValueError('retained execution receipt is missing or corrupt')
@@ -183,17 +183,21 @@ def history_usage(state_dir: Path) -> tuple[int, int]:
     return len(attempts), size
 
 
-def guard_retention(state_dir: Path, max_runs: int, max_bytes: int) -> None:
-    """Index every state; hold at high-water thresholds without deleting bytes."""
+def guard_retention(state_dir: Path, max_runs: int | None = None, max_bytes: int | None = None) -> None:
+    """Index every state; hold only at explicitly selected thresholds, deleting nothing.
+
+    Without thresholds the accounting still runs and is recorded, and only an
+    inconsistent or unreadable history refuses a new attempt.
+    """
     check = {'schema': 'agent-ee.nightly-retention-check/1', 'runs': None, 'bytes': None,
              'max_runs': max_runs, 'max_bytes': max_bytes, 'checked_at': datetime.now(timezone.utc).isoformat(),
              'remediation': 'Lead must reconcile/export indexed history before authorizing any release; delete nothing automatically.'}
     try:
-        if max_runs < 1 or max_bytes < 1:
+        if (max_runs is not None and max_runs < 1) or (max_bytes is not None and max_bytes < 1):
             raise ValueError('retention thresholds must be positive')
         count, size = history_usage(state_dir)
         check.update(runs=count, bytes=size)
-        if count >= max_runs or size >= max_bytes:
+        if (max_runs is not None and count >= max_runs) or (max_bytes is not None and size >= max_bytes):
             raise ValueError(f'retained history threshold reached: {count} runs, {size} bytes; lead reconciliation required')
         check['decision'] = 'admit'
     except (OSError, ValueError, KeyError, TypeError) as error:

@@ -16,7 +16,6 @@ permissions:
 env:
   # Runtime input metadata consumed by ae-ci-exec; retained until its contract changes.
   FOME_MC_COMMIT: 1289f3149d2bcaa83a3b490a0bfbd11ed8a17589
-  FOME_MC_STORE: build/external/fome-mc
   J1_DRAWING_URL: https://www.farnell.com/cad/2916153.pdf
   J1_DRAWING_SHA256: 14bd5c3bb2ca16bfcf01918b678eab1aa19df10001c17735dd1f11356a6e4fe8
 
