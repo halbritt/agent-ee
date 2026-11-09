@@ -72,7 +72,7 @@ must confirm the requested assignee in the returned issue; an ignored flag or
 unassigned existing issue keeps reporting incomplete. This path does not change
 an existing issue's assignment. Reporting retries preserve the commit external
 identity and original suite finish time without rerunning the suite. Real filing
-and deduplication proof still require a separate operational authorization.
+and deduplication evidence is recorded separately from the controller fixtures.
 
 When module setup prevents execution, its previous problem IDs/kinds remain
 `unexecuted_problems` with status unknown. Summary, Plane and integrator records
@@ -148,7 +148,8 @@ unique external `AE_CI_EVIDENCE_DIR` under the attempt's `runs/<id>/native/`. Th
 runner's own helper prepares read-only snapshots, binds the resolved image into
 one receipt and announces `ae-ci-exec: native input receipt /absolute/path` in
 the log. After completion validation the controller binds that single receipt to
-the attempt: status `prepared`, manifest bytes, source commit/tree, runner hash
+the attempt: status `prepared`, the manifest digest selected before launch,
+unchanged current manifest bytes, source commit/tree, runner hash
 and announced image must all match, every input must be read-only with a file or
 Git identity, and the receipt must lie inside this attempt's evidence directory.
 Any mismatch leaves the attempt `incomplete` ("native input receipt not bound").
@@ -171,7 +172,8 @@ interpreter whose only `agent_ee` is the selected checkout's `src` (clean import
 custody); the controller never imports the producer. Requested
 IDs come from the current context's two retained parent catalogs; the existing
 `agent_ee.jlc_stock_capture` producer runs once per parent with bounded time, no
-retry and no backdating; part identities must match the previous catalog; the
+retry and no backdating. The configured request interval also applies between
+the two parent populations. Part identities must match the previous catalog; the
 existing `alternative_context` union/admission algebra builds and checks the new
 closure; raw bytes and provenance are retained under `runs/<id>/stock/`. The
 per-attempt manifest `runs/<id>/input-manifest.json` replaces exactly the stock
@@ -179,6 +181,12 @@ source root and context entries. Unchanged-main skips and reporting retries neve
 capture. Any failed preparation is retained with its reason and starts no native
 work and advances no baseline; there is no cached stale fallback. The 24 h
 acceptance rule is evaluated by the tests at real run time and is unchanged.
+Preparation attempts are indexed before capture, so a failed preparation remains
+counted and a later explicit retry can proceed. The active-native marker is
+created only after preparation succeeds. The existing preparation child owns
+one process group containing its producer and fetch workers; bounded termination
+and reaping on return, failure, timeout or interruption prevent a fetch from
+outliving a failed preparation. Partial logs and records remain retained.
 
 ## Module input setup and preserved coverage
 
@@ -221,13 +229,12 @@ Nothing is automatically deleted. Worktrees, inputs, outputs and scratch remain 
 reconciles, exports and explicitly releases them. Missing selected scratch blocks
 new work; there is no age-based purge.
 
-The prepared infra unit explicitly selects the owned runtime manifest and a
-fresh per-run evidence policy. The separate scoped nightly manifest remains runtime-owned and pending; its
-exact reviewed hash must be recorded before activation. Lead retention thresholds
-are selected, with implementation/review still pending.
-The lead owns installation, activation, moved-main execution and unchanged-main
-skip proof after review/landing. No native grant, baseline import or timer
-activation follows merely from preparing this code.
+The infra service must explicitly select the runtime input manifest and fresh
+stock configuration, retain native scratch and use a fresh worktree per attempt.
+Its installation record binds the selected configuration and installed file
+hashes. The campaign selects no retained-run or byte threshold. Installation,
+activation, moved-main execution and unchanged-main skip evidence are separate
+from source-level verification of this controller.
 
 History accounting validates `retention-index.json` against all retained attempts,
 including failed/incomplete states. Multiple lineage entries for the
