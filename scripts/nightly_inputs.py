@@ -106,13 +106,19 @@ def bind_receipt(log_bytes: bytes, *, manifest: Path, evidence_dir: Path, commit
         if (not isinstance(item, dict) or item.get('read_only') is not True or not isinstance(item.get('name'), str)
                 or not isinstance(item.get('env'), str) or not (item.get('files') or item.get('git'))):
             raise ValueError('native input receipt input entry is incomplete or writable')
-    for field in ('policy_sha256', 'preparer'):
+    for field in ('policy_sha256', 'preparer', 'mount_plan_sha256', 'launch', 'launch_sha256', 'validated_at'):
         if not record.get(field):
-            raise ValueError(f'native input receipt lacks {field}')
+            raise ValueError(f'native input receipt lacks {field} (launch mounts not validated before Docker)')
+    launch = record['launch']
+    if (not isinstance(launch, list) or not all(isinstance(arg, str) for arg in launch)
+            or record['launch_sha256'] != digest_bytes(json.dumps(launch).encode())):
+        raise ValueError('native input receipt launch argv does not match its recorded digest')
     return {
         'path': str(path), 'sha256': digest_bytes(raw), 'manifest': str(manifest),
         'manifest_sha256': manifest_sha256, 'image': record['image'],
         'policy_sha256': record['policy_sha256'], 'module_env_sha256': record.get('module_env_sha256'),
+        'mount_plan_sha256': record['mount_plan_sha256'], 'launch_sha256': record['launch_sha256'],
+        'validated_at': record['validated_at'],
         'preparer_sha256': (record['preparer'] or {}).get('sha256') if isinstance(record['preparer'], dict) else None,
         'output_directory': record.get('output_directory'),
         'inputs': [{'name': item['name'], 'env': item['env'], 'identity': item.get('git') or item.get('files')}

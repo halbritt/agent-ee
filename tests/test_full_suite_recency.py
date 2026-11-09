@@ -484,7 +484,7 @@ class NightlyLifecycleTests(unittest.TestCase):
             self.assertEqual(receipt['completion'], 'complete')
 
     def test_receipt_faults_leave_the_attempt_incomplete_without_state(self):
-        for fault in ('silent', 'twice', 'manifest', 'image', 'commit', 'status', 'writable'):
+        for fault in ('silent', 'twice', 'manifest', 'image', 'commit', 'status', 'writable', 'launch', 'unvalidated'):
             with self.subTest(fault=fault), nightly_fixture() as case:
                 with patch.dict(os.environ, NIGHTLY_RECEIPT_FAULT=fault):
                     self.assertNotEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest'],

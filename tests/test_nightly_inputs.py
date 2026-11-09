@@ -30,6 +30,8 @@ class ReceiptBindingTests(unittest.TestCase):
             'agent_ee': {'commit': 'c' * 40, 'tree': 't' * 40, 'clean': True},
             'runner': {'sha256': 'r' * 64}, 'preparer': {'sha256': 'p' * 64}, 'policy_sha256': 'q' * 64,
             'module_env_sha256': 'm' * 64, 'output_directory': str(self.evidence / 'run/output'),
+            'mount_plan_sha256': 'n' * 64, 'launch': ['docker', 'run'],
+            'launch_sha256': sha(json.dumps(['docker', 'run']).encode()), 'validated_at': '2026-11-09T00:00:00+00:00',
             'inputs': [{'name': 'k91-final', 'env': 'AGENT_EE_K91_FINAL_RECEIPT', 'read_only': True,
                         'files': {'RESULT.md': 'f' * 64}}]}
         self.receipt.write_text(json.dumps(self.record))
@@ -52,6 +54,8 @@ class ReceiptBindingTests(unittest.TestCase):
         self.assertEqual(bound['inputs'], [{'name': 'k91-final', 'env': 'AGENT_EE_K91_FINAL_RECEIPT',
                                             'identity': {'RESULT.md': 'f' * 64}}])
         self.assertEqual(bound['preparer_sha256'], 'p' * 64)
+        self.assertEqual((bound['mount_plan_sha256'], bound['launch_sha256'], bound['validated_at']),
+                         ('n' * 64, sha(json.dumps(['docker', 'run']).encode()), '2026-11-09T00:00:00+00:00'))
 
     def test_every_binding_mismatch_refuses(self):
         cases = {
@@ -67,6 +71,8 @@ class ReceiptBindingTests(unittest.TestCase):
         for label, change in {'status': {'status': 'prepared_with_unavailable_inputs'},
                               'manifest': {'manifest_sha256': '0' * 64}, 'schema': {'schema': 'other/1'},
                               'no inputs': {'inputs': []}, 'policy': {'policy_sha256': ''},
+                              'unvalidated launch': {'validated_at': None}, 'no mount plan': {'mount_plan_sha256': ''},
+                              'launch digest': {'launch_sha256': '0' * 64},
                               'writable input': {'inputs': [{**self.record['inputs'][0], 'read_only': False}]}}.items():
             with self.subTest(label=label):
                 self.receipt.write_text(json.dumps({**self.record, **change}))

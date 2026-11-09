@@ -88,9 +88,15 @@ if 'AE_CI_INPUT_MANIFEST' in os.environ:
               'runner': {'path': __file__, 'sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
               'preparer': {'path': 'native-inputs.py', 'sha256': 'c' * 64},
               'policy_sha256': 'd' * 64, 'module_env_sha256': 'e' * 64, 'output_directory': str(run / 'output'),
+              'mount_plan_sha256': '1' * 64,
+              'launch': ['docker', 'run', '--mount', 'type=bind,src=' + str(run / 'inputs/owned-input') + ',dst=/opt/agent-ee-inputs/owned-input,readonly'],
+              'validated_at': '2026-11-09T00:00:00+00:00',
               'inputs': [{'name': 'owned-input', 'env': 'AGENT_EE_ACQUISITION_INPUTS', 'read_only': fault != 'writable',
                           'files': {'owned.txt': 'f' * 64}, 'snapshot': str(run / 'inputs/owned-input'),
                           'container_path': '/opt/agent-ee-inputs/owned-input', 'modules': ['*']}]}
+    record['launch_sha256'] = '0' * 64 if fault == 'launch' else hashlib.sha256(json.dumps(record['launch']).encode()).hexdigest()
+    if fault == 'unvalidated':
+        del record['validated_at']
     receipt = run / 'native-inputs.json'
     receipt.write_text(json.dumps(record, indent=2) + '\n')
     if fault != 'silent':
