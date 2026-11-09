@@ -74,7 +74,15 @@ def probe(plan_path, run, out):
     shutil.copytree(Path(build.__file__).parent, runtime_source / 'agent_ee')
     with (runtime_source / 'agent_ee/build_workflow.py').open('a') as stream:
         stream.write('\n# Inert runtime-identity regression control.\n')
-    refused('runtime', env=dict(os.environ, PYTHONPATH=str(runtime_source)))
+    # An edited agent-ee is not a refusal: the resume proceeds and records both tool identities.
+    result = subprocess.run(command, env=dict(os.environ, PYTHONPATH=str(runtime_source)),
+                            text=True, capture_output=True, timeout=180)
+    assert result.returncode == 0, result.stderr + result.stdout
+    change, = read_json(copied / 'build-report.json')['tool_changes']
+    assert change['files'] == ['build_workflow.py'], change
+    results['tool_source'] = dict(exit=result.returncode, tool_change=change)
+    for name, raw in before.items():
+        (copied / name).write_bytes(raw)
     if 'judgments' in plan:
         draft = out / source / plan['judgments'] / 'new-after-freeze.json'
         draft.write_text('{}\n')

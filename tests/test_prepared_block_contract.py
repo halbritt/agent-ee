@@ -323,7 +323,12 @@ class FinalArtworkBlockProofTests(unittest.TestCase):
         self.seal()
         path=self.artwork.directory/block_package.PROOF
         original=path.read_bytes()
-        for case in ('missing','board','report','binding','groups','policy','declaration'):
+        # AGENTEE-630: the proof's policy_sha256 records its producing tool source; an edited
+        # agent-ee still verifies the sealed proof and reports the recorded value.
+        sealed=block_package.verify(self.root,self.candidate,self.scope,self.plan)
+        with patch.object(block_package,'policy_files',return_value={'changed':'policy'}):
+            self.assertEqual(block_package.verify(self.root,self.candidate,self.scope,self.plan),sealed)
+        for case in ('missing','board','report','binding','groups','declaration'):
             with self.subTest(case=case):
                 if case=='missing':path.unlink()
                 elif case=='board':(self.candidate/'board.kicad_pcb').write_bytes(b'after proof edit')

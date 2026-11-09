@@ -80,7 +80,9 @@ agent-ee build run build.json --out RUN
 ```
 
 Each stage writes a hash-bound candidate directory and a receipt. Resumption
-re-checks source and runtime identity. A `CANCEL` file stops before the next
+re-checks the plan, the input source and the native tool runtime (KiCad, Python).
+A changed agent-ee source does not refuse a resume; the report records it in
+`tool_changes`. A `CANCEL` file stops before the next
 stage. `--through STAGE` stops at a checkpoint for diagnosis. See the
 [build workflow](docs/build-workflow.md) for the plan format and
 [placement job](docs/placement-job.md) for search, router and budget settings.

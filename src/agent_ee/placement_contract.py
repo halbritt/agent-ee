@@ -54,8 +54,6 @@ def grade(saved_capture, binding):
     body = {k: v for k, v in binding.items() if k != 'binding_sha256'}
     if binding.get('schema') != SCHEMA or binding.get('binding_sha256') != identity(body):
         raise JobRefusal('block contract binding changed after capture')
-    if binding['policy_sha256'] != identity(policy_files()):
-        raise JobRefusal('block contract checking policy changed after capture')
     report = block_contract.judge(_project(saved_capture, binding['references']), binding['contract'],
         original_capture=binding['original_capture'], plan={'policy': {'fixed_refs': binding['fixed_refs']}})
     native_refs = {fp['uuid']: fp['native_ref'] for fp in binding['original_capture']['footprints']

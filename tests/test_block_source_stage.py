@@ -243,7 +243,7 @@ class ProducerTests(unittest.TestCase):
         self.assertEqual(read_json(self.root/'out/binding.json')['policy_sha256'],identity(stage.policy_files()))
 
     def test_child_failure_drift_and_deadline_publish_nothing(self):
-        for failure in ('exit','board','rules','policy','deadline'):
+        for failure in ('exit','board','rules','deadline'):
             with self.subTest(failure=failure):
                 out=self.root/failure
                 original=(self.candidate/'board.kicad_pcb').read_bytes()
@@ -253,16 +253,11 @@ class ProducerTests(unittest.TestCase):
                     if failure=='board':(self.candidate/'board.kicad_pcb').write_bytes(b'drift')
                     if failure=='rules':(self.candidate/'board.kicad_dru').write_bytes(b'late')
                     return result
-                policies=[{'old':'policy'},{'changed':'policy'}]
                 with native_run.using(native_run.Recorded(respond)):
-                    if failure=='policy':
-                        with patch.object(stage,'policy_files',side_effect=policies),self.assertRaisesRegex(ValueError,'policy changed'):
-                            stage.produce(self.candidate,out,self.names,clock=job.Clock(10))
-                    else:
-                        expected = (job.EnvironmentFailure if failure == 'exit' else
-                                    job.JobStopped if failure == 'deadline' else job.JobRefusal)
-                        with self.assertRaises(expected):
-                            stage.produce(self.candidate,out,self.names,clock=job.Clock(0 if failure=='deadline' else 10))
+                    expected = (job.EnvironmentFailure if failure == 'exit' else
+                                job.JobStopped if failure == 'deadline' else job.JobRefusal)
+                    with self.assertRaises(expected):
+                        stage.produce(self.candidate,out,self.names,clock=job.Clock(0 if failure=='deadline' else 10))
                 self.assertFalse(out.exists())
                 (self.candidate/'board.kicad_pcb').write_bytes(original)
                 (self.candidate/'board.kicad_dru').unlink(missing_ok=True)
@@ -343,9 +338,10 @@ class ProducerTests(unittest.TestCase):
         self.assertEqual(stage.verify(root,candidate,self.scope,self.plan),expected)
         consumer=self.root/'placement-inputs';shutil.copytree(candidate,consumer)
         self.assertEqual(stage.verify(root,consumer,self.scope,self.plan),expected)
-        with patch.object(stage,'policy_files',return_value={'changed':'policy'}):
-            with self.assertRaisesRegex(ValueError,'production no longer matches'):
-                stage.verify(root,consumer,self.scope,self.plan)
+        # AGENTEE-630: an edited agent-ee still verifies what the earlier source produced.
+        with patch.object(stage,'policy_files',return_value={'changed':'policy'}), \
+                patch.object(contract,'policy_files',return_value={'changed':'policy'}):
+            self.assertEqual(stage.verify(root,consumer,self.scope,self.plan),expected)
         for target in ('source.json',stage.DIRECTORY+'/production.json',
                        stage.DIRECTORY+'/original/board.kicad_pcb'):
             path=consumer/target;original=path.read_bytes()

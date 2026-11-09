@@ -5,10 +5,9 @@ from pathlib import Path
 import re
 import shutil
 
-from . import parts_stage, qualification, requirement_map, retained_run, scaffold, schematic_stage, spec_record
+from . import parts_stage, qualification, requirement_map, retained_run, run_record, scaffold, schematic_stage, spec_record
 from .stage_receipts import adopt, run_step, tree_identity
 from .storage import digest, read_json, write_json
-from .run_record import policy_files
 
 TYPED_SCHEMA = retained_run.TYPED_SCHEMA
 GENERATED = 'build-generated/connectivity-intent.json'
@@ -165,8 +164,11 @@ def _package(plan, candidate, stage_dir, scope, accounting, profile=None, *, out
             raise ValueError('typed package review requires its retained build judgment context')
         from .judgment_context import Source
         context['judgment_context'] = Source(out, stage_dir, candidate)
+    # The package review records the source this process loaded and does not re-observe the
+    # checkout: editing agent-ee during a build is not a reason to fail its stage.
     result = retained_run.review_candidate(candidate_scope(scope, candidate), stage_dir,
-                                           plan.get('verification_timeout_s', 3600), profile=profile, **context)
+                                           plan.get('verification_timeout_s', 3600), profile=profile,
+                                           host=dict(policy_files=run_record.LOADED_POLICY_FILES), **context)
     artifacts = qualification.package_artifacts(result, scope, candidate)
     extra = {}
     if group_proof is not None:
@@ -192,7 +194,7 @@ def _artwork(candidate, directory, board):
     source_sha = digest(candidate / board)
     declaration = routed_artwork.step(directory / 'tool', board, discover_targets=True)
     path, receipt = _step(directory, candidate, declaration, 0)
-    proof = routed_artwork.qualify_receipt(path, receipt, board, policy_files())
+    proof = routed_artwork.qualify_receipt(path, receipt, board, None)
     produced = read_json(path / 'run' / routed_artwork.REPORT)
     conflicts = produced['open_defects']
     status = produced['status']

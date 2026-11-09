@@ -486,7 +486,7 @@ class BuildQualificationTests(unittest.TestCase):
         self.assertEqual(read_json(refusal)['kind'], 'judgment_inputs')
         self.assertIn('judgments_sha256', read_json(refusal)['attempted'])
 
-    def test_plan_and_real_runtime_changes_refuse_with_nonzero_cli_without_rewriting_records(self):
+    def test_plan_change_refuses_and_tool_source_change_resumes_recording_both_identities(self):
         build.run(self.plan_path, self.out, through='requirements')
         before = {name: (self.out / name).read_bytes() for name in ('build-report.json', 'qualification.json')}
         original_plan = self.plan_path.read_bytes()
@@ -505,14 +505,35 @@ class BuildQualificationTests(unittest.TestCase):
         shutil.copytree(Path(build.__file__).parent, runtime_source / 'agent_ee')
         with (runtime_source / 'agent_ee/build_workflow.py').open('a') as stream:
             stream.write('\n# Runtime identity regression control.\n')
+        refusals = [read_json(p) for p in (self.out / 'resume-refusals').glob('*.json')]
+        self.assertEqual([r['kind'] for r in refusals], ['invocation_identity'])
+        # AGENTEE-630: an edited agent-ee resumes the build and records both tool identities.
+        captured = read_json(self.out / 'build-report.json')
         changed_runtime = subprocess.run(command, env=dict(os.environ, PYTHONPATH=str(runtime_source)),
                                          capture_output=True, text=True, timeout=30)
-        self.assertNotEqual(changed_runtime.returncode, 0, changed_runtime.stdout)
-        self.assertIn('resume identity differs', changed_runtime.stderr)
-        self.assertEqual(before, {name: (self.out / name).read_bytes() for name in before})
-        refusals = [read_json(p) for p in (self.out / 'resume-refusals').glob('*.json')]
-        self.assertEqual(len(refusals), 2)
-        self.assertTrue(all(r['kind'] == 'invocation_identity' for r in refusals))
+        self.assertEqual(changed_runtime.returncode, 0, changed_runtime.stderr)
+        resumed = read_json(self.out / 'build-report.json')
+        self.assertEqual(resumed['status'], 'checkpoint')
+        self.assertEqual((resumed['identity'], resumed['inputs'], resumed['completed']),
+                         (captured['identity'], captured['inputs'], captured['completed']))
+        change, = resumed['tool_changes']
+        self.assertEqual(change['captured_sha256'], identity(captured['inputs']['runtime']['source']))
+        self.assertNotEqual(change['current_sha256'], change['captured_sha256'])
+        self.assertEqual(change['files'], ['build_workflow.py'])
+        self.assertEqual(len(list((self.out / 'resume-refusals').glob('*.json'))), 1)
+
+    def test_tool_source_change_during_a_stage_does_not_fail_it_but_a_native_tool_change_does(self):
+        from unittest import mock
+        real = build._runtime()
+        with mock.patch.object(build, '_runtime', side_effect=[real, dict(real, source={'edited.py': 'a' * 64})]):
+            report = build.run(self.plan_path, self.out, through='requirements')
+        self.assertEqual(report['status'], 'checkpoint', report)
+        self.assertEqual(report['inputs']['runtime'], real)
+        self.assertNotIn('tool_changes', report)
+        with mock.patch.object(build, '_runtime', side_effect=[real, dict(real, kicad_cli='b' * 64)]):
+            report = build.run(self.plan_path, self.root / 'native-change', through='requirements')
+        self.assertEqual(report['status'], 'failed', report)
+        self.assertIn('runtime changed during stage execution', report['reason'])
 
     def test_retained_corruption_withdraws_claim_and_preserves_exact_superseded_records(self):
         report = build.run(self.plan_path, self.out, through='requirements')

@@ -234,7 +234,7 @@ Operational assessment supports only the explicitly compiled
 and an interrupted/failed attempt followed by the completed attempt of that
 same stage under the same run identity. A clean first run reports operational
 pending; a package or an unrelated resume cannot satisfy arbitrary operational
-prose. Changed live inputs or invocation runtime refuse resume in a separate
+prose. Changed live inputs or native tool runtime refuse resume in a separate
 receipt; they do not rewrite the retained build's claims. Corrupted retained
 source or completed-stage evidence withdraws the current claim and records
 operational failure while preserving previous root records and completed stage
@@ -263,6 +263,19 @@ creates a bounded `resume-refusals/<id>.json` (`agent-ee.resume-refusal/1`) and
 returns nonzero. The receipt records the reason, attempted identity and input
 hashes, retained identity, and hashes of the unchanged report and qualification.
 These are refused invocations, not changes to the historical build outcome.
+
+The compared runtime is the native tools: the Python executable, `kicad-cli`
+and the `pcbnew` extension. agent-ee's own source digests stay in
+`inputs.runtime.source` as provenance of the capturing tool, but they are not
+part of that comparison, and a stage does not fail because agent-ee's source
+changed while it ran. A resume under a different agent-ee source proceeds under
+the build's captured identity and appends one `tool_changes` row to
+`build-report.json`: `captured_sha256` and `current_sha256` are the identities
+of the capturing and the resuming source digest maps, and `files` names the
+package files that differ. Tool-source digests recorded in stage evidence
+(`policy_sha256` in block bindings and proofs, a step receipt's tool snapshot,
+the package review's `policy_files`) are likewise recorded; a build does not
+refuse or fail because they differ from the current checkout.
 An ordinary review verifier can also refuse the current tools or rules after
 retained stage custody passes; that refusal is recorded separately.
 
@@ -281,7 +294,8 @@ acceptance is historical evidence, not a valid current claim on corrupted files.
 The maintainer [resume regression probe](../tests/qualification_resume_probe.py)
 accepts `--plan`, `--run` and a new `--out` directory. Run it in the supported
 runtime against an already qualified build. It verifies a real package gate,
-changes only copies, and checks refusal bytes, migration and corruption; a
+changes only copies, and checks refusal bytes, a resume under an edited
+agent-ee source, migration and corruption; a
 typed input also exercises its frozen judgment directory.
 
 ## Declared mechanics
@@ -347,7 +361,7 @@ agent-ee build run build.json --out RUN --through artwork
 agent-ee build run build.json --out RUN --resume
 ```
 
-The resume uses the same plan, source and runtime. Only the declared judgments
+The resume uses the same plan, input source and native tool runtime. Only the declared judgments
 directory is excluded from the source pin before it is frozen.
 
 Judgment paths in the typed map are relative to the declared judgments

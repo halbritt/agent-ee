@@ -850,22 +850,26 @@ def step(tool_dir, board, *, stage='verification', timeout_s=300, targets=None, 
 
 
 def qualify_receipt(receipt_dir, receipt, board, source_files):
-    """Authenticate the producer snapshot and independently recompute its silk-only scope."""
+    """Authenticate the producer snapshot and independently recompute its silk-only scope.
+
+    source_files is a campaign's package pin. A build passes None: its producer ran from the
+    receipt's own retained snapshot, which is not compared with this checkout's source."""
     from .placement_adapter import LAUNCHER as PLACER_LAUNCHER
     if receipt['status'] != 'completed' or set(receipt['spec']['writes']) != {board}:
         raise ValueError('artwork receipt incomplete or writes other inputs')
-    expected = {f'agent_ee/{name}': sha for name, sha in source_files.items()}
-    expected['launch.py'] = hashlib.sha256(PLACER_LAUNCHER.encode()).hexdigest()
-    expected['artwork.py'] = hashlib.sha256(LAUNCHER.encode()).hexdigest()
     spec = receipt['spec']
     if (spec['argv'][:5] != ['/usr/bin/python3', '-B', '-I', f'{TOOL_AT}/artwork.py', f'/candidate/{board}'] or
             spec.get('source') != TOOL_AT or len(spec['mounts']) != 1 or
             spec['mounts'][0]['at'] != TOOL_AT):
         raise ValueError('artwork receipt invokes a different producer')
     tree = receipt['tool']['source_tree']
-    # Bind the entire retained tool tree to the campaign's package pin.
-    if tree != {'path': TOOL_AT, **tree_identity_from_files(expected)}:
-        raise ValueError('artwork source differs from campaign source pin')
+    if source_files is not None:
+        # Bind the entire retained tool tree to the campaign's package pin.
+        expected = {f'agent_ee/{name}': sha for name, sha in source_files.items()}
+        expected['launch.py'] = hashlib.sha256(PLACER_LAUNCHER.encode()).hexdigest()
+        expected['artwork.py'] = hashlib.sha256(LAUNCHER.encode()).hexdigest()
+        if tree != {'path': TOOL_AT, **tree_identity_from_files(expected)}:
+            raise ValueError('artwork source differs from campaign source pin')
     root = Path(receipt_dir)
     policy_file = receipt_policy_file(spec['argv'])
     if policy_file is not None:

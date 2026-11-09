@@ -266,7 +266,7 @@ def _mechanics_artwork(out, candidate, directory, scope, basis):
         source_files = input_inventory(placement.candidate)
         receipt = validate_receipt(receipt_dir, binding=dict(implementation=1, receipt_index=0,
             source_candidate_id=routed_artwork.tree_identity_from_files(source_files)['sha256']))
-        proof = routed_artwork.qualify_receipt(receipt_dir, receipt, scope['board'], policy_files())
+        proof = routed_artwork.qualify_receipt(receipt_dir, receipt, scope['board'], None)
         if (digest(receipt_dir/'receipt.json') != report.get('receipt_sha256')
                 or receipt['inputs'] != source_files or after_tree(receipt) != input_inventory(candidate)
                 or receipt['inputs'].get(scope['board']) != source_sha
@@ -287,6 +287,16 @@ def original_basis(out, scope, plan):
         return _original_basis(out, scope, plan)
     except (KeyError, TypeError) as exc:
         raise ValueError('strict original placement basis is incomplete: ' + str(exc)) from exc
+
+
+def _keep_recorded_policy(basis, recorded):
+    """policy_sha256 records the tool source that produced a proof; replay keeps it and never
+    compares it with this checkout."""
+    if isinstance(recorded, dict) and isinstance(recorded.get('basis'), dict):
+        recorded = recorded['basis']
+    if isinstance(recorded, dict) and 'policy_sha256' in recorded:
+        basis['policy_sha256'] = recorded['policy_sha256']
+    return basis
 
 
 def _validate(proof, normalized, basis, files, board, transition=None):
@@ -334,7 +344,7 @@ def produce(out, candidate, directory, scope, plan):
         proof['mechanics_artwork'] = transition
     # Retain evaluator defects/unknowns too; a failed artwork stage is never sealed.
     write_json(directory / PROOF, proof)
-    if original_basis(out, scope, plan)[1] != basis or input_inventory(candidate) != files:
+    if _keep_recorded_policy(original_basis(out, scope, plan)[1], basis) != basis or input_inventory(candidate) != files:
         raise ValueError('strict final artwork inputs changed during fresh native read')
     if _mechanics_artwork(out, candidate, directory, scope, basis) != transition:
         raise ValueError('mechanics artwork transition changed during fresh native read')
@@ -357,11 +367,13 @@ def verify(out, candidate, scope, plan):
         raise ValueError('strict package differs from sealed final artwork candidate')
     if mechanics_only(plan):
         expected = _mechanics_only_proof(out, candidate, artwork.directory, scope, plan)
+        _keep_recorded_policy(expected['basis'], proof)
         if proof != expected:
             raise ValueError('mechanics final proof differs')
         return dict(proof_sha256=digest(path), basis_sha256=identity(expected['basis']),
                     board_sha256=files[scope['board']], policy_sha256=expected['basis']['policy_sha256'])
     normalized, basis = original_basis(out, scope, plan)
+    _keep_recorded_policy(basis, proof)
     transition = _mechanics_artwork(out, candidate, artwork.directory, scope, basis)
     _validate(proof, normalized, basis, files, scope['board'], transition)
     return dict(proof_sha256=digest(path), report_sha256=proof['report_sha256'],

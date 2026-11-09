@@ -8,7 +8,7 @@ from .catalog import strict_json
 from .run_record import policy_files
 from .stage_receipts import _relative, after_tree, file_tree, tree_identity, validate_receipt, validate_step
 from .storage import canonical, digest, identity, read_json, write_json
-from .tool_source import snapshot, _files
+from .tool_source import snapshot
 
 DIRECTORY = 'build-generated/block-contract'
 STEP = 'bind-block-source'
@@ -127,7 +127,11 @@ def _binding(binding, contract, normalized, facts_sha256=None):
         records.append(dict(uuid=fp['uuid'], native_ref=fp['ref'], role=role))
     fixed_order = {ref: i for i, ref in enumerate(binding['fixed_refs'])}
     records.sort(key=lambda r: fixed_order.get(binding['references'].get(r['uuid'], r['native_ref']), len(fixed_order)))
-    if placement_contract.bind(original, contract, normalized, records) != binding:
+    # policy_sha256 records the tool source that made the binding; it is not compared with this checkout.
+    body = {key: value for key, value in placement_contract.bind(original, contract, normalized, records).items()
+            if key != 'binding_sha256'}
+    body['policy_sha256'] = binding.get('policy_sha256')
+    if dict(body, binding_sha256=identity(body)) != binding:
         raise ValueError('block source prepared binding differs from declared basis')
 
 
@@ -145,8 +149,8 @@ def produce(candidate, out, names, *, clock):
     if binding is None:
         raise ValueError('native capture omitted requested block source binding')
     _binding(binding, contract, normalized, record['facts_sha256'])
-    if _inputs(candidate, names)[0] != raw or identity(policy_files()) != policy:
-        raise ValueError('block source inputs or checking policy changed during native capture')
+    if _inputs(candidate, names)[0] != raw:
+        raise ValueError('block source inputs changed during native capture')
     placement_job._check_stop(clock, None)
     # No output directory or partial successful binding is published on refusal.
     out.mkdir(parents=True, exist_ok=False)
@@ -191,8 +195,8 @@ def verify(out, candidate, scope, plan):
     spec = receipt['spec']
     if len(spec['mounts']) != 1 or spec != _spec(names, spec['mounts'][0]['source']):
         raise ValueError('block source receipt is not the fixed producer')
-    expected_tool = dict(path='/tool/agent-ee', sha256=identity(_files(SOURCE_ROOT)), files=len(_files(SOURCE_ROOT)))
-    if receipt['tool']['source_tree'] != expected_tool or receipt['tool_after']['source_tree'] != expected_tool:
+    # The producer ran from its own retained snapshot; this checkout's source is not compared with it.
+    if receipt['tool']['source_tree'] != receipt['tool_after']['source_tree']:
         raise ValueError('block source producer source identity changed')
     for target, produced in spec['writes'].items():
         if digest(Path(candidate) / target) != receipt['outputs'][target] or receipt['artifacts'][produced] != receipt['outputs'][target]:
@@ -204,12 +208,12 @@ def verify(out, candidate, scope, plan):
     expected = dict(schema='agent-ee.block-source-production/1', inputs=_pins(raw, names),
         source_sha256=identity(source), contract_sha256=identity(contract), binding_sha256=binding['binding_sha256'],
         groups_sha256=identity(normalized['groups']), normalized_sha256=identity(normalized),
-        policy_sha256=identity(policy_files()), facts_sha256=production['facts_sha256'],
+        policy_sha256=production.get('policy_sha256'), facts_sha256=production['facts_sha256'],
         outputs={str(Path(target).relative_to(DIRECTORY)): digest(Path(candidate) / target)
                  for target in _outputs(names) if not target.endswith('/production.json')})
     if (production != expected or read_json(Path(candidate) / DIRECTORY / 'contract.json') != contract
             or binding['original_capture']['board_sha256'] != placement_job.sha256_bytes(raw['board'])):
-        raise ValueError('block source production no longer matches captured source/native/policy identities')
+        raise ValueError('block source production no longer matches captured source/native identities')
     for key in ('board', 'project', 'rules'):
         if key in raw and _read(candidate, DIRECTORY + '/original/board' + Path(names[key]).suffix) != raw[key]:
             raise ValueError('block source original sibling differs: ' + key)

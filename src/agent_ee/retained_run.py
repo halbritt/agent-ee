@@ -144,7 +144,7 @@ def review_resubmissions(limit):
         _review_resubmissions.reset(token)
 
 
-def review_candidate(scope, directory, timeout, profile=None, *, judgment_context=None):
+def review_candidate(scope, directory, timeout, profile=None, *, judgment_context=None, host=None):
     """Use the generated acceptance scope against this actual native candidate.
 
     Without a profile this is the checks-only review; with one, the ordinary
@@ -152,7 +152,7 @@ def review_candidate(scope, directory, timeout, profile=None, *, judgment_contex
     path = scope_path(directory)
     write_scope(directory, scope)
     run_review(path, directory / 'review', timeout, checks_only=profile is None, profile=profile,
-               output_stream=sys.stderr, **({} if judgment_context is None else {'judgment_context': judgment_context}),
+               output_stream=sys.stderr, **({} if host is None else {'host': host}), **({} if judgment_context is None else {'judgment_context': judgment_context}),
                **({} if _review_resubmissions.get() == 1 else
                    {"max_schema_resubmissions": _review_resubmissions.get()}))
     return verify_stage_review(directory)

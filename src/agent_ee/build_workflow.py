@@ -55,6 +55,28 @@ def _runtime():
                 kicad_version=version.stdout.strip(), pcbnew_version=pcbnew_result.stdout.strip(), pcbnew_sha256=digest(extension))
 
 
+def _native(runtime):
+    """The runtime a build is bound to. agent-ee's own source digests are recorded
+    provenance: using the tool must not depend on the tool staying unedited."""
+    return {key: value for key, value in runtime.items() if key != 'source'}
+
+
+def _bound(pin):
+    return identity(dict(pin, runtime=_native(pin['runtime'])))
+
+
+def _record_tool_change(report, pin):
+    captured, current = report['inputs']['runtime'].get('source'), pin['runtime'].get('source')
+    if captured == current:
+        return
+    change = dict(reason='agent-ee source changed since capture', captured_sha256=identity(captured),
+                  current_sha256=identity(current),
+                  files=sorted(name for name in (captured or {}).keys() | (current or {}).keys()
+                               if (captured or {}).get(name) != (current or {}).get(name)))
+    if change not in report.setdefault('tool_changes', []):
+        report['tool_changes'].append(change)
+
+
 def review_build(run, out, *, max_seconds=900, profile=None):
     """Fresh checks, and with a profile the ordinary full review, without adopting
     a candidate or accepting a package."""
@@ -147,8 +169,11 @@ def run(plan_path, out, *, resume=False, through='package'):
             if retained_plan is None:
                 _refuse_resume(out, report, 'historical build has no captured plan; resume migration is unsupported',
                                pin, kind='historical_migration')
-            if report['identity'] != binding:
+            if _bound(report['inputs']) != _bound(pin):
                 _refuse_resume(out, report, 'build resume identity differs from captured inputs or runtime', pin)
+            # The build keeps its captured identity; a later tool is recorded beside it.
+            binding = report['identity']
+            _record_tool_change(report, pin)
         captured_plan = out / 'build-plan.json'
         if not captured_plan.exists():
             captured_plan.write_bytes(plan_raw)
@@ -211,7 +236,7 @@ def run(plan_path, out, *, resume=False, through='package'):
                     retained_run.write_report(out, report)
                 candidate = attempt.execute(plan, previous, diagnostic=through != 'package')
                 if (tree_identity(previous) != before or build_plan.source_inventory(source, plan) != source_files
-                        or digest(plan_path) != pin['plan_sha256'] or _runtime() != pin['runtime']):
+                        or digest(plan_path) != pin['plan_sha256'] or _native(_runtime()) != _native(pin['runtime'])):
                     raise ValueError('build input or runtime changed during stage execution')
                 if stage == 'package' and plan['schema'] == TYPED_SCHEMA:
                     qualification.verify_judgment_source(source, plan, directory)

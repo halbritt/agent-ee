@@ -226,7 +226,8 @@ def pinned(host, name, observe):
     """The fingerprint host gives for name, else a fresh observe() that is not kept.
 
     A run compares its start observation with a later one, so a lifecycle never caches into
-    host. The loaded-code fingerprint (LOADED_POLICY_FILES) is never supplied."""
+    host. Only a build's package review (build_stages) supplies the loaded-code
+    fingerprint (LOADED_POLICY_FILES) as its policy observation."""
     return copy.deepcopy(host[name]) if host is not None and name in host else observe()
 
 
