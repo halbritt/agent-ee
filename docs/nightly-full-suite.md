@@ -162,7 +162,13 @@ runner-invoked helper and to `strict_inputs`; the controller validates neither.
 `source_root`, `per_request_timeout_seconds`, `invocation_timeout_seconds`,
 `min_interval_seconds`, `max_bytes`, optional `endpoint`) refreshes the
 acquisition stock context before an actually selected native attempt, after the
-lock, unchanged-main, reporting, unresolved-attempt and source checks. Requested
+lock, unchanged-main, reporting, unresolved-attempt and source checks. The config
+is exact and finite: non-finite numbers, non-integer `max_bytes`, an invocation
+timeout above 420 s, a per-request timeout not below the invocation timeout, or
+values outside the producer's own limits refuse; values are preserved, never
+coerced. Preparation runs in `scripts/nightly_stock_prepare.py`, a fresh
+interpreter whose only `agent_ee` is the selected checkout's `src` (clean import
+custody); the controller never imports the producer. Requested
 IDs come from the current context's two retained parent catalogs; the existing
 `agent_ee.jlc_stock_capture` producer runs once per parent with bounded time, no
 retry and no backdating; part identities must match the previous catalog; the

@@ -26,6 +26,8 @@ import shutil
 import subprocess
 import sys
 
+import nightly_stock_prepare  # config contract shared with the child; no agent_ee import here
+
 RECEIPT_SCHEMA = 'agent-ee.native-inputs/1'
 STOCK_CONFIG_SCHEMA = 'agent-ee.nightly-stock-config/1'
 RECEIPT_LINE = re.compile(r'^ae-ci-exec: native input receipt (/\S.*)$', re.MULTILINE)
@@ -137,154 +139,42 @@ def verify_bound_receipt(binding: dict, *, manifest_sha256: str) -> None:
 
 # --- Part C: fresh stock preparation ---------------------------------------------------
 
-def load_stock_config(path: Path) -> dict:
-    document = json.loads(path.read_bytes(), object_pairs_hook=unique_fields)
-    required = {'schema', 'context_path', 'source_root', 'per_request_timeout_seconds',
-                'invocation_timeout_seconds', 'min_interval_seconds', 'max_bytes'}
-    allowed = required | {'endpoint'}
-    if (not isinstance(document, dict) or document.get('schema') != STOCK_CONFIG_SCHEMA
-            or not required <= set(document) <= allowed):
-        raise ValueError(f'stock config must be {STOCK_CONFIG_SCHEMA} with exactly the documented fields')
-    for key in ('context_path', 'source_root'):
-        if not isinstance(document[key], str) or not Path(document[key]).is_absolute():
-            raise ValueError(f'stock config {key} must be an absolute path')
-    for key in ('per_request_timeout_seconds', 'invocation_timeout_seconds', 'min_interval_seconds', 'max_bytes'):
-        value = document[key]
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-            raise ValueError(f'stock config {key} must be a positive number')
-    if 'endpoint' in document and (not isinstance(document['endpoint'], str)
-                                   or not document['endpoint'].startswith(('https://', 'http://127.0.0.1:'))):
-        raise ValueError('stock config endpoint must be an https URL (or a loopback test stub)')
-    return document
+CHILD = Path(__file__).with_name('nightly_stock_prepare.py')
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def load_stock_config(path: Path, limits: dict | None = None) -> dict:
+    """Structural/finite/bounded validation; producer limits are applied by the child from the selected source."""
+    return nightly_stock_prepare.load_config(path, limits)
 
 
 def prepare_fresh_stock(config_path: Path, worktree: Path, stock_dir: Path, *, python: str = sys.executable) -> dict:
     """Refresh the acquisition stock context for one selected native attempt.
 
-    Returns {'context_path', 'source_root', 'replaced': {old_source_root, old_context_path}, 'record'}.
+    Runs scripts/nightly_stock_prepare.py in a fresh interpreter whose only agent_ee is
+    WORKTREE/src (clean import custody); the controller never imports the producer.
+    Returns {'context_path', 'source_root', 'replaced': {...}, 'record'} with Path values.
     Raises ValueError/RuntimeError on any refusal; nothing is retried or backdated.
     """
     config = load_stock_config(config_path)
-    sys.path.insert(0, str(worktree / 'src'))
+    argv = [python, '-B', '-P', '-s', str(CHILD), str(config_path), str(worktree), str(stock_dir)]
+    env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8',
+           'PYTHONPATH': str(worktree / 'src'), 'PYTHONSAFEPATH': '1', 'PYTHONDONTWRITEBYTECODE': '1'}
+    budget = 2 * config['invocation_timeout_seconds'] + 60
     try:
-        from agent_ee import jlc_stock_capture as stock
-        from agent_ee.acquisition import alternative_context
-        from agent_ee.storage import canonical, json_bytes
-    finally:
-        sys.path.pop(0)
-    old_context_path, old_source = Path(config['context_path']), Path(config['source_root'])
-    old_raw = old_context_path.read_bytes()
-    old_context, old_captures = alternative_context.read(old_source, old_raw)
-    old_catalog = json.loads(old_captures[old_context['catalog']['path']])
-    if stock_dir.exists():
-        raise ValueError('stock preparation directory must start absent')
-    stock_dir.mkdir(parents=True, mode=0o700)
-    home = stock_dir / 'home'
-    home.mkdir(mode=0o700)
-    (stock_dir / 'captures').mkdir()
-    environment = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'HOME': str(home),
-                   'PYTHONPATH': str(worktree / 'src'), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONSAFEPATH': '1'}
-    endpoint = config.get('endpoint', stock.DEFAULT_ENDPOINT)
-    record = {'schema': 'agent-ee.nightly-stock-preparation/1', 'started_at': _now(), 'status': 'started',
-              'config': str(config_path), 'config_sha256': digest_file(config_path),
-              'source': str(worktree), 'endpoint': endpoint,
-              'replaced_context': {'context_path': str(old_context_path), 'context_sha256': digest_bytes(old_raw),
-                                   'source_root': str(old_source)},
-              'invocations': []}
-    record_path = stock_dir / 'record.json'
-    record_path.write_text(json.dumps(record, indent=2) + '\n')
+        completed = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=budget)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError('stock preparation exceeded its bounded time') from error
+    if completed.returncode != 0:
+        detail = completed.stderr.strip().splitlines()[-1] if completed.stderr.strip() else f'exit {completed.returncode}'
+        raise RuntimeError(f'stock preparation failed: {detail}')
     try:
-        parents = []
-        for index, parent_ref in enumerate(old_context['parents'], 1):
-            parent_catalog = json.loads(old_captures[parent_ref['path']])
-            ids = [request['lcsc'] for request in parent_catalog['requests']]
-            if not ids or len(set(ids)) != len(ids):
-                raise ValueError(f'parent {index} catalog has no unique requested ids')
-            out = stock_dir / 'captures' / f'parent-{index}'
-            argv = [python, '-B', '-P', '-m', 'agent_ee.jlc_stock_capture', '--allow-network',
-                    '--endpoint', endpoint, '--out', str(out),
-                    '--timeout', str(config['per_request_timeout_seconds']),
-                    '--min-interval', str(config['min_interval_seconds']),
-                    '--max-bytes', str(int(config['max_bytes'])), *ids]
-            invocation = {'argv': argv, 'cwd': str(home), 'started_at': _now(), 'requested': ids}
-            record['invocations'].append(invocation)
-            record_path.write_text(json.dumps(record, indent=2) + '\n')
-            with (stock_dir / f'parent-{index}.log').open('wb') as log:
-                try:
-                    completed = subprocess.run(argv, cwd=home, env=environment, stdout=log, stderr=subprocess.STDOUT,
-                                               timeout=config['invocation_timeout_seconds'])
-                except subprocess.TimeoutExpired as error:
-                    invocation.update(exit_code=None, finished_at=_now(), timeout=True)
-                    raise RuntimeError(f'stock capture {index} exceeded its bounded time') from error
-            invocation.update(exit_code=completed.returncode, finished_at=_now())
-            if completed.returncode != 0:
-                raise RuntimeError(f'stock capture {index} failed: exit {completed.returncode}')
-            raw = (out / 'catalog.json').read_bytes()
-            catalog = json.loads(raw)
-            validation = stock.validate_capture(catalog, lambda rel, out=out: (out / rel).read_bytes())
-            invocation['validation'] = validation
-            if validation['requested'] != ids or validation['failed'] or validation['not_found']:
-                raise RuntimeError(f'stock capture {index} is incomplete: {validation}')
-            if not all(row['http_status'] == 200 and row['status'] == 'found' for row in catalog['requests']):
-                raise RuntimeError(f'stock capture {index} has a non-found response')
-            for lcsc, part in catalog['parts'].items():
-                for field in ('mpn', 'mfr', 'library_tier'):
-                    if part[field] != old_catalog['parts'][lcsc][field]:
-                        raise RuntimeError(f'stock capture {index} changed part identity for {lcsc}: {field}')
-            parents.append((out, raw, catalog))
-        target = stock_dir / 'addr-current'
-        shutil.copytree(old_source, target, symlinks=False)
-        context = json.loads(old_raw)
-        union = dict(schema=stock.SCHEMA,
-                     as_of=min((p[2]['as_of'] for p in parents), key=lambda t: stock._utc(t, 'as_of')),
-                     completed_at=max((p[2]['completed_at'] for p in parents), key=lambda t: stock._utc(t, 'completed_at')),
-                     stale_before=None, source=parents[0][2]['source'], requests=[], parts={})
-        derivation = {'kind': 'Conservative offline union of actual captures; NOT a fresh capture or one original invocation',
-                      'parents': [], 'requests': [], 'physical_validation_performed': False,
-                      'supplier_preview_performed': False, 'supplier_eligibility': 'unknown'}
-        for index, (out, raw, catalog) in enumerate(parents, 1):
-            parent_ref = context['parents'][index - 1]
-            (target / parent_ref['path']).write_bytes(raw)
-            parent_ref['sha256'] = digest_bytes(raw)
-            derivation['parents'].append({'as_of': catalog['as_of'], 'completed_at': catalog['completed_at'],
-                                          'copy': parent_ref['path'], 'sha256': parent_ref['sha256'],
-                                          'source': str(out / 'catalog.json')})
-            union['requests'] += catalog['requests']
-            union['parts'].update(catalog['parts'])
-            for request in catalog['requests']:
-                relative = request['response']['path']
-                shutil.copy2(out / relative, target / Path(context['catalog']['path']).parent / relative)
-                body = stock.request_body(request['lcsc'])
-                derivation['requests'].append({
-                    'lcsc': request['lcsc'], 'parent': index, 'fetched_at': request['fetched_at'],
-                    'request_body_utf8': body.decode(), 'request_body_sha256': digest_bytes(body),
-                    'request_record_canonical_sha256': digest_bytes(canonical(request)),
-                    'response_sha256': request['response']['sha256'],
-                    'response_size_bytes': request['response']['size_bytes']})
-        (target / context['catalog']['path']).write_bytes(json_bytes(union))
-        (target / context['derivation']['path']).write_bytes(json_bytes(derivation))
-        context['files'] = {name: digest_file(target / name) for name in context['files']}
-        for key in ('catalog', 'derivation'):
-            context[key]['sha256'] = context['files'][context[key]['path']]
-        context_path = stock_dir / 'addr-current-context.json'
-        context_path.write_bytes(json_bytes(context))
-        alternative_context.read(target, context_path.read_bytes())  # existing admission algebra
-        if old_context_path.read_bytes() != old_raw:
-            raise RuntimeError('original stock context changed during preparation')
-        record.update(status='prepared', context_path=str(context_path), source_root=str(target),
-                      as_of=union['as_of'], requested_parts=list(union['parts']), originals_unchanged=True)
-        return {'context_path': context_path, 'source_root': target,
-                'replaced': {'source_root': old_source, 'context_path': old_context_path}, 'record': record}
-    except BaseException as error:
-        record.update(status='failed', failure=type(error).__name__ + ': ' + str(error))
-        raise
-    finally:
-        record['finished_at'] = _now()
-        record_path.write_text(json.dumps(record, indent=2) + '\n')
+        result = json.loads(completed.stdout, object_pairs_hook=unique_fields)
+    except ValueError as error:
+        raise RuntimeError('stock preparation produced no readable result') from error
+    for key in ('context_path', 'source_root'):
+        result[key] = Path(result[key])
+    result['replaced'] = {key: Path(value) for key, value in result['replaced'].items()}
+    return result
 
 
 def rebind_manifest(manifest: Path, destination: Path, prepared: dict) -> Path:

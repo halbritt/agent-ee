@@ -533,6 +533,32 @@ class NightlyLifecycleTests(unittest.TestCase):
             self.assertNotEqual(nightly_full_suite.import_baseline(case['root'], case['base'] / 'other', intent), 0)
             self.assertFalse((case['base'] / 'other/state.json').exists())
 
+    def test_failed_stock_preparation_starts_no_native_work_and_unchanged_main_never_captures(self):
+        """Controller boundary only: the producer/algebra are exercised for real in test_nightly_inputs."""
+        with nightly_fixture() as case:
+            config = case['base'] / 'stock-config.json'
+            config.write_text('{}')
+            with patch.object(nightly_full_suite.nightly_inputs, 'prepare_fresh_stock',
+                              side_effect=RuntimeError('stock preparation failed: stock capture 1 failed: exit 2')) as prepare:
+                self.assertNotEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest'],
+                                                  stock_config=config, skip_plane=True, skip_gh_status=True), 0)
+            prepare.assert_called_once()
+            self.assertFalse((case['base'] / 'runner-args').exists())
+            self.assertFalse((case['state_dir'] / 'active-run.json').exists())
+            self.assertFalse((case['state_dir'] / 'state.json').exists())
+            failure = json.loads((case['state_dir'] / 'latest-attempt-failure.json').read_text())
+            self.assertIn('stock capture 1 failed', failure['error'])
+            self.assertEqual(failure['status'], 'incomplete')
+        with nightly_fixture() as case:
+            self.assertEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest'],
+                                           skip_plane=True, skip_gh_status=True), 0)
+            config = case['base'] / 'stock-config.json'
+            config.write_text('{}')
+            with patch.object(nightly_full_suite.nightly_inputs, 'prepare_fresh_stock') as prepare:
+                self.assertEqual(self.run_case(case, input_manifest=case['manifest'], stock_config=config,
+                                               skip_plane=True, skip_gh_status=True), 0)
+            prepare.assert_not_called()
+
     def test_missing_state_requires_explicit_initialization(self):
         with nightly_fixture() as case:
             self.assertNotEqual(self.run_case(case), 0)

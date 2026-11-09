@@ -110,20 +110,43 @@ class StockPreparationContractTests(unittest.TestCase):
         path.write_text(json.dumps(document))
         return path
 
-    def test_config_is_exact_bounded_and_https_only(self):
-        nightly_inputs.load_stock_config(self.config())
+    def test_config_is_exact_finite_bounded_and_uncoerced(self):
+        loaded = nightly_inputs.load_stock_config(self.config())
+        self.assertEqual((loaded['per_request_timeout_seconds'], loaded['max_bytes']), (10, 2097152))
         nightly_inputs.load_stock_config(self.config(endpoint='http://127.0.0.1:8/search'))
-        for label, overrides in {'schema': {'schema': 'x'}, 'relative': {'context_path': 'rel.json'},
-                                 'zero timeout': {'per_request_timeout_seconds': 0}, 'bool': {'max_bytes': True},
-                                 'plain http': {'endpoint': 'http://example.invalid/'},
-                                 'extra field': {'retries': 3}}.items():
+        limits = {'max_seconds': 60, 'min_interval': 1.0, 'max_bytes': 2 * 1024 * 1024}
+        nightly_inputs.load_stock_config(self.config(), limits)
+        refusals = {'schema': {'schema': 'x'}, 'relative': {'context_path': 'rel.json'},
+                    'zero timeout': {'per_request_timeout_seconds': 0}, 'bool bytes': {'max_bytes': True},
+                    'float bytes': {'max_bytes': 2097152.0}, 'plain http': {'endpoint': 'http://example.invalid/'},
+                    'extra field': {'retries': 3}, 'invocation above 420': {'invocation_timeout_seconds': 421},
+                    'request not below invocation': {'per_request_timeout_seconds': 190},
+                    'negative interval': {'min_interval_seconds': -1}}
+        for label, overrides in refusals.items():
             with self.subTest(label=label), self.assertRaises(ValueError):
                 nightly_inputs.load_stock_config(self.config(**overrides))
+        for label, text in {'NaN': 'NaN', 'Infinity': 'Infinity', '-Infinity': '-Infinity'}.items():
+            with self.subTest(label=label):
+                path = self.base / 'nonfinite.json'
+                path.write_text(json.dumps(json.loads(self.config().read_text())).replace('10,', text + ',', 1))
+                with self.assertRaises(ValueError):
+                    nightly_inputs.load_stock_config(path)
+        for label, overrides in {'above producer seconds': {'per_request_timeout_seconds': 61},
+                                 'below producer interval': {'min_interval_seconds': 0.5},
+                                 'above producer bytes': {'max_bytes': 2 * 1024 * 1024 + 1}}.items():
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                nightly_inputs.load_stock_config(self.config(**overrides), limits)
+        with self.subTest(label='duplicate field'):
+            path = self.base / 'dup.json'
+            path.write_text(self.config().read_text()[:-1] + ', "max_bytes": 1}')
+            with self.assertRaises(ValueError):
+                nightly_inputs.load_stock_config(path)
 
     def test_missing_context_refuses_before_any_capture(self):
-        with self.assertRaises((OSError, ValueError)):
+        with self.assertRaises(RuntimeError) as error:
             nightly_inputs.prepare_fresh_stock(self.config(), ROOT, self.base / 'stock')
-        self.assertFalse((self.base / 'stock/captures').exists() and any((self.base / 'stock/captures').iterdir()))
+        self.assertIn('stock preparation failed', str(error.exception))
+        self.assertFalse((self.base / 'stock/captures').exists())
 
     def test_manifest_rebinding_replaces_exactly_the_stock_entries(self):
         old_source, old_context = self.base / 'old-source', self.base / 'old-context.json'
@@ -153,6 +176,155 @@ class StockPreparationContractTests(unittest.TestCase):
         prepared['replaced']['context_path'] = self.base / 'absent.json'
         with self.assertRaises(ValueError):
             nightly_inputs.rebind_manifest(manifest, self.base / 'another.json', prepared)
+
+
+try:
+    from test_jlc_stock_capture import JlcStub, row, search
+except ImportError:
+    from tests.test_jlc_stock_capture import JlcStub, row, search
+
+sys.path.insert(0, str(ROOT / 'src'))
+from agent_ee import jlc_stock_capture as stock  # noqa: E402  (authoring the original closure; the child under test imports its own)
+from agent_ee.acquisition import alternative_context  # noqa: E402
+from agent_ee.storage import json_bytes  # noqa: E402
+
+PARENT_IDS = (['C17024', 'C25804'], ['C468683'])  # producer order: numeric ascending within a parent
+ROWS = {'C25804': dict(componentModelEn='MPN-A', componentBrandEn='Mfr A'),
+        'C17024': dict(componentModelEn='MPN-B', componentBrandEn='Mfr B', library='expand'),
+        'C468683': dict(componentModelEn='MPN-C', componentBrandEn='Mfr C', library='expand')}
+
+
+def routes(stock_by_id, **changes):
+    result = {}
+    for lcsc, options in ROWS.items():
+        if lcsc in changes:
+            result[lcsc] = changes[lcsc]
+        else:
+            result[lcsc] = (200, search(row(lcsc, stock_by_id[lcsc], **options)))
+    return result
+
+
+def author_closure(root: Path, server: JlcStub) -> Path:
+    """An explicitly authored two-parent context whose parents the REAL producer captured from the stub."""
+    def put(rel, raw):
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        return {'path': rel, 'sha256': sha(raw)}
+    files, parents, union = {}, [], None
+    catalog_dir = 'preparation/catalog'
+    for index, ids in enumerate(PARENT_IDS, 1):
+        out = root.parent / f'authored-parent-{index}'
+        stock.capture_jlc_stock(ids, out, allow_network=True, endpoint=server.url, min_interval=1.0, timeout=5)
+        raw = (out / 'catalog.json').read_bytes()
+        catalog = json.loads(raw)
+        blob = put(f'preparation/parents/parent-{index}.json', raw)
+        files[blob['path']] = blob['sha256']
+        parents.append(blob)
+        for request in catalog['requests']:
+            rel = request['response']['path']
+            copied = put(f'{catalog_dir}/{rel}', (out / rel).read_bytes())
+            files[copied['path']] = copied['sha256']
+        if union is None:
+            union = dict(schema=stock.SCHEMA, as_of=catalog['as_of'], completed_at=catalog['completed_at'],
+                         stale_before=None, source=catalog['source'], requests=[], parts={})
+        union['as_of'] = min(union['as_of'], catalog['as_of'], key=lambda t: stock._utc(t, 'as_of'))
+        union['completed_at'] = max(union['completed_at'], catalog['completed_at'], key=lambda t: stock._utc(t, 'completed_at'))
+        union['requests'] += catalog['requests']
+        union['parts'].update(catalog['parts'])
+    catalog_blob = put(f'{catalog_dir}/catalog.json', json_bytes(union))
+    derivation_blob = put('preparation/derivation.json', json_bytes({
+        'kind': 'Authored conservative offline union; NOT a fresh capture', 'parents': [{'sha256': b['sha256']} for b in parents]}))
+    carrier = put('carrier.html', b'<html>authored carrier page</html>\n')
+    ordering = put('ordering.txt', b'authored ordering text\n')
+    for blob in (catalog_blob, derivation_blob, carrier, ordering):
+        files[blob['path']] = blob['sha256']
+    context = {'schema': alternative_context.SCHEMA, 'reference': 'acquisition-control', 'files': files,
+               'catalog': catalog_blob, 'carrier_page': carrier, 'ordering_text': ordering,
+               'parents': parents, 'derivation': derivation_blob}
+    context_path = root.parent / 'authored-context.json'
+    context_path.write_bytes(json_bytes(context))
+    alternative_context.read(root, context_path.read_bytes())  # the authored closure must itself be admissible
+    return context_path
+
+
+class StockPreparationEndToEndTests(unittest.TestCase):
+    """The REAL producer and context algebra run from the selected checkout against a loopback stub."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='nightly-stock-e2e-')
+        self.base = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        self.source = self.base / 'closure/source'
+        self.source.mkdir(parents=True)
+        self.original_server = JlcStub(routes({'C25804': 10, 'C17024': 20, 'C468683': 30}))
+        self.addCleanup(self.original_server.close)
+        self.context_path = author_closure(self.source, self.original_server)
+        self.original_bytes = {path: path.read_bytes() for path in self.source.rglob('*') if path.is_file()}
+        self.original_bytes[self.context_path] = self.context_path.read_bytes()
+
+    def fresh_server(self, **changes):
+        server = JlcStub(routes({'C25804': 111, 'C17024': 222, 'C468683': 333}, **changes))
+        self.addCleanup(server.close)
+        return server
+
+    def config(self, server):
+        path = self.base / 'stock-config.json'
+        path.write_text(json.dumps({'schema': 'agent-ee.nightly-stock-config/1', 'context_path': str(self.context_path),
+                                    'source_root': str(self.source), 'endpoint': server.url,
+                                    'per_request_timeout_seconds': 5, 'invocation_timeout_seconds': 60,
+                                    'min_interval_seconds': 1, 'max_bytes': 2097152}))
+        return path
+
+    def assert_originals_unchanged(self):
+        for path, raw in self.original_bytes.items():
+            self.assertEqual(path.read_bytes(), raw, path)
+
+    def test_fresh_success_builds_an_admissible_union_from_real_captures(self):
+        server = self.fresh_server()
+        stock_dir = self.base / 'stock'
+        prepared = nightly_inputs.prepare_fresh_stock(self.config(server), ROOT, stock_dir)
+        record = prepared['record']
+        self.assertEqual(record['status'], 'prepared')
+        self.assertEqual([inv['requested'] for inv in record['invocations']], [list(ids) for ids in PARENT_IDS])
+        self.assertTrue(all(inv['exit_code'] == 0 for inv in record['invocations']))
+        self.assertEqual(len(server.requests), 3)  # one real request per id, none retried
+        context, captures = alternative_context.read(prepared['source_root'], prepared['context_path'].read_bytes())
+        catalog = json.loads(captures[context['catalog']['path']])
+        self.assertEqual({lcsc: part['stock'] for lcsc, part in catalog['parts'].items()},
+                         {'C25804': 111, 'C17024': 222, 'C468683': 333})
+        self.assertEqual([r['lcsc'] for r in catalog['requests']], ['C17024', 'C25804', 'C468683'])
+        self.assertEqual(record['producer_sha256'], sha((ROOT / 'src/agent_ee/jlc_stock_capture.py').read_bytes()))
+        self.assertTrue((stock_dir / 'captures/parent-1/catalog.json').is_file())
+        self.assert_originals_unchanged()
+        manifest = self.base / 'manifest.json'
+        manifest.write_text(json.dumps({'schema': 'agent-ee.native-inputs/1', 'inputs': [
+            {'name': 'addr-source', 'env': 'AGENT_EE_ADDR_SOURCE', 'path': str(self.source), 'files': {}},
+            {'name': 'addr-context', 'env': 'AGENT_EE_ADDR_CONTEXT', 'path': str(self.context_path), 'files': {}}]}))
+        rebound = json.loads(nightly_inputs.rebind_manifest(manifest, self.base / 'attempt.json', prepared).read_text())
+        self.assertEqual({item['path'] for item in rebound['inputs']},
+                         {str(prepared['source_root']), str(prepared['context_path'])})
+
+    def test_failed_missing_or_changed_responses_are_retained_as_failure_without_fallback(self):
+        cases = {
+            'failed': ({'C17024': (503, b'{"code":503}')}, 'exit 2'),
+            'missing': ({'C468683': (200, search())}, 'incomplete'),
+            'changed': ({'C25804': (200, search(row('C25804', 5, componentModelEn='OTHER-MPN', componentBrandEn='Mfr A')))},
+                        'changed part identity'),
+        }
+        for label, (changes, expected) in cases.items():
+            with self.subTest(label=label):
+                server = self.fresh_server(**changes)
+                stock_dir = self.base / f'stock-{label}'
+                with self.assertRaises(RuntimeError) as error:
+                    nightly_inputs.prepare_fresh_stock(self.config(server), ROOT, stock_dir)
+                self.assertIn(expected, str(error.exception))
+                record = json.loads((stock_dir / 'record.json').read_text())
+                self.assertEqual(record['status'], 'failed')
+                self.assertIn(expected, record['failure'])
+                self.assertFalse((stock_dir / 'addr-current-context.json').exists())
+                self.assertTrue(record['invocations'], 'the real producer ran before the refusal')
+                self.assert_originals_unchanged()
 
 
 if __name__ == '__main__':
