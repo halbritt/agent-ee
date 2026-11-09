@@ -1,0 +1,17 @@
+{
+ "note": "Preregistered set (docs/benchmarks/krt-matched-2026-11-09.md). Paths are relative to ~/.cache/agent-ee-krt-bench/. Boards are fetched at run time and never committed.",
+ "repositories": {
+  "KiCadRoutingTools": {"url": "https://github.com/drandyhaas/KiCadRoutingTools.git", "commit": "e6bc31e2291a91327217cd668885e065a487ec92"},
+  "sources/kicad-demos": {"url": "https://gitlab.com/kicad/code/kicad.git", "commit": "f87615475ec8b349c979b22474eb1c3d2d284f65", "sparse": "demos"},
+  "sources/ESP32-DevKit-LiPo": {"url": "https://github.com/OLIMEX/ESP32-DevKit-LiPo.git", "commit": "1ebbbb5ceaa84b1d67631d8d542d7f6128c19fc1"}
+ },
+ "boards": {
+  "esp_prog": {"class": "krt", "source": "KiCadRoutingTools/kicad_files/esp_prog.kicad_pcb"},
+  "flat_hierarchy": {"class": "krt", "source": "KiCadRoutingTools/kicad_files/flat_hierarchy.kicad_pcb"},
+  "tigard": {"class": "krt", "source": "KiCadRoutingTools/kicad_files/tigard.kicad_pcb"},
+  "esp32_devkit_lipo": {"class": "independent", "source": "sources/ESP32-DevKit-LiPo/HARDWARE/ESP32-DevKit-LiPo-Rev.D/ESP32-DevKit-Lipo_Rev_D.kicad_pcb"},
+  "complex_hierarchy": {"class": "independent", "source": "sources/kicad-demos/demos/complex_hierarchy/complex_hierarchy.kicad_pcb"},
+  "stickhub": {"class": "independent", "source": "sources/kicad-demos/demos/stickhub/StickHub.kicad_pcb"}
+ },
+ "debug_board": {"sonde_u": "KiCadRoutingTools/kicad_files/sonde_u.kicad_pcb"}
+}
