@@ -16,8 +16,9 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 
-MAX_INVOCATION_SECONDS = 420  # sufficient for the approved twelve public part reads
+MAX_INVOCATION_SECONDS = 420  # finite budget for each selected parent population
 
 
 def _now():
@@ -109,12 +110,14 @@ def prepare(config_path, worktree, stock_dir):
     record_path = stock_dir / 'record.json'
     record_path.write_text(json.dumps(record, indent=2) + '\n')
     try:
-        parents = []
+        parents, last_capture_end = [], None
         for index, parent_ref in enumerate(old_context['parents'], 1):
             parent_catalog = json.loads(old_captures[parent_ref['path']])
             ids = [request['lcsc'] for request in parent_catalog['requests']]
             if not ids or len(set(ids)) != len(ids):
                 raise ValueError(f'parent {index} catalog has no unique requested ids')
+            if last_capture_end is not None:
+                time.sleep(max(0.0, config['min_interval_seconds'] - (time.monotonic() - last_capture_end)))
             out = stock_dir / 'captures' / f'parent-{index}'
             argv = [sys.executable, '-B', '-P', '-m', 'agent_ee.jlc_stock_capture', '--allow-network',
                     '--endpoint', endpoint, '--out', str(out),
@@ -132,6 +135,7 @@ def prepare(config_path, worktree, stock_dir):
                     invocation.update(exit_code=None, finished_at=_now(), timeout=True)
                     raise RuntimeError(f'stock capture {index} exceeded its bounded time') from error
             invocation.update(exit_code=completed.returncode, finished_at=_now())
+            last_capture_end = time.monotonic()
             if completed.returncode != 0:
                 raise RuntimeError(f'stock capture {index} failed: exit {completed.returncode}')
             raw = (out / 'catalog.json').read_bytes()

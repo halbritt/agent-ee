@@ -74,7 +74,7 @@ def announced_receipts(log_bytes: bytes) -> list[str]:
 
 
 def bind_receipt(log_bytes: bytes, *, manifest: Path, evidence_dir: Path, commit: str, tree: str,
-                 runner_sha256: str, image_ids: list[str]) -> dict:
+                 runner_sha256: str, image_ids: list[str], selected_manifest_sha256: str) -> dict:
     """Bind the one announced receipt to this attempt; anything else is a refusal."""
     announced = announced_receipts(log_bytes)
     if len(announced) != 1:
@@ -91,6 +91,8 @@ def bind_receipt(log_bytes: bytes, *, manifest: Path, evidence_dir: Path, commit
     if record.get('status') != 'prepared':
         raise ValueError(f"native input receipt status is {record.get('status')!r}, not prepared")
     manifest_sha256 = digest_file(manifest)
+    if manifest_sha256 != selected_manifest_sha256:
+        raise ValueError('selected input manifest changed during the native attempt')
     if record.get('manifest_sha256') != manifest_sha256:
         raise ValueError('native input receipt binds a different manifest than this attempt selected')
     if record.get('image') not in image_ids:

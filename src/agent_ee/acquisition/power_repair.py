@@ -139,6 +139,14 @@ def _catalog(root, captures, old_blob, selected):
         if any(old['parts'][lcsc][field] != new['parts'][lcsc][field]
                for field in ('mpn', 'mfr', 'package', 'library_tier')):
             raise ValueError('current R6 identity/package/library tier differs from the selected historical part')
+        # Downstream prepared-input readers use this conventional catalog path.
+        # Copy the operative bytes unchanged; the returned stock parent stays original.
+        for request in old['requests']:
+            name = request['response']['path']
+            _write(root, PREFIX + '/catalog/' + name,
+                   parts_manifest.read_captured(root, str(Path(old_blob['path']).parent / name)))
+        for name in ('catalog.json', 'parent-adc.json'):
+            _write(root, PREFIX + '/catalog/' + name, parts_manifest._read_blob(root, old_blob))
         # Reuse the admitted current blob and its raw responses. The historical
         # response has the same basename, so retain it under a distinct directory.
         historical = PREFIX + '/catalog/historical-r6/'

@@ -79,6 +79,8 @@ if 'AE_CI_INPUT_MANIFEST' in os.environ:
     def git(ref):
         return subprocess.check_output(['git', '-C', str(source), 'rev-parse', ref], text=True).strip()
     fault = os.environ.get('NIGHTLY_RECEIPT_FAULT')
+    if fault == 'runtime-manifest-drift':
+        manifest.write_bytes(manifest.read_bytes() + b' ')
     record = {'schema': 'agent-ee.native-inputs/1', 'status': 'failed' if fault == 'status' else 'prepared',
               'manifest': str(manifest),
               'manifest_sha256': '0' * 64 if fault == 'manifest' else hashlib.sha256(manifest.read_bytes()).hexdigest(),

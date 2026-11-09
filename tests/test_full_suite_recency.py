@@ -484,7 +484,8 @@ class NightlyLifecycleTests(unittest.TestCase):
             self.assertEqual(receipt['completion'], 'complete')
 
     def test_receipt_faults_leave_the_attempt_incomplete_without_state(self):
-        for fault in ('silent', 'twice', 'manifest', 'image', 'commit', 'status', 'writable', 'launch', 'unvalidated'):
+        for fault in ('silent', 'twice', 'manifest', 'image', 'commit', 'status', 'writable', 'launch', 'unvalidated',
+                      'runtime-manifest-drift'):
             with self.subTest(fault=fault), nightly_fixture() as case:
                 with patch.dict(os.environ, NIGHTLY_RECEIPT_FAULT=fault):
                     self.assertNotEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest'],
@@ -559,6 +560,20 @@ class NightlyLifecycleTests(unittest.TestCase):
             failure = json.loads((case['state_dir'] / 'latest-attempt-failure.json').read_text())
             self.assertIn('stock capture 1 failed', failure['error'])
             self.assertEqual(failure['status'], 'incomplete')
+            self.assertNotIn('retention_index_error', failure)
+            failed_run = Path(failure['run_dir'])
+            self.assertEqual(nightly_full_suite.nightly_evidence.history_usage(case['state_dir'])[0], 1)
+            index = nightly_full_suite.nightly_evidence.read_index(case['state_dir'])
+            self.assertEqual(index['entries'][failed_run.name]['state'], 'incomplete')
+            # A later explicit attempt with the preparation condition corrected succeeds.
+            prepared = dict(context_path=context, source_root=case['base'] / 'owned-input',
+                            replaced=dict(context_path=context, source_root=case['base'] / 'owned-input'))
+            with patch.object(nightly_full_suite.nightly_inputs, 'prepare_fresh_stock', return_value=prepared):
+                self.assertEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest'],
+                                               stock_config=config, skip_plane=True, skip_gh_status=True), 0)
+            self.assertEqual(nightly_full_suite.nightly_evidence.history_usage(case['state_dir'])[0], 2)
+            self.assertTrue((failed_run / 'attempt-failure.json').is_file())
+            self.assertFalse((case['state_dir'] / 'active-run.json').exists())
         with nightly_fixture() as case:
             self.assertEqual(self.run_case(case, initialize_baseline=True, input_manifest=case['manifest'],
                                            skip_plane=True, skip_gh_status=True), 0)

@@ -375,7 +375,8 @@ def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int,
             try:
                 receipt['input_receipt'] = nightly_inputs.bind_receipt(
                     content, manifest=input_manifest, evidence_dir=evidence_dir, commit=receipt['commit'],
-                    tree=receipt['tree'], runner_sha256=receipt['runner_sha256'], image_ids=image_ids)
+                    tree=receipt['tree'], runner_sha256=receipt['runner_sha256'], image_ids=image_ids,
+                    selected_manifest_sha256=receipt['input_manifest_sha256'])
             except (OSError, ValueError) as error:
                 receipt['incomplete_reason'] = f'native input receipt not bound: {error}'
                 raise RuntimeError(receipt['incomplete_reason']) from error
@@ -649,9 +650,6 @@ def run_nightly_suite(
             prepare_worktree(root, selected_worktree, origin_head)
             run_dir = state_dir / 'runs' / f'{run_id}-{origin_head[:8]}'
             run_dir.mkdir(parents=True)
-            # Fresh stock only now: lock held, main moved, reporting complete, no unresolved attempt,
-            # exact source checked out. A failure here leaves no marker and starts no native work.
-            selected_manifest = prepare_inputs(input_manifest, stock_config, selected_worktree, run_dir)
             attempt_id = str(uuid.uuid4())
             active = {'schema': 'agent-ee.nightly-attempt/1', 'attempt_id': attempt_id,
                       'commit': origin_head, 'tree': git_output(selected_worktree, 'rev-parse', 'HEAD^{tree}'),
@@ -659,6 +657,9 @@ def run_nightly_suite(
                       'run_dir': str(run_dir), 'started_at': datetime.now(timezone.utc).isoformat()}
             write_json(run_dir / 'attempt.json', active)
             nightly_evidence.register_run(state_dir, run_dir, attempt_id, selected_worktree)
+            # Index preparation failures for a later explicit retry, but create the
+            # active-native marker only after preparation has actually succeeded.
+            selected_manifest = prepare_inputs(input_manifest, stock_config, selected_worktree, run_dir)
             write_json(active_file, active)
             if not skip_gh_status:
                 publish_github_status(repo, origin_head, 'pending', 'Native full suite in progress; no complete verdict yet')

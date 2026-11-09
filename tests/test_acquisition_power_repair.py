@@ -63,6 +63,11 @@ class CurrentStockTests(unittest.TestCase):
                 self.gate(root, blob, document)
                 derivation = json.loads((root / repair.PREFIX / 'catalog/derivation.json').read_bytes())
                 self.assertEqual(derivation['stock_parent'], original)
+                conventional = root / repair.PREFIX / 'catalog/catalog.json'
+                self.assertEqual(repair.identity_bytes(conventional.read_bytes()), original['sha256'])
+                self.assertEqual(conventional.read_bytes(), current['catalog/catalog.json'])
+                stock.validate_capture(json.loads(conventional.read_bytes()),
+                                       lambda rel: (conventional.parent / rel).read_bytes())
                 self.assertIn('design provenance only', derivation['kind'])
                 parent = root / derivation['historical_parent']['path']
                 self.assertEqual(parent.read_bytes(), historical['catalog/catalog.json'])

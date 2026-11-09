@@ -22,6 +22,7 @@ class ReceiptBindingTests(unittest.TestCase):
         self.base = Path(self.tmp.name)
         self.manifest = self.base / 'manifest.json'
         self.manifest.write_text('{"schema": "agent-ee.native-inputs/1", "inputs": []}\n')
+        self.selected_manifest_sha256 = sha(self.manifest.read_bytes())
         self.evidence = self.base / 'native'
         (self.evidence / 'run').mkdir(parents=True)
         self.receipt = self.evidence / 'run/native-inputs.json'
@@ -43,7 +44,8 @@ class ReceiptBindingTests(unittest.TestCase):
 
     def bind(self, log=None, **overrides):
         options = dict(manifest=self.manifest, evidence_dir=self.evidence, commit='c' * 40, tree='t' * 40,
-                       runner_sha256='r' * 64, image_ids=['sha256:' + 'a' * 64])
+                       runner_sha256='r' * 64, image_ids=['sha256:' + 'a' * 64],
+                       selected_manifest_sha256=self.selected_manifest_sha256)
         options.update(overrides)
         return nightly_inputs.bind_receipt(self.log if log is None else log, **options)
 
@@ -341,6 +343,8 @@ class StockPreparationEndToEndTests(unittest.TestCase):
         self.assertEqual([inv['requested'] for inv in record['invocations']], [list(ids) for ids in PARENT_IDS])
         self.assertTrue(all(inv['exit_code'] == 0 for inv in record['invocations']))
         self.assertEqual(len(server.requests), 3)  # one real request per id, none retried
+        starts = [request['at'] for request in server.requests]
+        self.assertTrue(all(after - before >= 1 for before, after in zip(starts, starts[1:])), starts)
         context, captures = alternative_context.read(prepared['source_root'], prepared['context_path'].read_bytes())
         catalog = json.loads(captures[context['catalog']['path']])
         self.assertEqual({lcsc: part['stock'] for lcsc, part in catalog['parts'].items()},
