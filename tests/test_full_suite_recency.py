@@ -664,6 +664,24 @@ class NightlyLifecycleTests(unittest.TestCase):
             self.assertFalse((case['state_dir'] / 'active-run.json').exists())
             self.assertFalse((case['state_dir'] / 'state.json').exists())
 
+    def test_force_killed_runner_keeps_unresolved_marker(self):
+        with nightly_fixture() as case:
+            runner = case['base'] / 'bin/ae-ci-exec'
+            runner.write_text('#!' + sys.executable + '\n'
+                              'import signal, time\n'
+                              'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+                              'time.sleep(60)\n')
+            with patch.object(nightly_full_suite, 'SUITE_TIMEOUT_SECONDS', 0.3), \
+                    patch.object(nightly_full_suite, 'SUITE_STOP_GRACE_SECONDS', 0.2):
+                self.assertNotEqual(self.run_case(case, initialize_baseline=True), 0)
+            receipt = json.loads(next((case['state_dir'] / 'runs').glob('*/execution.json')).read_text())
+            self.assertEqual(receipt['exit_code'], -9)
+            self.assertEqual(receipt['completion'], 'incomplete')
+            self.assertTrue((case['state_dir'] / 'active-run.json').exists())
+            self.assertFalse((case['state_dir'] / 'state.json').exists())
+            self.assertNotEqual(self.run_case(case, initialize_baseline=True, force=True), 0)
+            self.assertEqual(len(list((case['state_dir'] / 'runs').glob('*/execution.json'))), 1)
+
 
 class PlaneFilingTests(unittest.TestCase):
     ASSIGNEE = 'a3f369ea-d8dd-42ed-bea3-db653abd632b'

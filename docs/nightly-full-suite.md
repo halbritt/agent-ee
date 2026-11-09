@@ -84,12 +84,13 @@ Completion is established only by the retained log's single complete strict
 verdict agreeing with the observed exit status. A missing, truncated, duplicate
 or disagreeing verdict, a timeout or an interruption leaves the attempt
 `incomplete`: state does not advance, nothing publishes as complete, and GitHub
-receives `error`. When the controller observed the runner exit (or stopped it),
+receives `error`. When the controller observed a normal runner exit,
 the attempt is retained as incomplete, `reconciliation.json` records
 `exit_observed_incomplete`, and `active-run.json` is cleared so a later call may
-try that commit again. A marker whose attempt has no observed exit (the
-controller itself died) stays and blocks even `--force`; the native process may
-still be running, so the lead reconciles it by hand. A generic exit code never
+try that commit again. A missing exit or a runner killed by signal leaves the
+marker in place and blocks even `--force`: native cleanup is uncertain. A
+timeout permits retry only if the runner's TERM cleanup returned normally.
+The lead inspects unresolved attempts before retrying. A generic exit code never
 establishes completion.
 
 ## Explicit baseline initialization and one full gate

@@ -278,6 +278,18 @@ def unique_fields(pairs):
     return result
 
 
+def completed_problems(log_path: Path, exit_code: int) -> dict[str, str]:
+    """Validate the runner's observed exit against one complete strict verdict."""
+    try:
+        problems = parse_problems_from_log(log_path)
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f'no complete strict-suite verdict: {error}') from error
+    if exit_code != (1 if problems else 0):
+        raise RuntimeError(f'runner exit status {exit_code} disagrees with the '
+                           f'strict-suite verdict of {len(problems)} problem(s)')
+    return problems
+
+
 def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int,
                   attempt_id: str, runner: str) -> dict[str, str]:
     """Run the installed runner once; a complete verdict and agreeing exit establish completion.
@@ -336,14 +348,10 @@ def execute_suite(worktree: Path, run_dir: Path, weight: int, jobs: int,
         receipt['exit_code'] = proc.returncode
         receipt['finished_at'] = datetime.now(timezone.utc).isoformat()
         try:
-            problems = parse_problems_from_log(log_path)
-        except (OSError, ValueError) as error:
-            receipt['incomplete_reason'] = f'no complete strict-suite verdict: {error}'
-            raise RuntimeError(receipt['incomplete_reason']) from error
-        if proc.returncode != (1 if problems else 0):
-            receipt['incomplete_reason'] = (f'runner exit status {proc.returncode} disagrees with the '
-                                            f'strict-suite verdict of {len(problems)} problem(s)')
-            raise RuntimeError(receipt['incomplete_reason'])
+            problems = completed_problems(log_path, proc.returncode)
+        except RuntimeError as error:
+            receipt['incomplete_reason'] = str(error)
+            raise
         receipt['problem_count'] = len(problems)
         receipt['full_suite'] = True
         receipt['completion'] = 'complete'
@@ -515,12 +523,13 @@ def report_run(state: dict, state_dir: Path, repo: str, skip_plane: bool, skip_g
 
 
 def observed_exit(run_dir: Path) -> bool:
-    """True when this attempt's execution receipt records an observed runner exit status."""
+    """A normal runner exit permits retry; death by signal leaves cleanup uncertain."""
     try:
         receipt = json.loads((run_dir / 'execution.json').read_text(), object_pairs_hook=unique_fields)
     except (OSError, ValueError):
         return False
-    return isinstance(receipt, dict) and isinstance(receipt.get('exit_code'), int)
+    return (isinstance(receipt, dict) and type(receipt.get('exit_code')) is int
+            and receipt['exit_code'] >= 0)
 
 
 def run_nightly_suite(
@@ -542,11 +551,10 @@ def run_nightly_suite(
 ) -> int:
     """Run moved main once; retain completed tests separately from reporting.
 
-    An attempt whose runner process the controller observed terminating (normal
-    exit, timeout or interruption) is finalized as incomplete and cleared, so a
-    later invocation may attempt the commit again. Only a marker left by a
-    controller that never observed its child's exit stays, because the native
-    process may still be running; the lead reconciles that by hand.
+    An attempt whose runner exited normally is finalized as incomplete and
+    cleared, so a later invocation may attempt the commit again. A missing exit
+    or death by signal leaves cleanup uncertain and retains the marker for
+    inspection. A timeout can retry only when the runner's TERM cleanup returned.
     """
     if weight < 1 or jobs < 1:
         raise ValueError('weight and jobs must be positive')
@@ -642,8 +650,8 @@ def run_nightly_suite(
                        'timestamp': datetime.now(timezone.utc).isoformat(), 'status': 'incomplete',
                        'error': str(error)}
             if run_dir and active_file.exists():
-                # The controller observed this attempt's runner exit (or stopped it); the attempt
-                # is retained as incomplete and the marker is cleared so a later run may retry.
+                # A normal runner exit includes its cleanup. A killed runner may leave native
+                # work alive, so its marker remains unresolved even though wait() returned.
                 failure['exit_observed'] = observed_exit(run_dir)
                 if failure['exit_observed']:
                     write_json(run_dir / 'reconciliation.json', {
