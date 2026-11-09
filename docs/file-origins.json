@@ -4775,6 +4775,16 @@
         "AE"
       ],
       "reviewed": "Original Kelvin-sense connection routing and shared-copper evaluation logic. Geometric trace inspection and branch-point distance measurement; no third-party CAD or proprietary assets."
+    },
+    {
+      "paths": [
+        "benchmarks/krt-matched/"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "note": "AGENTEE-628 original benchmark harness. It names KiCadRoutingTools and public boards and runs them from clones made at run time; no third-party file is copied into the repository."
     }
   ]
 }
