@@ -688,6 +688,12 @@
       "reviewed": "Original AGENTEE-625 pure carry-status protocol fixtures. The minimal board with two silk lines, UUIDs, policy and receipt records are hand-authored for these tests. No upstream design or retained historical artifact bytes are copied; native qualification is separate."
     },
     {
+      "paths": ["tests/test_nightly_inputs.py"],
+      "kind": "owned-source",
+      "origins": ["AE"],
+      "reviewed": "Original nightly input and stock-preparation regression tests. The minimal carrier HTML, ordering text, catalog rows and loopback HTTP responses are authored test fixtures; no supplier page or captured vendor response is copied. They exercise input custody and conservative union construction, not manufacturer or stock qualification."
+    },
+    {
       "paths": [
         "src/agent_ee/native_netlist.py",
         "tests/test_placement_blocks_request.py"
