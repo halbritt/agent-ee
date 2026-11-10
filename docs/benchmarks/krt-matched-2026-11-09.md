@@ -703,3 +703,240 @@ Not fixed here.
   on a board with those features ended at the deadline. The routing arm did
   exercise pours, polygon outlines and 45 degree parts end to end.
 - The full test suite was not run (by instruction).
+
+---
+
+## Rerun after AGENTEE-637 (2026-11-10)
+
+Written after the tool changes of AGENTEE-637 (placement search budget, engine
+speed, default search size). Only the agent-ee placement cells were run again,
+on the same prepared boards as the first run (`bench.py reuse`, hashes
+checked), with pours kept, the same 900 s budget, the same routing of the
+chosen placement by stock KRT and the same scoring on the host. The stock KRT
+rows are copied from the first run; KRT was not run again. Run window:
+2026-11-10 02:43 to 04:25 UTC on host proximal, at most two jobs at a time.
+Raw results: `~/.local/share/agent-ee/krt-matched-20261109-r3/` (not
+committed). Everything above this section is unchanged.
+
+### Result in brief
+
+- **Every board now gets a placement** (6 of 6; 1 of 6 before). No job spent
+  its budget in the search: each search ended `completed` inside its share of
+  the time (329 to 353 s of a 359 s share) and its candidates went on to the
+  native checks and the router.
+- **Only esp_prog's placement is one agent-ee itself accepts** (a checked
+  incumbent). On the other five the job offers its best diagnostic candidate,
+  which is not valid: on flat_hierarchy and complex_hierarchy every seed was
+  feasible for the engine and native DRC then reported errors the engine does
+  not model (`starved_thermal` on an unrouted poured board; silkscreen findings
+  that complex_hierarchy's project raises to errors); on tigard the engine
+  found feasible states and the candidate still was not eligible; on
+  ESP32-DevKit-LiPo and StickHub no seed reached a feasible state.
+- **Routed by the same stock KRT, agent-ee's placements are worse than KRT's
+  placer on vias and track length on all six boards.** They leave fewer nets
+  open on ESP32-DevKit-LiPo (10 against 23) and more on tigard (8 against 1)
+  and StickHub (50 against 21).
+- Two jobs (tigard, ESP32-DevKit-LiPo) ended `deadline` in agent-ee's own
+  routing; the placement they had checked is named in the report and was
+  routed by KRT here.
+- The placement comparison with stock KRT is still not won. What changed is
+  that it can now be made on every board.
+
+### Versions
+
+| Item | Version |
+| --- | --- |
+| agent-ee | `5c1ba455` (branch `agentee-637-placement-budget`), clean, all 12 cells |
+| agent-ee CI image | `sha256:ff3f11dc5a21…` (`agent-ee:exec-8629520c85ba9f55`), Python 3.12.3, KiCad 10.0.8 |
+| Placement engine | `agent-ee-placement 0.1.0`, image binary sha256 `9140c7d2faaf…`, built from this branch's crate |
+| kicad-route | the image's `/opt/kicad-route`, as in the earlier runs (recorded per cell in `job_preflight`) |
+| KiCad (host, scoring) | `kicad-cli` 10.0.8, pcbnew 10.0.8 |
+| Stock KRT (router for both placements) | `e6bc31e2`, the first run's clone |
+| Stock KRT placer rows | first run, `e6bc31e2` |
+
+### Placement arm (pours kept)
+
+Search setting: the design compiler's default, which since AGENTEE-637 is 4
+clustered seeds, shortlist 4 and no step count (the engine sizes the seeds to
+the time). "Ended" is the job's own status. "Seconds" is the job's `elapsed_s`
+for agent-ee and the placer's wall clock for KRT. Unconnected, DRC errors (the
+board's own rules), vias and track length are of the placement routed by stock
+KRT `route.py` at defaults.
+
+| Board | Placer | Placement produced | Ended | Seconds | Unconnected | DRC errors | Vias | Track mm |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| esp_prog | KRT (first run) | yes | exit 0 | 57 | 0 | 12 | 16 | 228.94 |
+| esp_prog | agent-ee | yes, checked incumbent | `verification_failed` (own route) | 507 | 0 | 31 | 29 | 317.72 |
+| flat_hierarchy | KRT (first run) | yes | exit 0 | 239 | 0 | 2 | 36 | 1271.05 |
+| flat_hierarchy | agent-ee | yes, diagnostic (not valid) | `verification_failed` | 535 | 0 | 6 | 119 | 2391.78 |
+| tigard | KRT (first run) | yes | exit 0 | 822 | 1 | 861 | 192 | 2146.60 |
+| tigard | agent-ee | yes, diagnostic (not valid) | `deadline` (in own routing) | 900 | 8 | 1143 | 245 | 2655.89 |
+| esp32_devkit_lipo | KRT (first run) | yes, all seeds illegal | exit 4 | 191 | 23 | 402 | 111 | 838.25 |
+| esp32_devkit_lipo | agent-ee | yes, diagnostic (not valid) | `deadline` (in own routing) | 900 | 10 | 977 | 200 | 1630.17 |
+| complex_hierarchy | KRT (first run) | yes | exit 0 | 166 | 0 | 74 | 17 | 948.40 |
+| complex_hierarchy | agent-ee | yes, diagnostic (not valid) | `verification_failed` | 446 | 0 | 164 | 45 | 1331.01 |
+| stickhub | KRT (first run) | yes, 8 of 12 seeds | stopped at 900 s | 900 | 21 | 387 | 133 | 685.73 |
+| stickhub | agent-ee | yes, diagnostic (not valid) | `placement_infeasible` | 673 | 50 | 406 | 190 | 890.65 |
+
+Under the rules KRT wrote for itself, the KRT-routed agent-ee placements have
+3, 6, 8, 27, 122 and 99 errors (same board order); the KRT placer rows had 4,
+2, 8, 48, 74 and 55. Errors of the placement alone, before routing: 1, 4, 48,
+9, 118 and 2.
+
+agent-ee's own route of its own placement, same job:
+
+| Board | Unconnected | DRC errors | Vias | Track mm |
+| --- | ---: | ---: | ---: | ---: |
+| esp_prog | 2 | 2 | 24 | 300.13 |
+| flat_hierarchy | 2 | 7 | 96 | 2164.63 |
+| tigard | no routed board (deadline) |  |  |  |
+| esp32_devkit_lipo | no routed board (deadline) |  |  |  |
+| complex_hierarchy | 4 | 121 | 36 | 1128.04 |
+| stickhub | 56 | 36 | 138 | 617.40 |
+
+How each search used its 359 s share (4 seeds planned):
+
+| Board | Movable parts | Seeds run | Steps per seed | Seeds feasible for the engine | Search s |
+| --- | ---: | ---: | --- | ---: | ---: |
+| esp_prog | 13 | 4 | 1.74 M to 2.68 M | 4 | 331 |
+| flat_hierarchy | 54 | 4 | 294 k to 426 k | 4 | 347 |
+| tigard | 76 | 2 (2 dropped by the plan) | 158 k, 320 k | 2 | 353 |
+| esp32_devkit_lipo | 48 | 4 | 315 k to 431 k | 0 (fewest hard violations 4) | 331 |
+| complex_hierarchy | 61 | 4 | 499 k to 600 k | 4 | 333 |
+| stickhub | 80 | 4 | 207 k to 273 k | 0 (fewest hard violations 78) | 329 |
+
+### Secondary: the earlier default, 100,000 steps per seed
+
+The same cells with `place --capped` (4 seeds, 100,000 steps, shortlist 4, the
+default before AGENTEE-637), to show what the default change did. One run per
+cell.
+
+| Board | Job s | Search s | Ended | Unconnected | DRC errors | Vias | Track mm |
+| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| esp_prog | 145 | 20 | `verification_failed` | 0 | 15 | 31 | 336.14 |
+| flat_hierarchy | 382 | 138 | `verification_failed` | 0 | 4 | 84 | 2178.25 |
+| tigard | 900 | 356 | `deadline` (in own routing) | 8 | 1200 | 277 | 2850.73 |
+| esp32_devkit_lipo | 900 | 109 | `deadline` (in own routing) | 24 | 1127 | 230 | 1585.94 |
+| complex_hierarchy | 199 | 68 | `verification_failed` | 0 | 112 | 49 | 1407.09 |
+| stickhub | 422 | 135 | `placement_infeasible` | 51 | 449 | 176 | 813.12 |
+
+esp_prog here repeats the first run's placement exactly (31 vias, 336.14 mm):
+a seed that runs its full step count is reproducible. Against these rows the
+sized default is better on esp_prog, tigard, ESP32-DevKit-LiPo and
+complex_hierarchy, worse on flat_hierarchy (119 vias against 84) and mixed on
+StickHub (one net fewer open; more vias and track). With one run per cell this
+does not establish that the longer search routes better.
+
+### Engine step rate
+
+Before: the engine of `dde31c53`. After: `5c1ba455`. "Fixed test" is one
+clustered seed of 2,000 steps on the captured problem of each board, run on
+the host back to back; the two engines returned the same result. "In the job"
+is the rate over whole seeds in the benchmark jobs, two jobs at a time: for
+the earlier runs the bound that follows from the seeds that finished in the
+898 s search, for this run the engine's own `steps_per_s`.
+
+| Board | Fixed test before, ms/step | Fixed test after, ms/step | In the job before, ms/step | In the job after, ms/step |
+| --- | ---: | ---: | --- | ---: |
+| esp_prog | 1.416 | 0.091 | 1.7 | 0.04 |
+| flat_hierarchy | 12.549 | 0.772 | above 9.0 (no seed finished) | 0.19 to 0.25 |
+| tigard | 19.826 | 1.543 | above 9.0 (no seed finished) | 0.55 to 0.58 |
+| esp32_devkit_lipo | 8.766 | 0.393 | 4.5 to 9.0 (1 seed finished) | 0.21 to 0.24 |
+| complex_hierarchy | 6.059 | 0.362 | 4.5 to 9.0 (1 seed finished) | 0.13 to 0.17 |
+| stickhub | 6.726 | 0.564 | 3.0 to 4.5 (2 seeds finished) | 0.33 to 0.37 |
+
+The fixed test ran while other jobs loaded the host; an earlier quiet run of
+the same test gave 0.042 ms/step on esp_prog and 0.193 on ESP32-DevKit-LiPo
+after the change. Where the time went before, measured by timing the sections
+of one trial on flat_hierarchy (1,500 steps, 15.8 s): 7.0 s in the group term,
+which placed every member of a group, exact pad contours included, to read its
+body centre; 5.3 s placing each neighbour of a moved part again for every
+trial; 2.7 s placing the moved parts; 0.5 s on pairs inside a group that moved
+as one. All four grow with the pads per part and the group size, which is why
+the cost per step rose from board to board. After a seed, the member
+refinement graded every seat with the full evaluator: 47 s on flat_hierarchy
+for a 6 s anneal of 20,000 steps.
+
+### What changed in the tool
+
+1. **A job always offers the best placement it checked.** The search takes a
+   share of the time left (`search.time_share`, default 0.4) and the engine
+   sizes itself to it: the time is shared between the seeds, each seed cools
+   fully inside its share, and seeds are dropped when the measured step rate
+   cannot serve them. A search that used up its time ends `completed` and its
+   candidates are checked and routed. `placement` in the job report names the
+   placement in every ending, `deadline` included, with `deadline_limited`.
+2. **The engine is faster.** Exact pad contours are transformed only when a
+   box test cannot decide; committed placements are kept; a group moved as one
+   skips its unchanged inner pairs; the group term reads body boxes only;
+   refinement uses the incremental evaluator and has a time limit. Results
+   are identical step for step.
+3. **The default search has no step count.** The design compiler wrote 4
+   seeds of 100,000 steps. Measured on esp_prog and sonde_u, the cost was
+   still falling at 250,000 steps per movable part (esp_prog, median of the
+   feasible seeds: 1,036 M at 2,000 steps per part, 999 M at 25,000, 916 M at
+   250,000), so a seed now runs for its share of the time unless the design
+   gives a count.
+
+### Why agent-ee's esp_prog placements route worse than KRT's (measured, not fixed)
+
+- Graded by agent-ee's own engine, KRT's twelve esp_prog placements cost
+  1,004 M to 1,244 M; ten are feasible. agent-ee's 100,000-step seeds cost
+  965 M to 1,022 M. The objective does not tell KRT's best placement (16 vias,
+  229 mm) from agent-ee's (31 to 39 vias, 336 to 343 mm).
+- The group-link term is 58 to 61 % of that cost (588 M to 621 M of 965 M to
+  1,022 M); net bounding-box length is 25 %. The benchmark's one group per
+  schematic sheet makes every part a member of one group, so each part is
+  linked to the anchor by any pad pair and every net forms links between all
+  its members.
+- With the link and group weights set to zero and 1,000,000 steps, three of
+  four seeds routed with 14 to 16 vias and 234 to 246 mm (KRT's kept seed: 16
+  and 229); the fourth with 37 vias and 3 nets open. With the weights as they
+  are and 1,000,000 steps: 20 to 35 vias, 245 to 359 mm. At 100,000 steps the
+  zero-weight search gave 18 to 37 vias.
+- A spanning-tree net length in place of the bounding box did not help
+  (19 to 40 vias over 11 placements).
+- These experiments ran the engine on the host on the captured esp_prog
+  problem and routed with stock KRT; they are not benchmark cells and are from
+  one board. No weight was changed in the tool.
+
+### Tool defects this rerun exposed or confirmed
+
+Not fixed here.
+
+1. **`placement_job` (judge):** `starved_thermal` on a placed, unrouted board
+   with pours counts as an error the placement introduced, so no candidate can
+   become the incumbent (flat_hierarchy: 2 or 3 per candidate, every seed
+   feasible for the engine). The thermal spokes cannot exist before routing.
+2. **Engine (model):** silkscreen findings a project raises to errors are not
+   modelled (complex_hierarchy: 118 to 158 per candidate, every seed feasible
+   for the engine). KRT's placement of the same board has 74.
+3. **Engine (search):** no feasible state on ESP32-DevKit-LiPo (fewest hard
+   violations 4: board-edge copper clearance and occupancy outside the
+   outline) or StickHub (78) in 207 k to 431 k steps per seed. KRT's placer
+   also found no legal placement on ESP32-DevKit-LiPo.
+4. **Engine (objective):** see the esp_prog section above; on every board the
+   KRT-routed result has more vias and track than KRT's placement.
+5. **`placement_job` (budget):** the router took all the time left on tigard
+   (543 s) and ESP32-DevKit-LiPo (562 s) and the job ended `deadline` without
+   a routed board. The routing phase has no reserve for the final checks.
+6. **`placement_job` (time on small boards):** with no step count, esp_prog's
+   search used its whole share (331 s) although 20 s gave a comparable result
+   in the capped run. The search has no stopping rule other than time.
+7. **tigard:** the engine reported two feasible seeds and the job still
+   offered only a diagnostic candidate. The cause was not investigated.
+8. Defects 9 to 11 of the first run (kicad-route) are unchanged and were not
+   touched.
+
+### Limits of this rerun
+
+- One run per cell. A seed limited by time follows the clock and is not
+  reproducible; five of the six default cells are of that kind in every seed.
+- The jobs ran two at a time, which lowers the step rate and so the steps a
+  time-sized seed gets.
+- Stock KRT's placer was not rerun; its rows are the first run's.
+- The routing arm and the zone-fallback variants were not rerun.
+- Tests: the modules that import the changed code were run in the CI image
+  (59 modules, 827 tests, on the commit before the last two source changes;
+  101 tests of 8 modules on the final commit). The full suite was not run (by
+  instruction).
