@@ -456,6 +456,73 @@ class ControllerBoundaryTests(Fixture):
                 self.assertEqual(json.loads((out / 'incumbent.json').read_text()), entry)
                 self.assertEqual(json.loads((out / 'job-report.json').read_text())['status'], report['status'])
 
+    def test_a_search_cut_short_by_its_time_still_yields_the_best_placement(self):
+        # AGENTEE-637: the search's own deadline is not the job's. Candidates found so far are
+        # checked and routed, and a job stopped later still names the placement it checked.
+        problem, _ = self.problem()
+        entry = {'index': 0, 'seed': 0, 'board_sha256': 'fixture', 'errors': {}, 'engine_violations': [],
+                 'directory': str(self.dir), 'board': str(self.board), 'engine_cost': '1'}
+        for mode in ('limited', 'limited-then-job-deadline', 'nothing-found'):
+            with self.subTest(mode=mode):
+                out = self.dir / mode
+                config = {'budget_s': 60, 'inputs': {k: {} for k in ('board', 'project', 'intent', 'groups')},
+                          'search': {'shortlist': 1}, 'router': {'checkout': 'unused'}}
+                values = [(self.board, self.board.read_bytes()), (self.project, b'{}'),
+                          (self.board, json.dumps(intent()).encode()), (self.board, json.dumps(groups()).encode())]
+                remaining = [60.0]
+                output = {'timing': {'prepare_s': None}, 'status': 'deadline', 'counters': {}, 'seeds': [], 'prng': None,
+                          'shortlist': [] if mode == 'nothing-found' else [{'seed': 0, 'cost': '1', 'poses': []}]}
+                def judged(*args, **kwargs):
+                    (out / 'incumbent.json').write_text(json.dumps(entry))
+                    return {'board': str(self.board), 'board_sha256': 'fixture', 'integrity': 'preserved', 'problems': []}
+                def routed(*args, **kwargs):
+                    if mode == 'limited-then-job-deadline':
+                        remaining[0] = -1.0
+                    return {'status': 'routed', 'board': str(self.board), 'preflight': {k: None for k in job.ROUTER_IDENTITY}}
+                with ExitStack() as stack:
+                    stack.enter_context(patch.object(job, 'verified_input', side_effect=lambda _entry, label:
+                        dict(zip(('board', 'project', 'intent', 'groups'), values))[label]))
+                    stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
+                    stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
+                    solve = stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))
+                    stack.enter_context(patch.object(job.Clock, 'remaining', side_effect=lambda: remaining[0]))
+                    stack.enter_context(patch.object(job, 'materialize', side_effect=judged))
+                    stack.enter_context(patch.object(job, 'promote', return_value=False))
+                    stack.enter_context(patch.object(job, 'retain_diagnostic', return_value=False))
+                    stack.enter_context(patch.object(job, 'drc', return_value=({'violations': [], 'unconnected_items': []}, {})))
+                    route = stack.enter_context(patch.object(job, 'route', side_effect=routed))
+                    stack.enter_context(patch.object(job, 'final_checks', return_value={
+                        'integrity': 'violated', 'physical_checks': 'FAILED'}))
+                    report = job.run_job(config, out)
+                # The engine is given a share of the remaining time, never all of it.
+                self.assertEqual(solve.call_args.kwargs['deadline_s'], 60 * job.SEARCH_TIME_SHARE)
+                self.assertEqual(report['search']['limited_by_budget'], True)
+                if mode == 'nothing-found':
+                    self.assertEqual((report['status'], report['placement'], route.called), ('deadline', None, False))
+                    continue
+                self.assertTrue(route.called, 'a search cut short still routes what it found')
+                self.assertEqual(report['status'], 'deadline' if mode.endswith('job-deadline') else 'integrity_failed')
+                self.assertEqual(report['placement'], {
+                    'kind': 'incumbent', 'valid': True, 'board': str(self.board), 'board_sha256': 'fixture',
+                    'seed': 0, 'engine_cost': '1', 'deadline_limited': True})
+                self.assertEqual(json.loads((out / 'job-report.json').read_text())['placement'], report['placement'])
+
+    def test_search_time_share_is_validated(self):
+        for bad in (0, 1, 1.5, True, 'half'):
+            with self.subTest(share=bad), self.assertRaisesRegex(job.JobRefusal, 'search.time_share'):
+                problem, _ = self.problem()
+                config = {'budget_s': 60, 'inputs': {k: {} for k in ('board', 'project', 'intent', 'groups')},
+                          'search': {'shortlist': 1, 'time_share': bad}, 'router': {'checkout': 'unused'}}
+                values = [(self.board, self.board.read_bytes()), (self.project, b'{}'),
+                          (self.board, json.dumps(intent()).encode()), (self.board, json.dumps(groups()).encode())]
+                with ExitStack() as stack:
+                    stack.enter_context(patch.object(job, 'verified_input', side_effect=lambda _entry, label:
+                        dict(zip(('board', 'project', 'intent', 'groups'), values))[label]))
+                    stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
+                    stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
+                    job._execute_job(config, self.dir / f'share-{bad}', resume=False, executable=None,
+                                     clock=job.Clock(60), report={}, ownership={})
+
     def test_stalled_engine_stream_is_bounded(self):
         problem, _ = self.problem()
         child = self.dir / 'stalled'

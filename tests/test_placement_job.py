@@ -427,6 +427,15 @@ class LimitTests(Fixture):
         started = time.monotonic()
         output, execution = job.solve(problem, self.search(6, 50_000_000), self.dir, deadline_s=1.5)
         self.assertLess(time.monotonic() - started, 10)
+        if not execution.get('interruption'):
+            # AGENTEE-637: the engine sizes the portfolio to its deadline and answers with what
+            # it found, instead of running into the deadline with seeds not started.
+            self.assertEqual(output['status'], 'completed')
+            self.assertTrue(output['budget']['sized_to_deadline'] and output['budget']['limited'])
+            self.assertTrue(output['shortlist'] or output['diagnostic_shortlist'])
+            self.assertLessEqual({s['status'] for s in output['seeds']}, {'completed', 'not_run_budget'})
+            self.assertIn('time', {s.get('limited_by') for s in output['seeds']})
+            return
         self.assertEqual(output['status'], 'deadline')
         if execution.get('interruption'):
             self.assertEqual(execution['interruption'], 'deadline')

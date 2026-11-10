@@ -49,6 +49,13 @@ CONFIG_SCHEMA = 'agent-ee.placement-job-config/1'
 LEGACY_INPUT_SCHEMA = 'agent-ee.placement-job-input/1'
 CHECKPOINT_SCHEMA = 'agent-ee.placement-job-checkpoint/1'
 PHASES = ('setup', 'import', 'prepare', 'search', 'judge', 'export', 'final_validation')
+# The placement search may use this part of the time left when it starts; the rest is kept for
+# the native checks of its candidates, routing and the final checks (AGENTEE-637). The engine
+# sizes its seeds and steps to that time. `search.time_share` in the job configuration overrides
+# it. A scheduling choice of the tool, not an engineering rule of any board.
+SEARCH_TIME_SHARE = 0.4
+# How long the controller waits for the engine's answer after the engine's own deadline.
+SEARCH_GRACE_S = 15.0
 SILK = ('F.Silkscreen', 'B.Silkscreen')
 FAB = {'F': 'F.Fab', 'B': 'B.Fab'}
 SILK_OF = {'F': 'F.Silkscreen', 'B': 'B.Silkscreen'}
@@ -1015,7 +1022,11 @@ def rust_executable():
 
 
 def solve(problem, search, job_dir, *, deadline_s, executable=None, on_seed=None, clock=None):
-    """One Rust process for the whole seed portfolio; heartbeats carry finished seeds."""
+    """One Rust process for the whole seed portfolio; heartbeats carry finished seeds.
+
+    deadline_s is the engine's own deadline: it shares that time between its seeds and answers
+    `completed` with what it found. clock bounds the process; when it expires first the
+    answer is an interrupted record holding only the seeds the heartbeats reported."""
     executable = Path(executable or rust_executable())
     payload = dict(problem, search=dict(search, deadline_ms=max(0, int(deadline_s * 1000)),
                                         cancel_file=str(Path(job_dir) / 'CANCEL')))
@@ -1475,6 +1486,22 @@ def retain_diagnostic(job_dir, entry):
     write_json(tmp, entry)
     os.replace(tmp, pointer)
     return True
+
+
+def chosen_placement(job_dir, *, deadline_limited):
+    """The placement this job offers, also when it stopped early (AGENTEE-637).
+
+    The checked incumbent, else the best diagnostic candidate, which the engine or native DRC
+    rejected and which is never valid. None when no candidate was checked. deadline_limited
+    says the search was cut short by the budget or the job ended at its deadline."""
+    for kind, name in (('incumbent', 'incumbent.json'), ('best_diagnostic', 'best-diagnostic.json')):
+        pointer = Path(job_dir) / name
+        if pointer.exists():
+            entry = read_json(pointer)
+            return {'kind': kind, 'valid': kind == 'incumbent', 'board': entry.get('board'),
+                    'board_sha256': entry.get('board_sha256'), 'seed': entry.get('seed'),
+                    'engine_cost': entry.get('engine_cost'), 'deadline_limited': bool(deadline_limited)}
+    return None
 
 
 def checkpoint(job_dir, state):
@@ -1940,6 +1967,9 @@ def run_job(config, job_dir, *, resume=False, executable=None):
         # An interrupted trial never overwrites the incumbent or its board.
         pointer = Path(job_dir) / 'incumbent.json'
         report['incumbent'] = read_json(pointer) if pointer.exists() else None
+        # A stopped job still names the best placement it checked; it never ends with nothing
+        # when a candidate exists.
+        report['placement'] = chosen_placement(job_dir, deadline_limited=True)
         if report.get('attempt') is not None:
             write_json(Path(job_dir) / f'job-report-a{report["attempt"]}.json', report)
         write_json(Path(job_dir) / 'job-report.json', report)
@@ -2139,6 +2169,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             report['native_rules'] = verify_rule_loading(board_path, job_dir / f'native-rules-a{attempt}',
                                                         clock=clock, cancel_dir=job_dir)
     search = dict(config['search'], completed_seeds=state['completed_seeds'])
+    share = search.pop('time_share', SEARCH_TIME_SHARE)
+    if isinstance(share, bool) or not isinstance(share, (int, float)) or not 0 < share < 1:
+        raise JobRefusal('search.time_share: expected a number above 0 and below 1')
 
     def on_seed(event):
         state['completed_seeds'] = sorted(set(state['completed_seeds']) | (
@@ -2147,15 +2180,26 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         checkpoint(job_dir, state)
 
     with clock.phase('search'):
-        output, engine = solve(problem, search, job_dir, deadline_s=clock.remaining(),
-                               executable=executable, on_seed=on_seed, clock=clock)
+        # The engine gets a share of the time left and sizes its seeds and steps to it; the
+        # controller waits a little longer for its answer, never past the job deadline.
+        search_s = max(0.0, clock.remaining()) * share
+        output, engine = solve(problem, search, job_dir, deadline_s=search_s,
+                               executable=executable, on_seed=on_seed,
+                               clock=Clock(min(clock.remaining(), search_s + SEARCH_GRACE_S)))
         write_json(job_dir / 'engine-output.json', output)
         write_json(job_dir / f'engine-output-a{attempt}.json', output)
     report['engine'] = {**engine, 'status': output['status'], 'counters': output['counters'],
-                        'seeds': output['seeds'], 'prng': output['prng']}
-    if output['status'] in ('cancelled', 'deadline'):
-        raise JobStopped(output['status'])
-    clock.phases['prepare'] = round(output['timing']['prepare_s'], 6)
+                        'seeds': output['seeds'], 'prng': output['prng'], 'budget': output.get('budget')}
+    # 'deadline' here is the search's own time, not the job's: the candidates found so far go
+    # on to the checks and the router, marked as limited. Only a cancel stops the job.
+    search_limited = output['status'] == 'deadline' or bool((output.get('budget') or {}).get('limited'))
+    report['search'] = {'time_share': share, 'budget_s': round(search_s, 3), 'status': output['status'],
+                        'limited_by_budget': search_limited}
+    if output['status'] == 'cancelled':
+        raise JobStopped('cancelled')
+    _check_stop(clock, job_dir)
+    if output['timing'].get('prepare_s') is not None:
+        clock.phases['prepare'] = round(output['timing']['prepare_s'], 6)
     # Earlier seeds of a resumed job compete with the new ones on equal terms.
     shortlist = list(output['shortlist'])
     for seed, event in state['seed_results'].items():
@@ -2164,6 +2208,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     shortlist.sort(key=lambda c: (int(c['cost']), c['seed']))
     shortlist = [dict(c, feasible=True) for c in shortlist[:int(config['search'].get('shortlist', 3))]]
     diagnostics = list(output.get('diagnostic_shortlist', []))
+    if not diagnostics and not shortlist:
+        # An interrupted engine sent no final record; the heartbeats of its finished seeds did.
+        diagnostics = _search_diagnostics(output, state)[:int(config['search'].get('shortlist', 3))]
+    if output['status'] == 'deadline' and not shortlist and not diagnostics:
+        raise JobStopped('deadline')   # the search time ended before any state could be kept
     if 'mechanics' in normalized:
         diagnostics = _search_diagnostics(output, state)[:int(config['search'].get('shortlist', 3))]
         with clock.phase('placement_repair'):
@@ -2233,6 +2282,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     # Exploratory routing of the best diagnostic candidate is allowed (rule 7); it is never valid.
     selected, report['routed_candidate'] = ((incumbent, 'incumbent') if incumbent is not None
                                             else (diagnostic, 'best_diagnostic_exploratory'))
+    report['placement'] = chosen_placement(job_dir, deadline_limited=search_limited)
     if selected is None:
         _check_stop(clock, job_dir)
         report['status'] = 'cancelled' if _cancelled(job_dir) else 'no_checked_candidate'
@@ -2424,6 +2474,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             os.replace(tmp, job_dir / 'routed-incumbent.json')
             break
     _check_stop(clock, job_dir)
+    report['placement'] = chosen_placement(job_dir, deadline_limited=search_limited)
     report['phases'] = clock.phases
     report['elapsed_s'] = round(time.monotonic() - clock.start, 3)
     report['status'] = status
