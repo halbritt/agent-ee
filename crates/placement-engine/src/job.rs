@@ -390,6 +390,7 @@ impl Copper {
                polygons, parts, part_bounds, edges }
     }
 
+    #[cfg(test)]
     fn overlap(&self, other: &Self) -> i128 {
         let clearance = self.clearance.max(other.clearance);
         self.overlap_at_clearance(other, clearance)
@@ -1184,22 +1185,71 @@ impl Terms {
     }
 }
 
+/// One copper item or hole of a footprint under a pose. The box is placed at
+/// once; the exact contours are transformed only when a box test cannot decide
+/// (AGENTEE-637: most trial poses are rejected on boxes alone, and transforming
+/// every pad polygon of every neighbour dominated the step time).
+#[derive(Clone, Debug)]
+struct PlacedCopper {
+    footprint: usize,
+    item: usize,
+    hole: bool,
+    pose: Pose,
+    bounds: Rect,
+    clearance: i64,
+    native: bool,
+    exact: std::cell::OnceCell<Copper>,
+}
+
+impl PlacedCopper {
+    fn new(footprint: usize, item: usize, hole: bool, local: &Copper, pose: &Pose) -> Self {
+        Self { footprint, item, hole, pose: *pose, bounds: place_rect(&local.bounds, pose),
+               clearance: local.clearance, native: local.polygons.is_some(), exact: std::cell::OnceCell::new() }
+    }
+
+    fn exact(&self, p: &Prepared) -> &Copper {
+        self.exact.get_or_init(|| {
+            let fp = &p.footprints[self.footprint];
+            (if self.hole { &fp.holes[self.item] } else { &fp.copper[self.item] }).at(&self.pose)
+        })
+    }
+
+    fn overlap(&self, p: &Prepared, other: &Self) -> i128 {
+        self.overlap_at_clearance(p, other, self.clearance.max(other.clearance))
+    }
+
+    /// The verdict of `Copper::overlap_at_clearance`, whose first test is this same box test.
+    fn overlap_at_clearance(&self, p: &Prepared, other: &Self, clearance: i64) -> i128 {
+        let boxed = self.bounds.grown(clearance).overlap(&other.bounds);
+        if boxed == 0 || (!self.native && !other.native) {
+            return boxed;
+        }
+        self.exact(p).overlap_at_clearance(other.exact(p), clearance)
+    }
+}
+
+#[derive(Clone, Debug)]
 struct Placed {
     body: Option<Rect>,
     edge_seat: Option<Rect>,
-    copper: Vec<Copper>,
-    holes: Vec<Copper>,
+    copper: Vec<PlacedCopper>,
+    holes: Vec<PlacedCopper>,
     mask: Vec<Rect>,
     escape: Vec<Rect>,
     reach: Option<Rect>,
+}
+
+/// Body centre times two (the group term needs nothing else of a placed part).
+fn body_centre2(p: &Prepared, f: usize, pose: &Pose) -> (i64, i64) {
+    p.footprints[f].occupancy.map(|r| place_rect(&r, pose).center2()).unwrap_or((2 * pose.x, 2 * pose.y))
 }
 
 fn placed(p: &Prepared, f: usize, pose: &Pose) -> Placed {
     let fp = &p.footprints[f];
     let body = fp.occupancy.map(|r| place_rect(&r, pose));
     let edge_seat = fp.edge.as_ref().and_then(|e| e.seat).map(|r| place_rect(&r, pose)).or(body);
-    let copper: Vec<Copper> = fp.copper.iter().map(|c| c.at(pose)).collect();
-    let holes: Vec<Copper> = fp.holes.iter().map(|c| c.at(pose)).collect();
+    let copper: Vec<PlacedCopper> = fp.copper.iter().enumerate().map(|(i, c)| PlacedCopper::new(f, i, false, c, pose)).collect();
+    let holes: Vec<PlacedCopper> = fp.holes.iter().enumerate().map(|(i, c)| PlacedCopper::new(f, i, true, c, pose)).collect();
     let mask: Vec<Rect> = fp.mask.iter().map(|r| place_rect(r, pose)).collect();
     let escape: Vec<Rect> = fp.escape.iter().map(|r| place_rect(r, pose)).collect();
     let mut reach = body;
@@ -1308,7 +1358,7 @@ fn pair_terms(p: &Prepared, a: &Placed, b: &Placed) -> Terms {
     // Bounds prune distant items; native outer polygons decide pad clearance.
     for ca in &a.copper {
         for cb in &b.copper {
-            let o = ca.overlap(cb);
+            let o = ca.overlap(p, cb);
             if o > 0 {
                 t.hard += o;
                 t.hard_count += 1;
@@ -1319,14 +1369,14 @@ fn pair_terms(p: &Prepared, a: &Placed, b: &Placed) -> Terms {
     for (holes, copper) in [(&a.holes, &b.copper), (&b.holes, &a.copper)] {
         for hole in holes {
             for c in copper {
-                let o = hole.overlap_at_clearance(c, hole.clearance);
+                let o = hole.overlap_at_clearance(p, c, hole.clearance);
                 if o > 0 { t.hard += o; t.hard_count += 1; }
             }
         }
     }
     for ha in &a.holes {
         for hb in &b.holes {
-            let o = ha.overlap_at_clearance(hb, p.hole_to_hole_nm);
+            let o = ha.overlap_at_clearance(p, hb, p.hole_to_hole_nm);
             if o > 0 { t.hard += o; t.hard_count += 1; }
         }
     }
@@ -1420,10 +1470,7 @@ fn group_terms(p: &Prepared, f: usize, poses: &[Pose]) -> i128 {
     let Some(g) = p.footprints[f].group else { return 0 };
     let (_, anchor, members) = &p.groups[g];
     if *anchor >= p.footprints.len() { return 0; }
-    let centre = |i: usize| {
-        let at = placed(p, i, &poses[i]);
-        at.body.map(|b| b.center2()).unwrap_or((2 * poses[i].x, 2 * poses[i].y))
-    };
+    let centre = |i: usize| body_centre2(p, i, &poses[i]);
     let (ax, ay) = centre(*anchor);
     if f == *anchor {
         members.iter().filter(|&&m| m != f).map(|&m| {
@@ -1624,16 +1671,26 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
 /// stays hard-legal (zero overlap, outline, hole and edge violations) and the cost strictly
 /// decreases. Fixed, anchor and non-movable footprints never move.
 pub fn refine_members(p: &Prepared, poses: &mut Vec<Pose>, passes: usize) -> Vec<Value> {
+    refine_members_until(p, poses, passes, None).0
+}
+
+/// `refine_members` with a time limit. Seats are graded by the incremental evaluator, whose
+/// terms equal the full evaluator's exactly, so a seat costs its neighbourhood and not the
+/// whole board (AGENTEE-637). The flag is true when the limit ended the refinement early;
+/// every accepted seat is still legal and strictly cheaper.
+pub fn refine_members_until(p: &Prepared, poses: &mut Vec<Pose>, passes: usize, until: Option<Instant>) -> (Vec<Value>, bool) {
     let mut rows = Vec::new();
-    let mut current = full_evaluate(p, poses);
-    if current.hard != 0 || current.hard_count != 0 { return rows; }
-    let mut cost = current.cost(&p.weights);
-    for pass in 0..passes {
+    let Ok(mut state) = SearchState::new(p, poses.clone()) else { return (rows, false) };
+    if state.totals.hard != 0 || state.totals.hard_count != 0 { return (rows, false); }
+    let mut cost = state.totals.cost(&p.weights);
+    let mut stopped = false;
+    'passes: for pass in 0..passes {
         let mut improved = false;
         let mut order: Vec<(i64, usize)> = (0..p.links.len()).map(|k| (link_gap(p, k, poses), k)).collect();
         order.sort_by(|x, y| y.0.cmp(&x.0).then(x.1.cmp(&y.1)));
         for (gap, k) in order {
             if gap <= 0 { continue; }
+            if until.is_some_and(|t| Instant::now() >= t) { stopped = true; break 'passes; }
             let l = &p.links[k];
             let Some((_, (fa, _, fb, _))) = link_argmin(p, k, poses) else { continue };
             let is_anchor = |f: usize| p.footprints[f].group.map(|g| p.groups[g].1) == Some(f);
@@ -1641,7 +1698,7 @@ pub fn refine_members(p: &Prepared, poses: &mut Vec<Pose>, passes: usize) -> Vec
                          else if p.movable.contains(&fb) && !is_anchor(fb) { fb } else { continue };
             let partner = if member == fa { fb } else { fa };
             let before = poses[member];
-            let mut best: Option<(i128, Pose, Terms)> = None;
+            let mut best: Option<(i128, Trial)> = None;
             let seats_for: Vec<(usize, usize)> = l.pairs.iter().filter_map(|&(a, pa, b, pb)| {
                 if a == member && b == partner { Some((pa, pb)) } else if b == member && a == partner { Some((pb, pa)) } else { None }
             }).collect();
@@ -1658,17 +1715,19 @@ pub fn refine_members(p: &Prepared, poses: &mut Vec<Pose>, passes: usize) -> Vec
                         for (cx, cy) in seats {
                             let trial = Pose { x: cx - lx, y: cy - ly, q };
                             if trial == before { continue; }
-                            poses[member] = trial;
-                            let terms = full_evaluate(p, poses);
-                            poses[member] = before;
+                            let Ok(graded) = state.evaluate(p, &[(member, trial)]) else { continue };
+                            let mut terms = state.totals.clone();
+                            terms.add(&graded.delta, 1);
                             if terms.hard != 0 || terms.hard_count != 0 { continue; }
                             let c = terms.cost(&p.weights);
-                            if c < cost && best.as_ref().is_none_or(|b| c < b.0) { best = Some((c, trial, terms)); }
+                            if c < cost && best.as_ref().is_none_or(|b| c < b.0) { best = Some((c, graded)); }
                         }
                     }
                 }
             }
-            if let Some((c, trial, terms)) = best {
+            if let Some((c, graded)) = best {
+                let trial = graded.moves[0].1;
+                if state.commit(p, graded).is_err() { continue; }
                 poses[member] = trial;
                 let gap_after = link_gap(p, k, poses);
                 poses[member] = before;
@@ -1680,14 +1739,12 @@ pub fn refine_members(p: &Prepared, poses: &mut Vec<Pose>, passes: usize) -> Vec
                                  "to": {"x_nm": trial.x, "y_nm": trial.y, "quarter_turns": trial.q.rem_euclid(4)}}));
                 poses[member] = trial;
                 cost = c;
-                current = terms;
                 improved = true;
             }
         }
         if !improved { break; }
     }
-    let _ = current;
-    rows
+    (rows, stopped)
 }
 
 fn rotate_rational([x, y]: [Rat; 2], q: i64) -> [Rat; 2] {
@@ -1850,6 +1907,8 @@ pub struct SearchState {
     decoupling_cost: Vec<Terms>,
     cells: HashMap<(i64, i64), BTreeSet<usize>>,
     cell_of: Vec<Vec<(i64, i64)>>,
+    /// Every footprint placed at its committed pose; a commit replaces the movers' entries.
+    at: Vec<Placed>,
     pub counters: Counters,
 }
 
@@ -1874,6 +1933,7 @@ pub struct Trial {
     after_links: Vec<(usize, i128)>,
     after_locality: Vec<(usize, Terms)>,
     after_decoupling: Vec<(usize, Terms)>,
+    after_placed: Vec<(usize, Placed)>,
 }
 
 fn cells_for(r: &Rect) -> Vec<(i64, i64)> {
@@ -1904,6 +1964,7 @@ impl SearchState {
             locality_cost: (0..p.locality.len()).map(|k| locality_terms(p, k, &poses)).collect(),
             decoupling_cost: (0..p.decoupling.len()).map(|k| decoupling_terms(p, k, &poses)).collect(),
             totals: full_evaluate(p, &poses),
+            at: (0..p.footprints.len()).map(|f| placed(p, f, &poses[f])).collect(),
             poses,
             generation: 0,
             cells: HashMap::new(),
@@ -1926,7 +1987,7 @@ impl SearchState {
         if p.footprints[f].role == Role::SilkOnly {
             return;
         }
-        if let Some(reach) = placed(p, f, &self.poses[f]).reach {
+        if let Some(reach) = self.at[f].reach {
             let cells = cells_for(&reach);
             for c in &cells {
                 self.cells.entry(*c).or_default().insert(f);
@@ -1962,31 +2023,37 @@ impl SearchState {
         let mut delta = Terms::default();
         delta.add(&body_mechanics(p, &self.poses, None), -1);
         delta.add(&body_mechanics(p, &after, None), 1);
-        let old: BTreeMap<usize, Placed> = movers.iter().map(|&f| (f, placed(p, f, &self.poses[f]))).collect();
+        let old = &self.at;
         let new: BTreeMap<usize, Placed> = movers.iter().map(|&f| (f, placed(p, f, &after[f]))).collect();
         for &f in &movers {
-            delta.add(&unary_terms(p, f, &old[&f]), -1);
+            delta.add(&unary_terms(p, f, &old[f]), -1);
             delta.add(&unary_terms(p, f, &new[&f]), 1);
             // Old contributors come from the committed index; new neighbours from a
             // query at the new pose. Movers pair with each other separately.
-            let old_n = old[&f].reach.map(|r| self.neighbours(&r)).unwrap_or_default();
+            let old_n = old[f].reach.map(|r| self.neighbours(&r)).unwrap_or_default();
             let new_n = new[&f].reach.map(|r| self.neighbours(&r)).unwrap_or_default();
             for &g in old_n.iter().filter(|g| !movers.contains(g)) {
                 if interacts(p, f, g) {
-                    delta.add(&ordered_pair(p, f, &old[&f], g, &placed(p, g, &self.poses[g])), -1);
+                    delta.add(&ordered_pair(p, f, &old[f], g, &old[g]), -1);
                 }
             }
             for &g in new_n.iter().filter(|g| !movers.contains(g)) {
                 if interacts(p, f, g) {
-                    delta.add(&ordered_pair(p, f, &new[&f], g, &placed(p, g, &self.poses[g])), 1);
+                    delta.add(&ordered_pair(p, f, &new[&f], g, &old[g]), 1);
                 }
             }
         }
+        // Parts that move by one common vector keep every term between them: each pair
+        // term is an overlap of boxes and contours, which a common translation preserves.
+        let shift = moves.first().map(|&(f, pose)| (pose.x - self.poses[f].x, pose.y - self.poses[f].y));
+        let rigid = moves.iter().all(|&(f, pose)|
+            pose.q == self.poses[f].q && Some((pose.x - self.poses[f].x, pose.y - self.poses[f].y)) == shift);
         let list: Vec<usize> = movers.iter().copied().collect();
         for (i, &a) in list.iter().enumerate() {
+            if rigid { break; }
             for &b in &list[i + 1..] {
                 if interacts(p, a, b) {
-                    delta.add(&pair_terms(p, &old[&a], &old[&b]), -1);
+                    delta.add(&pair_terms(p, &old[a], &old[b]), -1);
                     delta.add(&pair_terms(p, &new[&a], &new[&b]), 1);
                 }
             }
@@ -2041,7 +2108,8 @@ impl SearchState {
                 after_decoupling.push((k, value));
             }
         }
-        Ok(Trial { generation: self.generation, moves: moves.to_vec(), delta, after_nets, after_groups, after_prox, after_links, after_locality, after_decoupling })
+        Ok(Trial { generation: self.generation, moves: moves.to_vec(), delta, after_nets, after_groups, after_prox, after_links, after_locality, after_decoupling,
+                   after_placed: new.into_iter().collect() })
     }
 
     /// Apply a trial atomically. A trial evaluated against another generation is refused.
@@ -2052,6 +2120,9 @@ impl SearchState {
         }
         for &(f, pose) in &trial.moves {
             self.poses[f] = pose;
+        }
+        for (f, at) in trial.after_placed {
+            self.at[f] = at;
         }
         for &(f, _) in &trial.moves {
             self.index(p, f);
@@ -2124,6 +2195,18 @@ impl Rng {
 
 const GRID_NM: i64 = 50_000;
 
+// How a search with a deadline shares its time (AGENTEE-637). These are scheduling
+// choices of the tool, not engineering rules of any board.
+/// A seed is worth running when each movable part can expect this many trial moves.
+const USEFUL_STEPS_PER_PART: u64 = 2000;
+/// Part of a seed's share spent annealing; the rest is for its member refinement.
+const ANNEAL_SHARE: f64 = 0.8;
+/// Part of the remaining time kept back for grading and writing the result.
+const OUTPUT_SHARE: f64 = 0.03;
+/// The rate probe takes this part of the time, and never more than PROBE_MAX_S.
+const PROBE_SHARE: f64 = 0.02;
+const PROBE_MAX_S: f64 = 5.0;
+
 fn snap(v: i64) -> i64 {
     v.div_euclid(GRID_NM) * GRID_NM
 }
@@ -2165,8 +2248,14 @@ pub struct Candidate {
     pub step: u64,
 }
 
+#[derive(Clone)]
 pub struct Limits {
     pub steps_per_seed: u64,
+    /// The time one seed's schedule may take, from its start. The schedule then follows
+    /// whichever is further along, the step count or the clock, so it always cools fully
+    /// inside the window (AGENTEE-637). None keeps the step count alone, which is
+    /// reproducible step for step.
+    pub window: Option<std::time::Duration>,
     pub deadline: Option<Instant>,
     pub cancel_file: Option<std::path::PathBuf>,
     pub check_every: u64,
@@ -2179,6 +2268,8 @@ pub struct Limits {
 
 pub enum Stop {
     Completed,
+    /// The seed's time window ended its schedule, fully cooled, before the step count did.
+    Window,
     Deadline,
     Cancelled,
 }
@@ -2199,6 +2290,7 @@ impl Limits {
 /// exploration; only a state whose hard measure is exactly zero is retained,
 /// and a better feasible state replaces the seed's best only on commit.
 pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Result<(Option<Candidate>, Counters, Stop, u64, ((i64, i128), Vec<Value>, Option<Candidate>))> {
+    let begun = Instant::now();
     let mut rng = Rng::new(seed);
     let mut state = SearchState::new(p, start_poses(p, seed, clustered, &mut rng))?;
     let mut best: Option<Candidate> = None;
@@ -2226,7 +2318,24 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
                 break;
             }
         }
-        let frac = step as f64 / total as f64;
+        let mut frac = step as f64 / total as f64;
+        if limits.window.is_some() || limits.deadline.is_some() {
+            // One clock read per step: a step can take milliseconds on a dense board, so a
+            // check every `check_every` steps would overrun the deadline by seconds.
+            let now = Instant::now();
+            if limits.deadline.is_some_and(|d| now >= d) {
+                stop = Stop::Deadline;
+                break;
+            }
+            if let Some(window) = limits.window {
+                let used = (now - begun).as_secs_f64() / window.as_secs_f64().max(1e-9);
+                if used >= 1.0 {
+                    stop = Stop::Window;
+                    break;
+                }
+                frac = frac.max(used);
+            }
+        }
         let temperature = t0 * (1.0 - frac).powi(3) + 1.0;
         let reach = ((span as f64) * (0.5 * (1.0 - frac) + 0.01)) as i64;
         let f = p.movable[rng.below(p.movable.len() as u64) as usize];
@@ -2675,8 +2784,9 @@ pub fn run(input: &Value) -> Result<Value> {
     let skip: BTreeSet<u64> = search["completed_seeds"].as_array().cloned().unwrap_or_default()
         .iter().filter_map(Value::as_u64).collect();
     let deadline_ms = search.get("deadline_ms").and_then(Value::as_u64);
-    let limits = Limits {
+    let mut limits = Limits {
         steps_per_seed: search["steps_per_seed"].as_u64().context("steps_per_seed")?,
+        window: None,
         deadline: deadline_ms.map(|ms| started + std::time::Duration::from_millis(ms)),
         cancel_file: search.get("cancel_file").and_then(Value::as_str).map(Into::into),
         check_every: search.get("check_every").and_then(Value::as_u64).unwrap_or(256),
@@ -2690,6 +2800,36 @@ pub fn run(input: &Value) -> Result<Value> {
     let mut seed_rows = Vec::new();
     let mut status = "completed";
     let mut counters = Counters::default();
+    // A search with a deadline sizes itself to it (AGENTEE-637). The remaining time is
+    // shared between the seeds still to run, each seed's schedule cools fully inside its
+    // share, and seeds are dropped from the end of the portfolio when the measured step
+    // rate cannot give each of them a useful number of steps. Without a deadline every
+    // seed runs its full step count, as before.
+    let sized = limits.deadline.is_some() && !p.movable.is_empty();
+    let useful_steps = limits.steps_per_seed.min(USEFUL_STEPS_PER_PART * p.movable.len() as u64).max(1);
+    let mut pending = seeds.iter().filter(|(seed, _)| !skip.contains(seed)).count() as u64;
+    let mut rate: Option<f64> = None;
+    let mut probe = Value::Null;
+    let mut plan_rows = Vec::new();
+    if sized && pending > 1 && limits.stop().is_none() {
+        // A short whole schedule on the first pending seed measures the step rate. It is
+        // discarded: the seed then runs its own schedule from the same start.
+        let left = limits.deadline.unwrap().saturating_duration_since(Instant::now());
+        let window = left.mul_f64(PROBE_SHARE).min(std::time::Duration::from_secs_f64(PROBE_MAX_S));
+        let &(seed, clustered) = seeds.iter().find(|(seed, _)| !skip.contains(seed)).unwrap();
+        let t = Instant::now();
+        let trial = Limits { window: Some(window), ..limits.clone() };
+        let (_, c, _, steps, _) = anneal(&p, seed, clustered, &trial)?;
+        let took = t.elapsed().as_secs_f64();
+        counters.evaluations += c.evaluations;
+        counters.commits += c.commits;
+        counters.rejects += c.rejects;
+        counters.full_evaluations += c.full_evaluations;
+        if steps > 0 && took > 0.0 { rate = Some(steps as f64 / took); }
+        probe = json!({"seed": seed, "steps": steps, "elapsed_s": took, "steps_per_s": rate});
+    }
+    let mut dropped = 0u64;
+    let mut time_limited = 0u64;
     for &(seed, clustered) in &seeds {
         if skip.contains(&seed) {
             seed_rows.push(json!({"seed": seed, "status": "skipped_completed"}));
@@ -2701,11 +2841,37 @@ pub fn run(input: &Value) -> Result<Value> {
             continue;
         }
         let t = Instant::now();
+        let mut refine_until = None;
+        if sized {
+            let left = limits.deadline.unwrap().saturating_duration_since(t).mul_f64(1.0 - OUTPUT_SHARE);
+            // How many of the pending seeds the remaining time can give useful steps.
+            let affordable = rate.map(|r| ((left.as_secs_f64() * ANNEAL_SHARE * r) / useful_steps as f64).floor() as u64);
+            let run = affordable.map_or(pending, |n| n.clamp(1, pending));
+            if affordable == Some(0) && !plan_rows.is_empty() {
+                // A seed has run and no useful one fits in what is left: keep what was
+                // found and hand the time back to the caller. The first seed always runs.
+                seed_rows.push(json!({"seed": seed, "status": "not_run_budget"}));
+                dropped += 1;
+                pending -= 1;
+                continue;
+            }
+            let share = left.div_f64(run as f64);
+            limits.window = Some(share.mul_f64(ANNEAL_SHARE));
+            refine_until = Some(t + share);
+            plan_rows.push(json!({"seed": seed, "seeds_sharing": run, "pending": pending, "share_s": share.as_secs_f64(),
+                "anneal_window_s": share.as_secs_f64() * ANNEAL_SHARE, "steps_per_s_expected": rate,
+                "steps_expected": rate.map(|r| (r * share.as_secs_f64() * ANNEAL_SHARE).min(limits.steps_per_seed as f64))}));
+        }
         let (best, c, stop, steps, least) = anneal(&p, seed, clustered, &limits)?;
+        let anneal_s = t.elapsed().as_secs_f64();
+        pending -= 1;
+        if sized && steps > 0 && anneal_s > 0.0 { rate = Some(steps as f64 / anneal_s); }
         // AGENTEE-479: deterministic post-anneal member refinement on the feasible result.
+        let mut refinement_stopped = false;
         let (best, refinement) = match best {
             Some(mut b) if !p.links.is_empty() => {
-                let rows = refine_members(&p, &mut b.poses, 3);
+                let (rows, stopped) = refine_members_until(&p, &mut b.poses, 3, refine_until.or(limits.deadline));
+                refinement_stopped = stopped;
                 if !rows.is_empty() {
                     b.terms = full_evaluate(&p, &b.poses);
                     b.cost = b.terms.cost(&p.weights);
@@ -2719,12 +2885,17 @@ pub fn run(input: &Value) -> Result<Value> {
         counters.rejects += c.rejects;
         counters.stale_refusals += c.stale_refusals;
         counters.full_evaluations += c.full_evaluations;
-        let seed_status = match stop { Stop::Completed => "completed", Stop::Deadline => "deadline", Stop::Cancelled => "cancelled" };
+        // A seed whose window ended its schedule is complete: it cooled fully, on fewer steps.
+        let seed_status = match stop { Stop::Completed | Stop::Window => "completed", Stop::Deadline => "deadline", Stop::Cancelled => "cancelled" };
+        let limited_by = match stop { Stop::Completed => "steps", Stop::Window => "time", Stop::Deadline => "deadline", Stop::Cancelled => "cancelled" };
+        if matches!(stop, Stop::Window) { time_limited += 1; }
         if seed_status != "completed" {
             status = seed_status;
         }
         seed_rows.push(json!({"seed": seed, "start": if clustered {"clustered"} else {"scattered"},
-            "status": seed_status, "steps": steps, "elapsed_s": t.elapsed().as_secs_f64(),
+            "status": seed_status, "steps": steps, "elapsed_s": t.elapsed().as_secs_f64(), "anneal_s": anneal_s,
+            "limited_by": limited_by, "steps_per_s": if anneal_s > 0.0 { json!(steps as f64 / anneal_s) } else { Value::Null },
+            "refinement_stopped_by_time": refinement_stopped,
             "feasible": best.is_some(), "best_cost": best.as_ref().map(|b| b.cost.to_string()),
             "least_hard_count": if least.0.0 == i64::MAX { Value::Null } else { json!(least.0.0) },
             "least_hard_violations": least.1.clone(),
@@ -2786,6 +2957,10 @@ pub fn run(input: &Value) -> Result<Value> {
         "counters": {"evaluations": counters.evaluations, "commits": counters.commits, "rejects": counters.rejects,
                      "stale_refusals": counters.stale_refusals, "full_evaluations": counters.full_evaluations},
         "timing": {"prepare_s": prepare_s, "total_s": started.elapsed().as_secs_f64()},
+        "budget": {"sized_to_deadline": sized, "deadline_ms": deadline_ms, "steps_per_seed_limit": limits.steps_per_seed,
+                   "useful_steps_per_seed": useful_steps, "probe": probe, "plan": plan_rows,
+                   "seeds_time_limited": time_limited, "seeds_not_run": dropped,
+                   "limited": time_limited > 0 || dropped > 0 || status == "deadline"},
         "prng": "splitmix64/agent-ee-515-v1", "engine_version": env!("CARGO_PKG_VERSION"),
     }))
 }
@@ -3383,6 +3558,53 @@ mod tests {
     }
 
     #[test]
+    fn a_search_with_a_deadline_sizes_itself_and_returns_what_it_found() {
+        // Far more steps than the deadline allows: each seed must still cool fully inside
+        // its share of the time and the search must end `completed`, with candidates.
+        let mut raw = input(vec![]);
+        raw["search"]["steps_per_seed"] = json!(2_000_000_000_u64);
+        raw["search"]["verify_every"] = json!(0);
+        raw["search"]["deadline_ms"] = json!(1500);
+        let started = Instant::now();
+        let result = run(&raw).unwrap();
+        assert!(started.elapsed().as_secs_f64() < 3.0, "the search overran its deadline");
+        assert_eq!(result["status"], "completed", "{}", result["seeds"]);
+        assert_eq!(result["budget"]["sized_to_deadline"], true);
+        assert_eq!(result["budget"]["limited"], true);
+        let seeds = result["seeds"].as_array().unwrap();
+        assert!(seeds.iter().any(|s| s["limited_by"] == "time" && s["status"] == "completed"));
+        assert!(seeds.iter().all(|s| s["status"] == "completed" || s["status"] == "not_run_budget"));
+        assert!(!result["shortlist"].as_array().unwrap().is_empty()
+            || !result["diagnostic_shortlist"].as_array().unwrap().is_empty(), "a sized search returns a candidate");
+        for c in result["shortlist"].as_array().unwrap() {
+            assert_eq!(c["full_evaluation_equal"], true);
+        }
+        // Without a deadline nothing is sized and the result is the step-for-step one.
+        let mut plain = input(vec![]);
+        plain["search"].as_object_mut().unwrap().remove("deadline_ms");
+        let (a, b) = (run(&plain).unwrap(), run(&plain).unwrap());
+        assert_eq!(a["budget"]["sized_to_deadline"], false);
+        assert_eq!(a["shortlist"], b["shortlist"]);
+        assert!(a["seeds"].as_array().unwrap().iter().all(|s| s["limited_by"] == "steps"));
+    }
+
+    #[test]
+    fn refinement_stops_at_its_time_limit_and_keeps_a_legal_result() {
+        let p = prepare(&with_half_extents(input(vec![]), json!({"shared": ["GND"], "scoped": {}}))).unwrap();
+        let mut poses = legal_dispersed(&p);
+        let before = poses.clone();
+        let (rows, stopped) = refine_members_until(&p, &mut poses, 3, Some(Instant::now()));
+        assert!(stopped && rows.is_empty());
+        assert_eq!(poses, before);
+        // Unlimited, the incremental grading reaches the result the full evaluator confirms.
+        let (rows, stopped) = refine_members_until(&p, &mut poses, 3, None);
+        assert!(!stopped && !rows.is_empty());
+        let after = full_evaluate(&p, &poses);
+        assert_eq!((after.hard, after.hard_count), (0, 0));
+        assert_eq!(after.cost(&p.weights).to_string(), rows.last().unwrap()["cost_after"]);
+    }
+
+    #[test]
     fn refuses_malformed_or_unlabelled_occupancy() {
         let mut bad = input(vec![]);
         bad["footprints"][0]["occupancy"] = json!({"status": "courtyard_unproven"});
@@ -3651,7 +3873,9 @@ mod tests {
         let r = run(&resumed).unwrap();
         assert_eq!(r["seeds"][0]["status"], "skipped_completed");
         assert_eq!(r["seeds"][1], out["seeds"][1].clone().as_object().map(|o| {
-            let mut o = o.clone(); o["elapsed_s"] = r["seeds"][1]["elapsed_s"].clone(); Value::Object(o)
+            let mut o = o.clone();
+            for timing in ["elapsed_s", "anneal_s", "steps_per_s"] { o[timing] = r["seeds"][1][timing].clone(); }
+            Value::Object(o)
         }).unwrap());
         let mut late = input(vec![]);
         late["search"]["deadline_ms"] = json!(0);
