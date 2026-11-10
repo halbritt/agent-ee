@@ -97,6 +97,10 @@ Nothing is keyed on a board. Every rule below applies to every board.
   routed board when the job produced one; otherwise the placement the job
   chose (`incumbent.json`, else `best-diagnostic.json`), recorded as
   `placement_kind`.
+- **Search record**: every agent-ee cell records how the placement search used
+  its time (`job_search`, `engine_budget`, one `engine_seeds` row per seed with
+  its steps and measured step rate) and the placement the job offers
+  (`job_placement`), which a job ending `deadline` also names.
 - **Versions**: every agent-ee cell records the agent-ee commit (and whether
   the tree was dirty), the CI image ID, and the job's own preflight record
   (engine binary hash, router commit, pcbnew and kicad-cli versions).

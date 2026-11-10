@@ -340,6 +340,14 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
                       job_reason=report.get('reason') or report.get('refusal'),
                       job_eligibility=final.get('eligibility'), routed_candidate=report.get('routed_candidate'),
                       router_identity=report.get('router_identity'), job_preflight=report.get('preflight'))
+        # How the search used its time and which placement the job offers (AGENTEE-637).
+        engine = report.get('engine') or {}
+        record.update(job_search=report.get('search'), job_placement=report.get('placement'),
+                      engine_budget=engine.get('budget'),
+                      engine_seeds=[{k: row.get(k) for k in ('seed', 'status', 'limited_by', 'steps', 'steps_per_s',
+                                                             'anneal_s', 'elapsed_s', 'feasible', 'best_cost',
+                                                             'least_hard_count')}
+                                    for row in engine.get('seeds') or []])
         if final.get('board'):
             local = out_dir / Path(final['board']).relative_to(IN_IMAGE / tag)
             record['output'] = str(local) if local.is_file() else None

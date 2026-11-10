@@ -232,7 +232,29 @@ hard-limit acceptance.
 ```
 
 `budget_s` is ONE overall budget from job start: preparation, search, judging,
-export (routing) and final validation all draw on it; there is no phase cap.
+export (routing) and final validation all draw on it.
+
+The placement search takes a share of the time left when it starts
+(`search.time_share`, a number above 0 and below 1, default 0.4); the rest is
+kept for the native checks of its candidates, routing and the final checks. The
+engine sizes the search to that time. `steps_per_seed` is the most steps a seed
+may take, not a promise: the remaining time is shared between the seeds still to
+run, a seed's schedule follows whichever is further along, its step count or its
+share of the clock, and so always cools fully. A short probe measures the step
+rate, and seeds are dropped from the end of the list when the rate cannot give
+each of them 2,000 trial moves per movable part; the first seed always runs. Each
+seed row in `engine-output.json` says what ended it (`limited_by`: `steps` or
+`time`) and its measured `steps_per_s`; `budget` holds the plan. A search limited
+this way ends `completed`, and its candidates go on as usual. The job report
+records it as `search.limited_by_budget` and in `placement.deadline_limited`.
+A seed that ran its full step count is reproducible step for step; a seed limited
+by time is not, because its schedule followed the clock.
+
+`placement` in the job report names the placement the job offers, in every
+ending that checked a candidate, including `deadline`: `kind` is `incumbent`
+(checked, `valid: true`) or `best_diagnostic` (rejected by the engine or by native
+DRC, never valid), with its `board`, `board_sha256`, `seed` and
+`deadline_limited`. It is null only when no candidate was checked.
 The legacy `router.budget_s` field is accepted but ignored: routing receives
 the remaining overall time, with no minimum timeout extension. If less than one
 second remains, the integer-second router CLI is not started.
@@ -775,7 +797,10 @@ capture, engine, router and DRC subprocesses, including stalled stdout or stdin.
 interruption the owned process group is killed and its leader reaped; no next
 phase starts. The report says `cancelled` or `deadline` and the incumbent stays
 intact. An interrupted child is recorded without claiming solver completion or
-native DRC evidence. The engine also checks its deadline internally.
+native DRC evidence. The engine also checks its deadline internally, at every
+step. A job that ends `deadline` after its candidates were checked still names
+the best of them in `placement` (see `budget_s` above); a search that used up
+its own share of the time is not a job deadline.
 Finished seeds are checkpointed atomically (`checkpoint.json`, bound to the job
 identity: problem, config, engine and controller hashes, router identity and
 native tool versions). `--resume` refuses a checkpoint of

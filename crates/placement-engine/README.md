@@ -59,3 +59,10 @@ use an inline representation; checked machine-integer geometric predicates fall
 back to exact arithmetic when needed. Geometry is prepared once per pose, broad
 phase bounds reject disjoint shapes, and the candidate heap resolves exact wire
 costs lazily while preserving the reference ordering and step accounting.
+
+The whole-board placement job (`src/job.rs`, schema `agent-ee.placement-job-input/2`)
+places a footprint's boxes at once and transforms its exact pad contours only when
+a box test cannot decide, keeps every committed placement, and grades refinement
+seats with the incremental evaluator. A search given `deadline_ms` shares that time
+between its seeds and reports the plan under `budget`; see
+[the placement job](../../docs/placement-job.md).
