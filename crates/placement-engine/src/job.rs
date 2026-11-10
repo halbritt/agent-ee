@@ -2302,6 +2302,7 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
     let mut least_poses = state.poses.clone();
     let mut stop = Stop::Completed;
     let mut step = 0;
+    let mut timed = false;
     // A fully anchored board has exactly one placement. Grade it without
     // selecting a move from an empty set; native checks still judge the board.
     if p.movable.is_empty() {
@@ -2333,7 +2334,11 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
                     stop = Stop::Window;
                     break;
                 }
-                frac = frac.max(used);
+                // The clock takes over only once the seed is behind its step schedule, tested
+                // every 256 steps; a seed that keeps pace never reads it into the schedule
+                // and stays reproducible step for step.
+                if !timed && step > 0 && step % 256 == 0 && used > frac { timed = true; }
+                if timed { frac = frac.max(used); }
             }
         }
         let temperature = t0 * (1.0 - frac).powi(3) + 1.0;
