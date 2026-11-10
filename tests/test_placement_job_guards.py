@@ -509,7 +509,7 @@ class ControllerBoundaryTests(Fixture):
 
     def test_search_time_share_is_validated(self):
         for bad in (0, 1, 1.5, True, 'half'):
-            with self.subTest(share=bad), self.assertRaisesRegex(job.JobRefusal, 'search.time_share'):
+            with self.subTest(share=bad):
                 problem, _ = self.problem()
                 config = {'budget_s': 60, 'inputs': {k: {} for k in ('board', 'project', 'intent', 'groups')},
                           'search': {'shortlist': 1, 'time_share': bad}, 'router': {'checkout': 'unused'}}
@@ -520,8 +520,11 @@ class ControllerBoundaryTests(Fixture):
                         dict(zip(('board', 'project', 'intent', 'groups'), values))[label]))
                     stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
                     stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
-                    job._execute_job(config, self.dir / f'share-{bad}', resume=False, executable=None,
-                                     clock=job.Clock(60), report={}, ownership={})
+                    solve = stack.enter_context(patch.object(job, 'solve'))
+                    report = job.run_job(config, self.dir / f'share-{bad}')
+                self.assertEqual(report['status'], 'refused')
+                self.assertIn('search.time_share', report['reason'])
+                self.assertFalse(solve.called)
 
     def test_stalled_engine_stream_is_bounded(self):
         problem, _ = self.problem()
