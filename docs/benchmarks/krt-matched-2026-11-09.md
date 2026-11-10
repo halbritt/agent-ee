@@ -940,3 +940,77 @@ Not fixed here.
   (59 modules, 827 tests, on the commit before the last two source changes;
   101 tests of 8 modules on the final commit). The full suite was not run (by
   instruction).
+
+## Rerun with the fixed router, and a placer weight test (2026-11-10)
+
+Two questions: does routing through `agent-ee place run` improve with
+kicad-route `f074b4a` (AGENTEE-638), and does agent-ee's placement route better
+when the pull of each schematic-sheet group toward its anchor is reduced or
+off. Same prepared boards (hashes checked), same 900 s budget, KiCad 10.0.8,
+CI image `sha256:85e8151f3e82`, agent-ee `cd5564dd`. Raw results:
+`~/.local/share/agent-ee/krt-matched-20261109-r4/` and
+`krt-matched-20261110-weights-{off,quarter}/`.
+
+### Routing arm through `place run`
+
+| Board | Router `995891ae` (r2) | Router `f074b4a` (r4) | Job status (r4) |
+|---|---|---|---|
+| esp_prog | 0 open, 10 errors | 0 open, 4 errors (3 shorts added) | `verification_failed` |
+| flat_hierarchy | refused (router crash) | 0 open, 2 errors, both pre-existing | `verification_failed` |
+| tigard | 9 open, 48 errors | 9 open, 48 errors, all pre-existing | `verification_failed` |
+| ESP32-DevKit-LiPo | 18 open, 54 errors | 18 open, 43 errors | `verification_failed` |
+| complex_hierarchy | refused (router crash) | 0 open, 0 errors | `integrity_failed` |
+| StickHub | 2 open, 29 errors | 2 open, 30 errors | `verification_failed` |
+
+The crashes and the hole-clearance errors are gone. No open net closed on
+tigard, ESP32-DevKit-LiPo or StickHub. No board is accepted by the job.
+
+### Placement arm with changed weights
+
+The weight table is `WEIGHTS` in `src/agent_ee/placement_problem.py`. "Off"
+sets `group` and `link` to 0. "One quarter" multiplies every other weight by 4
+and leaves `group` and `link` at 1. Each placement was stripped of copper and
+routed by stock KRT, as before. Cells are open nets / vias / track length in
+mm. KRT's placer and the default weights are the earlier runs' rows.
+
+| Board | KRT's placer | Default weights (r3) | Group off | Group one quarter |
+|---|---|---|---|---|
+| esp_prog | 0 / 16 / 229 | 0 / 29 / 318 | 0 / 24 / 298 | 0 / 33 / 279 |
+| flat_hierarchy | 0 / 36 / 1271 | 0 / 119 / 2392 | 0 / 37 / 1419 | 0 / 104 / 2077 |
+| tigard | 1 / 192 / 2147 | 8 / 245 / 2656 | 2 / 229 / 2189 | 4 / 233 / 2615 |
+| ESP32-DevKit-LiPo | 23 / 111 / 838 | 10 / 200 / 1630 | 17 / 212 / 1574 | 21 / 249 / 1571 |
+| complex_hierarchy | 0 / 17 / 948 | 0 / 45 / 1331 | 0 / 20 / 989 | 0 / 31 / 1149 |
+| StickHub | 21 / 133 / 686 | 50 / 190 / 891 | 54 / 154 / 786 | 58 / 152 / 752 |
+
+- With the group pull off, the placement routes with less copper than the
+  default on five boards and about level on ESP32-DevKit-LiPo. It is close to
+  KRT's placer on flat_hierarchy, complex_hierarchy and tigard, and still
+  behind it on every board except in open nets on ESP32-DevKit-LiPo (where
+  KRT's placement itself has 49 errors before routing).
+- One quarter is between the two; the effect is not all-or-nothing.
+- StickHub is not explained by this term: 50 to 58 nets stay open against
+  KRT's 21 in all three, and the job reports `placement_infeasible` each time.
+- agent-ee's own routing of these placements still ends `deadline` on
+  ESP32-DevKit-LiPo and leaves 32 to 42 nets open on tigard.
+
+No weight was changed in the tool. The groups here are mechanical (one per
+sheet, anchor = the part with most pads), so this shows the term hurts with
+such groups, not that grouping is wrong when an engineer declares it.
+
+### Tool defects this rerun exposed
+
+- complex_hierarchy routes with 0 open nets and 0 DRC errors and the job
+  rejects it: `identity_problems` says the router changed protected native
+  content. flat_hierarchy gets the same message. Whether the router changed
+  such content or the comparison is wrong was not determined.
+- The group-view step fails on every board whose outline is not four straight
+  lines (`native fit-board crop is qualified only for four-line rectangular
+  Edge.Cuts`, `unsupported nonrectangular native crop`): four of six boards.
+  AGENTEE-636 removed this limit from the job's capture but not from this step.
+- esp_prog: the router adds 3 `shorting_items`.
+
+### Limits
+
+One run per cell, so differences of a few vias are within unknown noise. The
+runs started after other sessions restarted on the host; the load was below 4
+at the start and was not recorded afterwards. KRT's rows were not rerun.
