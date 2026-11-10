@@ -546,3 +546,160 @@ placement failures.
   raises them to errors (complex_hierarchy).
 - Not run: a stretch board of about 200 parts; seed repeats on any board but
   esp_prog; the full test suite (by instruction).
+
+---
+
+## Rerun after AGENTEE-635/636 (2026-11-09/10)
+
+Written after the tool changes of AGENTEE-635 (copper pours) and AGENTEE-636
+(outlines, rotated parts, contour limit, routing-only jobs). Only the
+agent-ee cells were run again, on the same prepared boards as the first run
+(`bench.py reuse` copies them and checks the `route-in` and `place-in`
+hashes), with pours kept, the same 900 s budget and the same scoring on the
+host. The stock KRT rows are copied from the tables above; KRT was not run
+again. Run window: 2026-11-09 23:43 to 2026-11-10 01:05 UTC on host proximal,
+at most two jobs at a time. Raw results:
+`~/.local/share/agent-ee/krt-matched-20261109-r2/` (not committed). The
+preregistered text and the first run's results above are unchanged.
+
+### Result in brief
+
+- **`place run` now accepts all six boards in both arms** (12 of 12 cells;
+  2 of 12 in the first run). No cell ended with one of the five refusals
+  listed under "Refusals and crashes, verbatim".
+- **Routing arm:** four boards were routed and scored. Two (flat_hierarchy,
+  complex_hierarchy) were accepted, checked and handed to the router, which
+  crashed on its copper-text parser (`Invalid native copper-text bounds`,
+  defect 9 above; kicad-route, not changed here).
+- **Placement arm:** esp_prog repeated its first-run result. On the other
+  five boards the job was accepted and then spent the whole budget in the
+  placement search (`deadline`, defects 6 and 7 above): no placement was
+  selected and nothing was routed.
+- No routed agent-ee board passed agent-ee's own final check
+  (`verification_failed`, `INELIGIBLE`, router `router_accepted: false` in all
+  four), and agent-ee left nets open on three of the four boards it routed
+  where stock KRT left none or fewer. Acceptance is fixed; the comparison
+  with stock KRT is still not won.
+
+### Versions
+
+| Item | Version |
+| --- | --- |
+| agent-ee | `909f3454` (tool changes), clean, for 7 cells. The placement cells of flat_hierarchy, tigard and esp32_devkit_lipo were recorded on `909f3454` with uncommitted edits, and those of complex_hierarchy and stickhub at `fee9265a`; in all five only `tests/` and `docs/` differed from `909f3454`. `src/`, `crates/` and the engine binary are the same in all 12. |
+| agent-ee CI image | `sha256:3c7234a3bcc6…` (`agent-ee:exec-343ea66cd64cd338`), Python 3.12.3, KiCad 10.0.8 |
+| Placement engine | `agent-ee-placement 0.1.0`, image binary sha256 `61982a440b91…`, built from this branch's crate |
+| kicad-route | `995891ae8852f6524815d5f06ad3a062f40ed8e0`, clean, the image's `/opt/kicad-route` (as in the first run) |
+| KiCad (host, scoring) | `kicad-cli` 10.0.8, pcbnew 10.0.8 |
+| Stock KRT rows | first run, `e6bc31e2` |
+
+### Routing arm (pours kept)
+
+"Accepted" means capture, engine preparation and the placement check
+completed and a candidate reached the router. DRC errors are native
+`kicad-cli pcb drc --refill-zones` against the board's own rules, scored on
+the host as before; the unrouted input's count is given beside it. Seconds
+are the job's `elapsed_s`.
+
+| Board | Tool | Accepted | Unconnected | DRC errors (input) | Vias | Track mm | Error types | Seconds | Tool's own verdict |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | --- |
+| esp_prog | stock KRT (first run) |  | 0 | 70 (1) | 24 | 310.36 | see above | 6 | exit 0 |
+| esp_prog | agent-ee `place run` | yes | 0 | 10 (1) | 31 | 293.82 | clearance 2, hole_clearance 6, shorting_items 2 | 43 | `verification_failed` |
+| flat_hierarchy | stock KRT (first run) |  | 0 | 2 (2) | 39 | 1641.68 | clearance 2 | 23 | exit 0 |
+| flat_hierarchy | agent-ee `place run` | yes | no routed board |  |  |  | router crashed: `ValueError: Invalid native copper-text bounds`; job reason `KRT exited 1` | 23 | `refused`, `failure_kind: environment`, stage `routing` |
+| tigard | stock KRT (first run) |  | 0 | 594 (48) | 168 | 1785.78 | see above | 104 | exit 0 |
+| tigard | agent-ee `place run` | yes | 9 | 48 (48) | 117 | 1766.67 | clearance 25, copper_edge_clearance 2, courtyards_overlap 2, drill_out_of_range 16, shorting_items 1, solder_mask_bridge 2 | 210 | `verification_failed` |
+| esp32_devkit_lipo | stock KRT (first run) |  | 4 | 746 (43) | 175 | 1250.70 | see above | 143 | exit 0 |
+| esp32_devkit_lipo | agent-ee `place run` | yes | 18 | 54 (43) | 100 | 781.11 | copper_edge_clearance 38, hole_clearance 10, items_not_allowed 1, starved_thermal 4, zones_intersect 1 | 461 | `verification_failed` |
+| complex_hierarchy | stock KRT (first run) |  | 0 | 0 (0) | 14 | 1186.61 | - | 12 | exit 0 |
+| complex_hierarchy | agent-ee `place run` | yes | no routed board |  |  |  | router crashed: `ValueError: Invalid native copper-text bounds`; job reason `KRT exited 1` | 20 | `refused`, `failure_kind: environment`, stage `routing` |
+| stickhub | stock KRT (first run) |  | 0 | 43 (0) | 83 | 569.83 | see above | 32 | exit 0 |
+| stickhub | agent-ee `place run` | yes | 2 | 29 (0) | 87 | 553.66 | solder_mask_bridge 29 | 252 | `verification_failed` |
+
+Under the rules KRT wrote for itself, the stock KRT boards had 5, 2, 8, 48, 0
+and 30 errors (first run). The capture records of the six routing jobs:
+all `routing_only: true`, no placement model built; outline `rectangle` on
+esp_prog and tigard and `polygon` on the other four; pour zones 0, 1, 0, 3,
+1, 5. The job's own final check kept `integrity: preserved` on all four
+routed boards, after it refilled and saved the pours. It attributed the
+errors as: esp_prog 1 pre-existing and 9 routing-introduced; tigard 48
+pre-existing; esp32_devkit_lipo 40 pre-existing and 14 routing-introduced;
+stickhub 33 routing-introduced (the host score of the same file counts 29
+`solder_mask_bridge`; the difference was not investigated).
+
+### Placement arm (pours kept)
+
+| Board | Cell | Accepted | Unconnected | DRC errors | Vias | Track mm | Seconds | Outcome |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| esp_prog | KRT placer → KRT route (first run) |  | 0 | 12 | 16 | 228.94 | 57 (placer) |  |
+| esp_prog | agent-ee placer → KRT route | yes | 0 | 15 | 31 | 336.14 | 833 (job) | same as the first run |
+| esp_prog | agent-ee placer → agent-ee route | yes | 1 | 15 | 30 | 293.23 | 833 | `verification_failed` |
+| flat_hierarchy | KRT placer → KRT route (first run) |  | 0 | 2 | 36 | 1271.05 | 239 (placer) |  |
+| flat_hierarchy | agent-ee `place run` | yes | no placement |  |  |  | 900 | `deadline`; search 898 s, no seed finished (54 movable parts) |
+| tigard | KRT placer → KRT route (first run) |  | 1 | 861 | 192 | 2146.60 | 822 (placer) |  |
+| tigard | agent-ee `place run` | yes | no placement |  |  |  | 900 | `deadline`; search 898 s, no seed finished (76 movable parts) |
+| esp32_devkit_lipo | KRT placer → KRT route (first run) |  | 23 | 402 | 111 | 838.25 | 191 (placer) |  |
+| esp32_devkit_lipo | agent-ee `place run` | yes | no placement |  |  |  | 900 | `deadline`; 1 of 4 seeds finished, not feasible (48 movable parts) |
+| complex_hierarchy | KRT placer → KRT route (first run) |  | 0 | 74 | 17 | 948.40 | 166 (placer) |  |
+| complex_hierarchy | agent-ee `place run` | yes | no placement |  |  |  | 900 | `deadline`; 1 of 4 seeds finished and feasible, kept only in the checkpoint (61 movable parts) |
+| stickhub | KRT placer → KRT route (first run) |  | 21 | 387 | 133 | 685.73 | 900 (placer, stopped) |  |
+| stickhub | agent-ee `place run` | yes | no placement |  |  |  | 900 | `deadline`; 2 of 4 seeds finished, not feasible (80 movable parts) |
+
+### What changed in the tool
+
+1. Copper pours are kept, refilled after a move and after routing, and judged
+   by native DRC with `--refill-zones`; rule areas that forbid footprints or
+   pads are fixed obstacles.
+2. Any closed outline with arcs and cut-outs is accepted through KiCad's own
+   outline builder; arcs become segments within the board's maximum error
+   (5 µm on these boards).
+3. A footprint may sit at any angle; the part of the angle that is not a
+   quarter turn stays with the part.
+4. The whole-problem contour-vertex limit is gone (tigard carries 16,440).
+5. A job in which nothing can move builds no placement model.
+
+Also changed because these boards needed it: fixed footprints may repeat a
+reference; a fixed footprint without pads or body drawing is no body
+(StickHub's mask-only logo); an error the unchanged input already reports
+between unmoved items is counted as pre-existing (defect 8 above). The
+details are in [`docs/placement-job.md`](../placement-job.md).
+
+### Tool defects this rerun exposed or confirmed
+
+Not fixed here.
+
+1. **kicad-route (parser), defect 9 above:** now the only reason
+   flat_hierarchy and complex_hierarchy have no agent-ee routing result.
+2. **`placement_job` (budget) and engine speed, defects 6 and 7 above:** with
+   the design compiler's default search no board of 48 to 80 movable parts
+   produced a placement in 900 s. The search finished 0, 0, 1, 1 and 2 of 4
+   seeds; the one feasible seed (complex_hierarchy) was not used because the
+   deadline ended the job.
+3. **`placement_job` (status):** a router crash is reported as `status:
+   refused` (with `failure_kind: environment`). The board was not refused.
+4. **kicad-route (router), defect 11 above:** through `place run` it left 9,
+   18 and 2 nets open on tigard, ESP32-DevKit-LiPo and StickHub; stock KRT
+   left 0, 4 and 0.
+5. **kicad-route (router), defect 10 above:** new `hole_clearance` errors on
+   esp_prog (6) and ESP32-DevKit-LiPo (10), a second `shorting_items` on
+   esp_prog, and 29 `solder_mask_bridge` on StickHub.
+6. **`placement_job` (final check):** the supplemental group views are not
+   rendered for a board whose outline is not four straight lines
+   (`group_views: missing` on ESP32-DevKit-LiPo and StickHub). They do not
+   decide eligibility.
+7. **`placement_job` (judge):** a routing-only job still materializes and
+   checks one identical candidate per seed (four on these runs), about 5 to
+   8 s of repeated native DRC.
+
+### Limits of this rerun
+
+- One run per cell. StickHub's routing result differed between a trial run
+  during development and this run (2 open nets in both; 32 against 29
+  errors), so the router is not repeatable to the error.
+- Stock KRT was not rerun; its rows are the first run's, on the same inputs.
+- The zone-fallback variants (pours removed) were not rerun.
+- The placement changes for outlines, rotated movable parts and keep-out
+  rule areas are covered by unit tests on synthetic boards. No benchmark
+  cell exercised them to a finished placement, because every placement job
+  on a board with those features ended at the deadline. The routing arm did
+  exercise pours, polygon outlines and 45 degree parts end to end.
+- The full test suite was not run (by instruction).
