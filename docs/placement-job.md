@@ -468,7 +468,8 @@ rules, including stricter coupling limits, always remain in force.
      side. That is larger than an area that is not a rectangle or that forbids
      only pads; native DRC on the saved board judges the real rule.
    - *Other rule areas* (tracks, vias, pours) are preserved; the router and
-     native DRC enforce them.
+     native DRC enforce them. A KiCad placement area (`placement` enabled on a
+     rule area) is preserved and not interpreted.
    - *Zones inside a footprint* move with it; their bounds join the
      footprint's occupancy (`sources` gains `footprint-zones`).
    The capture record counts `pour_zones` and `keepout_rule_areas`.

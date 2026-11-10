@@ -4,8 +4,9 @@ The placement job also preserves independent drill reservations and declared
 connector overhang (AGENTEE-515q2). Supported clearance inputs are the board
 minimum, Default netclass and pad overrides; custom rule files and non-default
 netclasses refuse capture. Capture reads rules in a fresh native subprocess,
-including defaults for omitted fields, and refuses all board-level zones,
-keepouts and rule areas before solving. Native sampled agreement does not establish
+including defaults for omitted fields. Boards with zones are accepted
+(AGENTEE-635): pours are kept and refilled, and rule areas that forbid
+footprints or pads are fixed obstacles. Native sampled agreement does not establish
 whole-board legality. See the [supported rules and controls](placement-job.md).
 
 The experimental [whole-board placement job](placement-job.md) independently

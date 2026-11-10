@@ -105,7 +105,7 @@ class PairTransitionTests(unittest.TestCase):
         self.assertNotEqual(report['status'], 'completed', report)
         self.assertFalse((out / 'routed-incumbent.json').exists())
 
-    def test_placement_restrictions_are_still_refused(self):
+    def test_placement_restrictions_are_accepted_as_obstacles(self):
         import pcbnew as k
         for constraint in ['Footprints', 'Pads', 'PlacementArea']:
             with self.subTest(constraint=constraint):
@@ -118,10 +118,14 @@ class PairTransitionTests(unittest.TestCase):
                 else:
                     getattr(zone, 'SetDoNotAllow' + constraint)(True)
                 k.SaveBoard(str(path), board)
-                with self.assertRaisesRegex(job.JobRefusal, 'board-level zones'):
-                    job.capture(path,
-                                job.normalize_intent(read_json(self.root / constraint / 'intent.json'),
-                                                     read_json(self.root / constraint / 'groups.json')))
+                # AGENTEE-635: the board is accepted. An area that forbids footprints or pads is a
+                # fixed body; a KiCad placement area restricts nothing the job moves against.
+                problem, record = job.capture(path,
+                                              job.normalize_intent(read_json(self.root / constraint / 'intent.json'),
+                                                                   read_json(self.root / constraint / 'groups.json')))
+                obstacles = [r for r in problem['footprints'] if r['native_ref'].startswith('rule-area:')]
+                expected = 0 if constraint == 'PlacementArea' else 1
+                self.assertEqual((record['keepout_rule_areas'], len(obstacles)), (expected, expected))
 
     def test_layer_selection_is_bound_to_resume_identity(self):
         out = self.root / 'cancelled'
