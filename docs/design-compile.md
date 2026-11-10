@@ -47,7 +47,7 @@ Unknown fields are refused.
 | `functional` | Nonempty list of `{text, witnesses}`. Each requirement needs independent topology witnesses. |
 | `bench` | Nonempty list of physical follow-ups. These remain physical obligations, separate from executable file checks. |
 | `diff_pairs` | Optional list of declared differential pairs `{positive, negative}` with optional `intra_pair_match` and `impedance`; see [Differential pairs](#differential-pairs). Omitted means no pair handling. |
-| `placement` | Optional `{budget_s, seeds, steps_per_seed}`; defaults are 600 seconds, 4 seeds, and 100000 steps per seed. |
+| `placement` | Optional `{budget_s, seeds, steps_per_seed}`; defaults are 600 seconds and 4 seeds. Without `steps_per_seed` each seed runs for its share of the budget; with it, for at most that many steps. |
 | `mechanics` | Optional `{access_owners, packages}`; see below. Omitted means no declared body/access model. |
 | `markings` | Optional list of visible silkscreen labels; see Board text below. |
 | `currents` | Optional object mapping a declared net to `{current_ma}`, its continuous current in mA; see Declared currents below. Omitted means every net keeps the Default width. |

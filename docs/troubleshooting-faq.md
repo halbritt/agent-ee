@@ -82,7 +82,7 @@ ValueError: placement/routing did not pass: timeout
 * **Cause**: The Rust placement engine (`agent-ee-placement`) was unable to find an overlap-free configuration within the allotted `budget_s`.
 * **Resolution**:
   1. In `build-plan.json`, increase `placement.budget_s` (e.g., from 600 to 1200 seconds).
-  2. Increase `placement.search.steps_per_seed` (e.g., from 100,000 to 200,000).
+  2. If the plan sets `placement.search.steps_per_seed`, raise it or remove it; without it each seed runs for its share of the budget.
   3. Verify that the board area in `envelope.json` provides adequate surface area for the total component footprint footprint area (a component-to-board area ratio under 60% is recommended).
 
 ---

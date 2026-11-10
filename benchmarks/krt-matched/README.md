@@ -90,8 +90,9 @@ Nothing is keyed on a board. Every rule below applies to every board.
   keeping the first seed its `judge.json` names.
 - **agent-ee**: `place run` with paths and hashes, the groups file, an intent
   holding only the schema line and a fixed pose per locked, named footprint, the
-  design compiler's default search (4 clustered seeds, 100,000 steps,
-  shortlist 4), `router.checkout` and the budget. No `router.*` option.
+  design compiler's default search (4 clustered seeds, shortlist 4, and since
+  AGENTEE-637 no step count: the engine sizes the seeds to the budget; `place
+  --capped` runs the earlier default of 100,000 steps per seed), `router.checkout` and the budget. No `router.*` option.
 - **Placement arm routing**: both chosen placements are stripped of copper
   and routed by the same stock KRT `route.py`. agent-ee's placement is its
   routed board when the job produced one; otherwise the placement the job

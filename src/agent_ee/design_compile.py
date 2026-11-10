@@ -1605,7 +1605,9 @@ def _compile_design(design, captures, out):
                 budget_s=p.get("budget_s", 600),
                 search=dict(
                     seeds=[dict(seed=i, start="clustered") for i in range(seeds)],
-                    steps_per_seed=p.get("steps_per_seed", 100000),
+                    # No step count unless the design gives one: the engine then sizes each
+                    # seed to its share of the budget (AGENTEE-637).
+                    **(dict(steps_per_seed=p["steps_per_seed"]) if "steps_per_seed" in p else {}),
                     shortlist=seeds,
                 ),
                 # Pair handling only for declared pairs (design.pair_routing).

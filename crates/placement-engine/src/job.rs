@@ -2784,8 +2784,12 @@ pub fn run(input: &Value) -> Result<Value> {
     let skip: BTreeSet<u64> = search["completed_seeds"].as_array().cloned().unwrap_or_default()
         .iter().filter_map(Value::as_u64).collect();
     let deadline_ms = search.get("deadline_ms").and_then(Value::as_u64);
+    // Without a step count a seed runs for its share of the deadline: the search is as
+    // long as its time allows (AGENTEE-637). A step count is then only an upper limit.
+    let steps_given = search.get("steps_per_seed").is_some_and(|v| !v.is_null());
+    ensure!(steps_given || deadline_ms.is_some(), "search needs steps_per_seed or deadline_ms");
     let mut limits = Limits {
-        steps_per_seed: search["steps_per_seed"].as_u64().context("steps_per_seed")?,
+        steps_per_seed: if steps_given { search["steps_per_seed"].as_u64().context("steps_per_seed")? } else { u64::MAX },
         window: None,
         deadline: deadline_ms.map(|ms| started + std::time::Duration::from_millis(ms)),
         cancel_file: search.get("cancel_file").and_then(Value::as_str).map(Into::into),
@@ -2957,7 +2961,8 @@ pub fn run(input: &Value) -> Result<Value> {
         "counters": {"evaluations": counters.evaluations, "commits": counters.commits, "rejects": counters.rejects,
                      "stale_refusals": counters.stale_refusals, "full_evaluations": counters.full_evaluations},
         "timing": {"prepare_s": prepare_s, "total_s": started.elapsed().as_secs_f64()},
-        "budget": {"sized_to_deadline": sized, "deadline_ms": deadline_ms, "steps_per_seed_limit": limits.steps_per_seed,
+        "budget": {"sized_to_deadline": sized, "deadline_ms": deadline_ms,
+                   "steps_per_seed_limit": if steps_given { json!(limits.steps_per_seed) } else { Value::Null },
                    "useful_steps_per_seed": useful_steps, "probe": probe, "plan": plan_rows,
                    "seeds_time_limited": time_limited, "seeds_not_run": dropped,
                    "limited": time_limited > 0 || dropped > 0 || status == "deadline"},
@@ -3579,6 +3584,17 @@ mod tests {
         for c in result["shortlist"].as_array().unwrap() {
             assert_eq!(c["full_evaluation_equal"], true);
         }
+        // No step count: every seed runs for its share of the time.
+        let mut open = input(vec![]);
+        open["search"].as_object_mut().unwrap().remove("steps_per_seed");
+        open["search"]["verify_every"] = json!(0);
+        open["search"]["deadline_ms"] = json!(800);
+        let timed = run(&open).unwrap();
+        assert_eq!(timed["status"], "completed");
+        assert_eq!(timed["budget"]["steps_per_seed_limit"], Value::Null);
+        assert!(timed["seeds"].as_array().unwrap().iter().all(|s| s["limited_by"] == "time"));
+        open["search"].as_object_mut().unwrap().remove("deadline_ms");
+        assert!(run(&open).unwrap_err().to_string().contains("steps_per_seed or deadline_ms"));
         // Without a deadline nothing is sized and the result is the step-for-step one.
         let mut plain = input(vec![]);
         plain["search"].as_object_mut().unwrap().remove("deadline_ms");

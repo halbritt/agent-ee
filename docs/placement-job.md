@@ -237,8 +237,11 @@ export (routing) and final validation all draw on it.
 The placement search takes a share of the time left when it starts
 (`search.time_share`, a number above 0 and below 1, default 0.4); the rest is
 kept for the native checks of its candidates, routing and the final checks. The
-engine sizes the search to that time. `steps_per_seed` is the most steps a seed
-may take, not a promise: the remaining time is shared between the seeds still to
+engine sizes the search to that time. `steps_per_seed` is optional. Without it
+a seed runs for its whole share of the time, and the design compiler writes none
+unless the design gives one: on the boards measured the cost was still falling at
+250,000 steps per movable part, so no fixed count is a sound default. With it, it
+is the most steps a seed may take, not a promise: the remaining time is shared between the seeds still to
 run, a seed's schedule follows whichever is further along, its step count or its
 share of the clock, and so always cools fully. A short probe measures the step
 rate, and seeds are dropped from the end of the list when the rate cannot give

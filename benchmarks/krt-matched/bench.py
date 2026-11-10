@@ -25,8 +25,10 @@ STAGE = REPO / 'build/krt-matched'            # gitignored; the CI image mounts 
 IN_IMAGE = Path('/opt/agent-ee/build/krt-matched')
 BUDGET_S = int(os.environ.get('KRT_BENCH_BUDGET_S', 900))
 LOCK_PREFIXES = ('J', 'P', 'CN', 'CON', 'USB', 'H', 'MH', 'SW')
-SEARCH = {'seeds': [{'seed': i, 'start': 'clustered'} for i in range(4)],
-          'steps_per_seed': 100000, 'shortlist': 4}   # design_compile.py defaults
+# design_compile.py defaults. Since AGENTEE-637 they hold no step count: the engine sizes the
+# seeds to the job budget. SEARCH_CAPPED is the earlier default, kept for a matched rerun.
+SEARCH = {'seeds': [{'seed': i, 'start': 'clustered'} for i in range(4)], 'shortlist': 4}
+SEARCH_CAPPED = dict(SEARCH, steps_per_seed=100000)
 # Secondary setting, the one documented in docs/benchmarks/placement-job-2026-10-24.md.
 SEARCH_B = {'seeds': [{'seed': i, 'start': 'scattered' if i < 6 else 'clustered'} for i in range(12)],
             'steps_per_seed': 10000, 'shortlist': 6}
@@ -474,8 +476,9 @@ def place_arm(args):
     norm = root / 'norm' / f'{name}.kicad_pcb'
     place_in = root / f'place-in{suffix}' / norm.name
     groups_path = place_in.parent / 'groups.json'
-    arm = 'place' + suffix + ('-searchB' if args.search_b else '') + (f'-seeds{args.seed_offset}' if args.seed_offset else '')
-    search = SEARCH_B if args.search_b else SEARCH
+    arm = ('place' + suffix + ('-searchB' if args.search_b else '') + ('-capped' if args.capped else '')
+           + (f'-seeds{args.seed_offset}' if args.seed_offset else ''))
+    search = SEARCH_B if args.search_b else SEARCH_CAPPED if args.capped else SEARCH
     if args.seed_offset:                                     # spread: the same search on other seeds
         search = dict(search, seeds=[dict(row, seed=row['seed'] + args.seed_offset) for row in search['seeds']])
     placed = {}
@@ -586,6 +589,7 @@ def main():
             p.add_argument('source', help='the earlier run directory whose prepared inputs to copy')
         if name == 'place':
             p.add_argument('--search-b', action='store_true', help="agent-ee only: the secondary search setting")
+            p.add_argument('--capped', action='store_true', help='agent-ee only: the earlier default, 100,000 steps per seed')
             p.add_argument('--seed-offset', type=int, default=0, help='agent-ee only: add to every seed number')
         if name in ('route', 'place'):
             p.add_argument('--tools', nargs='+', default=['krt', 'agent-ee'], choices=['krt', 'agent-ee'])
