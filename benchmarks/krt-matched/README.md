@@ -155,6 +155,16 @@ Nothing is keyed on a board. Every rule below applies to every board.
   stays `route.py IN OUT` with no option. `place NAME --held` routes each
   tool's placement that way as well (`<tool>-then-krt-held-route`), and
   `place-held NAME` does only that for the placements of an earlier `place`.
+- **KRT's label finish** (placement arm): `place_simple.py` does not move a
+  label, and KRT's placement instructions end with a separate step
+  (`.claude/skills/plan-pcb-placement/SKILL.md`, 3.9): tidy the reference
+  labels with `py_placer/beautify_labels.py`, grade the board before and
+  after with KiCad's silkscreen findings, keep the tidied board only when it
+  has fewer. `place` runs that on the board KRT placed and routed and scores
+  the board KRT's rule keeps, as the cell `krt-then-krt-route-labels` (and
+  `krt-then-krt-held-route-labels` with `--held`). `place-labels NAME` adds
+  the cells to an earlier run. Compare agent-ee, whose job moves labels
+  itself, with these cells, not with the cells without the step.
 - **Refusal**: when `place run` refuses a routing-arm board, `kicad-route run`
   is run directly with the adapter's base flags as a labelled secondary cell.
 

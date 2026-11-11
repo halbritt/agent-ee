@@ -623,8 +623,12 @@ def place_arm(args):
                                                           'job_elapsed_s', 'job_validity', 'placement_kind')},
                  'placement_only_score': score(bare, norm, root / 'score' / f'{key}-placement')}
         result(root, name, arm, f'{tool}-then-krt-route', krt_route(bare, root / 'runs' / key, norm), norm, extra)
+    if 'krt' in placed:                                      # KRT's documented finish of its own board
+        krt_labels(root, name, arm, 'krt-then-krt-route')
     if args.held:
         held_routes(root, name, arm, list(placed))
+        if 'krt' in placed:
+            krt_labels(root, name, arm, 'krt-then-krt-held-route')
 
 
 def held_routes(root, name, arm, tools):
@@ -645,6 +649,64 @@ def held_routes(root, name, arm, tools):
 def place_held(args):
     """The held routes alone, for the placements an earlier ``place`` of this run directory chose."""
     held_routes(RUNS / 'boards' / args.name, args.name, 'place', args.tools)
+    if 'krt' in args.tools:
+        krt_labels(RUNS / 'boards' / args.name, args.name, 'place', 'krt-then-krt-held-route')
+
+
+def silk_findings(report):
+    """KiCad's silkscreen findings in a DRC report by type, counted as KRT's instructions count them."""
+    counts = {}
+    for row in json.loads(Path(report).read_text()).get('violations', []):
+        if row['type'].startswith('silk'):
+            counts[row['type']] = counts.get(row['type'], 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def krt_labels(root, name, arm, tool):
+    """KRT's documented finish of a board it placed and routed, as the cell ``<tool>-labels``.
+
+    KRT's placement instructions (.claude/skills/plan-pcb-placement/SKILL.md, 3.9 "Finish the
+    board") end with: tidy the reference labels with ``py_placer/beautify_labels.py``, grade the
+    board before and after with KiCad's silkscreen findings, and keep the tidied board only when
+    it has fewer. ``place_simple.py`` alone does not move a label. This runs exactly that on the
+    routed board of ``tool`` and scores the board KRT's rule keeps."""
+    norm = root / 'norm' / f'{name}.kicad_pcb'
+    key = f'{arm}-{tool}'
+    earlier = root / 'results' / f'{key}.json'
+    data = json.loads(earlier.read_text()) if earlier.is_file() else {}
+    routed = (data.get('run') or {}).get('output')
+    if not routed or not Path(routed).is_file() or not (root / 'score' / key / 'drc.json').is_file():
+        print(f'{key}-labels', 'no routed board', flush=True)
+        return
+    out_dir = root / 'runs' / f'{key}-labels'
+    staged = out_dir / 'in' / norm.name
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(routed, staged)
+    copy_rules(norm, staged)
+    tidied = out_dir / 'tidied.kicad_pcb'
+    if tidied.exists():
+        tidied.unlink()
+    record = run([KRT_PY, '-X', 'utf8', 'py_placer/beautify_labels.py', staged, tidied,
+                  '--report-json', out_dir / 'labels.json'], out_dir / 'labels.log', cwd=KRT, timeout=BUDGET_S)
+    before = silk_findings(root / 'score' / key / 'drc.json')
+    record.update(silk_before=before, silk_after=None, kept='as routed', output=routed)
+    if tidied.is_file():
+        score(tidied, norm, root / 'score' / f'{key}-labels-tidied')
+        after = silk_findings(root / 'score' / f'{key}-labels-tidied' / 'drc.json')
+        record['silk_after'] = after
+        if sum(after.values()) < sum(before.values()):
+            record.update(kept='tidied', output=str(tidied))
+    print(f'{key}-labels', 'silk findings', sum(before.values()), '->',
+          None if record['silk_after'] is None else sum(record['silk_after'].values()), 'kept', record['kept'], flush=True)
+    result(root, name, arm, f'{tool}-labels', record, norm,
+           {k: data[k] for k in ('placement', 'placement_only_score') if k in data})
+
+
+def place_labels(args):
+    """KRT's label finish alone, for the boards an earlier ``place`` (and ``place-held``) routed."""
+    root = RUNS / 'boards' / args.name
+    for tool in ('krt-then-krt-route', 'krt-then-krt-held-route'):
+        krt_labels(root, args.name, 'place', tool)
 
 
 def krt_spread(args):
@@ -738,7 +800,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
     for name, func in (('prep', prep), ('reuse', reuse), ('baseline', baseline), ('route', route_arm),
-                       ('place', place_arm), ('place-held', place_held), ('krt-spread', krt_spread),
+                       ('place', place_arm), ('place-held', place_held), ('place-labels', place_labels),
+                       ('krt-spread', krt_spread),
                        ('summary', summary)):
         p = sub.add_parser(name)
         p.set_defaults(func=func)
