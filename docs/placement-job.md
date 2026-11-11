@@ -725,9 +725,21 @@ rules, including stricter coupling limits, always remain in force.
    footprint graphics/fields, board setup/rules, outline and other drawings.
    Tracks, arcs and vias are routing-owned; zones are protected unless their full
    UUIDs are explicitly supplied by the controller as owned. This job currently
-   owns no zones. An integrity mismatch yields `eligibility: INELIGIBLE`,
+   owns no zones. **Teardrop zones are routing-owned too (AGENTEE-640).** KiCad
+   builds a teardrop zone where a track meets a pad or via whose teardrop
+   setting is on. `kicad-cli pcb drc --refill-zones` rebuilds them all, and
+   with `--save-board` writes them to the board, without a UUID; the router
+   runs both before it grades its result. (pcbnew's `ZONE_FILLER` and
+   `SaveBoard`, which this job uses, neither build nor remove them.) A routed
+   board whose pads enable teardrops therefore carries one zone per joined
+   pad that its unrouted input does not have. They are copper derived from
+   the tracks; the pad settings they come from are footprint content and stay
+   compared, and native DRC judges their copper. An integrity mismatch yields
+   `eligibility: INELIGIBLE`,
    `physical_checks: FAILED` and job status `integrity_failed`, even if DRC is
-   otherwise clean. Router-output existence alone cannot yield `completed`.
+   otherwise clean; the problem names the kinds of node that differ and on
+   which board (for example `only on the routed board: zone 1`).
+   Router-output existence alone cannot yield `completed`.
    After the native checks the same saved board is rendered into supplemental
    annotated group views (`group_views`, see [group-views.md](group-views.md#final-check-wiring))
    through the bounded child mechanism, for any closed board outline;

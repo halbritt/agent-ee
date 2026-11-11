@@ -1317,6 +1317,13 @@ def native_inventory(board):
     return rows
 
 
+def _is_teardrop_zone(node):
+    """Whether a `zone` node is a teardrop: `(attr (teardrop (type ...)))`."""
+    return any(isinstance(child, list) and child[:1] == ['attr']
+               and any(isinstance(part, list) and part[:1] == ['teardrop'] for part in child[1:])
+               for child in node[1:])
+
+
 def _non_footprint_nodes(data, *, include_footprints=False, routing_owned=False, owned_zones=()):
     """Top-level board nodes other than footprints, for rule/geometry identity.
 
@@ -1325,7 +1332,15 @@ def _non_footprint_nodes(data, *, include_footprints=False, routing_owned=False,
     name and type, and any other user name difference is still reported. A zone
     is compared without its fill result (`filled_polygon`, `fill_segments` and
     the filled flag): the fill is recomputed from the zone's outline and
-    settings, which are compared, whenever footprints or copper change."""
+    settings, which are compared, whenever footprints or copper change.
+
+    With ``routing_owned`` the copper that routing produces is left out: tracks,
+    arcs, vias, the zones the controller names as owned, and teardrop zones. A
+    teardrop zone is not a zone a designer defined. KiCad builds one where a
+    track meets a pad or via whose teardrop setting is on: ``kicad-cli pcb drc
+    --refill-zones --save-board``, which a router runs on its result, rebuilds
+    them all and writes them without a UUID. The pad settings they come from
+    are footprint content, which is compared; native DRC judges their copper."""
     import pcbnew
     from .symbol_library import parse_sexpr
     tree = parse_sexpr(data)
@@ -1335,9 +1350,9 @@ def _non_footprint_nodes(data, *, include_footprints=False, routing_owned=False,
             continue
         if routing_owned and node[0] in ('segment', 'arc', 'via'):
             continue
-        if routing_owned and node[0] == 'zone' and any(
+        if routing_owned and node[0] == 'zone' and (_is_teardrop_zone(node) or any(
                 isinstance(child, list) and child[:1] == ['uuid'] and child[1] in owned_zones
-                for child in node[1:]):
+                for child in node[1:])):
             continue
         if node[0] == 'zone':
             node = [(['fill'] + [part for part in child[1:] if part not in ('yes', 'no')]
@@ -2790,8 +2805,15 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
                                          routing_owned=True, owned_zones=owned_zone_uuids)
     final_nodes = _non_footprint_nodes(board.read_bytes(), include_footprints=True, routing_owned=True,
                                       owned_zones=owned_zone_uuids)
-    if sorted(placed_nodes, key=canonical) != sorted(final_nodes, key=canonical):
-        problems.append('router changed protected native content (footprints, pads, graphics, setup, outline or drawings)')
+    placed_count, final_count = (Counter(canonical(node) for node in nodes) for nodes in (placed_nodes, final_nodes))
+    if placed_count != final_count:
+        def kinds(difference):   # what differs, by kind of node, so the report names it
+            return ', '.join(f'{kind} {count}' for kind, count in sorted(
+                Counter(json.loads(node)[0] for node in difference.elements()).items()))
+        lost, new = kinds(placed_count - final_count), kinds(final_count - placed_count)
+        problems.append('router changed protected native content (footprints, pads, graphics, setup, outline or drawings): '
+                        + '; '.join(part for part in (f'only on the placed board: {lost}' if lost else '',
+                                                      f'only on the routed board: {new}' if new else '') if part))
     placed_report = read_json(Path(incumbent['directory']) / 'native-drc.json')
     placed_keys = error_keys(placed_report)
     _check_stop(clock, cancel_dir)

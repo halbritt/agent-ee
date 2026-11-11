@@ -4,17 +4,23 @@ A routed board is eligible when native DRC with refilled zones reports no open
 connection and no error beyond those of the input board, its protected
 content is unchanged and its declared checks pass. Every board here is the
 synthetic fixture of ``test_placement_job`` with its parts spread and locked,
-and routed by hand through pcbnew; no third-party board is used.
+routed by hand through pcbnew or by the job's own router; no third-party board
+is used.
 """
+from collections import Counter
+import hashlib
+import json
+import os
 from pathlib import Path
 import shutil
 import unittest
 
-from agent_ee import placement_job as job
+from agent_ee import native_run, placement_job as job
 from agent_ee.storage import digest
 import test_placement_job as fixtures
 from test_placement_job import Fixture, groups, intent, MM
 from test_placement_job_guards import materialize
+from toolchain import require_kicad_route
 
 # Millimetres. The fixture piles its three netted parts at the board centre.
 PLACES = {'R1': (7, 9), 'C1': (7, 6), 'U1': (12, 6)}
@@ -32,6 +38,13 @@ def spread_and_lock(pcbnew, board):
             x, y = PLACES[fp.GetReference()]
             fp.SetPosition(pcbnew.VECTOR2I(x * MM, y * MM))
         fp.SetLocked(True)
+
+
+def enable_teardrops(pcbnew, board):
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if pad.GetNetname():
+                pad.SetTeardropsEnabled(True)
 
 
 def crowded_part(pcbnew, board):
@@ -74,6 +87,11 @@ def add_tracks(pcbnew, board, routes=ROUTES):
                 board.Add(track)
 
 
+def teardrop_zones(path):
+    import pcbnew
+    return sum(1 for zone in pcbnew.LoadBoard(str(path)).Zones() if zone.IsTeardropArea())
+
+
 def error_counts(final):
     return {cause: row['count'] for cause, row in final['errors'].items()}
 
@@ -112,12 +130,18 @@ class RoutedBoard(Fixture):
         base, _ = job.drc(self.board, self.dir / 'input-drc', refill=True, label='native-drc')
         return dict(placed, directory=str(self.dir / 'placed'), moved_footprints=placed['moved']), base
 
-    def routed(self, placed, *changes, name='routed'):
+    def routed(self, placed, *changes, name='routed', refill_and_save=False):
         """A router's result: the candidate with copper, saved beside the project it was given."""
         path = self.dir / name / 'board.kicad_pcb'
         path.parent.mkdir()
         shutil.copyfile(placed['board'], path)
         self.change(path, add_tracks, *changes)
+        if refill_and_save:
+            # What a router does before it grades its board: KiCad refills the zones and saves.
+            done = job._run_child(native_run.drc_argv(path, path.with_name('refill.json'), refill=True, save_board=True),
+                                  clock=job.Clock(120))
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.project_beside(path)
         return {'status': 'routed', 'board': str(path), 'router_accepted': True}
 
     def final(self, routed, placed, base, label='final'):
@@ -145,6 +169,37 @@ class CleanBoardTests(RoutedBoard):
                          ('INELIGIBLE', 'FAILED', ['4 open connection(s)']))
         self.assertEqual(job._completion_status(unrouted, placed, bare), 'verification_failed')
 
+    def test_teardrop_zones_kicad_builds_on_a_routed_board_are_routing_copper(self):
+        self.change(self.board, enable_teardrops)
+        placed, base = self.candidate()
+        routed = self.routed(placed, refill_and_save=True)
+        self.assertEqual(teardrop_zones(placed['board']), 0)
+        built = teardrop_zones(routed['board'])
+        self.assertGreater(built, 0)             # from the pad settings and the tracks that reach the pads
+        final = self.final(routed, placed, base)
+        self.assertEqual((final['identity_problems'], final['rejections']), ([], []))
+        self.assertEqual((final['integrity'], final['eligibility']), ('preserved', 'eligible'))
+        self.assertEqual(job._completion_status(routed, placed, final), 'completed')
+        self.assertEqual(teardrop_zones(final['board']), built)      # the board handed on keeps them
+        # Only the comparison of a routed board leaves them out. Where nothing was routed they are content.
+        data = Path(routed['board']).read_bytes()
+        zones = lambda **options: Counter(node[0] for node in job._non_footprint_nodes(data, **options))['zone']
+        self.assertEqual((zones(), zones(routing_owned=True)), (built, 0))
+
+    def test_the_teardrop_setting_of_a_pad_stays_protected(self):
+        self.change(self.board, enable_teardrops)
+        placed, base = self.candidate()
+
+        def switch_off(pcbnew, board):
+            next(iter(board.FindFootprintByReference('R1').Pads())).SetTeardropsEnabled(False)
+        routed = self.routed(placed, switch_off, refill_and_save=True)
+        final = self.final(routed, placed, base)
+        self.assertEqual(final['identity_problems'], [
+            'router changed protected native content (footprints, pads, graphics, setup, outline or drawings): '
+            'only on the placed board: footprint 1; only on the routed board: footprint 1'])
+        self.assertEqual((final['integrity'], final['eligibility']), ('violated', 'INELIGIBLE'))
+        self.assertEqual(job._completion_status(routed, placed, final), 'integrity_failed')
+
     def test_errors_the_unrouted_input_already_has_do_not_reject_the_routed_board(self):
         self.change(self.board, crowded_part)
         placed, base = self.candidate()
@@ -167,6 +222,34 @@ class CleanBoardTests(RoutedBoard):
         self.assertEqual(len(bad['rejections']), 1)
         self.assertRegex(bad['rejections'][0], r'^\d+ routing-introduced DRC error\(s\): .*shorting_items \d+')
         self.assertEqual(job._completion_status(shorted, placed, bad), 'verification_failed')
+
+class WholeJobTests(RoutedBoard):
+    def test_job_completes_on_a_board_with_teardrops_and_errors_of_its_own(self):
+        """The whole job with the real router: teardrop pads, and a part that breaks clearance by itself."""
+        require_kicad_route()
+        self.change(self.board, enable_teardrops, crowded_part)
+        files = {'board': self.board, 'project': self.project, 'intent': self.dir / 'intent.json',
+                 'groups': self.dir / 'groups.json'}
+        files['intent'].write_text(json.dumps(intent()))
+        files['groups'].write_text(json.dumps(groups()))
+        config = {'schema': job.CONFIG_SCHEMA, 'budget_s': 300,
+                  'inputs': {key: {'path': str(path), 'sha256': hashlib.sha256(Path(path).read_bytes()).hexdigest()}
+                             for key, path in files.items()},
+                  'search': self.search(2, 1000),
+                  'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'], 'budget_s': 60}}
+        report = job.run_job(config, self.dir / 'job')
+        final = report.get('final') or {}
+        self.assertEqual(report['status'], 'completed', (report.get('reason'), report.get('route')))
+        self.assertNotIn('reason', report)
+        self.assertGreater(report['input_drc']['errors'], 0)
+        self.assertEqual(error_counts(final), {'pre_existing': report['input_drc']['errors'],
+                                               'placement_introduced': 0, 'routing_introduced': 0})
+        self.assertEqual((final['opens'], final['identity_problems'], final['rejections'], final['eligibility']),
+                         (0, [], [], 'eligible'))
+        self.assertGreater(teardrop_zones(final['board']), 0)
+        self.assertEqual(report['validity'], 'integrity-valid placement; physical checks ' + final['physical_checks'])
+        self.assertIn('already in the input', final['physical_checks'])
+
 
 class ErrorCountTests(unittest.TestCase):
     def test_a_finding_reported_more_often_than_in_the_input_is_introduced(self):
