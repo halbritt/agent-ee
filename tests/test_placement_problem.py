@@ -142,6 +142,25 @@ class BuilderTests(unittest.TestCase):
         changed['weights']['edge'] += 1
         self.assertNotEqual(problem_builder.identity(changed), measured['problem_sha256'])
 
+    def test_a_stated_group_origin_travels_with_its_group(self):
+        # AGENTEE-637: the engine reads the origin from the group row; a row that states none is unchanged.
+        unstated = bundle()
+        intent = {k: v for k, v in unstated['intent'].items()}
+        row = unstated['groups']['groups'][0]
+        self.assertEqual(problem_builder.capture(board(), unstated)[0]['groups'],
+                         [{'name': 'g', 'anchor': 'R1', 'refs': ['R1', 'C1']}])
+        for origin in ('sheet', 'declared'):
+            with self.subTest(origin=origin):
+                stated = job.normalize_intent(intent, {'groups': [dict(row, origin=origin)]})
+                captured, _ = problem_builder.capture(board(), stated)
+                measured = evaluated(stated)
+                expected = [{'name': 'g', 'anchor': 'R1', 'refs': ['R1', 'C1'], 'origin': origin}]
+                self.assertEqual(captured['groups'], expected)
+                self.assertEqual(measured['groups'], expected, 'capture and evaluation build the same groups')
+                # The origin is part of the problem: a sheet group is another problem than a declared one.
+                self.assertNotEqual(captured['problem_sha256'],
+                                    problem_builder.capture(board(), unstated)[0]['problem_sha256'])
+
     def test_decoupling_loop_intent_is_ingested_and_carries_weights(self):
         normalized = bundle(decoupling=[{
             'id': 'loop-1', 'ic_ref': 'R1', 'cap_ref': 'C1',

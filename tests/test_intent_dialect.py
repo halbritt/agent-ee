@@ -83,6 +83,26 @@ class DialectAdapterTests(unittest.TestCase):
         self.assertEqual(record['proximity_pad_edge'][0]['basis'], 'pad_edge')
         self.assertNotIn('near', record['native_groups']['groups'][0])
 
+    def test_a_stated_group_origin_is_carried_through_the_dialect_projection(self):
+        # AGENTEE-637: `origin` is agent-ee's statement about a group row; the adapter never drops it.
+        groups = minimal_groups()
+        groups['groups'][0]['origin'] = 'sheet'
+        record = placement_intent.adapt(minimal_dialect(), groups)
+        self.assertEqual(record['native_groups']['groups'][0]['origin'], 'sheet')
+        self.assertNotIn('origin', record['native_groups']['groups'][1])
+        by_path = {d['path']: d for d in record['dispositions']}
+        self.assertEqual(by_path['groups.groups[0]'], {'path': 'groups.groups[0]', 'disposition': 'operative_supported',
+                                                       'name': 'core', 'origin': 'sheet'})
+        self.assertEqual(by_path['groups.groups[1]'], {'path': 'groups.groups[1]', 'disposition': 'operative_supported',
+                                                       'name': 'usb'})
+        bundle = placement_intent.normalize_intent(minimal_dialect(), groups)
+        self.assertEqual([(g['name'], placement_intent.anchor_pull(g)) for g in bundle['groups']['groups']],
+                         [('core', False), ('usb', True)])
+        self.assertEqual(bundle['groups']['groups'][0]['near'], ['usb'], 'a declared near stays with a sheet group')
+        groups['groups'][0]['origin'] = 'schematic'
+        with self.assertRaisesRegex(ValueError, r"groups\.groups\[0\]\.origin: expected 'declared' or 'sheet'"):
+            placement_intent.adapt(minimal_dialect(), groups)
+
     def test_native_intent_passes_through_runnable(self):
         native = {'schema': placement_intent.SCHEMA, 'fixed_poses': [{'ref': 'R1', 'x': 1.0, 'y': 1.0}]}
         record = placement_intent.adapt(native, {'groups': []})

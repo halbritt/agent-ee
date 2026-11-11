@@ -6,6 +6,27 @@ RAILS_SCHEMA = 'agent-ee.group-rails/1'
 EMPTY_RAILS = {'shared': {}, 'scoped': {}, 'bindings': None}
 DIALECT_SUPPORTED = frozenset(('intent.assembly.sides', 'intent.envelope', 'edge.side', 'edge.cable_entry',
                                'intent.proximity', 'groups.near'))
+# Where a group comes from (AGENTEE-637). An engineer declares a group and names its anchor: that
+# group pulls its members toward the anchor. A group derived mechanically from a schematic sheet
+# states `"origin": "sheet"`: its membership is context for reports and views and it applies no
+# anchor pull. A row that states no origin is declared, so every earlier groups file keeps its meaning.
+GROUP_ORIGINS = ('declared', 'sheet')
+
+
+def group_origin(row):
+    """The stated origin of a group row; a row that states none is declared."""
+    return row.get('origin', 'declared')
+
+
+def anchor_pull(row):
+    """Whether a group pulls its members toward its anchor: only a declared group does."""
+    return group_origin(row) == 'declared'
+
+
+def group_pull(groups):
+    """One row per group for reports: its origin and whether it applies anchor pull."""
+    return [{'name': row['name'], 'origin': group_origin(row), 'anchor_pull': anchor_pull(row),
+             'anchor': row['anchor'], 'members': len(row['refs'])} for row in groups['groups']]
 
 
 def _object(value, path, required=(), optional=(), *, kind='placement intent'):
@@ -203,10 +224,12 @@ def validate(intent, groups):
         _text(groups['board'], 'groups.board')
     names, members = set(), set()
     for path, row in _rows(groups['groups'], 'groups.groups'):
-        _object(row, path, ('name', 'anchor', 'refs'), ('role', 'why', 'near'))
+        _object(row, path, ('name', 'anchor', 'refs'), ('role', 'why', 'near', 'origin'))
         _text(row['name'], path + '.name')
         _text(row['anchor'], path + '.anchor')
         _texts(row['refs'], path + '.refs')
+        if 'origin' in row and (not isinstance(row['origin'], str) or row['origin'] not in GROUP_ORIGINS):
+            raise ValueError(path + '.origin: expected ' + ' or '.join(repr(o) for o in GROUP_ORIGINS))
         if 'near' in row:
             _texts(row['near'], path + '.near')
             declared = {g.get('name') for g in groups['groups'] if isinstance(g, dict)}
@@ -460,8 +483,10 @@ def adapt(document, groups, *, source=None, supported=frozenset()):
     native_groups['groups'] = []
     names = [row.get('name') for row in groups['groups'] if isinstance(row, dict)]
     for path, row in _rows(groups['groups'], 'groups.groups'):
-        _object(row, path, ('name', 'anchor', 'refs'), ('role', 'why', 'near'))
-        projected = {k: row[k] for k in ('name', 'anchor', 'refs', 'role', 'why') if k in row}
+        _object(row, path, ('name', 'anchor', 'refs'), ('role', 'why', 'near', 'origin'))
+        # `origin` is agent-ee's own statement about a group row, not a field of the original
+        # dialect: it is carried unchanged and the native validator below checks its value.
+        projected = {k: row[k] for k in ('name', 'anchor', 'refs', 'role', 'why', 'origin') if k in row}
         native_groups['groups'].append(projected)
         if 'near' in row:
             _texts(row['near'], path + '.near')
@@ -470,7 +495,8 @@ def adapt(document, groups, *, source=None, supported=frozenset()):
                     raise ValueError(path + '.near: expected other declared group names')
             note(path + '.near', 'objective_pending_solver', group=row['name'], near=list(row['near']),
                  needs='R1 declared-near interface objective and measured gap report')
-        note(path, 'operative_supported', name=row['name'])
+        note(path, 'operative_supported', name=row['name'],
+             **({'origin': row['origin']} if 'origin' in row else {}))
     validate(native, native_groups)
     record = {'schema': COMPATIBILITY_SCHEMA, 'dialect': dict(DIALECT), 'source': source,
               'native_intent': native, 'native_groups': native_groups,

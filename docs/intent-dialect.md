@@ -20,7 +20,7 @@ disposition with its exact path:
 
 | Disposition | Fields | Effect |
 | --- | --- | --- |
-| `operative_supported` | `fixed_poses[]`, `edge_connectors[]` (`ref`, `edge`, `max_setback_mm`, `overhang_mm`, `class`, `context.mount_mode`), `legality_budget.oob_count == 0`, `groups.groups[]` (`name`, `anchor`, `refs`) | carried in `native_intent` / `native_groups`, which the existing validator accepts |
+| `operative_supported` | `fixed_poses[]`, `edge_connectors[]` (`ref`, `edge`, `max_setback_mm`, `overhang_mm`, `class`, `context.mount_mode`), `legality_budget.oob_count == 0`, `groups.groups[]` (`name`, `anchor`, `refs`, and agent-ee's optional `origin`) | carried in `native_intent` / `native_groups`, which the existing validator accepts |
 | `operative_pending_capture` | `assembly.sides`, `envelope`, `edge_connectors[].side`, `edge_connectors[].context.cable_entry` | verification against native geometry is still to be wired into capture; listed in `pending` |
 | `objective_pending_solver` | `proximity[]` (`basis: pad_edge`), `groups.groups[].near` | measured by `pad_edge` / `group_links` here; solver objective and refinement are the remaining step; listed in `pending` |
 | `noop_empty` | `blocks`, `keepouts`, `must_lock`, `decaps`, `context.cutouts`, `context.edge_contours`, `context.file_locked`, `defaults.zone_tolerance_mm` | accepted only at the empty value; any content refuses |
@@ -100,6 +100,15 @@ measured `links`. `board_metrics` includes the `group_links` report and
 with a declared rail excluded, pad-edge terms equal the signed gap, and a
 legal dispersed member is moved next to its anchor with legality preserved,
 the anchor and fixed marks unmoved.
+
+Since AGENTEE-637 the member-to-anchor links and the group term are compiled
+only for a group an engineer declared. A group row that states
+`"origin": "sheet"` (a group derived mechanically from a schematic sheet)
+keeps its intra-group signal links and its declared-near interface links and
+has no anchor pull; see
+[placement-job.md](placement-job.md#supported-intent-boundary-agentee-520).
+The adapter carries a stated `origin` unchanged into `native_groups`; it is
+agent-ee's statement about the row, not a field of the original dialect.
 
 ## Capture contract
 

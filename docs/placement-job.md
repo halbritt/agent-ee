@@ -102,8 +102,42 @@ names and membership must be unique, and the anchor belongs to its refs.
 Optional group `role`/`why` are descriptive text. Optional top-level `schema: 1`
 and `board` retain the legacy group envelope; `board` is a descriptive label,
 while the actual native input is bound by `inputs.board` and its SHA-256.
-Group anchor distance remains a preference. Group `near`, side, zone, region
-or hard-cohesion declarations are unsupported and refuse.
+Group anchor distance remains a preference. Optional group `near` names other
+groups of the same file (the interface links of
+[intent-dialect.md](intent-dialect.md#capture-solver-and-reporting-second-slice)).
+Group side, zone, region or hard-cohesion declarations are unsupported and
+refuse.
+
+**Group origin and anchor pull (AGENTEE-637).** A group row may state where it
+comes from: `"origin": "declared"` or `"origin": "sheet"`. A row that states no
+origin is declared, so every earlier groups file keeps its meaning. Any other
+value refuses at `groups.groups[i].origin`.
+
+- A *declared* group is an engineer's statement that its parts belong together
+  around the anchor they named. It pulls its members toward that anchor: the
+  group term (the Manhattan distance of each member's body centre to the
+  anchor's, halved) and one member-to-anchor link per member (the pad gap
+  between the member and the anchor, over any pad pair).
+- A *sheet* group is derived mechanically, for example one group per schematic
+  sheet with the part with most pads as anchor. Nobody chose that anchor.
+  Membership of such a group is context: reports and the group views list it,
+  a group move translates its movable members together and a clustered start
+  begins them together. It applies **no anchor pull**: no group term and no
+  member-to-anchor link.
+- For every group, the links that follow real connectivity or a declaration
+  stay: the pad gap between two members that share a net (under the rails
+  rules below), and the interface link of a declared `near`.
+
+The origin travels with its group row: the intent check carries it as written,
+the problem document holds `groups[].origin` when the row states it, and the
+engine reads it there (a `/1` record that states one is refused). The result
+is named in three places. The job report's `groups` has one row per group
+with `origin`, `anchor_pull`, `anchor` and `members`; the engine's answer
+(`engine-output.json`) has the same rows under `groups`; and each group of the
+final `metrics.group_links` carries `origin` and `anchor_pull`, with no
+`R2_member_to_anchor_links` rows for a sheet group. A tool that builds groups
+mechanically must mark them as sheet groups; the matched benchmark harness
+does (`benchmarks/krt-matched/README.md`).
 
 Jobs record `intent_contract` with the supported version, input form, validator
 hash, constraint/preference distinction and unsupported capabilities. The

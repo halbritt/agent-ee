@@ -71,6 +71,22 @@ class PlacementIntentTests(unittest.TestCase):
                 job.validate_intent(intent, groups)
             self.assertIn(path, str(error.exception))
 
+    def test_group_origin_is_declared_or_sheet_and_unstated_means_declared(self):
+        # AGENTEE-637: only a group an engineer declares pulls its members toward its anchor.
+        def document(**extra):
+            return {'groups': [dict(name='a', anchor='U1', refs=['U1', 'C1'], **extra)]}
+        for groups, origin, pulls in [(document(), 'declared', True), (document(origin='declared'), 'declared', True),
+                                      (document(origin='sheet'), 'sheet', False)]:
+            with self.subTest(groups=groups):
+                normalized = job.normalize_intent({}, copy.deepcopy(groups))
+                self.assertEqual(normalized['groups'], groups, 'a group row is carried as written')
+                self.assertEqual(placement_intent.group_pull(normalized['groups']),
+                                 [dict(name='a', origin=origin, anchor_pull=pulls, anchor='U1', members=2)])
+        for bad in ('schematic', '', None, True, ['sheet']):
+            with self.subTest(origin=bad), self.assertRaisesRegex(
+                    job.JobRefusal, r"groups\.groups\[0\]\.origin: expected 'declared' or 'sheet'"):
+                job.validate_intent({}, document(origin=bad))
+
     def test_fixed_pose_may_name_any_angle(self):
         # AGENTEE-636: a fixed part is not required to sit at a quarter turn.
         job.validate_intent({'fixed_poses': [{'ref': 'R1', 'x': 1, 'y': 2, 'rot': 45}]}, {'groups': []})

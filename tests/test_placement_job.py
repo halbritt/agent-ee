@@ -164,6 +164,28 @@ class CaptureTests(Fixture):
         self.assertEqual(problem['problem_sha256'], hashlib.sha256(
             job.canonical({k: v for k, v in problem.items() if k != 'problem_sha256'})).hexdigest())
 
+    def test_a_sheet_group_reaches_the_engine_and_applies_no_anchor_pull(self):
+        # AGENTEE-637: the origin a group row states travels from the groups file to the engine,
+        # and every engine answer says which groups pull.
+        def link_kinds(output):
+            return {link['kind'] for seed in output['seeds'] for link in seed['links'] or ()}
+        sheet = {'groups': [dict(groups()['groups'][0], origin='sheet')]}
+        problem, _ = job.capture(self.board, job.normalize_intent(intent(), sheet))
+        self.assertEqual(problem['groups'], [{'name': 'g', 'anchor': 'R1', 'refs': ['R1', 'C1'], 'origin': 'sheet'}])
+        output, _ = job.solve(problem, self.search(1, 20000), self.dir, deadline_s=60)
+        self.assertEqual(output['groups'], [{'name': 'g', 'origin': 'sheet', 'anchor_pull': False,
+                                             'anchor': 'R1', 'members': 2}])
+        self.assertTrue(output['shortlist'], output['seeds'])
+        # R1 and C1 share net A: that link follows real connectivity and stays.
+        self.assertEqual(link_kinds(output), {'R2_intra_group_signal'})
+        self.assertEqual({seed['best_terms']['group_nm'] for seed in output['seeds']}, {'0'})
+        declared, _ = self.problem()
+        self.assertNotIn('origin', declared['groups'][0])
+        pulled, _ = job.solve(declared, self.search(1, 20000), self.dir, deadline_s=60)
+        self.assertEqual(pulled['groups'], [{'name': 'g', 'origin': 'declared', 'anchor_pull': True,
+                                             'anchor': 'R1', 'members': 2}])
+        self.assertEqual(link_kinds(pulled), {'R2_intra_group_signal', 'R2_member_to_anchor'})
+
     def test_malformed_courtyard_is_a_hard_refusal(self):
         build_board(self.board, malformed_courtyard=True)
         with self.assertRaisesRegex(job.JobRefusal, 'malformed courtyard'):
@@ -482,6 +504,10 @@ class EntryPointTests(Fixture):
         self.assertEqual(report['status'], 'completed', report.get('route'))
         self.assertEqual(report['routed_candidate'], 'incumbent')
         self.assertEqual(report['design_name'], self.board.stem)
+        # The report says which groups pull (AGENTEE-637): a row that states no origin is declared.
+        self.assertEqual(report['groups'], [{'name': 'g', 'origin': 'declared', 'anchor_pull': True,
+                                             'anchor': 'R1', 'members': 2}])
+        self.assertEqual(report['final']['metrics']['group_links']['groups']['g']['anchor_pull'], True)
         argv = report['route']['argv']
         self.assertEqual(argv[argv.index('--name') + 1], self.board.stem)
         self.assertEqual(argv[argv.index('--grid-step') + 1], '0.025')

@@ -289,7 +289,9 @@ def _document(board, *, fixed_poses, edges, groups, rails):
                 'outline': outline,
                 'rules': dict(board['rules']),
                 'footprints': sorted([*rows, *board.get('text_obstacles', [])], key=lambda r: r['uuid']),
-                'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near') if k in g} for g in groups],
+                # A stated `origin` travels with its group: the engine applies anchor pull (the group
+                # term and the member-to-anchor links) only to a declared group (AGENTEE-637).
+                'groups': [{k: g[k] for k in ('name', 'anchor', 'refs', 'near', 'origin') if k in g} for g in groups],
                 'rails': _rails(rails),
                 'weights': dict(WEIGHTS)}
     if 'mechanics' in board:

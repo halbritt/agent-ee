@@ -495,6 +495,39 @@ impl Edge {
     }
 }
 
+/// Where a group comes from (AGENTEE-637). An engineer declares a group and names its anchor;
+/// a sheet group is derived mechanically from a schematic sheet, and its anchor is only a label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GroupOrigin {
+    Declared,
+    Sheet,
+}
+
+impl GroupOrigin {
+    /// A row that states no origin is declared, so every earlier problem keeps its meaning.
+    fn parse(group: &Value, name: &str) -> Result<Self> {
+        match group.get("origin") {
+            None => Ok(Self::Declared),
+            Some(v) => match v.as_str() {
+                Some("declared") => Ok(Self::Declared),
+                Some("sheet") => Ok(Self::Sheet),
+                _ => bail!("group {name}: origin must be \"declared\" or \"sheet\""),
+            },
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self { Self::Declared => "declared", Self::Sheet => "sheet" }
+    }
+
+    /// Only a declared group pulls its members toward its anchor: the group term and the
+    /// member-to-anchor links. Membership of a sheet group is context for reports, group
+    /// moves and clustered starts; links that follow a shared net or a declared `near` stay.
+    pub fn anchor_pull(self) -> bool {
+        self == Self::Declared
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct GroupSpec {
     pub name: String,
@@ -503,6 +536,7 @@ pub struct GroupSpec {
     pub declared_refs: Vec<String>,
     pub present: Vec<usize>,
     pub near: Vec<String>,
+    pub origin: GroupOrigin,
 }
 
 #[derive(Clone, Debug)]
@@ -681,6 +715,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         ensure!(input["weights"].get("link").is_none(), "legacy placement job schema /1 cannot carry a link weight; capture with schema /2");
         for g in input["groups"].as_array().cloned().unwrap_or_default() {
             ensure!(g.get("near").is_none(), "legacy placement job schema /1 cannot declare near groups; capture with schema /2");
+            ensure!(g.get("origin").is_none(), "legacy placement job schema /1 cannot state a group origin; capture with schema /2");
         }
         for f in input["footprints"].as_array().cloned().unwrap_or_default() {
             for pad in f["pads"].as_array().cloned().unwrap_or_default() {
@@ -923,6 +958,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
             .map(|r| r.as_str().context("group member").map(str::to_string)).collect::<Result<_>>()?;
         let near: Vec<String> = group.get("near").and_then(Value::as_array).cloned().unwrap_or_default().iter()
             .map(|t| t.as_str().context("group near").map(str::to_string)).collect::<Result<_>>()?;
+        let origin = GroupOrigin::parse(group, &name)?;
         let member = |r: &str| physical_reference(r, &format!("group {name}"));
         let (anchor, anchor_opt, members) = if !is_evaluate {
             let anchor = member(&anchor_ref)?;
@@ -942,7 +978,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
             }
             (anchor_opt.or_else(|| members.first().copied()).unwrap_or(usize::MAX), anchor_opt, members)
         };
-        groups_raw.push(GroupSpec { name: name.clone(), anchor_ref, anchor: anchor_opt, declared_refs, present: members.clone(), near });
+        groups_raw.push(GroupSpec { name: name.clone(), anchor_ref, anchor: anchor_opt, declared_refs, present: members.clone(), near, origin });
         groups.push((name, anchor, members));
     }
     let mut net_pads = vec![Vec::new(); nets.len()];
@@ -1040,7 +1076,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         proximity.push(Proximity { ref_name, near_name, a, a_pads, b, b_pads, max_nm, max_mm, authority,
             unresolved, pad_edge, subject_declared, basis, metric });
     }
-    let links = if legacy { Vec::new() } else { compile_links(input, &footprints, &groups, &nets, &net_pads, &physical_reference)? };
+    let links = if legacy { Vec::new() } else { compile_links(input, &footprints, &groups, &groups_raw, &nets, &net_pads, &physical_reference)? };
     let mut locality = Vec::new();
     if let Some(raw) = input.get("locality") {
         let document = &raw["document"];
@@ -1467,7 +1503,9 @@ fn net_terms(p: &Prepared, n: usize, poses: &[Pose]) -> i128 {
 
 fn group_terms(p: &Prepared, f: usize, poses: &[Pose]) -> i128 {
     // Member-to-anchor Manhattan distance of body centres; the anchor carries its whole group.
+    // Only a declared group pulls: a sheet group has no group term (AGENTEE-637).
     let Some(g) = p.footprints[f].group else { return 0 };
+    if !p.groups_raw[g].origin.anchor_pull() { return 0; }
     let (_, anchor, members) = &p.groups[g];
     if *anchor >= p.footprints.len() { return 0; }
     let centre = |i: usize| body_centre2(p, i, &poses[i]);
@@ -1572,7 +1610,10 @@ fn link_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
 /// `rails.scoped`); a net spanning more than two groups outside them is never linked (it is
 /// reported upstream as an unknown multi-group net), so rails cannot merge blocks. Every link
 /// is a set of candidate pad pairs; the objective and the report take the same dynamic minimum.
-fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usize, Vec<usize>)], nets: &[String],
+/// Member-to-anchor links are anchor pull and exist only for a declared group (`specs[g].origin`);
+/// the links of a shared net and of a declared `near` follow real connectivity or a declaration
+/// and are compiled for every group.
+fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usize, Vec<usize>)], specs: &[GroupSpec], nets: &[String],
                  net_pads: &[Vec<(usize, usize)>], physical_reference: &dyn Fn(&str, &str) -> Result<usize>) -> Result<Vec<Link>> {
     let rails = input.get("rails").cloned().unwrap_or(Value::Null);
     let shared: BTreeSet<String> = match rails.get("shared").or_else(|| rails.get("shared_rails")) {
@@ -1619,7 +1660,7 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
                 }
             }
         }
-        if *anchor < footprints.len() && !copper(*anchor).is_empty() {
+        if specs[g].origin.anchor_pull() && *anchor < footprints.len() && !copper(*anchor).is_empty() {
             for &m in members {
                 if m != *anchor && !copper(m).is_empty() {
                     links.push(Link { kind: "R2_member_to_anchor".into(), group: name.clone(), target: footprints[*anchor].native_ref.clone(),
@@ -2441,6 +2482,15 @@ pub fn proximity_contract(p: &Prepared) -> &'static str {
     if p.legacy { LEGACY_PROXIMITY_CONTRACT } else { MODERN_PROXIMITY_CONTRACT }
 }
 
+/// One row per group: where it comes from and whether it pulls its members toward its anchor
+/// (the group term and the member-to-anchor links). Named in every engine output.
+pub fn group_rows(p: &Prepared) -> Value {
+    p.groups_raw.iter().map(|g| json!({"name": g.name, "origin": g.origin.name(),
+                                       "anchor_pull": g.origin.anchor_pull(), "anchor": g.anchor_ref,
+                                       "members": g.declared_refs.len()}))
+        .collect()
+}
+
 /// One row per proximity claim: the captured label and the metric actually applied.
 pub fn proximity_rows(p: &Prepared) -> Value {
     p.proximity.iter().map(|r| json!({"ref": r.ref_name, "near": r.near_name,
@@ -2577,8 +2627,9 @@ fn group_links_group(p: &Prepared, g: &GroupSpec, poses: &[Pose], owner: &BTreeM
             }
         }
     }
+    // A sheet group applies no anchor pull: it has no member-to-anchor links to measure.
     let mut anchor_links = Vec::new();
-    if let Some(af) = g.anchor.filter(|&af| !copper(af).is_empty()) {
+    if let Some(af) = g.anchor.filter(|&af| g.origin.anchor_pull() && !copper(af).is_empty()) {
         for &m in &g.present {
             if m == af || copper(m).is_empty() { continue; }
             let (gap_nm, pa, pb) = best_pair(m, &copper(m), af, &copper(af));
@@ -2658,13 +2709,14 @@ fn group_links_group(p: &Prepared, g: &GroupSpec, poses: &[Pose], owner: &BTreeM
         }
         intruders.sort();
     }
+    // Anchor separation is a diagnostic of anchor pull, so it compares declared groups only.
     let mut inversions = Vec::new();
-    if let Some(af) = g.anchor {
+    if let Some(af) = g.anchor.filter(|_| g.origin.anchor_pull()) {
         for &m in &g.present {
             if m == af { continue; }
             let d_own = ((poses[m].x - poses[af].x) as f64).hypot((poses[m].y - poses[af].y) as f64);
             for other_g in &p.groups_raw {
-                let Some(oaf) = other_g.anchor.filter(|_| other_g.name != g.name) else { continue };
+                let Some(oaf) = other_g.anchor.filter(|_| other_g.name != g.name && other_g.origin.anchor_pull()) else { continue };
                 let d_for = ((poses[m].x - poses[oaf].x) as f64).hypot((poses[m].y - poses[oaf].y) as f64);
                 if d_for < d_own {
                     inversions.push(json!({"member": p.footprints[m].native_ref, "own_anchor_mm": round4(d_own / 1_000_000.0),
@@ -2675,6 +2727,7 @@ fn group_links_group(p: &Prepared, g: &GroupSpec, poses: &[Pose], owner: &BTreeM
     }
     let present_refs: Vec<&str> = g.present.iter().map(|&f| p.footprints[f].native_ref.as_str()).collect();
     (json!({"anchor": g.anchor_ref, "refs": g.declared_refs, "members_present": present_refs,
+            "origin": g.origin.name(), "anchor_pull": g.origin.anchor_pull(),
             "R2_intra_group_signal_links": intra, "R2_member_to_anchor_links": anchor_links,
             "R1_declared_near_interfaces": near_links,
             "diagnostic_only_not_hard_gate": {
@@ -2769,6 +2822,7 @@ fn evaluate_poses(p: &Prepared, rows: &Value, prepare_s: f64) -> Result<Value> {
                         "proximity_contract": proximity_contract(p), "proximity": proximity_rows(p)}));
     }
     Ok(json!({"schema": OUTPUT_SCHEMA, "problem_sha256": p.identity, "status": "evaluated", "evaluations": out,
+              "groups": group_rows(p),
               "proximity_contract": proximity_contract(p), "proximity": proximity_rows(p),
               "timing": {"prepare_s": prepare_s, "evaluate_s": started.elapsed().as_secs_f64()},
               "engine_version": env!("CARGO_PKG_VERSION")}))
@@ -2957,6 +3011,7 @@ pub fn run(input: &Value) -> Result<Value> {
         "violations": v, "poses": pose_rows(&p, &c.poses)})).collect();
     Ok(json!({
         "schema": OUTPUT_SCHEMA, "problem_sha256": p.identity, "status": status,
+        "groups": group_rows(&p),
         "proximity_contract": proximity_contract(&p), "proximity": proximity_rows(&p),
         "diagnostic_shortlist": diagnostic,
         "aliases": p.footprints.iter().map(|f| json!({"uuid": f.uuid, "alias": f.alias, "native_ref": f.native_ref})).collect::<Vec<_>>(),
@@ -3261,6 +3316,112 @@ mod tests {
         let row = rows.as_array().unwrap().iter().find(|r| r["kind"] == "R1_declared_near_interface").unwrap();
         assert_eq!(row["paired_by"], "any_pad_fallback");
         assert_eq!(row["gap_nm"].as_i64().unwrap(), gf, "the report and the objective take the same dynamic minimum");
+    }
+
+    /// The two-group board of the tests above, with every group row stating `origin` (None: unstated).
+    fn two_groups(origins: [Option<&str>; 2]) -> Value {
+        let mut raw = with_half_extents(input(vec![]), json!({"shared": {"GND": "ground return"}, "scoped": {}}));
+        raw["groups"] = json!([{"name": "g", "anchor": "R1", "refs": ["R1", "R2"], "near": ["h"]},
+                               {"name": "h", "anchor": "R3", "refs": ["R3", "R4"]}]);
+        for (row, origin) in raw["groups"].as_array_mut().unwrap().iter_mut().zip(origins) {
+            if let Some(origin) = origin { row["origin"] = json!(origin); }
+        }
+        raw
+    }
+
+    fn link_kinds(p: &Prepared) -> Vec<(&str, &str)> {
+        p.links.iter().map(|l| (l.kind.as_str(), l.group.as_str())).collect()
+    }
+
+    #[test]
+    fn a_sheet_group_applies_no_anchor_pull_and_keeps_its_net_and_near_links() {
+        let declared = prepare(&two_groups([None, None])).unwrap();
+        let sheet = prepare(&two_groups([Some("sheet"), Some("sheet")])).unwrap();
+        assert_eq!(link_kinds(&declared), vec![
+            ("R2_intra_group_signal", "g"), ("R2_member_to_anchor", "g"), ("R1_declared_near_interface", "g"),
+            ("R2_intra_group_signal", "h"), ("R2_member_to_anchor", "h")]);
+        // The links of a shared net and of a declared `near` stay; the member-to-anchor links are gone.
+        assert_eq!(link_kinds(&sheet), vec![
+            ("R2_intra_group_signal", "g"), ("R1_declared_near_interface", "g"), ("R2_intra_group_signal", "h")]);
+        let poses = legal_dispersed(&declared);
+        let (d, s) = (full_evaluate(&declared, &poses), full_evaluate(&sheet, &poses));
+        assert!(d.group > 0, "a declared group has a group term");
+        assert_eq!(s.group, 0, "a sheet group has none");
+        let anchor_links: i128 = (0..declared.links.len()).filter(|&k| declared.links[k].kind == "R2_member_to_anchor")
+            .map(|k| link_terms(&declared, k, &poses)).sum();
+        assert!(anchor_links > 0);
+        assert_eq!(s.link, d.link - anchor_links, "the link term loses exactly the member-to-anchor links");
+        // Nothing else depends on the origin.
+        assert_eq!((s.hard, s.hard_count, s.wire, s.proximity, s.edge, s.escape),
+                   (d.hard, d.hard_count, d.wire, d.proximity, d.edge, d.escape));
+        // Stating "declared" is the same problem as stating nothing.
+        let stated = prepare(&two_groups([Some("declared"), Some("declared")])).unwrap();
+        assert_eq!(link_kinds(&stated), link_kinds(&declared));
+        assert_eq!(full_evaluate(&stated, &poses), d);
+        // Each group follows its own origin.
+        let mixed = prepare(&two_groups([Some("sheet"), None])).unwrap();
+        assert_eq!(link_kinds(&mixed), vec![
+            ("R2_intra_group_signal", "g"), ("R1_declared_near_interface", "g"),
+            ("R2_intra_group_signal", "h"), ("R2_member_to_anchor", "h")]);
+        let m = full_evaluate(&mixed, &poses);
+        assert!(m.group > 0 && m.group < d.group);
+        // The incremental evaluator agrees with the full one for single moves and for a move of a
+        // whole sheet group, whose membership still defines the group translation.
+        let mut state = SearchState::new(&sheet, poses.clone()).unwrap();
+        let (r1, r2) = (sheet.groups[0].2[0], sheet.groups[0].2[1]);
+        let shifted = |state: &SearchState, f: usize| (f, Pose { x: state.poses[f].x + 500_000, y: state.poses[f].y + 1_000_000, q: 0 });
+        for members in [vec![r1], vec![r1, r2]] {
+            let moves: Vec<(usize, Pose)> = members.iter().map(|&f| shifted(&state, f)).collect();
+            let trial = state.evaluate(&sheet, &moves).unwrap();
+            assert_eq!(trial.delta.group, 0);
+            state.commit(&sheet, trial).unwrap();
+            assert_eq!(state.totals, full_evaluate(&sheet, &state.poses));
+        }
+        assert_eq!(state.totals.group, 0);
+    }
+
+    #[test]
+    fn every_output_says_which_groups_pull() {
+        let raw = two_groups([Some("sheet"), None]);
+        let out = run(&raw).unwrap();
+        assert_eq!(out["groups"], json!([
+            {"name": "g", "origin": "sheet", "anchor_pull": false, "anchor": "R1", "members": 2},
+            {"name": "h", "origin": "declared", "anchor_pull": true, "anchor": "R3", "members": 2}]));
+        // The search still returns checked candidates when a group is a sheet group.
+        assert!(!out["shortlist"].as_array().unwrap().is_empty(), "{}", out["seeds"]);
+        for c in out["shortlist"].as_array().unwrap() {
+            assert_eq!(c["full_evaluation_equal"], true);
+            assert_eq!(c["terms"]["hard"], "0");
+        }
+        let mut measured = raw.clone();
+        measured["evaluate"] = json!([{}]);
+        let evaluated = run(&measured).unwrap();
+        assert_eq!(evaluated["groups"], out["groups"]);
+        let report = &evaluated["evaluations"][0]["group_links"]["groups"];
+        assert_eq!((&report["g"]["origin"], &report["g"]["anchor_pull"]), (&json!("sheet"), &json!(false)));
+        assert_eq!(report["g"]["R2_member_to_anchor_links"], json!([]));
+        assert_eq!(report["g"]["R2_intra_group_signal_links"].as_array().unwrap().len(), 1);
+        assert_eq!(report["g"]["R1_declared_near_interfaces"].as_array().unwrap().len(), 1);
+        assert_eq!((&report["h"]["origin"], &report["h"]["anchor_pull"]), (&json!("declared"), &json!(true)));
+        assert_eq!(report["h"]["R2_member_to_anchor_links"].as_array().unwrap().len(), 1);
+        // The measured objective is the sum of the links the search minimises: no anchor link for g.
+        let links = evaluated["evaluations"][0]["links"].as_array().unwrap();
+        assert!(links.iter().all(|l| !(l["kind"] == "R2_member_to_anchor" && l["group"] == "g")));
+        assert!(links.iter().any(|l| l["kind"] == "R2_member_to_anchor" && l["group"] == "h"));
+    }
+
+    #[test]
+    fn a_group_origin_is_one_of_two_stated_values() {
+        for bad in [json!("schematic"), json!(""), json!(true), json!(null), json!(["sheet"])] {
+            let mut raw = two_groups([None, None]);
+            raw["groups"][0]["origin"] = bad.clone();
+            let error = prepare(&raw).unwrap_err().to_string();
+            assert!(error.contains("group g: origin must be \"declared\" or \"sheet\""), "{bad}: {error}");
+        }
+        // A /1 record predates the field: one that carries it is a mislabelled capture.
+        let mut old = legacy(input(vec![]));
+        old["groups"][0]["origin"] = json!("sheet");
+        assert!(prepare(&old).unwrap_err().to_string().contains("cannot state a group origin"));
     }
 
     #[test]

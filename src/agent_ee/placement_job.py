@@ -2138,6 +2138,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             path, _ = verified_input(config['inputs']['mechanics'], 'mechanics')
             normalized['mechanics'] = load(path)
         report['intent_contract'] = normalized['intent_contract']
+        # Which groups pull their members toward an anchor: only declared ones (AGENTEE-637).
+        from .placement_intent import group_pull
+        report['groups'] = group_pull(normalized['groups'])
         plane_bytes = None
         plane_ids = ()
         if 'planes' in config['inputs']:
