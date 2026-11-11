@@ -1810,10 +1810,15 @@ def _route_attempt(route_dir, *, argv, env, clock, cancel_dir):
     return routing_adapter.bind_board_attempt(route_dir, argv, done.returncode)
 
 
-def _route_feedback(record, checkout, *, env, clock, cancel_dir):
-    """Select one bounded repair from native findings; never relax a rule."""
-    if record.get('status') != 'routed' or record['router_accepted']:
-        return None
+def _route_feedback(record, checkout, *, env, clock, cancel_dir, owned_copper=True):
+    """Select one bounded repair from native findings; never relax a rule.
+
+    A starved thermal is repaired by routing the same unrouted input again with the pad's spoke
+    corridors reserved. That changes no copper the input brought, so it is offered whoever made
+    the pours. A dangling track is repaired by rerouting its net on the routed board, which only
+    a job whose input had no tracks of its own may do (``owned_copper``)."""
+    if record.get('status') != 'routed' or record.get('router_accepted') is not False:
+        return None     # only a board the router delivered and its own grading rejected
     result_path = Path(record['result_path'])
     result = read_json(result_path)
     validation = result['validation']
@@ -1840,6 +1845,8 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir):
             return None
         return {'kind': 'thermal_corridors', 'evidence': str(path), 'sha256': digest(path),
                 'pads': sorted({p['uuid'] + '@' + p['layer'] for p in pads})}
+    if not owned_copper:
+        return None
     settings = result.get('settings', {})
     if record.get('argv') is not None and '--diff-pairs' not in record['argv']:
         # No pair handling was requested, and the router reports none.
@@ -2043,10 +2050,17 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     used, pads = set(), []
     # At most one retry for each demonstrated defect class, within the original
     # candidate's remaining allocation. Failed trials and source bytes survive.
-    while owned_copper and route_clock.remaining() >= 1:
+    # A board that brought copper of its own is offered the thermal retry alone: it starts
+    # again from the same input and keeps --protect existing.
+    while route_clock.remaining() >= 1:
         try:
-            feedback = _route_feedback(record, checkout, env=env, clock=route_clock, cancel_dir=cancel_dir)
+            feedback = _route_feedback(record, checkout, env=env, clock=route_clock, cancel_dir=cancel_dir,
+                                       owned_copper=owned_copper)
             if feedback is None or feedback['kind'] in used:
+                break
+            if not owned_copper and feedback['kind'] != 'thermal_corridors':
+                attempts[-1]['feedback'] = {**feedback, 'recovery': 'not_applied',
+                    'reason': 'the input brought copper of its own; this repair reroutes on the routed board'}
                 break
             if (intra_pair_match is not None or length_match is not None or ac_match is not None) and feedback['kind'] != 'thermal_corridors':
                 attempts[-1]['feedback'] = {**feedback, 'recovery': 'not_applied',

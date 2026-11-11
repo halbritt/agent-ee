@@ -229,13 +229,18 @@ For a plane job whose staged native input contains no tracks or vias, the router
 may rip up its own generated copper (`--protect locked`). Authored copper keeps
 the default `--protect existing` policy. A fully connected result with a newly
 starved thermal may receive one retry reserving the exact native pad/layer
-corridors. A remaining dangling track may receive one scoped reroute, only when
+corridors. That retry routes the same unrouted input again, so every job may
+have it, also one whose board brought its own pours or tracks; it keeps that
+board's `--protect` policy. A remaining dangling track may receive one scoped
+reroute, only in a plane job that owns its copper, and only when
 the route had no pair handling (no `--diff-pairs`, and the saved result reports
 no pairs) or the saved result establishes that the router detected no pairs, and
 every other preservation check passes. Both repairs share the original candidate's remaining
 budget, retain all attempts and undergo unchanged native and final placement
 checks. A rejected router result cannot complete the job. See the
-[qualification and limits](qualification/plane-feedback-2026-10-24.md).
+[qualification and limits](qualification/plane-feedback-2026-10-24.md), which
+covers plane jobs; the retry on a board with its own pours was measured on
+flat_hierarchy (AGENTEE-654).
 
 An optional `inputs.locality` supplies a path and SHA-256 for the existing
 `agent-ee.electrical-locality/1` document. The public build derives this input

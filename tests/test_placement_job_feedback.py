@@ -29,7 +29,8 @@ class RoutingFeedbackTests(Fixture):
             self.assertEqual(result['attempts'][0]['feedback']['recovery'], 'not_applied')
             self.assertFalse(result['router_accepted'])
 
-    def test_existing_copper_never_enables_generated_copper_repair(self):
+    def authored_track(self):
+        """One authored track on the fixture board: the job then owns no copper."""
         import pcbnew
         board = pcbnew.LoadBoard(str(self.board))
         track = pcbnew.PCB_TRACK(board)
@@ -39,18 +40,100 @@ class RoutingFeedbackTests(Fixture):
         track.SetLayer(pcbnew.F_Cu)
         board.Add(track)
         pcbnew.SaveBoard(str(self.board), board)
-        # Plane production does not own or remove authored tracks. A refused
-        # route must stay refused, even when a feedback strategy is available.
+
+    def test_existing_copper_never_enables_generated_copper_repair(self):
+        self.authored_track()
+        # Plane production does not own or remove authored tracks. A refused route stays
+        # refused, and the repair selector is told that the copper is not the job's.
         checkout = self.router()
         with patch.object(job, '_produce_planes', return_value={}), \
                 patch.object(job, '_route_attempt', return_value={'status': 'no_candidate'}) as run, \
-                patch.object(job, '_route_feedback', side_effect=AssertionError('authored copper repair')):
+                patch.object(job, '_route_feedback', wraps=job._route_feedback) as select:
             result = job.route(self.dir, self.dir / 'route', checkout, budget_s=10, timeout_s=10,
                                home=self.dir / 'home', planes=b'{}')
         argv = run.call_args.kwargs['argv']
+        self.assertEqual(run.call_count, 1)
         self.assertEqual(argv[argv.index('--protect') + 1], 'existing')
         self.assertEqual(result['status'], 'no_candidate')
         self.assertEqual(result['copper_policy'], 'preserve_existing')
+        self.assertIs(select.call_args.kwargs['owned_copper'], False)
+
+    def test_existing_copper_is_never_rerouted_on_the_routed_board(self):
+        # The dangling-track repair reroutes a net on the routed board. Only a job that owns
+        # that board's copper is offered it, and the route loop would not apply it otherwise.
+        record, _, _ = self.feedback_case()
+        def select(**owned):
+            return job._route_feedback(record, self.dir, env={}, clock=job.Clock(10), cancel_dir=None, **owned)
+        self.assertEqual(select()['kind'], 'dangling_net')
+        self.assertIsNone(select(owned_copper=False))
+        checkout = self.router()
+        rejected = {'status': 'routed', 'router_accepted': False, 'board': str(self.board)}
+        with patch.object(job, '_route_attempt', return_value=rejected) as run, \
+                patch.object(job, '_route_feedback', return_value={'kind': 'dangling_net', 'nets': ['A']}):
+            result = job.route(self.dir, self.dir / 'route', checkout, budget_s=10, timeout_s=10,
+                               home=self.dir / 'home')
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(result['attempts'][0]['feedback']['recovery'], 'not_applied')
+        self.assertEqual(result['copper_policy'], 'preserve_existing')
+        self.assertFalse(result['router_accepted'])
+
+    def test_a_starved_thermal_is_retried_on_a_board_with_copper_of_its_own(self):
+        # AGENTEE-654: the thermal retry routes the same unrouted input again with the starved
+        # pad's corridors reserved. It needs no copper of the job's own, so a board that brings
+        # its pours (no plane plan) or its tracks gets it too, under its own --protect policy.
+        feedback = {'kind': 'thermal_corridors', 'evidence': 'spokes.json', 'sha256': 'x', 'pads': ['pad-uuid@B.Cu']}
+        checkout = self.router()
+        for index, (planes, authored) in enumerate(((None, False), (b'{}', True))):
+            if authored:
+                self.authored_track()
+            rejected = {'status': 'routed', 'router_accepted': False, 'board': str(self.board)}
+            accepted = {'status': 'routed', 'router_accepted': True, 'board': str(self.board)}
+            with self.subTest(planes=planes, authored=authored), \
+                    patch.object(job, '_produce_planes', return_value={}), \
+                    patch.object(job, '_route_attempt', side_effect=[dict(rejected), dict(accepted)]) as run, \
+                    patch.object(job, '_route_feedback', side_effect=[feedback, None]) as select:
+                result = job.route(self.dir, self.dir / f'route-{index}', checkout, budget_s=10, timeout_s=10,
+                                   home=self.dir / 'home', planes=planes)
+                first, retry = (call.kwargs['argv'] for call in run.call_args_list)
+                self.assertEqual(retry[retry.index('--reserve-spoke-pad') + 1], 'pad-uuid@B.Cu')
+                for option in ('--protect', '--dir', '--board'):
+                    self.assertEqual(retry[retry.index(option) + 1], first[first.index(option) + 1], option)
+                self.assertEqual(first[first.index('--protect') + 1], 'existing')
+                self.assertNotIn('--reserve-spoke-pad', first)
+                self.assertNotEqual(retry[retry.index('--out') + 1], first[first.index('--out') + 1])
+                self.assertIs(select.call_args.kwargs['owned_copper'], False)
+                self.assertTrue(result['router_accepted'])
+                self.assertEqual(result['copper_policy'], 'preserve_existing')
+                self.assertEqual([a.get('router_accepted') for a in result['attempts']], [False, True])
+                self.assertEqual(result['attempts'][0]['feedback'], feedback)
+
+    def test_a_starved_thermal_selects_its_pads_whoever_owns_the_copper(self):
+        result = self.dir / 'result.json'
+        write_json(result, {'process': {'status': 'PASS'}, 'routing': {'unconnected_total': 0},
+                           'validation': {'drc': {'new_parity': {'count': 0}},
+                                          'preservation': {'footprints': 'PASS', 'pour_integrity': 'FAIL'}}})
+        (self.dir / 'validate').mkdir()
+        write_json(self.dir / 'validate/new-findings.json', {'violations': [{'type': 'starved_thermal', 'items': []}]})
+        record = {'status': 'routed', 'router_accepted': False, 'result_path': str(result), 'board': str(self.board)}
+        pad = {'uuid': 'pad-uuid', 'layer': 'B.Cu', 'new': True, 'attributed': True}
+
+        def spokes(report, code=3):
+            def run(argv, **kwargs):
+                write_json(self.dir / 'spokes.json', report)
+                return type('Done', (), {'returncode': code})()
+            return run
+
+        def select(report, code=3, **owned):
+            with patch.object(job, '_run_child', side_effect=spokes(report, code)):
+                return job._route_feedback(record, self.dir, env={}, clock=job.Clock(10), cancel_dir=None, **owned)
+        for owned in ({}, {'owned_copper': False}):
+            with self.subTest(owned=owned):
+                chosen = select({'starved_pads': [pad]}, **owned)
+                self.assertEqual((chosen['kind'], chosen['pads']), ('thermal_corridors', ['pad-uuid@B.Cu']))
+                # A pad that no new copper is shown to have starved is not a basis for a retry,
+                self.assertIsNone(select({'starved_pads': [dict(pad, attributed=False)]}, **owned))
+                # nor is a report that found no new starved pad (exit 0).
+                self.assertIsNone(select({'starved_pads': []}, code=0, **owned))
 
     def feedback_case(self):
         import pcbnew
