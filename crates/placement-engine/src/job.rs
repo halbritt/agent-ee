@@ -562,8 +562,16 @@ impl GroupOrigin {
 
     /// Only a declared group pulls its members toward its anchor: the group term and the
     /// member-to-anchor links. Membership of a sheet group is context for reports, group
-    /// moves and clustered starts; links that follow a shared net or a declared `near` stay.
+    /// moves and clustered starts; a declared `near` still links it.
     pub fn anchor_pull(self) -> bool {
+        self == Self::Declared
+    }
+
+    /// Only a declared group links its members by the nets they share (AGENTEE-648). There is
+    /// one such link for every pair of members on a net, so in a sheet group, which can hold a
+    /// whole board, a power net made most of the objective: 1,225 of 1,982 links on GND for a
+    /// one-sheet board of 85 parts. The wire term measures every net of every group already.
+    pub fn member_links(self) -> bool {
         self == Self::Declared
     }
 }
@@ -1713,9 +1721,9 @@ fn link_terms(p: &Prepared, k: usize, poses: &[Pose]) -> i128 {
 /// `rails.scoped`); a net spanning more than two groups outside them is never linked (it is
 /// reported upstream as an unknown multi-group net), so rails cannot merge blocks. Every link
 /// is a set of candidate pad pairs; the objective and the report take the same dynamic minimum.
-/// Member-to-anchor links are anchor pull and exist only for a declared group (`specs[g].origin`);
-/// the links of a shared net and of a declared `near` follow real connectivity or a declaration
-/// and are compiled for every group.
+/// Member-to-anchor links are anchor pull, and the links of a shared net are one per pair of
+/// members: both exist only for a declared group (`specs[g].origin`). A declared `near` is a
+/// declaration and is compiled for every group.
 fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usize, Vec<usize>)], specs: &[GroupSpec], nets: &[String],
                  net_pads: &[Vec<(usize, usize)>], physical_reference: &dyn Fn(&str, &str) -> Result<usize>) -> Result<Vec<Link>> {
     let rails = input.get("rails").cloned().unwrap_or(Value::Null);
@@ -1750,6 +1758,7 @@ fn compile_links(input: &Value, footprints: &[Footprint], groups: &[(String, usi
     let mut links = Vec::new();
     for (g, (name, anchor, members)) in groups.iter().enumerate() {
         for &(n, net) in &net_order {
+            if !specs[g].origin.member_links() { break; }
             let scoped_here = scoped.get(net).and_then(|s| s.get("intra_group")).and_then(Value::as_str) == Some(name.as_str());
             if shared.contains(net) && !scoped_here { continue; }
             if !shared.contains(net) && span[n].len() > 2 { continue; }
@@ -2715,8 +2724,10 @@ fn group_links_group(p: &Prepared, g: &GroupSpec, poses: &[Pose], owner: &BTreeM
     let mut obj = 0.0;
     let mut net_order: Vec<(usize, &String)> = p.nets.iter().enumerate().collect();
     net_order.sort_by_key(|(_, name)| *name);
+    // A sheet group links no members: there is no intra-group link to measure.
     let mut intra = Vec::new();
     for &(n, net_name) in &net_order {
+        if !g.origin.member_links() { break; }
         let scoped_here = scoped.get(net_name).and_then(|s| s.get("intra_group")).and_then(Value::as_str) == Some(g.name.as_str());
         if excluded.contains(net_name) || (shared.contains(net_name) && !scoped_here) { continue; }
         let mut distinct: Vec<usize> = g.present.iter().copied().filter(|&f| !pads_on(f, n).is_empty()).collect();
@@ -3442,23 +3453,22 @@ mod tests {
     }
 
     #[test]
-    fn a_sheet_group_applies_no_anchor_pull_and_keeps_its_net_and_near_links() {
+    fn a_sheet_group_applies_no_anchor_pull_and_links_no_members() {
         let declared = prepare(&two_groups([None, None])).unwrap();
         let sheet = prepare(&two_groups([Some("sheet"), Some("sheet")])).unwrap();
         assert_eq!(link_kinds(&declared), vec![
             ("R2_intra_group_signal", "g"), ("R2_member_to_anchor", "g"), ("R1_declared_near_interface", "g"),
             ("R2_intra_group_signal", "h"), ("R2_member_to_anchor", "h")]);
-        // The links of a shared net and of a declared `near` stay; the member-to-anchor links are gone.
-        assert_eq!(link_kinds(&sheet), vec![
-            ("R2_intra_group_signal", "g"), ("R1_declared_near_interface", "g"), ("R2_intra_group_signal", "h")]);
+        // Only the declared `near` stays: the member-to-anchor links and the links of a shared net are gone.
+        assert_eq!(link_kinds(&sheet), vec![("R1_declared_near_interface", "g")]);
         let poses = legal_dispersed(&declared);
         let (d, s) = (full_evaluate(&declared, &poses), full_evaluate(&sheet, &poses));
         assert!(d.group > 0, "a declared group has a group term");
         assert_eq!(s.group, 0, "a sheet group has none");
-        let anchor_links: i128 = (0..declared.links.len()).filter(|&k| declared.links[k].kind == "R2_member_to_anchor")
+        let member_links: i128 = (0..declared.links.len()).filter(|&k| declared.links[k].kind != "R1_declared_near_interface")
             .map(|k| link_terms(&declared, k, &poses)).sum();
-        assert!(anchor_links > 0);
-        assert_eq!(s.link, d.link - anchor_links, "the link term loses exactly the member-to-anchor links");
+        assert!(member_links > 0);
+        assert_eq!(s.link, d.link - member_links, "the link term keeps exactly the declared near link");
         // Nothing else depends on the origin.
         assert_eq!((s.hard, s.hard_count, s.wire, s.proximity, s.edge, s.escape),
                    (d.hard, d.hard_count, d.wire, d.proximity, d.edge, d.escape));
@@ -3469,8 +3479,7 @@ mod tests {
         // Each group follows its own origin.
         let mixed = prepare(&two_groups([Some("sheet"), None])).unwrap();
         assert_eq!(link_kinds(&mixed), vec![
-            ("R2_intra_group_signal", "g"), ("R1_declared_near_interface", "g"),
-            ("R2_intra_group_signal", "h"), ("R2_member_to_anchor", "h")]);
+            ("R1_declared_near_interface", "g"), ("R2_intra_group_signal", "h"), ("R2_member_to_anchor", "h")]);
         let m = full_evaluate(&mixed, &poses);
         assert!(m.group > 0 && m.group < d.group);
         // The incremental evaluator agrees with the full one for single moves and for a move of a
@@ -3508,13 +3517,14 @@ mod tests {
         let report = &evaluated["evaluations"][0]["group_links"]["groups"];
         assert_eq!((&report["g"]["origin"], &report["g"]["anchor_pull"]), (&json!("sheet"), &json!(false)));
         assert_eq!(report["g"]["R2_member_to_anchor_links"], json!([]));
-        assert_eq!(report["g"]["R2_intra_group_signal_links"].as_array().unwrap().len(), 1);
+        assert_eq!(report["g"]["R2_intra_group_signal_links"], json!([]));
         assert_eq!(report["g"]["R1_declared_near_interfaces"].as_array().unwrap().len(), 1);
+        assert_eq!(report["h"]["R2_intra_group_signal_links"].as_array().unwrap().len(), 1);
         assert_eq!((&report["h"]["origin"], &report["h"]["anchor_pull"]), (&json!("declared"), &json!(true)));
         assert_eq!(report["h"]["R2_member_to_anchor_links"].as_array().unwrap().len(), 1);
-        // The measured objective is the sum of the links the search minimises: no anchor link for g.
+        // The measured objective is the sum of the links the search minimises: for g, its declared near only.
         let links = evaluated["evaluations"][0]["links"].as_array().unwrap();
-        assert!(links.iter().all(|l| !(l["kind"] == "R2_member_to_anchor" && l["group"] == "g")));
+        assert!(links.iter().all(|l| l["group"] != "g" || l["kind"] == "R1_declared_near_interface"));
         assert!(links.iter().any(|l| l["kind"] == "R2_member_to_anchor" && l["group"] == "h"));
     }
 

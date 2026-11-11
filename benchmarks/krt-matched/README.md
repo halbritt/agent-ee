@@ -88,9 +88,9 @@ Nothing is keyed on a board. Every rule below applies to every board.
 - **Each placer reads the groups in its own file.** A groups file built
   mechanically is not an engineer's declaration, and the file each tool reads
   says so in that tool's terms. agent-ee reads a copy in which every row
-  states `"origin": "sheet"`: such a group is membership context and applies
-  no anchor pull (no group term, no member-to-anchor link); the links of
-  shared nets stay. KRT reads the file without that key, because its reader
+  states `"origin": "sheet"`: such a group is membership context and adds no
+  cost to the search (no group term, no member-to-anchor link and, since
+  AGENTEE-648, no link between its members). KRT reads the file without that key, because its reader
   refuses a key it does not know (`placement/grouping.py`, `GROUP_KEYS`).
   A key one tool needs is never added to the file the other tool reads. Each
   agent-ee cell records the origin and the pull of every group (`job_groups`).

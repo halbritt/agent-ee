@@ -176,8 +176,9 @@ class CaptureTests(Fixture):
         self.assertEqual(output['groups'], [{'name': 'g', 'origin': 'sheet', 'anchor_pull': False,
                                              'anchor': 'R1', 'members': 2}])
         self.assertTrue(output['shortlist'], output['seeds'])
-        # R1 and C1 share net A: that link follows real connectivity and stays.
-        self.assertEqual(link_kinds(output), {'R2_intra_group_signal'})
+        # R1 and C1 share net A. A sheet group does not link its members (AGENTEE-648): the wire
+        # term measures that net, and one link per pair of members made power nets most of the cost.
+        self.assertEqual(link_kinds(output), set())
         self.assertEqual({seed['best_terms']['group_nm'] for seed in output['seeds']}, {'0'})
         declared, _ = self.problem()
         self.assertNotIn('origin', declared['groups'][0])

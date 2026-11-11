@@ -7,9 +7,11 @@ EMPTY_RAILS = {'shared': {}, 'scoped': {}, 'bindings': None}
 DIALECT_SUPPORTED = frozenset(('intent.assembly.sides', 'intent.envelope', 'edge.side', 'edge.cable_entry',
                                'intent.proximity', 'groups.near'))
 # Where a group comes from (AGENTEE-637). An engineer declares a group and names its anchor: that
-# group pulls its members toward the anchor. A group derived mechanically from a schematic sheet
-# states `"origin": "sheet"`: its membership is context for reports and views and it applies no
-# anchor pull. A row that states no origin is declared, so every earlier groups file keeps its meaning.
+# group pulls its members toward the anchor and links members that share a net. A group derived
+# mechanically from a schematic sheet states `"origin": "sheet"`: its membership is context for
+# reports and views, and it adds no cost to the search: no anchor pull and no link between its
+# members (AGENTEE-648). A row that states no origin is declared, so every earlier groups file
+# keeps its meaning.
 GROUP_ORIGINS = ('declared', 'sheet')
 
 

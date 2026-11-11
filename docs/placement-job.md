@@ -117,16 +117,20 @@ value refuses at `groups.groups[i].origin`.
   around the anchor they named. It pulls its members toward that anchor: the
   group term (the Manhattan distance of each member's body centre to the
   anchor's, halved) and one member-to-anchor link per member (the pad gap
-  between the member and the anchor, over any pad pair).
+  between the member and the anchor, over any pad pair). It also links its
+  members to each other: the pad gap between two members that share a net
+  (under the rails rules below), one link for every such pair.
 - A *sheet* group is derived mechanically, for example one group per schematic
   sheet with the part with most pads as anchor. Nobody chose that anchor.
   Membership of such a group is context: reports and the group views list it,
   a group move translates its movable members together and a clustered start
-  begins them together. It applies **no anchor pull**: no group term and no
-  member-to-anchor link.
-- For every group, the links that follow real connectivity or a declaration
-  stay: the pad gap between two members that share a net (under the rails
-  rules below), and the interface link of a declared `near`.
+  begins them together. It adds **no cost**: no group term, no
+  member-to-anchor link and no link between its members (AGENTEE-648). The
+  links between members are one per pair on a net. A sheet group can hold a
+  whole board and its rails are not declared, so on a one-sheet board of 85
+  parts 1,225 of 1,982 such links were on GND and the search mostly pulled
+  the GND parts together. The wire term measures every net either way.
+- For every group, the interface link of a declared `near` stays.
 
 The origin travels with its group row: the intent check carries it as written,
 the problem document holds `groups[].origin` when the row states it, and the
@@ -135,7 +139,8 @@ is named in three places. The job report's `groups` has one row per group
 with `origin`, `anchor_pull`, `anchor` and `members`; the engine's answer
 (`engine-output.json`) has the same rows under `groups`; and each group of the
 final `metrics.group_links` carries `origin` and `anchor_pull`, with no
-`R2_member_to_anchor_links` rows for a sheet group. A tool that builds groups
+`R2_member_to_anchor_links` and no `R2_intra_group_signal_links` rows for a
+sheet group. A tool that builds groups
 mechanically must mark them as sheet groups; the matched benchmark harness
 does (`benchmarks/krt-matched/README.md`).
 
