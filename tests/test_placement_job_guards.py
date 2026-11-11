@@ -168,6 +168,10 @@ class FinalInventoryTests(Fixture):
                 self.assertTrue(final['identity_problems'], mutation)
                 self.assertEqual(final.get('eligibility'), 'INELIGIBLE')
                 self.assertEqual(final['physical_checks'], 'FAILED')
+                # What the router did to the placed board is the routing's, not the placement's:
+                # on tigard a via in a pad was booked against the placement and the job
+                # skipped the second routing trial (matched benchmark, 2026-11-11).
+                self.assertEqual(final['made_by'], {'placement': False, 'routing': True}, mutation)
 
     def test_only_tracks_vias_and_explicitly_owned_zones_may_change(self):
         import pcbnew

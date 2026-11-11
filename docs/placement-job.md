@@ -333,7 +333,8 @@ for something the routing made gets one second trial on the other grid
 (0.025 mm after the router's default, the default after 0.025 mm; never against a
 declared `router.grid_step_mm`). That is: the router ran out of search time, its
 own grading rejected its board, or the final checks reject open connections,
-errors or dangling tracks the routing introduced, or a check of routed copper
+errors or dangling tracks the routing introduced, something the router changed
+on the placed board, or a check of routed copper
 (`final.made_by.routing`). A trial whose placement is rejected
 (`final.made_by.placement`) gets none. Second trials start after every candidate has
 had its first trial and use only the time those left, in equal shares. One

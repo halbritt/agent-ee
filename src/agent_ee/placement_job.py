@@ -3154,10 +3154,11 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     rejections += [f'{name} check: {status}' for name, status, passing in declared if status not in passing]
     failed = bool(rejections)
     # Which rejections the placement made and which the routing made: another routing search of the
-    # same placement can change only the second kind (second_trial_useful).
-    made_by = {'placement': bool(problems or split['placement_introduced'] or (reject_silk_graphics and silk_conflicts)
+    # same placement can change only the second kind (second_trial_useful). `problems` are what the
+    # router did to the placed board (a changed footprint, a via in a pad), so they are the routing's.
+    made_by = {'placement': bool(split['placement_introduced'] or (reject_silk_graphics and silk_conflicts)
                                  or any(status not in passing for _, status, passing in declared[:4])),
-               'routing': bool(report_['unconnected_items'] or split['routing_introduced'] or track_conflicts
+               'routing': bool(problems or report_['unconnected_items'] or split['routing_introduced'] or track_conflicts
                                or any(status not in passing for _, status, passing in declared[4:]))}
     return {'status': 'checked', 'board': str(board), 'board_sha256': final_board_sha256,
             **({'local_stub_cleanup': local_stub_cleanup} if local_stub_cleanup is not None else {}),
