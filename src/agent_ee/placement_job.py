@@ -364,32 +364,18 @@ def __getattr__(name):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-# Scheduling policy for the builtin router, not a design rule: its 0.1 mm default left
-# opens and dangling vias on every trial of both sub-millimetre boards tried so far,
-# and 0.025 mm routed them.
+# Scheduling policy for the builtin router, not a design rule. No one grid is better on every
+# board: its 0.1 mm default left opens and dangling vias on two sub-millimetre boards that
+# 0.025 mm routed, and routes other fine-pitch boards clean in a fifth of the time. So a job
+# starts on the router's default, which is cheap, and moves to the finer grid after a failure.
 FINE_ROUTER_GRID_MM = 0.025
-FINE_PITCH_NM = 1_000_000
 
 
-def _fine_pitch(problem):
-    """Whether any footprint has pads on different nets less than 1 mm apart, centre to centre."""
-    for footprint in problem['footprints']:
-        pads = footprint['pads']
-        for index, a in enumerate(pads):
-            for b in pads[index+1:]:
-                if a['net'] != b['net'] and math.hypot(a['local_nm'][0]-b['local_nm'][0],
-                                                       a['local_nm'][1]-b['local_nm'][1]) < FINE_PITCH_NM:
-                    return True
-    return False
-
-
-def router_grid(config, problem, *, after_failed_route):
-    """The declared search grid, or a finer one when the pads or a failed trial call for it."""
+def router_grid(config, *, after_failed_route):
+    """The declared search grid; otherwise the router's own, and the finer one after a failed trial."""
     declared = config['router'].get('grid_step_mm')
     if declared is not None:
         return declared, 'declared'
-    if _fine_pitch(problem):
-        return FINE_ROUTER_GRID_MM, 'fine-pitch-pads'
     if after_failed_route:
         return FINE_ROUTER_GRID_MM, 'after-failed-route'
     return None, 'router-default'
@@ -424,7 +410,7 @@ def other_grid(grid_step, grid_basis):
 
     No one grid is better for every board: on the matched benchmark's fine-pitch boards the
     0.025 mm grid left fewer connections open on three and added a pair of vias too close
-    together on a fourth, which the router's default grid routed clean."""
+    together on a fourth, which the router's default grid routed clean in a fifth of the time."""
     if grid_basis == 'declared':
         return None
     return (FINE_ROUTER_GRID_MM if grid_step is None else None), 'other-grid-after-failed-route'
@@ -2553,7 +2539,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # A resumed job's retained trials count too. An interrupted first trial leaves none.
         second = selected.get('second_trial')
         grid_step, grid_basis = ((second['grid_step_mm'], second['grid_basis']) if second else router_grid(
-            config, problem, after_failed_route=bool(number or state.get('routing_trials'))))
+            config, after_failed_route=bool(number or state.get('routing_trials'))))
         trial = {'seed': selected['seed'], 'board_sha256': selected['board_sha256'],
                  'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
                  'budget_basis': 'agent-default/equal-remaining-share',

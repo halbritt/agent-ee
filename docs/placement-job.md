@@ -316,12 +316,15 @@ this flag still rejects the remaining dangling-track case.
 Optional `router.grid_step_mm` selects the builtin router's search resolution
 in millimetres, including its coupled differential-pair and remaining-net
 passes. For example, `0.025` requests a 25 micrometre search grid. It does not
-change native widths or clearance requirements. When it is omitted, the job uses
-0.025 mm if any footprint has pads on different nets less than 1 mm apart, centre to
-centre, and on any trial after a failed route, including one retained by a resumed job.
-Otherwise the router uses its own
-default. This is scheduling policy: on both sub-millimetre boards tried so far, the
-default left opens or dangling vias and 0.025 mm routed. The pinned CLI rejects
+change native widths or clearance requirements. When it is omitted, the first
+routing trial of a job uses the router's own default, and every trial after a
+failed route uses 0.025 mm, including after a failed route retained by a
+resumed job. This is scheduling policy. On two sub-millimetre boards the default
+left opens or dangling vias and 0.025 mm routed; on others the default routes
+clean in about a fifth of the time and 0.025 mm does not (AGENTEE-649). Until
+then a job started on 0.025 mm whenever a footprint had pads on different nets
+less than 1 mm apart. The default is the cheap trial, so it comes first, and a
+board that needs the finer grid loses that one trial. The pinned CLI rejects
 non-finite, sub-nanometre or incompatible controls. Each entry in `routing_trials`
 records its `grid_step_mm` and `grid_basis`.
 

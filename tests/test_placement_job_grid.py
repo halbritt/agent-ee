@@ -4,34 +4,26 @@ import unittest
 from agent_ee import placement_job as job
 from test_electrical_locality import board, declaration
 
-MM = 1_000_000
-
-
-def problem(pitch_nm, *, nets=('A', 'B')):
-    pads = [dict(local_nm=[0, 0], net=nets[0]), dict(local_nm=[pitch_nm, 0], net=nets[1])]
-    return dict(footprints=[dict(pads=pads)])
-
 
 class RouterGridTests(unittest.TestCase):
-    def test_grid_follows_declaration_pad_pitch_and_failed_trials(self):
+    def test_grid_follows_the_declaration_and_failed_trials(self):
         declared = dict(router=dict(grid_step_mm=.1))
         omitted = dict(router={})
         cases = [
-            (declared, problem(MM // 2), True, (.1, 'declared')),
-            (omitted, problem(650_000), False, (.025, 'fine-pitch-pads')),
-            (omitted, problem(MM), False, (None, 'router-default')),
-            (omitted, problem(650_000, nets=('A', 'A')), False, (None, 'router-default')),
-            (omitted, problem(MM), True, (.025, 'after-failed-route')),
+            (declared, False, (.1, 'declared')),
+            (declared, True, (.1, 'declared')),
+            # The first trial is the cheap one, whatever the pad pitch (AGENTEE-649).
+            (omitted, False, (None, 'router-default')),
+            (omitted, True, (.025, 'after-failed-route')),
         ]
-        for config, board, failed, expected in cases:
+        for config, failed, expected in cases:
             with self.subTest(expected=expected, failed=failed):
-                self.assertEqual(job.router_grid(config, board, after_failed_route=failed), expected)
+                self.assertEqual(job.router_grid(config, after_failed_route=failed), expected)
 
 
 class SecondTrialTests(unittest.TestCase):
     def test_other_grid_is_the_one_the_first_trial_did_not_use(self):
         self.assertEqual(job.other_grid(None, 'router-default'), (.025, 'other-grid-after-failed-route'))
-        self.assertEqual(job.other_grid(.025, 'fine-pitch-pads'), (None, 'other-grid-after-failed-route'))
         self.assertEqual(job.other_grid(.025, 'after-failed-route'), (None, 'other-grid-after-failed-route'))
         self.assertIsNone(job.other_grid(.1, 'declared'))
 
