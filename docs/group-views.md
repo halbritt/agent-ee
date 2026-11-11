@@ -41,14 +41,24 @@ logs remain beside the annotations, with their hashes. Native PCB geometry is
 not reconstructed from footprint centres. The runtime record binds the native
 CLI and pcbnew extension, Python, exporter source and annotation helper source.
 
-This frame is qualified on the supported CI KiCad 10.0.7 runtime for one
-axis-aligned rectangular outline made of four Edge.Cuts lines. Other contours,
-footprint-owned Edge.Cuts and inconsistent SVG viewports refuse. The native
-fit-board SVG page size is quantized to mils; annotation preserves its native
-children without clipping the last outline edge to that rounded page height.
-The annotated drawing window is the outline plus 2 mm; the full native SVG
-remains available separately. This is a bounded applicability limit, not a
-replacement general renderer.
+The frame is the bounding box of the board outline, whatever its shape
+(AGENTEE-640). KiCad joins the Edge.Cuts lines, arcs, circles, rectangles and
+polygons of the board and of its footprints into closed contours
+(`GetBoardPolygonOutlines`; an arc becomes segments within the board's maximum
+error, 5 µm by default), and its fit-to-board plot crops to the bounds of those
+contours, not to the bounds of the drawn strokes. That was measured on KiCad
+10.0.8 for a four-line rectangle, an L shape, rounded corners, a circle, a
+single rectangle and a single polygon shape, an arc that bulges past its end
+points, a cut-out, edges that belong to a footprint and two separate outlines.
+The helper takes the same bounds and checks them against the page of every
+plotted SVG: KiCad rounds the page size down to whole mils, and a larger
+difference refuses (`native SVG crop differs from the bounds of the board
+outline`). A board without a closed outline refuses (`no closed Edge.Cuts
+outline`): KiCad then crops to other bounds, which the helper does not use.
+Annotation preserves the native children without clipping the last outline
+edge to the rounded page height. The annotated drawing window is the bounds
+plus 2 mm; the full native SVG remains available separately. The helper
+annotates KiCad's own plot; it is not a replacement renderer.
 
 Both views use coordinates read from the exact saved board. Top is native X
 right/Y down. Bottom mirrors X about the same outline frame for **both** native
@@ -83,7 +93,10 @@ ae-ci-exec . -- /usr/bin/python3 -m unittest -v tests.test_group_views
 The tests compare actual plotted pad geometry against asymmetric front/back
 poses, repeat after translating the saved board (including negative Y), check
 the mirror on native geometry and markers, and exercise membership, crop,
-unresolved visibility and independent input/final hash controls.
+unresolved visibility and independent input/final hash controls. The frame
+check repeats on outlines that are not rectangles: an L shape, arcs, a circle,
+a cut-out that belongs to a footprint and an outline that belongs to a
+footprint.
 
 ## Chief verification — 2026-10-25
 
@@ -125,7 +138,8 @@ and M1 remain open.
 ## Final-check wiring
 
 `placement_job.final_checks` renders the views of the **selected final saved
-board** after native finalization, through the job's bounded child mechanism
+board**, for any closed outline, after native finalization, through the job's
+bounded child mechanism
 (`_run_child` under the job `Clock` and `CANCEL` file), by running
 `python -m agent_ee.group_views produce --board … --groups … --out … [--input-board …]`.
 The validated groups document is passed as a request file; the raw input board

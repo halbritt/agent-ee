@@ -54,6 +54,108 @@ class GroupViewsTests(unittest.TestCase):
                 fp.Flip(fp.GetPosition(), False)
         k.SaveBoard(str(self.board), board)
 
+    def edge(self, parent, kind, *points):
+        """One Edge.Cuts shape on the board or in a footprint; points in mm."""
+        k = self.k
+        shape = k.PCB_SHAPE(parent)
+        shape.SetShape(kind)
+        shape.SetLayer(k.Edge_Cuts)
+        shape.SetWidth(k.FromMM(0.05))
+        at = [k.VECTOR2I(k.FromMM(x), k.FromMM(y)) for x, y in points]
+        if kind == k.SHAPE_T_ARC:
+            shape.SetArcGeometry(*at)                        # start, a point on the arc, end
+        elif kind == k.SHAPE_T_CIRCLE:
+            shape.SetCenter(at[0])
+            shape.SetEnd(at[1])                              # centre, a point on the circle
+        else:
+            shape.SetStart(at[0])
+            shape.SetEnd(at[1])
+        parent.Add(shape)
+
+    def reshape(self, draw, keep=False):
+        """Replace the outline of the saved board (or add to it) with what ``draw(board)`` adds."""
+        k = self.k
+        board = k.LoadBoard(str(self.board))
+        if not keep:
+            for item in [g for g in board.GetDrawings() if g.GetLayer() == k.Edge_Cuts]:
+                board.Remove(item)
+        draw(board)
+        k.SaveBoard(str(self.board), board)
+
+    def chain(self, board, points):
+        for a, b in zip(points, points[1:] + points[:1]):
+            self.edge(board, self.k.SHAPE_T_SEGMENT, a, b)
+
+    def plotted_pads(self, native_svg):
+        """Centres of the 2 x 1 mm pads KiCad plotted, in the coordinates of its own page."""
+        centres = []
+        for path in ET.parse(native_svg).getroot().iter(SVG + 'path'):
+            nums = [float(v) for v in re.findall(r'-?\d+\.\d+', path.attrib.get('d', ''))]
+            if len(nums) == 8:
+                xs, ys = nums[::2], nums[1::2]
+                if abs(max(xs) - min(xs) - 2) < 0.001 and abs(max(ys) - min(ys) - 1) < 0.001:
+                    centres.append(((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2))
+        return centres
+
+    def test_any_closed_outline_frames_the_view_by_its_bounds(self):
+        k = self.k
+
+        def stadium(board):                                  # straight top and bottom, half-circle ends
+            self.edge(board, k.SHAPE_T_SEGMENT, (15, 20), (35, 20))
+            self.edge(board, k.SHAPE_T_ARC, (35, 20), (43, 28), (35, 36))
+            self.edge(board, k.SHAPE_T_SEGMENT, (35, 36), (15, 36))
+            self.edge(board, k.SHAPE_T_ARC, (15, 36), (7, 28), (15, 20))
+
+        def cut_out(board):                                  # a slot that belongs to a footprint
+            part = k.FOOTPRINT(board)
+            part.SetReference('H1')
+            board.Add(part)
+            self.edge(part, k.SHAPE_T_CIRCLE, (0, 0), (1.5, 0))
+            part.SetPosition(k.VECTOR2I(k.FromMM(25), k.FromMM(27)))
+
+        def owned(board):                                    # the whole outline belongs to a footprint
+            part = k.FOOTPRINT(board)
+            part.SetReference('BRD')
+            board.Add(part)
+            self.chain(part, [(9, 19), (41, 19), (41, 36), (9, 36)])
+
+        cases = {
+            # A six-corner board: the bounds are not the bounds of any one edge.
+            'l-shape': (lambda board: self.chain(board, [(8, 18), (40, 18), (40, 35), (20, 35), (20, 26), (8, 26)]),
+                        False, (8, 18, 40, 35), []),
+            'arcs': (stadium, False, (7, 20, 43, 36), []),
+            'circle': (lambda board: self.edge(board, k.SHAPE_T_CIRCLE, (25, 28), (45, 28)), False, (5, 8, 45, 48), []),
+            'footprint cut-out': (cut_out, True, (10, 20, 40, 35), ['H1']),
+            'footprint outline': (owned, False, (9, 19, 41, 36), ['BRD']),
+        }
+        for index, (name, (draw, keep, frame, extra)) in enumerate(cases.items()):
+            with self.subTest(outline=name):
+                self.make_board()
+                self.reshape(draw, keep)
+                out = self.root / f'outline{index}'
+                result = group_views.produce(self.board, self.groups, out)
+                x0, y0, x1, y1 = frame
+                width, height = x1 - x0, y1 - y0
+                self.assertEqual([m['reference'] for m in result['ungrouped']], extra)
+                self.assertFalse(any(m['outside_view'] for m in result['members']))
+                for side in ('top', 'bottom'):
+                    view = result['views'][side]
+                    # KiCad turns an arc into segments within the board's maximum error (5 um).
+                    for got, want in zip(view['transform']['native_crop_origin_mm'] + view['transform']['native_size_mm'],
+                                         (x0, y0, width, height)):
+                        self.assertAlmostEqual(got, want, delta=0.006)
+                    markers = {m.attrib['data-ref']: (float(m.attrib['data-view-x-mm']), float(m.attrib['data-view-y-mm']))
+                               for m in ET.parse(out / view['path']).getroot().findall('.//' + SVG + 'circle[@data-ref]')}
+                    for ref, (x, y) in (('P1', (14, 24)), ('P2', (34, 30))):
+                        want = (width - (x - x0) if side == 'bottom' else x - x0, y - y0)
+                        self.assertAlmostEqual(markers[ref][0], want[0], delta=0.006)
+                        self.assertAlmostEqual(markers[ref][1], want[1], delta=0.006)
+                    # The pad KiCad plotted on this face sits where the frame says it does.
+                    x, y = (14, 24) if side == 'top' else (34, 30)
+                    pads = self.plotted_pads(out / view['native']['path'])
+                    self.assertTrue(any(abs(px - (x - x0)) < 0.006 and abs(py - (y - y0)) < 0.006 for px, py in pads),
+                                    (name, side, pads))
+
     def test_native_geometry_side_and_translated_origin_binding(self):
         for index, (dx, dy) in enumerate([(0, 0), (70, -30)]):
             self.make_board(dx, dy)
@@ -129,9 +231,14 @@ class GroupViewsTests(unittest.TestCase):
         board = self.k.LoadBoard(str(self.board))
         board.Remove(next(g for g in board.GetDrawings() if g.GetLayer() == self.k.Edge_Cuts))
         self.k.SaveBoard(str(self.board), board)
-        with self.assertRaisesRegex(ValueError, 'rectangular Edge.Cuts'):
+        with self.assertRaisesRegex(ValueError, 'no closed Edge.Cuts outline'):
             group_views.produce(self.board, self.groups, self.root / 'bad-outline')
         self.assertFalse((self.root / 'bad-outline').exists())
+        # No outline at all is refused the same way: there are no bounds to crop to.
+        self.reshape(lambda board: None)
+        with self.assertRaisesRegex(ValueError, 'no closed Edge.Cuts outline'):
+            group_views.produce(self.board, self.groups, self.root / 'no-outline')
+        self.assertFalse((self.root / 'no-outline').exists())
 
     def test_outside_view_and_xml_labels_remain_explicit(self):
         board = self.k.LoadBoard(str(self.board))

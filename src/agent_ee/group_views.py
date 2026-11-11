@@ -1,8 +1,9 @@
 """Supplemental group annotations over the existing native KiCad SVG plots.
 
-Only a four-line rectangular Edge.Cuts crop is qualified here. Native geometry
-is exported, never reconstructed from group positions. Views express membership
-and recorded poses; they do not assess functional coherence or orientation.
+The drawing window is the bounds of the board outline, whatever its shape:
+that is what KiCad's fit-to-board plot crops to. Native geometry is exported,
+never reconstructed from group positions. Views express membership and
+recorded poses; they do not assess functional coherence or orientation.
 """
 import copy
 import hashlib
@@ -34,22 +35,23 @@ def _element(parent, name, text=None, **attributes):
     return item
 
 
-def _rectangle(board, k):
-    edges = [g for g in board.GetDrawings() if g.GetLayer() == k.Edge_Cuts]
-    if len(edges) != 4 or any(g.GetShapeStr() != 'Line' for g in edges):
-        raise ValueError('group views: native fit-board crop is qualified only for four-line rectangular Edge.Cuts')
-    segments = [((g.GetStart().x, g.GetStart().y), (g.GetEnd().x, g.GetEnd().y)) for g in edges]
-    xs = {p[0] for segment in segments for p in segment}
-    ys = {p[1] for segment in segments for p in segment}
-    if len(xs) != 2 or len(ys) != 2:
-        raise ValueError('group views: unsupported nonrectangular native crop')
-    x0, x1 = sorted(xs)
-    y0, y1 = sorted(ys)
-    corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
-    expected = {frozenset((a, b)) for a, b in zip(corners, corners[1:] + corners[:1])}
-    if {frozenset(segment) for segment in segments} != expected:
-        raise ValueError('group views: Edge.Cuts does not form one axis-aligned rectangle')
-    return [value / 1e6 for value in (x0, y0, x1, y1)]
+def _frame(board, k):
+    """The window of KiCad's fit-to-board plot in mm: [x0, y0, x1, y1], the bounds of the outline.
+
+    KiCad joins the Edge.Cuts lines, arcs, circles, rectangles and polygons of the
+    board and of its footprints into closed contours (arcs become segments within
+    the board's maximum error) and fits the plot page to the bounds of those
+    contours, not to the bounds of the drawn strokes. ``_annotate`` checks the
+    plotted page against this frame. A board without a closed outline is refused:
+    KiCad then fits the page to other bounds, which this helper does not use.
+    """
+    outlines = k.SHAPE_POLY_SET()
+    if not board.GetBoardPolygonOutlines(outlines, False) or not outlines.OutlineCount():
+        raise ValueError('group views: the board has no closed Edge.Cuts outline to crop to')
+    box = outlines.BBox()
+    if box.GetWidth() <= 0 or box.GetHeight() <= 0:
+        raise ValueError('group views: the board outline has no extent')
+    return [value / 1e6 for value in (box.GetLeft(), box.GetTop(), box.GetRight(), box.GetBottom())]
 
 
 def _inventory(board, groups, k):
@@ -58,8 +60,6 @@ def _inventory(board, groups, k):
         raise ValueError('group views require a validated groups document with groups[]')
     by_ref, native = {}, []
     for fp in board.GetFootprints():
-        if any(g.GetLayer() == k.Edge_Cuts for g in fp.GraphicalItems()):
-            raise ValueError('group views: footprint Edge.Cuts crop is unsupported')
         pose = dict(reference=fp.GetReference(), uuid=fp.m_Uuid.AsString(),
                     position_mm=[fp.GetPosition().x / 1e6, fp.GetPosition().y / 1e6],
                     rotation_degrees=fp.GetOrientationDegrees(), side='B' if fp.IsFlipped() else 'F')
@@ -88,16 +88,16 @@ def _inventory(board, groups, k):
     return members, ungrouped
 
 
-def _annotate(native_path, target, *, side, rectangle, members, ungrouped, board_hash):
+def _annotate(native_path, target, *, side, frame, members, ungrouped, board_hash):
     raw = ET.parse(native_path).getroot()
-    x0, y0, x1, y1 = rectangle
+    x0, y0, x1, y1 = frame
     width, height = x1 - x0, y1 - y0
     viewport = [float(v) for v in raw.attrib['viewBox'].split()]
     # KiCad fit-board page dimensions are quantized to integer mils. Preserve
     # all native children so that quantization cannot clip an outline edge.
     if (raw.tag != '{' + SVG + '}svg' or viewport[:2] != [0, 0]
             or abs(viewport[2] - width) > 0.026 or abs(viewport[3] - height) > 0.026):
-        raise ValueError('group views: native SVG crop differs from qualified board frame')
+        raise ValueError('group views: native SVG crop differs from the bounds of the board outline')
     scale, left, top = 95 / width, 7, 24
     canvas_height = max(35 + height * scale, 30 + 2.8 * (len(members) + len(ungrouped) + len({m['group'] for m in members})))
     root = ET.Element('{' + SVG + '}svg', dict(viewBox=f'0 0 195 {canvas_height}', width='1600',
@@ -195,9 +195,9 @@ def produce(board_path, groups_document, out, *, input_board_path=None):
         if project_bytes is not None:
             captured.with_suffix('.kicad_pro').write_bytes(project_bytes)
         saved = pcbnew.LoadBoard(str(captured))
-        rectangle = _rectangle(saved, pcbnew)
+        frame = _frame(saved, pcbnew)
         members, ungrouped = _inventory(saved, groups, pcbnew)
-        x0, y0, x1, y1 = rectangle
+        x0, y0, x1, y1 = frame
         for member in members:
             x, y = member['position_mm']
             member['outside_view'] = not (x0 - 2 <= x <= x1 + 2 and y0 - 2 <= y <= y1 + 2)
@@ -232,7 +232,7 @@ def produce(board_path, groups_document, out, *, input_board_path=None):
                               digest(out / Path(native['path']).parent / name)
                               for name in ('command.json', 'stdout.log', 'stderr.log')}
         path = out / (side + '.svg')
-        transform = _annotate(out / native['path'], path, side=side, rectangle=rectangle,
+        transform = _annotate(out / native['path'], path, side=side, frame=frame,
                               members=members, ungrouped=ungrouped, board_hash=board_hash)
         views[side] = dict(path=path.name, sha256=digest(path), native=native, transform=transform,
                            layers=layers, face='F' if side == 'top' else 'B')
@@ -256,9 +256,10 @@ def produce(board_path, groups_document, out, *, input_board_path=None):
                   unresolved=[dict(kind='ungrouped_native_item', **p) for p in ungrouped]
                       + [dict(kind='member_outside_view', **p) for p in members if p['outside_view']],
                   views=views, acceptance_assessed=False,
-                  limitations=['Rectangle crop only; views supplement independent final-coordinate measurements.',
+                  limitations=['The drawing window is the bounds of the board outline; views supplement '
+                               'independent final-coordinate measurements.',
                                'Recorded native rotation/side is not an orientation assessment.',
-                               'Annotated drawing window is outline plus 2 mm; full native SVG is retained.',
+                               'Annotated drawing window is those bounds plus 2 mm; full native SVG is retained.',
                                'Opposite-face member origins are projected with dashed markers.',
                                'Native SVG timestamps are retained; byte determinism is not claimed.'])
     write_json(out / 'manifest.json', report)

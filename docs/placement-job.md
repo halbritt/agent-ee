@@ -725,7 +725,8 @@ rules, including stricter coupling limits, always remain in force.
    otherwise clean. Router-output existence alone cannot yield `completed`.
    After the native checks the same saved board is rendered into supplemental
    annotated group views (`group_views`, see [group-views.md](group-views.md#final-check-wiring))
-   through the bounded child mechanism; `evidence_complete` is true only when the
+   through the bounded child mechanism, for any closed board outline;
+   `evidence_complete` is true only when the
    manifest, both views, the final board, the raw input board and the validated
    groups bind by hash. Missing views are reported as such and never change
    `eligibility`; `acceptance_assessed` stays false.
