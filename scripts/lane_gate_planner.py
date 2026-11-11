@@ -55,8 +55,10 @@ def is_owned_code_path(rel_posix: str) -> bool:
     return False
 
 
-def origins_selection_reason(norm_changed: list[str], structural_paths: set[str]) -> str | None:
+def origins_selection_reason(norm_changed: list[str], structural_paths: set[str] | None) -> str | None:
     """Return why test_file_origins is warranted, or None for ordinary in-place code edits."""
+    if norm_changed and structural_paths is None:
+        return 'path change status unknown; additions or renames may need origin entries'
     if structural_paths:
         return 'added, deleted, or renamed path in git diff'
     if any(f in ORIGIN_INPUT_FILES for f in norm_changed):
@@ -236,11 +238,12 @@ def plan_lane_gate(
     change_base: str | None = None,
     head: str | None = None,
     *,
-    structural_paths: set[str] | tuple[str, ...] = (),
+    structural_paths: set[str] | tuple[str, ...] | None = None,
 ) -> dict:
-    """Generate structured lane gate plan from list of changed files."""
+    """Generate a lane plan; None structural_paths means change status is unknown."""
     norm_changed = [_norm_rel_posix(root, f) for f in changed_files]
-    norm_structural = {_norm_rel_posix(root, f) for f in structural_paths}
+    norm_structural = (None if structural_paths is None else
+                       {_norm_rel_posix(root, f) for f in structural_paths})
 
     touched_test_modules = set()
     changed_src_modules = set()
@@ -384,7 +387,8 @@ def get_git_diff_paths(root: Path, change_base: str, allow_dirty: bool = False) 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Lane Gate Planner (AGENTEE-614 Part 1)')
     parser.add_argument('--change-base', help='Git commit/ref to diff against HEAD')
-    parser.add_argument('--diff-paths', nargs='+', help='Explicit list of changed file paths')
+    parser.add_argument('--diff-paths', nargs='+',
+                        help='Explicit changed paths without status; retains the origins scan')
     parser.add_argument('--root', default='.', help='Repository root directory')
     parser.add_argument('--format', choices=['space', 'lines', 'json'], default='space',
                         help='Output format for selected modules (default: space)')
@@ -401,7 +405,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     changed_files = []
-    structural_paths = set()
+    structural_paths = None
     change_base = None
     head = None
 

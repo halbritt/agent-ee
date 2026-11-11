@@ -13,6 +13,22 @@ import lane_gate_planner
 
 
 class LaneGatePlannerTests(unittest.TestCase):
+    def test_explicit_paths_without_change_status_keep_origins_scanner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'tests').mkdir()
+            (root / 'tests/test_file_origins.py').write_text('')
+            (root / 'src/agent_ee').mkdir(parents=True)
+            (root / 'src/agent_ee/new_module.py').write_text('value = 1\n')
+            result = subprocess.run([
+                sys.executable, str(ROOT / 'scripts/lane_gate_planner.py'),
+                '--root', str(root), '--diff-paths', 'src/agent_ee/new_module.py',
+                '--format', 'json',
+            ], capture_output=True, text=True, check=True)
+            plan = json.loads(result.stdout)
+            self.assertIn('test_file_origins', plan['modules'])
+            self.assertTrue(any('unknown' in reason for reason in plan['reasons']))
+
     def test_execution_image_changes_require_every_test_module(self):
         # AGENTEE-618: updated Poppler broke consumers outside the selected lane.
         with tempfile.TemporaryDirectory() as tmp:
@@ -133,13 +149,13 @@ class LaneGatePlannerTests(unittest.TestCase):
                     lines = output.splitlines()
                     self.assertIn('test_fab_consistency', lines)
                     self.assertIn('test_architecture_boundaries', lines)
-                    self.assertNotIn('test_file_origins', lines)
+                    self.assertIn('test_file_origins', lines)
                     self.assertNotIn('test_tool_source', lines)
                 else:  # space
                     tokens = output.split()
                     self.assertIn('test_fab_consistency', tokens)
                     self.assertIn('test_architecture_boundaries', tokens)
-                    self.assertNotIn('test_file_origins', tokens)
+                    self.assertIn('test_file_origins', tokens)
                     self.assertNotIn('test_tool_source', tokens)
 
     def test_git_change_base_and_dirty_handling(self):
@@ -198,16 +214,16 @@ class LaneGatePlannerTests(unittest.TestCase):
             lane_gate_planner.CORE_SCANNERS,
             ['test_architecture_boundaries', 'test_native_run_guard', 'test_tree_hygiene'],
         )
-        ordinary = lane_gate_planner.plan_lane_gate(ROOT, ['tests/test_fab_consistency.py'])
+        ordinary = lane_gate_planner.plan_lane_gate(ROOT, ['tests/test_fab_consistency.py'], structural_paths=())
         self.assertNotIn('test_tool_source', ordinary['modules'])
         self.assertNotIn('test_file_origins', ordinary['modules'])
 
-        src_leaf = lane_gate_planner.plan_lane_gate(ROOT, ['src/agent_ee/acquisition.py'])
+        src_leaf = lane_gate_planner.plan_lane_gate(ROOT, ['src/agent_ee/acquisition.py'], structural_paths=())
         self.assertIn('test_acquisition_film', src_leaf['modules'])
         self.assertNotIn('test_tool_source', src_leaf['modules'])
         self.assertNotIn('test_file_origins', src_leaf['modules'])
 
-        dep_plan = lane_gate_planner.plan_lane_gate(ROOT, ['src/agent_ee/stage_receipts.py'])
+        dep_plan = lane_gate_planner.plan_lane_gate(ROOT, ['src/agent_ee/stage_receipts.py'], structural_paths=())
         self.assertIn('test_tool_source', dep_plan['analysis']['reverse_dependent_test_modules'])
         self.assertIn('test_tool_source', dep_plan['modules'])
         self.assertNotIn('test_file_origins', dep_plan['modules'])
@@ -239,7 +255,7 @@ class LaneGatePlannerTests(unittest.TestCase):
             'crates/placement_engine/src/main.rs',
         ):
             with self.subTest(code_edit=code_edit):
-                plan = lane_gate_planner.plan_lane_gate(ROOT, [code_edit])
+                plan = lane_gate_planner.plan_lane_gate(ROOT, [code_edit], structural_paths=())
                 self.assertNotIn('test_file_origins', plan['modules'])
 
     def test_git_change_base_selects_origins_on_added_or_renamed_code_paths(self):

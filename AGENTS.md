@@ -111,6 +111,9 @@ Focused native tests can run directly on a host with compatible KiCad 10.x,
 `pcbnew`, ngspice, libraries and working Bubblewrap. Missing prerequisites skip
 by default; set `AGENT_EE_REQUIRE_TOOLCHAIN=1` to make them fail. Native tools
 still run in their sandbox with deadlines. The nightly uses the container image.
+Tests that use the Rust placement engine or external router also need current
+binaries; use the image when the host lacks those dependencies
+([installation](docs/installation.md#rust-placement-engine)).
 
 One implementer per change is enough. Ask for a second opinion when you are
 unsure about the engineering, not as a ritual.

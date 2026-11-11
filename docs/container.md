@@ -267,8 +267,11 @@ cache. No C scorer, scalar scoring library or PyPy runtime is installed.
 The normal strict suite exercises the installed binary against the independent
 Python planner using the committed parity tests. Rust unit tests already ran in
 the build stage; runtime tests require no compiler installation. On configured
-project hosts, use `ae-ci-exec` for image builds and native checks; missing
-toolchain inputs fail the check rather than switching to host execution.
+project hosts, use `ae-ci-exec` for image builds, the nightly suite and tests
+whose dependencies are unavailable or stale on the host. Focused native tests
+can run directly on a host with the required toolchain; see
+[AGENTS.md](../AGENTS.md#working-here). An image run with missing toolchain
+inputs fails rather than switching to host execution.
 
 ## Routing tool at its current version
 
