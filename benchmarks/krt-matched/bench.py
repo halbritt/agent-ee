@@ -619,11 +619,32 @@ def place_arm(args):
             continue
         bare = root / 'runs' / key / 'placement' / norm.name
         edit_board(source, bare, strip=True)
-        routed = krt_route(bare, root / 'runs' / key, norm)
-        result(root, name, arm, f'{tool}-then-krt-route', routed, norm,
-               {'placement': {k: record.get(k) for k in ('wall_s', 'exit_code', 'timed_out', 'kept_seed', 'job_status',
-                                                         'job_elapsed_s', 'job_validity', 'placement_kind')},
-                'placement_only_score': score(bare, norm, root / 'score' / f'{key}-placement')})
+        extra = {'placement': {k: record.get(k) for k in ('wall_s', 'exit_code', 'timed_out', 'kept_seed', 'job_status',
+                                                          'job_elapsed_s', 'job_validity', 'placement_kind')},
+                 'placement_only_score': score(bare, norm, root / 'score' / f'{key}-placement')}
+        result(root, name, arm, f'{tool}-then-krt-route', krt_route(bare, root / 'runs' / key, norm), norm, extra)
+    if args.held:
+        held_routes(root, name, arm, list(placed))
+
+
+def held_routes(root, name, arm, tools):
+    """Route the placement each tool chose again with stock KRT held to the board's floors (KRT_HELD)."""
+    norm = root / 'norm' / f'{name}.kicad_pcb'
+    for tool in tools:
+        key = f'{arm}-{tool}-then-krt-held-route'
+        bare = root / 'runs' / f'{arm}-{tool}-then-krt-route' / 'placement' / norm.name
+        earlier = root / 'results' / f'{arm}-{tool}-then-krt-route.json'
+        if not bare.is_file() or not earlier.is_file():
+            print(key, 'no placement', flush=True)
+            continue
+        data = json.loads(earlier.read_text())
+        result(root, name, arm, f'{tool}-then-krt-held-route', krt_route(bare, root / 'runs' / key, norm, KRT_HELD),
+               norm, {k: data[k] for k in ('placement', 'placement_only_score') if k in data})
+
+
+def place_held(args):
+    """The held routes alone, for the placements an earlier ``place`` of this run directory chose."""
+    held_routes(RUNS / 'boards' / args.name, args.name, 'place', args.tools)
 
 
 def krt_spread(args):
@@ -717,7 +738,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
     for name, func in (('prep', prep), ('reuse', reuse), ('baseline', baseline), ('route', route_arm),
-                       ('place', place_arm), ('krt-spread', krt_spread), ('summary', summary)):
+                       ('place', place_arm), ('place-held', place_held), ('krt-spread', krt_spread),
+                       ('summary', summary)):
         p = sub.add_parser(name)
         p.set_defaults(func=func)
         if name != 'summary':
@@ -733,7 +755,9 @@ def main():
             p.add_argument('--search-b', action='store_true', help="agent-ee only: the secondary search setting")
             p.add_argument('--capped', action='store_true', help='agent-ee only: the earlier default, 100,000 steps per seed')
             p.add_argument('--seed-offset', type=int, default=0, help='agent-ee only: add to every seed number')
-        if name in ('route', 'place'):
+            p.add_argument('--held', action='store_true',
+                           help='also route each placement with stock KRT held to the board\'s floors (krt-held)')
+        if name in ('route', 'place', 'place-held'):
             p.add_argument('--tools', nargs='+', default=['krt', 'agent-ee'],
                            choices=['krt', 'agent-ee'] + ['krt-held'] * (name == 'route'))
     args = parser.parse_args()

@@ -152,7 +152,9 @@ Nothing is keyed on a board. Every rule below applies to every board.
   --tools krt-held` runs stock KRT with `--escalation board
   --no-fix-drc-settings`, its own options for never going below the board's
   declared minimums and not rewriting the project file. The primary KRT cell
-  stays `route.py IN OUT` with no option.
+  stays `route.py IN OUT` with no option. `place NAME --held` routes each
+  tool's placement that way as well (`<tool>-then-krt-held-route`), and
+  `place-held NAME` does only that for the placements of an earlier `place`.
 - **Refusal**: when `place run` refuses a routing-arm board, `kicad-route run`
   is run directly with the adapter's base flags as a labelled secondary cell.
 
