@@ -664,6 +664,13 @@ rules, including stricter coupling limits, always remain in force.
    `fab+pads`, `silk+pads`, `pads`, and the source drawing UUIDs. `User.Drawings`
    is classified as documentation, never as a package outline. Separation of
    derived envelopes is **not** proof of package body separation.
+   A board whose own project file sets `courtyards_overlap` to `ignore` lets
+   its courtyards overlap, so on such a board the body is the same derived
+   rung even where a courtyard exists, and the footprint's diagnostics say so
+   (AGENTEE-647). A footprint that draws nothing but a courtyard keeps it.
+   Copper clearance, mask and hole rules do not change. An error or a warning
+   severity, and a project file that does not name the rule, keep the
+   courtyard.
 4. **Prepared Rust model and incremental search** (`crates/placement-engine/src/job.rs`,
    schema `agent-ee.placement-job-input/2`; a `/1` record replays only under the
    labelled `legacy_pad_centre/1` contract, see [intent-dialect.md](intent-dialect.md#capture-contract);

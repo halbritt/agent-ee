@@ -511,7 +511,7 @@ def _union(boxes):
     return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
 
-def classify_footprint(fp, captured):
+def classify_footprint(fp, captured, *, courtyard_is_body=True):
     """Native facts about one footprint that the role rule and its body occupancy need.
 
     Only demonstrably silk-only, padless, zone-free graphics are excluded from
@@ -520,6 +520,11 @@ def classify_footprint(fp, captured):
     copper mark, a copper obstacle and never a body. Every other footprint gets
     an occupancy with its provenance rung; a malformed courtyard or missing
     geometry is returned as ``refusal``, raised only if its role needs a body.
+
+    ``courtyard_is_body`` is False on a board whose own rules ignore courtyard
+    overlap (:func:`courtyard_overlap_ignored`). Its courtyards may overlap, so
+    the body is the next rung, the package outline with the pads; a footprint
+    that draws nothing else keeps its courtyard.
     """
     import pcbnew
     uuid = fp.m_Uuid.AsString()
@@ -554,7 +559,7 @@ def classify_footprint(fp, captured):
         if record.get('status') != 'proven':
             return dict(facts, refusal=f'{uuid} ({fp.GetReference()!r}): malformed courtyard on {court_side}.CrtYd: '
                                        f'{record.get("status")} {record.get("reason", "")}'.strip())
-    if side in courtyards:
+    if side in courtyards and (courtyard_is_body or not (fab or silk or pads)):
         boxes = [[min(p[0] for p in poly), min(p[1] for p in poly), max(p[0] for p in poly), max(p[1] for p in poly)]
                  for poly in courtyards[side]['polygons']]
         return dict(facts, occupancy={'status': 'courtyard', 'rung': 'courtyard', 'box': _union(boxes),
@@ -574,11 +579,21 @@ def classify_footprint(fp, captured):
         return dict(facts, bodiless=True,
                     refusal=f'{uuid}: no courtyard, fab, silk or pad geometry for derived occupancy')
     boxes = [_bbox(g) for g in source] + pad_boxes
-    diagnostics.append(f'courtyard missing (metadata gap): derived_occupancy rung {rung}')
+    diagnostics.append(f"courtyard overlap is ignored by the board's rules: derived_occupancy rung {rung}"
+                       if side in courtyards else f'courtyard missing (metadata gap): derived_occupancy rung {rung}')
     return dict(facts, diagnostics=diagnostics,
                 occupancy={'status': 'derived', 'label': 'derived_occupancy', 'rung': rung, 'box': _union(boxes),
                            'sources': sorted(g.m_Uuid.AsString() for g in source) + ['pads'],
                            'note': 'derived envelope; separation is not proof of package body separation'})
+
+
+def courtyard_overlap_ignored(board):
+    """Whether the board's own rules ignore overlapping courtyards (``courtyards_overlap: ignore``).
+
+    KiCad's default is an error, and a warning still tells the designer, so only an
+    explicit ``ignore`` in the board's project file says its courtyards may overlap."""
+    from . import silk_labels
+    return silk_labels.rule_severities(board).get('courtyards_overlap') == 'ignore'
 
 
 ROUTING_ONLY = {'status': 'none', 'reason': 'routing-only job: every footprint is fixed, no placement model is built'}
@@ -656,6 +671,7 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
     text_obstacles, attached_text = _board_obstacles(board, fixed_poses)
     # None unless a footprint can move and this board's own rules make silk overlaps errors.
     silk_grow = silk_labels.reserve(board) if geometry and not routing_only(facts['footprints'], list(fixed_poses)) else None
+    courtyard_is_body = not courtyard_overlap_ignored(board)
     footprints = []
     for fp in board.GetFootprints():
         uuid = fp.m_Uuid.AsString()
@@ -677,7 +693,7 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
                          for p in fp.Pads()],
                 'seats_local_nm': {'body:fab': None, 'body:silk': None, 'body:occupancy': None}})
             continue
-        native = classify_footprint(fp, captured)
+        native = classify_footprint(fp, captured, courtyard_is_body=courtyard_is_body)
         seat_occupancy = (native['occupancy'] or {}).get('box')
         # Declared text and the footprint's own zones (keep-outs, antenna areas) move with the part.
         # So do its silk drawings and texts that are not fields, which no later step can move

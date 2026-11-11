@@ -4,12 +4,13 @@ Copper pours, outlines that are not rectangles, parts at angles other than a
 quarter turn, and routing-only jobs. Every board here is built through pcbnew
 from the synthetic fixture of ``test_placement_job``; no third-party board is used.
 """
+import json
 import math
 import unittest
 
 from agent_ee import placement_job as job
 from agent_ee import placement_problem
-from tests.test_placement_job import Fixture, _segment, _v, groups, intent, MM
+from tests.test_placement_job import Fixture, _box, _segment, _v, groups, intent, MM
 from tests.test_placement_job_clearance import evaluate
 
 
@@ -370,6 +371,66 @@ class RigidItemTests(Boards):
         self.assertFalse(uuids(fp.Zones()) & rigid)
         # Fields and zones still belong to their footprint for the rule that reads the input.
         self.assertLessEqual(uuids(fp.GetFields()) | uuids(fp.Zones()), set(owners))
+
+
+class CourtyardRuleTests(Boards):
+    """AGENTEE-647: the body of a footprint follows the board's own courtyard rule."""
+
+    @staticmethod
+    def courtyard(k, board):
+        fp = next(f for f in board.GetFootprints() if f.GetReference() == 'R1')
+        for shape in _box(k, fp, k.F_CrtYd, 8 * MM, 4 * MM, 12 * MM, 8 * MM):
+            fp.Add(shape)
+
+    def body(self, severities):
+        self.project.write_text(json.dumps({'board': {'design_settings': {'rule_severities': severities}}}))
+        problem, record = self.capture()
+        row = self.by_ref(problem)['R1']['occupancy']
+        captured = next(f for f in record['footprints'] if f['native_ref'] == 'R1')
+        return row['rung'], row['local_rect_nm'], captured['diagnostics']
+
+    def test_courtyard_is_the_body_unless_the_board_ignores_courtyard_overlap(self):
+        # Benchmark board StickHub: its project ignores courtyard overlap and its designer overlaps
+        # 143 pairs of courtyards; with the courtyard as body the search found no placement it accepted.
+        self.edit(self.courtyard)
+        court = [-2 * MM, -2 * MM, 2 * MM, 2 * MM]
+        outline_and_pads = [-1_150_000, -550_000, 1_150_000, 550_000]   # pads in x, the fab line's own width in y
+        for severities in ({}, {'courtyards_overlap': 'error'}, {'courtyards_overlap': 'warning'},
+                           {'silk_overlap': 'ignore'}):
+            with self.subTest(severities=severities):
+                self.assertEqual(self.body(severities), ('courtyard', court, []))
+        rung, rect, diagnostics = self.body({'courtyards_overlap': 'ignore'})
+        self.assertEqual((rung, rect), ('fab+pads', outline_and_pads))
+        self.assertEqual(diagnostics, ["courtyard overlap is ignored by the board's rules: derived_occupancy rung fab+pads"])
+
+    def test_a_footprint_that_draws_only_a_courtyard_keeps_it(self):
+        import pcbnew
+        from agent_ee.placement_probe import extract
+
+        def only_a_courtyard(k, board):
+            fp = next(f for f in board.GetFootprints() if f.GetReference() == 'R1')
+            for item in list(fp.Pads()) + [g for g in fp.GraphicalItems() if g.GetClass() == 'PCB_SHAPE']:
+                fp.Remove(item)
+            self.courtyard(k, board)
+        self.edit(only_a_courtyard)
+        board = pcbnew.LoadBoard(str(self.board))
+        fp = next(f for f in board.GetFootprints() if f.GetReference() == 'R1')
+        captured = next(f for f in extract(self.board)['footprints'] if f['ref'] == 'R1')
+        for courtyard_is_body in (True, False):
+            with self.subTest(courtyard_is_body=courtyard_is_body):
+                facts = job.classify_footprint(fp, captured, courtyard_is_body=courtyard_is_body)
+                self.assertEqual(facts['occupancy']['rung'], 'courtyard')
+
+    def test_rule_is_read_from_the_boards_own_project_file(self):
+        import pcbnew
+        self.project.write_text(json.dumps({'board': {'design_settings': {'rule_severities': {'courtyards_overlap': 'ignore'}}}}))
+        self.assertTrue(job.courtyard_overlap_ignored(pcbnew.LoadBoard(str(self.board))))
+        for text in ('{}\n', 'not json', json.dumps({'board': {'design_settings': {'rule_severities': []}}})):
+            with self.subTest(project=text):
+                self.project.write_text(text)
+                self.assertFalse(job.courtyard_overlap_ignored(pcbnew.LoadBoard(str(self.board))))
+        self.project.unlink()
+        self.assertFalse(job.courtyard_overlap_ignored(pcbnew.LoadBoard(str(self.board))))
 
 
 if __name__ == '__main__':

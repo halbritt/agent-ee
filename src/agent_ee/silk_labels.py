@@ -59,6 +59,22 @@ def _labels(fp, silk):
 
 # ---------------------------------------------------------------- capture
 
+def rule_severities(board):
+    """The severities the board's own project file gives native DRC finding types.
+
+    Empty when the board has no project file beside it or the file names none; a type the
+    file leaves out has KiCad's default severity, which this does not supply."""
+    name = board.GetFileName()
+    project = Path(name).with_suffix('.kicad_pro') if name else None
+    if project is None or not project.is_file():
+        return {}
+    try:
+        severities = json.loads(project.read_bytes())['board']['design_settings']['rule_severities']
+    except (ValueError, KeyError, TypeError):
+        return {}
+    return severities if isinstance(severities, dict) else {}
+
+
 def reserve(board):
     """How far capture grows reserved silk content and pad openings (nm), or None.
 
@@ -70,16 +86,7 @@ def reserve(board):
     error, by which the openings native DRC tests can exceed the exact pad shapes. Two
     reservations that touch are then at least a whole clearance apart.
     """
-    name = board.GetFileName()
-    project = Path(name).with_suffix('.kicad_pro') if name else None
-    if project is None or not project.is_file():
-        return None
-    try:
-        document = json.loads(project.read_bytes())
-        severities = document['board']['design_settings']['rule_severities']
-    except (ValueError, KeyError, TypeError):
-        return None
-    if not isinstance(severities, dict) or not any(severities.get(kind) == 'error' for kind in RESERVING):
+    if not any(rule_severities(board).get(kind) == 'error' for kind in RESERVING):
         return None
     settings = board.GetDesignSettings()
     half = (max(0, int(settings.m_SilkClearance)) + 1) // 2
