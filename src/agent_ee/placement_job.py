@@ -1468,6 +1468,41 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
             'moved': sorted(row['uuid'] for row in poses if row['moved'])}
 
 
+def place_labels(check, report, execution, project_bytes, rules_bytes, *, clock, cancel_dir=None):
+    """The label step of a placed candidate (AGENTEE-644, ``silk_labels.settle``).
+
+    Labels of the moved footprints that the candidate's native DRC ``report`` names in a
+    silkscreen finding are moved to free places beside their parts, and the same native DRC
+    judges the saved board again. Returns the report and execution that now describe the
+    candidate board, and the record of the step. When a label moved, ``native-drc.json`` is
+    the report after the step, the report before it is kept as ``native-drc-before-labels``,
+    and ``check`` names the board as it is now.
+    """
+    from . import silk_labels
+    board = Path(check['board'])
+    directory = board.parent
+
+    def restore():
+        # SaveBoard also writes sibling project files; the job restores the frozen bytes.
+        board.with_suffix('.kicad_pro').write_bytes(project_bytes)
+        if rules_bytes is not None:
+            board.with_suffix('.kicad_dru').write_bytes(rules_bytes)
+        board.with_suffix('.kicad_prl').unlink(missing_ok=True)
+
+    def again():
+        for suffix in ('.json', '.log'):
+            kept = directory / ('native-drc-before-labels' + suffix)
+            if not kept.exists():
+                os.replace(directory / ('native-drc' + suffix), kept)
+        return drc(board, directory, refill=True, label='native-drc', clock=clock, cancel_dir=cancel_dir)
+
+    report, after, record = silk_labels.settle(board, report, check.get('moved') or (), drc=again, restore=restore,
+                                               tick=lambda: _check_stop(clock, cancel_dir))
+    if after is not None:
+        check['board_sha256'] = digest(board)
+    return report, after or execution, record
+
+
 # ---------------------------------------------------------------- incumbent
 
 def _rank(entry):
@@ -2286,9 +2321,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 _check_stop(clock, job_dir)
                 report_, exec_ = drc(directory / 'board.kicad_pcb', directory, refill=True, label='native-drc',
                                      clock=clock, cancel_dir=job_dir)
+                report_, exec_, labels = place_labels(check, report_, exec_, project_bytes, rules_bytes,
+                                                      clock=clock, cancel_dir=job_dir)
                 split = classify_errors(report_, owners, base_keys, moved=check.get('moved'))
                 entry.update(status='checked', integrity=check['integrity'], integrity_problems=check['problems'],
-                             moved_footprints=check.get('moved'),
+                             moved_footprints=check.get('moved'), labels=labels,
                              mechanics=check_mechanics(directory / 'board.kicad_pcb', normalized, clock=clock, cancel_dir=job_dir),
                              block_contract=check_block_contract(directory / 'board.kicad_pcb', normalized,
                                                                   clock=clock, cancel_dir=job_dir),

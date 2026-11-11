@@ -686,6 +686,36 @@ rules, including stricter coupling limits, always remain in force.
    source-board native locks and the captured fixed intent. Any protected x, y,
    rotation or side difference, or a protected `moved: true` row, refuses the
    candidate independently of its predicted pads.
+
+   **Labels (AGENTEE-644).** A placement leaves every footprint text at its
+   offset from the part, where it can land on a neighbour's outline, pad
+   opening or label. After the first native DRC of a candidate, the label step
+   (`silk_labels.settle`) moves the labels (visible fields on a silkscreen
+   layer) of the moved footprints that this DRC names in a `silk_overlap`,
+   `silk_over_copper` or `silk_edge_clearance` finding, whatever its severity.
+   A label goes to the best free place beside its part: against one of the
+   part's four sides, its centre within that side, at most one label height
+   away, reading left to right or bottom to top; inside the part's own outline
+   only when no side is free. Free means inside the board and clear, by the
+   native shapes, of every silk drawing and text, every other label, every pad
+   and mask opening and drill hole of that side, and every other part's
+   courtyard. Room to spare is tried first (the label's stroke width from
+   everything, half its height from other labels), then the board's silkscreen
+   clearance alone. Only the label's position and angle change; it is never
+   hidden, resized, moved to another layer or re-justified. A label in no
+   finding stays where it is, and so does every label of a footprint the
+   candidate did not move. The board is saved, the frozen project bytes are
+   restored and the same native DRC judges it again; a label it still names
+   is searched again with a wider margin, at most three times. The candidate
+   that is classified, promoted and routed is the board after this step:
+   `native-drc.json` is its report, and `native-drc-before-labels.json` the
+   report before it. The entry's `labels` record
+   (`agent-ee.silk-labels/1`) has `status` (`not_needed`, `placed`, or
+   `incomplete` when a label is still in a finding), the number of labels
+   `named` by the first DRC, every `moved` label (reference, field, UUID,
+   `place`, `from`, `to`), every `unplaced` label by reference and field with
+   the reason, and the native findings that name a label, by type, `before`
+   and `after`.
 6. **Incumbent custody.** `incumbent.json` is replaced atomically (`os.replace`)
    only by a strictly better candidate with preserved integrity, engine-feasible
    poses, passing saved-board edge checks and zero placement-introduced errors. A failed trial, crash or worse
