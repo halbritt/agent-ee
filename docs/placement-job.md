@@ -499,6 +499,23 @@ rules, including stricter coupling limits, always remain in force.
      footprint's occupancy (`sources` gains `footprint-zones`).
    The capture record counts `pour_zones` and `keepout_rule_areas`.
 
+   **Silkscreen (AGENTEE-644).** Where the board's own project file makes
+   `silk_overlap` or `silk_over_copper` an error (KiCad's default for both is
+   a warning), capture keeps apart the silk that no later step can move:
+   - a footprint's silk drawings and its silkscreen texts that are not fields
+     (a diode's "K"), with its pad and mask openings, join its occupancy
+     where they reach beyond it (`sources` gains `silk-content`);
+   - every board-level silkscreen text and every label (visible silkscreen
+     field) of a fixed footprint becomes a fixed body (`native_ref`
+     `board-text:<uuid>`), on every side.
+
+   Silk bounds grow by half the board's silkscreen clearance plus its curve
+   approximation error (`m_MaxError`), pad openings by half the clearance.
+   Where those findings are warnings or ignored, and on a board where nothing
+   can move, capture is unchanged. Board-level silkscreen drawings other than
+   text, and silk-only footprints, are not reserved. Labels of movable
+   footprints are not reserved either: the label step moves them (step 5).
+
    **Outline (AGENTEE-636).** A proven axis-aligned rectangle is passed as
    `{"kind": "rectangle", "rect_nm": [...]}`. Any other board uses KiCad's own
    outline builder (`GetBoardPolygonOutlines`): one closed contour of lines and

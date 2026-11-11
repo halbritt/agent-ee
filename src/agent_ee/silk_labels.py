@@ -1,21 +1,36 @@
-"""Labels after an automatic placement (AGENTEE-644).
+"""Silkscreen after an automatic placement (AGENTEE-644).
 
 A placement moves and turns footprints, and everything a footprint prints on the
-silkscreen goes with it. A label (a visible field on a silkscreen layer) keeps its
-offset from the part and lands on a neighbour's outline, pad opening or label.
+silkscreen goes with it. The body packing does not see two things:
 
-After the job has placed the footprints, ``settle`` moves the labels of the moved
-footprints that native DRC names in a silkscreen finding to a free place beside their
-part. Native DRC of the saved board is the judge before and after; the native shapes
-used to search are only a way to propose places. A label is never hidden, resized, moved
-to another layer or re-justified: only its position and its angle (0 or 90 degrees, both
-readable) change. A label that conflicts with nothing stays where it is, and so does
-every label of a footprint the job did not move. A label without a free place is
-reported by name.
+* a label (a visible field on a silkscreen layer) keeps its offset from the part and
+  lands on a neighbour's outline, pad opening or label;
+* silk content that nothing can move afterwards (a part's silk drawings and its texts
+  that are not fields, such as a diode's "K"; a board-level silkscreen text; the labels
+  of fixed footprints) ends up on another part's silk or pad openings.
+
+``settle`` handles the first on every board. After the job has placed the footprints it
+moves the labels of the moved footprints that native DRC names in a silkscreen finding
+to a free place beside their part. Native DRC of the saved board is the judge before and
+after; the native shapes used to search are only a way to propose places. A label is
+never hidden, resized, moved to another layer or re-justified: only its position and its
+angle (0 or 90 degrees, both readable) change. A label that conflicts with nothing stays
+where it is, and so does every label of a footprint the job did not move. A label
+without a free place is reported by name.
+
+``reserve``, ``fixed_content`` and ``board_obstacles`` handle the second at capture, and
+only where the board's own rule severities make a silkscreen overlap an error: the
+content joins its part's occupancy or the fixed obstacles, so the search keeps other
+parts off it. Where those findings are warnings or ignored, capture is unchanged.
 """
+import json
+from pathlib import Path
+
 SCHEMA = 'agent-ee.silk-labels/1'
 # Native findings a silkscreen label can take part in (KiCad 10 type names).
 FINDINGS = ('silk_overlap', 'silk_over_copper', 'silk_edge_clearance')
+# The findings whose error severity makes capture reserve silk content.
+RESERVING = ('silk_overlap', 'silk_over_copper')
 # How often a label that native DRC still reports is searched again.
 ROUNDS = 3
 TEXTS = ('PCB_TEXT', 'PCB_TEXTBOX', 'PCB_FIELD')
@@ -31,10 +46,125 @@ def _grown(box, by):
     return [box[0] - by, box[1] - by, box[2] + by, box[3] + by]
 
 
+def _ink(item, layer):
+    """The bounds of what the item prints: native stroke shapes, not the larger text frame."""
+    return _nm(item.GetEffectiveShape(layer).BBox())
+
+
 def _labels(fp, silk):
     """The labels of one footprint: its visible fields on a silkscreen layer that print something."""
     return [f for f in fp.GetFields()
             if f.IsVisible() and f.GetLayer() in silk and f.GetShownText(False).strip()]
+
+
+# ---------------------------------------------------------------- capture
+
+def reserve(board):
+    """How far capture grows reserved silk content and pad openings (nm), or None.
+
+    Capture reserves silk content only where the board's own project file makes
+    ``silk_overlap`` or ``silk_over_copper`` an error. KiCad's default for both is a
+    warning, so a project that does not name them reserves nothing (None). Otherwise
+    the answer is ``(silk, openings)``: pad openings grow by half the board's
+    silkscreen clearance and silk content by that plus the board's curve approximation
+    error, by which the openings native DRC tests can exceed the exact pad shapes. Two
+    reservations that touch are then at least a whole clearance apart.
+    """
+    name = board.GetFileName()
+    project = Path(name).with_suffix('.kicad_pro') if name else None
+    if project is None or not project.is_file():
+        return None
+    try:
+        document = json.loads(project.read_bytes())
+        severities = document['board']['design_settings']['rule_severities']
+    except (ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(severities, dict) or not any(severities.get(kind) == 'error' for kind in RESERVING):
+        return None
+    settings = board.GetDesignSettings()
+    half = (max(0, int(settings.m_SilkClearance)) + 1) // 2
+    return half + max(0, int(settings.m_MaxError)), half
+
+
+def fixed_content(fp, grow, mask=(), within=None):
+    """Boxes of what a footprint prints that no later step can move, and of its pad openings.
+
+    The silk drawings and the visible texts that are not fields, on either silkscreen
+    layer, and ``mask``, the footprint's pad and mask openings, which another part's
+    silk must stay off just the same. ``grow`` is the answer of ``reserve``. Returns
+    nothing when it is None (the board reserves nothing) or when every box already
+    lies in ``within``.
+    """
+    if grow is None:
+        return []
+    import pcbnew as k
+    silk = (k.F_SilkS, k.B_SilkS)
+    boxes = [_grown(box, grow[1]) for box in mask]
+    for item in fp.GraphicalItems():
+        if item.GetLayer() not in silk:
+            continue
+        if item.GetClass() in TEXTS:
+            if item.IsVisible() and item.GetShownText(False).strip():
+                boxes.append(_grown(_ink(item, item.GetLayer()), grow[0]))
+        else:
+            boxes.append(_grown(_nm(item.GetBoundingBox()), grow[0]))
+    boxes = [box for box in boxes if box[0] < box[2] and box[1] < box[3]]
+    if within is not None and all(within[0] <= box[0] and within[1] <= box[1]
+                                  and box[2] <= within[2] and box[3] <= within[3] for box in boxes):
+        return []
+    return boxes
+
+
+def fixed_footprints(board, fixed_poses=()):
+    """UUIDs of the footprints a job cannot move: natively locked, or with a declared fixed pose."""
+    from . import placement_problem
+    rows = [{'uuid': fp.m_Uuid.AsString(), 'ref': fp.GetReference(), 'locked': bool(fp.IsLocked()),
+             'position_nm': [int(fp.GetPosition().x), int(fp.GetPosition().y)],
+             'side': 'B' if fp.IsFlipped() else 'F', 'rotation_deg': fp.GetOrientationDegrees()}
+            for fp in board.GetFootprints()]
+    return ({row['uuid'] for row in rows if row['locked']}
+            | set(placement_problem.fixed_pose_owners(list(fixed_poses), rows)))
+
+
+def board_obstacles(board, fixed_poses=(), known=()):
+    """Silkscreen text that stays where it is, as fixed bodies for the placement engine.
+
+    Every visible board-level silkscreen text and every label of a fixed footprint: the
+    designer placed them, no step moves them, and a part placed on one is a silkscreen
+    finding nothing can repair. ``known`` holds the UUIDs of texts that are obstacles
+    already (declared board text). Empty where the board reserves nothing (``reserve``)
+    and where no footprint can move.
+    """
+    grow = reserve(board)
+    if grow is None:
+        return []
+    import pcbnew as k
+    silk = (k.F_SilkS, k.B_SilkS)
+    fixed = fixed_footprints(board, fixed_poses)
+    footprints = list(board.GetFootprints())
+    if all(fp.m_Uuid.AsString() in fixed for fp in footprints):
+        return []
+    texts = [item for item in board.GetDrawings()
+             if item.GetClass() in TEXTS and item.GetLayer() in silk and item.IsVisible()
+             and item.GetShownText(False).strip()]
+    for fp in footprints:
+        if fp.m_Uuid.AsString() in fixed:
+            texts.extend(_labels(fp, silk))
+    rows = []
+    for item in texts:
+        uid = item.m_Uuid.AsString()
+        box = _ink(item, item.GetLayer())
+        if uid in known or box[0] > box[2] or box[1] > box[3]:
+            continue
+        box, at = _grown(box, max(grow[0], 1)), item.GetPosition()
+        rows.append(dict(
+            uuid=uid, native_ref='board-text:' + uid, role='fixed_body',
+            pose=dict(x_nm=int(at.x), y_nm=int(at.y), quarter_turns=0),
+            occupancy=dict(status='derived', label='derived_occupancy', rung='silk+pads',
+                           local_rect_nm=[box[0] - int(at.x), box[1] - int(at.y),
+                                          box[2] - int(at.x), box[3] - int(at.y)]),
+            copper_local_nm=[], mask_local_nm=[], holes_local_nm=[], pads=[], rotations=[0]))
+    return sorted(rows, key=lambda row: row['uuid'])
 
 
 # ---------------------------------------------------------------- the scene a label is placed in

@@ -1,8 +1,9 @@
-"""Labels after an automatic placement (AGENTEE-644).
+"""Silkscreen after an automatic placement (AGENTEE-644).
 
-The label step (``silk_labels.settle`` through ``placement_job.place_labels``). Every
-board is a small synthetic board built through pcbnew, and every verdict is the job's
-own native DRC. No benchmark or third-party board is used.
+The label step (``silk_labels.settle`` through ``placement_job.place_labels``) and the
+silk content capture reserves where a board's own rules make silkscreen overlaps errors.
+Every board is a small synthetic board built through pcbnew, and every verdict is the
+job's own native DRC. No benchmark or third-party board is used.
 """
 import json
 import shutil
@@ -11,7 +12,9 @@ import unittest
 from pathlib import Path
 
 from agent_ee import placement_job as job
-from tests.test_placement_job import MM, _box, _v
+from agent_ee import silk_labels
+from tests.test_placement_job import MM, Fixture, _box, _v, groups, intent
+from tests.test_placement_job_clearance import evaluate
 from tests.toolchain import require_toolchain
 
 SILK = ('silk_overlap', 'silk_over_copper', 'silk_edge_clearance')
@@ -54,6 +57,17 @@ def part(k, board, ref, x, y, *, label=ABOVE, locked=False, half=HALF, back=Fals
         fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
     fp.SetLocked(locked)
     return fp
+
+
+def silk_text(k, parent, text, x, y, layer=None):
+    item = k.PCB_TEXT(parent)
+    item.SetText(text)
+    item.SetLayer(k.F_SilkS if layer is None else layer)
+    item.SetTextSize(_v(k, MM, MM))
+    item.SetTextThickness(150_000)
+    item.SetPosition(_v(k, x, y))
+    parent.Add(item)
+    return item
 
 
 def findings(report, uuid=None, kinds=SILK, severity=None):
@@ -298,6 +312,165 @@ class LabelStepTests(Boards):
         with self.assertRaises(job.JobStopped):
             job.place_labels(check, report, execution, self.project, None, clock=job.Clock(0))
         self.assertEqual(self.board.read_bytes(), saved)
+
+
+class ReserveTests(Boards):
+    def test_only_an_error_severity_in_the_boards_own_project_reserves(self):
+        import pcbnew as k
+        self.build(lambda k, board: part(k, board, 'R101', 20 * MM, 15 * MM))
+        cases = [({}, None), ({'board': {}}, None), ({'board': {'design_settings': {'rule_severities': {}}}}, None)]
+        for a in ('error', 'warning', 'ignore'):
+            for b in ('error', 'warning', 'ignore'):
+                project = {'board': {'design_settings': {'rule_severities': {'silk_overlap': a, 'silk_over_copper': b}}}}
+                cases.append((project, 'error' in (a, b)))
+        cases.append(({'board': {'design_settings': {'rule_severities': {'silk_edge_clearance': 'error'}}}}, None))
+        for project, reserves in cases:
+            with self.subTest(project=project):
+                self.board.with_suffix('.kicad_pro').write_text(json.dumps(project))
+                grow = silk_labels.reserve(k.LoadBoard(str(self.board)))
+                self.assertEqual(grow is not None, bool(reserves))
+                if reserves:
+                    settings = k.LoadBoard(str(self.board)).GetDesignSettings()
+                    half = (settings.m_SilkClearance + 1) // 2
+                    self.assertEqual(grow, (half + settings.m_MaxError, half))
+        self.board.with_suffix('.kicad_pro').write_text('not json')
+        self.assertIsNone(silk_labels.reserve(k.LoadBoard(str(self.board))))
+        self.board.with_suffix('.kicad_pro').unlink()
+        self.assertIsNone(silk_labels.reserve(k.LoadBoard(str(self.board))))
+        self.assertIsNone(silk_labels.reserve(k.BOARD()))
+
+
+class CaptureTests(Fixture):
+    """The fixture board of test_placement_job with silk content added: U1 gets a "K" mark outside
+    its outline, the board a silkscreen text, the locked hole H1 and the movable R1 visible labels."""
+
+    def setUp(self):
+        super().setUp()
+        import pcbnew as k
+        board = k.LoadBoard(str(self.board))
+        for ref, offset in (('H1', (0, -2 * MM)), ('R1', (0, -1_500_000))):
+            fp = board.FindFootprintByReference(ref)
+            field = fp.Reference()
+            field.SetLayer(k.F_SilkS)
+            field.SetVisible(True)
+            field.SetTextSize(_v(k, MM, MM))
+            field.SetTextThickness(150_000)
+            field.SetPosition(_v(k, fp.GetPosition().x + offset[0], fp.GetPosition().y + offset[1]))
+        u1 = board.FindFootprintByReference('U1')
+        self.mark = silk_text(k, u1, 'K', u1.GetPosition().x + 3 * MM, u1.GetPosition().y).m_Uuid.AsString()
+        self.title = silk_text(k, board, 'TITLE', 4 * MM, 10 * MM).m_Uuid.AsString()
+        silk_text(k, board, 'CU', 15 * MM, 4 * MM, layer=k.F_Cu)
+        silk_text(k, board, ' ', 15 * MM, 2 * MM)
+        self.h1_label = board.FindFootprintByReference('H1').Reference().m_Uuid.AsString()
+        self.r1_label = board.FindFootprintByReference('R1').Reference().m_Uuid.AsString()
+        self.assertTrue(k.SaveBoard(str(self.board), board))
+
+    def capture(self, project, declared=None, grouped=None):
+        self.project.write_text(json.dumps(project))
+        problem, record = job.capture(self.board, job.normalize_intent(
+            intent() if declared is None else declared, groups() if grouped is None else grouped))
+        return problem, {row['native_ref']: row for row in problem['footprints']}, \
+            {row['native_ref']: row for row in record['footprints']}
+
+    def test_capture_is_the_same_where_silk_findings_are_not_errors(self):
+        plain, rows, records = self.capture({})
+        self.assertFalse([ref for ref in rows if ref.startswith('board-text:')])
+        self.assertFalse([ref for ref, row in records.items() if 'silk-content' in row['occupancy'].get('sources', [])])
+        for severity in ('warning', 'ignore'):
+            project = {'board': {'design_settings': {'rule_severities': {'silk_overlap': severity,
+                                                                         'silk_over_copper': severity}}}}
+            self.assertEqual(self.capture(project)[0], plain, severity)
+
+    def test_silk_content_joins_the_occupancy_where_silk_findings_are_errors(self):
+        _, plain, _ = self.capture({})
+        problem, rows, records = self.capture(ERRORS)
+        import pcbnew as k
+        board = k.LoadBoard(str(self.board))
+        grow, _ = silk_labels.reserve(board)
+        u1 = board.FindFootprintByReference('U1')
+        mark = next(g for g in u1.GraphicalItems() if g.m_Uuid.AsString() == self.mark)
+        ink = mark.GetEffectiveShape(mark.GetLayer()).BBox()
+        at = u1.GetPosition()
+        # U1 is unrotated, so its local frame is the board frame less its position.
+        was, now = plain['U1']['occupancy']['local_rect_nm'], rows['U1']['occupancy']['local_rect_nm']
+        self.assertGreater(ink.GetRight() - at.x, was[2], 'the mark is outside the plain occupancy')
+        self.assertEqual(now[2], ink.GetRight() - at.x + grow)
+        self.assertTrue(now[0] <= was[0] and now[1] <= was[1] and now[3] >= was[3])
+        self.assertIn('silk-content', records['U1']['occupancy']['sources'])
+        self.assertEqual(rows['U1']['occupancy']['label'], 'derived_occupancy')
+        # A part whose silk and pad openings its occupancy already holds is captured as before.
+        for ref in ('R1', 'C1', 'FID', ''):
+            self.assertEqual(rows[ref], plain[ref], ref)
+        self.assertNotIn('silk-content', records['R1']['occupancy'].get('sources', []))
+        # Seats keep the part's own outline: the reservation is packing room, not the body.
+        self.assertEqual({k: v for k, v in rows['U1'].items() if k != 'occupancy'},
+                         {k: v for k, v in plain['U1'].items() if k != 'occupancy'})
+
+    def test_board_silk_text_and_labels_of_fixed_footprints_are_obstacles(self):
+        problem, rows, _ = self.capture(ERRORS)
+        obstacles = {ref.split(':', 1)[1]: row for ref, row in rows.items() if ref.startswith('board-text:')}
+        # The board's silkscreen text and the label of the locked H1; not the movable R1's label,
+        # a text on copper or a text that prints nothing.
+        self.assertEqual(set(obstacles), {self.title, self.h1_label})
+        import pcbnew as k
+        board = k.LoadBoard(str(self.board))
+        grow, _ = silk_labels.reserve(board)
+        title = next(d for d in board.GetDrawings() if d.m_Uuid.AsString() == self.title)
+        ink = title.GetEffectiveShape(title.GetLayer()).BBox()
+        row = obstacles[self.title]
+        self.assertEqual((row['role'], row['rotations'], row['pads'], row['copper_local_nm']), ('fixed_body', [0], [], []))
+        x, y = row['pose']['x_nm'], row['pose']['y_nm']
+        rect = row['occupancy']['local_rect_nm']
+        self.assertEqual([rect[0] + x, rect[1] + y, rect[2] + x, rect[3] + y],
+                         [ink.GetLeft() - grow, ink.GetTop() - grow, ink.GetRight() + grow, ink.GetBottom() + grow])
+        # The engine keeps a part off the text: on it is a hard violation, beside it is not.
+        r1 = rows['R1']['uuid']
+        on, off = evaluate(problem, [{r1: [4 * MM, 10 * MM, 0]}, {r1: [10 * MM, 3 * MM, 0]}])
+        self.assertTrue([v for v in on['violations'] if v['kind'] == 'pair'], on['violations'])
+        self.assertFalse([v for v in off['violations'] if v['kind'] == 'pair'
+                          and 'board-text:' + self.title in json.dumps(v)], off['violations'])
+
+    def test_declared_fixed_pose_makes_a_label_fixed_text_too(self):
+        declared = intent()
+        declared['fixed_poses'].append({'ref': 'R1', 'x': 10.0, 'y': 6.0, 'rot': 0.0, 'side': 'F', 'basis': 'mechanical'})
+        _, rows, _ = self.capture(ERRORS, declared=declared, grouped={'groups': []})
+        self.assertEqual(rows['R1']['role'], 'fixed_body')
+        self.assertIn('board-text:' + self.r1_label, rows)
+
+    def test_a_board_where_nothing_can_move_reserves_nothing(self):
+        import pcbnew as k
+        board = k.LoadBoard(str(self.board))
+        for fp in board.GetFootprints():
+            fp.SetLocked(True)
+        self.assertTrue(k.SaveBoard(str(self.board), board))
+        problem, rows, _ = self.capture(ERRORS, grouped={'groups': []})
+        self.assertFalse([ref for ref in rows if ref.startswith('board-text:')])
+        self.assertEqual(problem, self.capture({}, grouped={'groups': []})[0])
+
+    def test_search_and_native_save_keep_parts_off_reserved_silk(self):
+        problem, rows, _ = self.capture(ERRORS)
+        normalized = job.normalize_intent(intent(), groups())
+        out, _ = job.solve(problem, self.search(2, 20000), self.dir, deadline_s=60)
+        self.assertTrue(out['shortlist'], out.get('diagnostic_shortlist'))
+        candidate = out['shortlist'][0]
+        self.assertEqual(candidate['terms']['hard_count'], 0)
+        placed = job.materialize(self.board, candidate['poses'], self.dir / 'placed', self.project.read_bytes(),
+                                 normalized=normalized)
+        self.assertEqual(placed['integrity'], 'preserved', placed['problems'])
+        report, execution = job.drc(placed['board'], self.dir / 'placed', refill=True, label='native-drc')
+        # No part is on silk that stays where it is. A label that came with its part may be; the
+        # label step moves it, and then nothing on the silkscreen is in a finding.
+        fixed = {self.title, self.h1_label, self.mark}
+        labels = {self.r1_label}
+        self.assertEqual([v for v in findings(report)
+                          if {i.get('uuid') for i in v['items']} & fixed and not {i.get('uuid') for i in v['items']} & labels], [])
+        report, _, record = job.place_labels(placed, report, execution, self.project.read_bytes(), None, clock=job.Clock(300))
+        self.assertEqual(findings(report), [], record)
+        # A candidate that moves an obstacle is refused as before.
+        moved = json.loads(json.dumps(candidate['poses']))
+        next(row for row in moved if row['uuid'] == self.title)['x_nm'] += 1
+        with self.assertRaisesRegex(job.JobRefusal, 'fixed board text or rule-area obstacle'):
+            job.materialize(self.board, moved, self.dir / 'refused', self.project.read_bytes(), normalized=normalized)
 
 
 if __name__ == '__main__':

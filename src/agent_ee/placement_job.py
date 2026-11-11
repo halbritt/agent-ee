@@ -425,7 +425,7 @@ def _evaluate_board_native(path, *, fixed_poses=(), edges=(), groups=(), rails=N
         board = pcbnew.LoadBoard(str(path))
     facts = extract(path, board=board, before=before)
     # The same choice of model as capture made for this board and intent.
-    description = _describe_board(board, facts, geometry=(
+    description = _describe_board(board, facts, fixed_poses=fixed_poses, geometry=(
         bool(edges) or mechanics_binding is not None or not routing_only(facts['footprints'], list(fixed_poses))))
     if mechanics_binding is not None:
         from .source_mechanics import attach
@@ -574,11 +574,16 @@ def keepout_obstacles(board):
     return sorted(rows, key=lambda r: r['uuid'])
 
 
-def _board_obstacles(board):
-    """Fixed obstacles that are not footprints, and the text boxes attached to footprints."""
+def _board_obstacles(board, fixed_poses=()):
+    """Fixed obstacles that are not footprints, and the text boxes attached to footprints.
+
+    Where the board's own severities make a silkscreen overlap an error, the silkscreen text
+    that stays where it is (board-level text, labels of fixed footprints) is an obstacle too."""
+    from . import silk_labels
     from .board_text import placement_regions
     text_obstacles, attached_text = placement_regions(board)
-    return sorted([*text_obstacles, *keepout_obstacles(board)], key=lambda r: r['uuid']), attached_text
+    silk_text = silk_labels.board_obstacles(board, fixed_poses, known={row['uuid'] for row in text_obstacles})
+    return sorted([*text_obstacles, *keepout_obstacles(board), *silk_text], key=lambda r: r['uuid']), attached_text
 
 
 def pour_zones(board):
@@ -594,22 +599,27 @@ def refill_pours(board):
         raise JobRefusal('native zone fill failed')
 
 
-def _describe_board(board, facts, *, geometry=True):
-    """Read a loaded native board into the description ``placement_problem`` builds from (no intent).
+def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
+    """Read a loaded native board into the description ``placement_problem`` builds from.
 
     ``geometry=False`` is the routing-only description: nothing can move, so no
     occupancy, copper, hole or mask model is read and no footprint or outline
     is refused for what that model cannot represent. Pads keep their nets and
     positions, which the net, group and proximity measurements use.
+    ``fixed_poses`` are the intent's declared fixed poses; they only tell which
+    footprints' labels are fixed silkscreen text (``_board_obstacles``).
     """
     import pcbnew
+    from . import silk_labels
     by_uuid = {f['uuid']: f for f in facts['footprints']}
     if len(by_uuid) != len(facts['footprints']):
         raise JobRefusal('duplicate native footprint UUID')
     settings = board.GetDesignSettings()
     native_class = settings.m_NetSettings.GetDefaultNetclass()
     clearance = _clearance(settings)
-    text_obstacles, attached_text = _board_obstacles(board)
+    text_obstacles, attached_text = _board_obstacles(board, fixed_poses)
+    # None unless a footprint can move and this board's own rules make silk overlaps errors.
+    silk_grow = silk_labels.reserve(board) if geometry and not routing_only(facts['footprints'], list(fixed_poses)) else None
     footprints = []
     for fp in board.GetFootprints():
         uuid = fp.m_Uuid.AsString()
@@ -634,8 +644,11 @@ def _describe_board(board, facts, *, geometry=True):
         native = classify_footprint(fp, captured)
         seat_occupancy = (native['occupancy'] or {}).get('box')
         # Declared text and the footprint's own zones (keep-outs, antenna areas) move with the part.
+        # So do its silk drawings and texts that are not fields, which no later step can move
+        # (AGENTEE-644): with its pad openings they join the occupancy where silk overlaps are errors.
         attached = [(attached_text.get(uuid, []), 'declared-board-text'),
-                    ([_bbox(z) for z in fp.Zones()], 'footprint-zones')]
+                    ([_bbox(z) for z in fp.Zones()], 'footprint-zones'),
+                    (silk_labels.fixed_content(fp, silk_grow, native['mask'], seat_occupancy), 'silk-content')]
         for boxes, source in attached:
             if boxes and native['occupancy'] is not None:
                 native['occupancy'] = dict(native['occupancy'],
@@ -934,7 +947,7 @@ def _capture_native(board_path, normalized):
     # routing-only job does not, so it is not held to what that model can represent.
     geometry = (not fixed or bool(intent.get('edge_connectors')) or 'electrical_locality' in intent
                 or 'mechanics' in normalized or 'block_contract' in normalized)
-    description = _describe_board(board, facts, geometry=geometry)
+    description = _describe_board(board, facts, geometry=geometry, fixed_poses=intent.get('fixed_poses', []))
     if Path(board_path).read_bytes() != before:
         raise JobRefusal('input board changed during capture')
     if 'electrical_locality' in intent:
@@ -1381,7 +1394,7 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
         raise JobRefusal('native custom rules differ from captured rules')
     board = pcbnew.LoadBoard(str(source))
     before = native_inventory(board)
-    obstacles, _ = _board_obstacles(board)
+    obstacles, _ = _board_obstacles(board, fixed_poses)
     reserved = {row['uuid']: row for row in obstacles}
     obstacle_poses = [row for row in poses if row['uuid'] in reserved]
     if len(obstacle_poses) != len(reserved) or len({r['uuid'] for r in obstacle_poses}) != len(reserved):
