@@ -400,9 +400,9 @@ def _find(scene, label, tiers, avoid=()):
 def _named(report, labels):
     """The native silkscreen findings that name each label: UUID -> list of findings.
 
-    A finding names an item by UUID. KiCad 10 can leave the UUID of a field out of a
-    silkscreen finding, so ``<Name> field of <reference>`` in an item's description also
-    names a label when exactly one label matches.
+    A finding names an item by UUID. ``silk_artwork.relocate`` records that KiCad 10 can
+    leave the UUID of a custom field out of a silkscreen finding, so an item described as
+    ``<Name> field of <reference>`` also names a label when exactly one label matches.
     """
     by_name = {}
     for uuid, (fp, field) in labels.items():
@@ -483,9 +483,6 @@ def settle(board_path, report, moved, *, drc, restore, tick=None):
             if tick is not None:
                 tick()
             fp, field = labels[uuid]
-            if field.IsLocked():
-                reasons[uuid] = 'the label is locked'
-                continue
             label = _Label(k, fp, field)
             if number == 0 and scene.clear(label, *label.start, base):
                 continue                    # what it overlapped has moved away: the label stays

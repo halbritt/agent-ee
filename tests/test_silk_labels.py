@@ -5,7 +5,9 @@ silk content capture reserves where a board's own rules make silkscreen overlaps
 Every board is a small synthetic board built through pcbnew, and every verdict is the
 job's own native DRC. No benchmark or third-party board is used.
 """
+import hashlib
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -15,7 +17,7 @@ from agent_ee import placement_job as job
 from agent_ee import silk_labels
 from tests.test_placement_job import MM, Fixture, _box, _v, groups, intent
 from tests.test_placement_job_clearance import evaluate
-from tests.toolchain import require_toolchain
+from tests.toolchain import require_kicad_route, require_toolchain
 
 SILK = ('silk_overlap', 'silk_over_copper', 'silk_edge_clearance')
 ERRORS = {'board': {'design_settings': {'rule_severities': {'silk_overlap': 'error', 'silk_over_copper': 'error'}}}}
@@ -295,6 +297,33 @@ class LabelStepTests(Boards):
         self.assertIn(after['angle'], (0.0, 90.0))
         self.assertFalse(self.overlap(after['ink'], done['after']['R102']['court']))
 
+    def test_labels_of_turned_parts_are_saved_where_the_step_put_them(self):
+        # A placement turns parts by quarter turns and each label turns with its part. Every R
+        # here has a neighbour C, turned the same way, right where its label came to lie.
+        def make(k, board):
+            for index, turns in enumerate((1, 2, 3)):
+                x, y = (8 + 14 * index) * MM, 15 * MM
+                fp = part(k, board, f'R10{turns}', x, y)
+                fp.SetOrientationDegrees(90.0 * turns)
+                at = fp.Reference().GetPosition()
+                other = part(k, board, f'C10{turns}', x + (at.x - x) * 32 // 22, y + (at.y - y) * 32 // 22)
+                other.SetOrientationDegrees(90.0 * turns)
+        self.build(make, size=(44, 30))
+        turned = ['R101', 'R102', 'R103']
+        done = self.step(turned + ['C101', 'C102', 'C103'])
+        for ref in turned:
+            self.assertTrue(findings(done['first'], done['before'][ref]['uuid']), ref)
+        self.assertEqual(findings(done['report']), [], done['record'])
+        moved = {row['reference']: row for row in done['record']['moved']}
+        self.assertEqual(sorted(moved), turned)
+        for ref, row in moved.items():
+            after = done['after'][ref]
+            self.assertEqual((row['to']['x_nm'], row['to']['y_nm'], row['to']['angle_deg']),
+                             (*after['at'], after['angle']), ref)
+            self.assertIn(after['angle'], (0.0, 90.0))
+            height = min(after['ink'][2] - after['ink'][0], after['ink'][3] - after['ink'][1])
+            self.assertLessEqual(self.gap(after), height, ref)
+
     def test_error_severity_findings_are_cleared_the_same_way(self):
         self.build(self.neighbours, project=ERRORS)
         done = self.step(['R101', 'R102'])
@@ -312,6 +341,113 @@ class LabelStepTests(Boards):
         with self.assertRaises(job.JobStopped):
             job.place_labels(check, report, execution, self.project, None, clock=job.Clock(0))
         self.assertEqual(self.board.read_bytes(), saved)
+
+
+class _Stub:
+    """A label of fixed ink size beside a fixed body, without pcbnew."""
+
+    def __init__(self, body, ink=(3_600_000, 1_150_000)):
+        self._body, self.unit = list(body), min(ink)
+        self._frames = {0: (-ink[0] // 2, -ink[1] // 2, ink[0] // 2, ink[1] // 2),
+                        90: (-ink[1] // 2, -ink[0] // 2, ink[1] // 2, ink[0] // 2)}
+
+    def body(self):
+        return self._body
+
+    def frame(self, angle):
+        return self._frames[angle]
+
+    def at(self, cx, cy, angle):
+        return int(cx), int(cy)
+
+
+class PlacesTests(unittest.TestCase):
+    """The order of the places a label is offered (no native tool needed)."""
+
+    BODY = (10 * MM, 10 * MM, 20 * MM, 12 * MM)             # 10 x 2 mm, lying down
+
+    def rows(self, body=BODY):
+        label = _Stub(body)
+        return label, silk_labels.places(label)
+
+    @staticmethod
+    def ink(label, row):
+        left, top, right, bottom = label.frame(row[4])
+        return [row[2] + left, row[3] + top, row[2] + right, row[3] + bottom]
+
+    def test_beside_comes_first_then_inside_and_every_place_is_readable(self):
+        label, rows = self.rows()
+        self.assertEqual(rows, sorted(rows))
+        self.assertEqual({row[4] for row in rows}, {0, 90})
+        kinds = [row[1] for row in rows]
+        beside = [kind for kind in kinds if kind != 'inside']
+        self.assertEqual(set(beside), {'above', 'below', 'left', 'right'})
+        self.assertEqual(kinds[:len(beside)], beside, 'no place inside the part before the last place beside it')
+        # The first choice: along a long side, in its middle, touching the part.
+        cost, where, x, y, angle = rows[0]
+        self.assertEqual((where, x, angle), ('above', 15 * MM, 0))
+        self.assertEqual(self.ink(label, rows[0])[3], 10 * MM)
+
+    def test_a_place_beside_is_within_one_label_height_and_within_its_side(self):
+        label, rows = self.rows()
+        x0, y0, x1, y1 = self.BODY
+        for row in rows:
+            ink = self.ink(label, row)
+            if row[1] == 'inside':
+                self.assertTrue(x0 <= ink[0] and ink[2] <= x1 and y0 <= ink[1] and ink[3] <= y1, row)
+                continue
+            gap = {'above': y0 - ink[3], 'below': ink[1] - y1, 'left': x0 - ink[2], 'right': ink[0] - x1}[row[1]]
+            self.assertTrue(0 <= gap <= label.unit, row)
+            centre = ((ink[0] + ink[2]) // 2, (ink[1] + ink[3]) // 2)
+            if row[1] in ('above', 'below'):
+                self.assertTrue(x0 <= centre[0] <= x1, row)
+            else:
+                self.assertTrue(y0 <= centre[1] <= y1, row)
+
+    def test_a_part_too_small_for_its_label_has_no_place_inside(self):
+        _, rows = self.rows((10 * MM, 10 * MM, 12 * MM, 11 * MM))
+        self.assertNotIn('inside', {row[1] for row in rows})
+        self.assertTrue(rows)
+
+
+class NamedTests(unittest.TestCase):
+    """Which labels a native report names (no native tool needed)."""
+
+    class Item:
+        def __init__(self, name):
+            self.name = name
+
+        def GetName(self):
+            return self.name
+
+        def GetReference(self):
+            return self.name
+
+    def labels(self):
+        return {'u-1': (self.Item('R1'), self.Item('Reference')), 'u-2': (self.Item('R2'), self.Item('Reference')),
+                'u-3': (self.Item('R2'), self.Item('Value'))}
+
+    def test_by_uuid_and_only_silkscreen_findings(self):
+        report = {'violations': [
+            {'type': 'silk_overlap', 'items': [{'uuid': 'u-1', 'description': 'x'}, {'uuid': 'u-2', 'description': 'y'}]},
+            {'type': 'silk_over_copper', 'items': [{'uuid': 'u-1', 'description': 'x'}, {'uuid': 'pad', 'description': 'p'}]},
+            {'type': 'silk_edge_clearance', 'items': [{'uuid': 'u-3', 'description': 'x'}, {'uuid': 'edge'}]},
+            {'type': 'clearance', 'items': [{'uuid': 'u-2'}, {'uuid': 'u-3'}]},
+            {'type': 'silk_overlap', 'items': [{'uuid': 'other'}, {'uuid': 'another'}]}]}
+        named = silk_labels._named(report, self.labels())
+        self.assertEqual({uuid: [f['type'] for f in found] for uuid, found in named.items()},
+                         {'u-1': ['silk_overlap', 'silk_over_copper'], 'u-2': ['silk_overlap'],
+                          'u-3': ['silk_edge_clearance']})
+        self.assertEqual(silk_labels._by_type(named),
+                         {'silk_edge_clearance': 1, 'silk_over_copper': 1, 'silk_overlap': 1})
+
+    def test_a_field_named_only_in_the_description_is_found_when_it_is_the_only_match(self):
+        report = {'violations': [
+            {'type': 'silk_overlap', 'items': [{'description': 'Value field of R2'}, {'uuid': 'seg', 'description': 's'}]},
+            {'type': 'silk_overlap', 'items': [{'description': 'Reference field of R9'}, {'uuid': 'seg'}]}]}
+        self.assertEqual(list(silk_labels._named(report, self.labels())), ['u-3'])
+        twice = dict(self.labels(), **{'u-4': (self.Item('R2'), self.Item('Value'))})
+        self.assertEqual(silk_labels._named(report, twice), {})
 
 
 class ReserveTests(Boards):
@@ -340,7 +476,7 @@ class ReserveTests(Boards):
         self.assertIsNone(silk_labels.reserve(k.BOARD()))
 
 
-class CaptureTests(Fixture):
+class SilkBoard(Fixture):
     """The fixture board of test_placement_job with silk content added: U1 gets a "K" mark outside
     its outline, the board a silkscreen text, the locked hole H1 and the movable R1 visible labels."""
 
@@ -365,6 +501,8 @@ class CaptureTests(Fixture):
         self.r1_label = board.FindFootprintByReference('R1').Reference().m_Uuid.AsString()
         self.assertTrue(k.SaveBoard(str(self.board), board))
 
+
+class CaptureTests(SilkBoard):
     def capture(self, project, declared=None, grouped=None):
         self.project.write_text(json.dumps(project))
         problem, record = job.capture(self.board, job.normalize_intent(
@@ -471,6 +609,40 @@ class CaptureTests(Fixture):
         next(row for row in moved if row['uuid'] == self.title)['x_nm'] += 1
         with self.assertRaisesRegex(job.JobRefusal, 'fixed board text or rule-area obstacle'):
             job.materialize(self.board, moved, self.dir / 'refused', self.project.read_bytes(), normalized=normalized)
+
+
+class JobTests(SilkBoard):
+    def test_job_on_a_board_whose_rules_make_silk_findings_errors_ends_without_one(self):
+        require_kicad_route()
+        self.project.write_text(json.dumps(ERRORS))
+        files = {'board': self.board, 'project': self.project, 'intent': self.dir / 'intent.json',
+                 'groups': self.dir / 'groups.json'}
+        files['intent'].write_text(json.dumps(intent()))
+        files['groups'].write_text(json.dumps(groups()))
+        config = {'schema': job.CONFIG_SCHEMA, 'budget_s': 300,
+                  'inputs': {key: {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                             for key, path in files.items()},
+                  'search': self.search(2, 30000),
+                  'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'], 'grid_step_mm': 0.025}}
+        report = job.run_job(config, self.dir / 'job')
+        checked = [entry for entry in report['shortlist'] if entry['status'] == 'checked']
+        self.assertTrue(checked, report['shortlist'])
+        for entry in checked:
+            self.assertEqual(entry['labels']['schema'], silk_labels.SCHEMA)
+            self.assertEqual(entry['board_sha256'], job.digest(entry['board']))
+        # The placement the job goes on with has no silkscreen finding: parts are off the silk that
+        # stays, and the label that came with R1 has a free place.
+        incumbent = json.loads((self.dir / 'job/incumbent.json').read_text())
+        self.assertEqual(incumbent['placement_introduced_errors'], 0, incumbent['errors'])
+        self.assertEqual(incumbent['labels']['unplaced'], [])
+        placed = json.loads((Path(incumbent['directory']) / 'native-drc.json').read_text())
+        self.assertEqual(findings(placed), [])
+        self.assertEqual(report['status'], 'completed', report.get('reason') or report.get('final'))
+        final = report['final']
+        self.assertEqual((final['opens'], final['errors']['placement_introduced']['count'],
+                          final['errors']['routing_introduced']['count']), (0, 0, 0))
+        routed = json.loads((Path(final['board']).parent / 'native-drc.json').read_text())
+        self.assertEqual(findings(routed, severity='error'), [])
 
 
 if __name__ == '__main__':
