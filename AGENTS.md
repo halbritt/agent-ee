@@ -107,6 +107,11 @@ runs nightly on the owner's host ([nightly suite](docs/nightly-full-suite.md));
 do not run it for an ordinary change. Use `git-wt create <slug>` for a
 worktree, land on `main`, and leave nothing unmerged.
 
+Focused native tests can run directly on a host with compatible KiCad 10.x,
+`pcbnew`, ngspice, libraries and working Bubblewrap. Missing prerequisites skip
+by default; set `AGENT_EE_REQUIRE_TOOLCHAIN=1` to make them fail. Native tools
+still run in their sandbox with deadlines. The nightly uses the container image.
+
 One implementer per change is enough. Ask for a second opinion when you are
 unsure about the engineering, not as a ritual.
 
