@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import shutil
 import unittest
+from unittest.mock import patch
 
 from agent_ee import native_run, placement_job as job
 from agent_ee.storage import digest
@@ -72,6 +73,15 @@ def crowded_part(pcbnew, board):
         pad.SetNet(net)
     part.SetPosition(pcbnew.VECTOR2I(16 * MM, 3 * MM))
     part.SetLocked(True)
+
+
+def cut_corner(pcbnew, board):
+    """Five straight edges: the fixture rectangle less its lower-left corner."""
+    for item in [d for d in board.GetDrawings() if d.GetLayer() == pcbnew.Edge_Cuts]:
+        board.Remove(item)
+    corners = [(0, 0), (20, 0), (20, 12), (3, 12), (0, 9)]
+    for a, b in zip(corners, corners[1:] + corners[:1]):
+        board.Add(fixtures._segment(pcbnew, board, pcbnew.Edge_Cuts, (a[0] * MM, a[1] * MM), (b[0] * MM, b[1] * MM)))
 
 
 def add_tracks(pcbnew, board, routes=ROUTES):
@@ -168,6 +178,7 @@ class CleanBoardTests(RoutedBoard):
         self.assertEqual((bare['eligibility'], bare['physical_checks'], bare['rejections']),
                          ('INELIGIBLE', 'FAILED', ['4 open connection(s)']))
         self.assertEqual(job._completion_status(unrouted, placed, bare), 'verification_failed')
+        self.assertEqual(job._rejection_reason('verification_failed', unrouted, bare), '4 open connection(s)')
 
     def test_teardrop_zones_kicad_builds_on_a_routed_board_are_routing_copper(self):
         self.change(self.board, enable_teardrops)
@@ -222,6 +233,35 @@ class CleanBoardTests(RoutedBoard):
         self.assertEqual(len(bad['rejections']), 1)
         self.assertRegex(bad['rejections'][0], r'^\d+ routing-introduced DRC error\(s\): .*shorting_items \d+')
         self.assertEqual(job._completion_status(shorted, placed, bad), 'verification_failed')
+        self.assertEqual(job._rejection_reason('verification_failed', shorted, bad), bad['rejections'][0])
+
+    def test_any_closed_outline_gets_its_views_and_a_missing_picture_decides_nothing(self):
+        self.change(self.board, cut_corner)
+        placed, base = self.candidate()
+        routed = self.routed(placed)
+        final = self.final(routed, placed, base)
+        self.assertEqual(final['group_views']['status'], 'rendered', final['group_views']['problems'])
+        self.assertTrue(final['evidence_complete'])
+        self.assertEqual(job.verify_group_views(final), [])
+        self.assertEqual((final['eligibility'], job._completion_status(routed, placed, final)), ('eligible', 'completed'))
+        # The view helper refuses a directory that exists. The board is as good as before.
+        (self.dir / 'final-unrendered-group-views').mkdir()
+        final = self.final(routed, placed, base, 'final-unrendered')
+        self.assertEqual(final['group_views']['status'], 'missing')
+        self.assertFalse(final['evidence_complete'])
+        self.assertEqual((final['rejections'], final['eligibility'], job._completion_status(routed, placed, final)),
+                         ([], 'eligible', 'completed'))
+
+    def test_a_view_helper_that_crashes_is_a_note_and_a_deadline_still_stops_the_job(self):
+        crash = job.EnvironmentFailure('native-tool', 'python3 crashed (exit -11): ')
+        with patch.object(job, '_run_child', side_effect=crash):
+            views = job._group_views(self.board, groups(), self.dir / 'crashed-views', clock=job.Clock(60))
+        self.assertEqual((views['status'], views['problems']),
+                         ('missing', ['group view helper did not finish: python3 crashed (exit -11): ']))
+        with patch.object(job, '_run_child', side_effect=job.JobStopped('deadline')):
+            with self.assertRaisesRegex(job.JobStopped, 'deadline'):
+                job._group_views(self.board, groups(), self.dir / 'late-views', clock=job.Clock(60))
+
 
 class WholeJobTests(RoutedBoard):
     def test_job_completes_on_a_board_with_teardrops_and_errors_of_its_own(self):
@@ -270,6 +310,30 @@ class ErrorCountTests(unittest.TestCase):
         self.assertEqual(count(job.classify_errors(report(2), owners, set(twice), set(twice), moved=[])), [1, 0, 1])
         # The caller's multisets are not consumed.
         self.assertEqual((sum(twice.values()), sum(thrice.values())), (2, 3))
+
+
+class VerdictTests(unittest.TestCase):
+    ELIGIBLE = {'integrity': 'preserved', 'edge_intent': {'status': 'pass'}, 'eligibility': 'eligible', 'rejections': []}
+
+    def test_the_report_names_what_rejected_a_routed_board(self):
+        accepted = {'status': 'routed', 'router_accepted': True}
+        self.assertEqual(job._completion_status(accepted, {}, self.ELIGIBLE), 'completed')
+        # The router grades its own result. A rejection there still decides, and the job repeats its words.
+        graded = {'status': 'routed', 'router_accepted': False,
+                  'classification': {'outcome': 'policy_failed', 'reasons': ['2 new vias below their net class', 'second']}}
+        self.assertEqual(job._completion_status(graded, {}, self.ELIGIBLE), 'verification_failed')
+        self.assertEqual(job._rejection_reason('verification_failed', graded, self.ELIGIBLE),
+                         "the router's own grading rejected its result: 2 new vias below their net class; second")
+        failed = dict(self.ELIGIBLE, eligibility='INELIGIBLE', rejections=['3 open connection(s)', 'edge intent check: failed'])
+        self.assertEqual(job._rejection_reason('verification_failed', graded, failed),
+                         "the router's own grading rejected its result: 2 new vias below their net class; second; "
+                         '3 open connection(s); edge intent check: failed')
+        self.assertEqual(job._rejection_reason('route_failed', {'status': 'no_candidate'}, {'status': 'unavailable'}),
+                         'the router delivered no board: no_candidate')
+        self.assertIn('exploratory route', job._rejection_reason('placement_failed', accepted, self.ELIGIBLE))
+        # A final record that gives no reasons still yields a sentence.
+        self.assertEqual(job._rejection_reason('verification_failed', accepted, {'eligibility': 'ineligible'}),
+                         'final board is ineligible')
 
 
 if __name__ == '__main__':

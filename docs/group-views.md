@@ -147,9 +147,9 @@ from the job's captured inputs is passed separately so `input_board_sha256`
 stays distinct from the final `board_sha256`. The final record's `group_views`
 entry binds the manifest hash, both view hashes, the final board hash, the raw
 input hash and the canonical groups identity; `evidence_complete` is true only
-when every binding holds. A helper refusal, a missing manifest, an unbound hash
-or a lost view is reported as `status: missing` with the reason, never as a
-stale or partial success, and never changes `eligibility`; `acceptance_assessed`
-stays false. `placement_job.verify_group_views(final)` lists changed or missing
+when every binding holds. A helper refusal, a helper that cannot start or
+crashes, a missing manifest, an unbound hash or a lost view is reported as
+`status: missing` with the reason, never as a stale or partial success, and
+never changes `eligibility`; `acceptance_assessed` stays false. `placement_job.verify_group_views(final)` lists changed or missing
 view artifacts afterwards. A cancel or deadline stops the child like any other
 final check and leaves the prior incumbent untouched.

@@ -338,7 +338,9 @@ class ControllerBoundaryTests(Fixture):
             if not final_fail:
                 self.assertEqual(report['route_selection']['seed'],2)
                 if local_failure:self.assertEqual([t['generated_relation_count'] for t in report['routing_trials']],[0,1])
-        self.assertNotIn('reason',report)
+        # A completed job states no reason. A rejected one states its own, never an earlier trial's deferral.
+        if final_fail:self.assertEqual(report['reason'],'final board is ineligible')
+        else:self.assertNotIn('reason',report)
         if acquisition:self.assertEqual(len(produced),2,produced)
         if final_fail:self.assertFalse((out/'routed-incumbent.json').exists())
         else:self.assertTrue((out/'routed-incumbent.json').exists())

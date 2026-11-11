@@ -2499,6 +2499,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         _check_stop(clock, job_dir)
         status = _completion_status(routed, selected if incumbent is not None else None, report['final'],
                                     engine_feasible=report['engine_feasible'])
+        if status != 'completed':
+            # The job says why, in words; the next trial or a completed one replaces it.
+            report['reason'] = trial['reason'] = _rejection_reason(status, routed, report['final'])
         trial.update(status=status, route=report['route'], final=report['final'])
         receipt = retain_routing_trial(trial, suffix)
         if status == 'completed':
@@ -2566,6 +2569,23 @@ def _completion_status(routed, incumbent, final, *, engine_feasible=True):
     return 'completed'
 
 
+def _rejection_reason(status, routed, final):
+    """Why a routed trial did not complete, in words: every check that rejected it."""
+    if status == 'route_failed':
+        return 'the router delivered no board: ' + str(routed.get('reason') or routed.get('status'))
+    reasons = []
+    if status == 'placement_infeasible':
+        reasons.append('the search found no placement without a hard violation; '
+                       'the routed board is an exploratory route of a diagnostic candidate')
+    if routed.get('router_accepted') is False:
+        graded = (routed.get('classification') or {}).get('reasons') or ['no reason recorded']
+        reasons.append("the router's own grading rejected its result: " + '; '.join(str(r) for r in graded))
+    reasons += final.get('rejections') or []
+    if status == 'placement_failed':
+        reasons.append('no placement passed its checks; the routed board is an exploratory route')
+    return '; '.join(reasons) or 'final board is ' + str(final.get('eligibility', 'not checked'))
+
+
 GROUP_VIEWS_SCHEMA = 'agent-ee.group-views/1'
 
 
@@ -2603,7 +2623,13 @@ def _group_views(board, groups, out, *, input_board=None, input_board_sha256=Non
     if input_board is not None:
         argv += ['--input-board', str(input_board)]
     _check_stop(clock, cancel_dir)
-    done = _run_child(argv, clock=clock, cancel_dir=cancel_dir)
+    try:
+        done = _run_child(argv, clock=clock, cancel_dir=cancel_dir)
+    except EnvironmentFailure as exc:
+        # A helper that cannot start or crashes is a note like one that refuses: the picture
+        # supplements the record. A deadline or a cancel still stops the job.
+        result['problems'].append(f'group view helper did not finish: {exc}')
+        return result
     if done.returncode != 0:
         noise = (': Debug: ', 'property.h(')
         tail = '\n'.join(line for line in done.stderr.decode(errors='replace').splitlines()

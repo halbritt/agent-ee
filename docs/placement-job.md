@@ -783,7 +783,10 @@ rules, including stricter coupling limits, always remain in force.
    `placement_failed` rejects an otherwise eligible exploratory route with no
    feasible incumbent. `completed` requires an eligible final board and a valid
    incumbent. It remains a placement/routing milestone, not manufacturing
-   acceptance or complete required-check coverage.
+   acceptance or complete required-check coverage. A job that ends with
+   another status says why in `reason`, in words: the router's reasons when
+   its grading rejected the result, then the final board's `rejections`. Each
+   rejected entry of `routing_trials` carries its own `reason`.
 
 ## Cancellation, deadline and resume
 
