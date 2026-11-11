@@ -1274,19 +1274,10 @@ Experiment evidence is never dropped and is never qualified.
   consumer. `tests/test_k91_control_matrix.py` runs it, and
   `tests/test_k91_reason_probe.py` is the round-3 reviewer's probe.
 
-  The round-1 record predates the staged original. The matrix replays its
-  committed `not_run` report under the verifier of its own era: the adapter at
-  `7552f6db`, which wrote and committed it. Its modules are committed
-  byte-exact under `tests/fixtures/k91-era-7552f6db/`, with a manifest of each
-  git blob id and sha256, so the gate image (built without `.git`) needs no git
-  history. The matrix loads only fixture files whose sha256 matches the
-  manifest. `tests/test_k91_era_fixture.py` checks the files against
-  `git show 7552f6db:<path>` when history is present. Without history it
-  checks each file's git blob id, computed in Python. That verifier must
-  reproduce the recorded value and refuse an edited copy. Today's
-  verifier must refuse the same report, for its missing staged original at the
-  report's own pin and as stale evidence at the production pin. The committed
-  bytes are never rewritten or re-graded.
+  The frozen round-1 verifier source and its era-replay tests are retired.
+  The current control matrix still tests the production consumer, candidate
+  and sidecar integrity, stale inputs, and runtime mismatches. The historical
+  implementation remains available in Git at `7552f6db`.
 
   An agent-ee capture run (`runs/N` holding `result.json` beside
   `inputs/<project>`) has the layout that kicad-route reads as a missing

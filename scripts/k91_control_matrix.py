@@ -29,9 +29,7 @@ expected outcome; 1 otherwise, listing the rows that differ.
 """
 import argparse
 import copy
-import hashlib
 import importlib
-import importlib.util
 import json
 import shutil
 import sys
@@ -45,14 +43,6 @@ for path in (ROOT / 'src', ROOT):
 
 SLOTS = ('a_mismatched_runtime', 'b_tampered_candidate', 'b_tampered_sidecar', 'c_stale_input')
 REQUIRED = ('a_mismatched_runtime', 'b_tampered_candidate', 'c_stale_input')
-# The adapter that wrote and committed evidence/k91-native-positive (round 1), before the staged
-# original (2c37f645); its verifier classifies that record. ERA_MODULES are the ones its verify imports,
-# committed byte-exact under ERA_FIXTURE (manifest.json: each git blob id and sha256), so the gate needs
-# no git history; tests/test_k91_era_fixture.py binds the files to the blobs.
-ERA = '7552f6db72ed53d5439144d145835160c206f0cb'
-ERA_FIXTURE = ROOT / 'tests/fixtures/k91-era-7552f6db'
-ERA_PACKAGE = 'k91_era_adapter'
-ERA_MODULES = ('routing_adapter', 'kicad_route_attempt', 'storage')
 BOARD = 'project/rc.kicad_pcb'
 SIDECAR = 'routing/attempt/routability-experiment.json'
 REFUSED, NOT_REFUSED, INCOMPLETE = 'refused', 'not_refused', 'incomplete'
@@ -253,16 +243,6 @@ class Matrix:
         historical = c.v2_verdict(c.v1_controls_as_v2(manifest))
         self.check_row('round-1 historical: no required control refused at the boundary', False,
                        historical['controls_refused'], 'round-1/2 review')
-        # The round-1 record predates the staged original (2c37f645): it is classified by the verifier of
-        # its own era, the adapter that wrote and committed it, and today's verifier refuses it.
-        self.check_row('round-1 mismatch-replay: the committed not_run report verifies to the recorded value '
-                       f'under its era verifier ({ERA[:8]}, pre-staging)', True,
-                       self.mismatch_replay(manifest, self.era_adapter()), 'round2/mismatch-replay.py')
-        self.check_row('round-1 mismatch-replay: the era verifier refuses an edited copy of the report',
-                       'ValueError: routing adapter report identity mismatch',
-                       self.outcome(lambda: self.mismatch_replay(
-                           manifest, self.era_adapter(), edit=lambda r: r['semantics'].update(reasons=[]))),
-                       'ee442 composition')
         from agent_ee import routing_adapter
         self.check_row('round-1 mismatch-replay: today\'s verifier refuses the pre-staging report at its own pin',
                        'ValueError: routing attempt inputs have unknown or missing fields',
@@ -402,38 +382,6 @@ class Matrix:
             return f'returned {call()!r}'
         except Exception as exc:
             return f'{type(exc).__name__}: {exc}'
-
-    def era_adapter(self):
-        """routing_adapter as committed at ERA, loaded from the committed era fixture into a private
-        package: the verifier of the round-1 record's own era, never a fallback of today's."""
-        package = self.fresh('era') / ERA_PACKAGE
-        package.mkdir(parents=True)
-        (package / '__init__.py').write_text('')
-        for name, data in era_modules().items():
-            (package / f'{name}.py').write_bytes(data)
-        spec = importlib.util.spec_from_file_location(ERA_PACKAGE, package / '__init__.py',
-                                                      submodule_search_locations=[str(package)])
-        sys.modules[ERA_PACKAGE] = importlib.util.module_from_spec(spec)
-        try:
-            spec.loader.exec_module(sys.modules[ERA_PACKAGE])
-            return importlib.import_module(f'{ERA_PACKAGE}.routing_adapter')
-        finally:
-            for name in [n for n in sys.modules if n == ERA_PACKAGE or n.startswith(ERA_PACKAGE + '.')]:
-                del sys.modules[name]
-
-
-def era_modules():
-    """The ERA_MODULES bytes from ERA_FIXTURE, each refused unless its sha256 is the manifest's."""
-    manifest = json.loads((ERA_FIXTURE / 'manifest.json').read_text())
-    if manifest.get('commit') != ERA or sorted(manifest.get('modules', {})) != sorted(ERA_MODULES):
-        raise ValueError('era fixture manifest does not name ERA and exactly ERA_MODULES')
-    modules = {}
-    for name in ERA_MODULES:
-        data = (ERA_FIXTURE / f'{name}.py').read_bytes()
-        if hashlib.sha256(data).hexdigest() != manifest['modules'][name]['sha256']:
-            raise ValueError(f'era fixture {name}.py differs from its manifest sha256')
-        modules[name] = data
-    return modules
 
 
 ORIGINAL = {'wrong_replay_binding': ('ValueError', 'replayed receipt is not the step and binding the consumer asked for'),

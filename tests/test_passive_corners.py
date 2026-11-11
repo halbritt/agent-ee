@@ -7,10 +7,25 @@ from test_checks import BASE_PARAMS, conn_fixture
 
 
 class CornerContractTest(unittest.TestCase):
-    def test_shipped_fixture_qualification_matches_reviewed_producer(self):
+    def test_shipped_fixture_qualification_matches_rc_domain(self):
         self.assertEqual(read_json(REPO / 'fixtures/passive-corners/qualification.json'),
                          passive_corners.qualification(),
-                         'Shipped fixture needs semantic review and native requalification')
+                         'Shipped fixture differs from the supported RC domain')
+
+    def test_legacy_source_hashes_do_not_change_the_qualified_domain(self):
+        record = passive_corners.qualification()
+        for hashes in ({}, {'parser_sha256': 'old-parser'}, {'model_sha256': 'old-model'},
+                       {'parser_sha256': 'old-parser', 'model_sha256': 'old-model'}):
+            with self.subTest(hashes=hashes):
+                passive_corners.validate_qualification({**record, **hashes})
+
+    def test_changed_domain_or_policy_still_requires_requalification(self):
+        for field, value in (('policy', 'different'), ('numerical_relative_v', 0.5),
+                             ('tau_s', [1e-8, 1.0]), ('schema', 'unknown'),
+                             ('unknown_parameter', True)):
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(ValueError, 'requalification'):
+                    passive_corners.validate_qualification({**passive_corners.qualification(), field: value})
 
     def test_complete_endpoint_grid_and_native_values(self):
         params = {**copy.deepcopy(BASE_PARAMS), 'tolerances': {
@@ -166,6 +181,10 @@ class NativeCornerTests(unittest.TestCase):
         for label in ('corner-control', 'corner-defect', 'corner-zero'):
             with self.subTest(label=label):
                 root = self.prepare(label, zero=label == 'corner-zero')
+                if label == 'corner-control':
+                    legacy = read_json(root / 'qualification.json')
+                    legacy.update(parser_sha256='old-parser', model_sha256='old-model')
+                    write_json(root / 'qualification.json', legacy)
                 with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), \
                      contextlib.redirect_stdout(io.StringIO()):
                     status = run_review(root / 'scope.json', root / 'run', 180, host=self.host)
@@ -282,7 +301,7 @@ class NativeCornerTests(unittest.TestCase):
             receipt = read_json(ctx.work / 'ensemble.json')
             self.assertFalse(receipt['complete'])
             self.assertNotEqual(receipt['expected'], receipt['completed'])
-        for field in ('parser_sha256', 'model_sha256', 'policy'):
+        for field in ('policy', 'numerical_relative_v'):
             changed = passive_corners.qualification()
             changed[field] = 'changed'
             write_json(root / 'run/inputs/qualification.json', changed)

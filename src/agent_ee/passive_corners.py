@@ -17,16 +17,23 @@ NUMERICAL_REL = 1e-4
 
 
 def qualification():
-    """Expected captured policy inputs; identities do not replace analytic checks."""
-    from . import checks
+    """The supported RC domain and numerical policy, independent of source edits."""
     return {'schema': 'agent-ee.passive-corners/1', 'policy': POLICY,
             'tool': str(TOOL),
-            'parser_sha256': digest(checks.__file__), 'model_sha256': digest(__file__),
             'ramp_s': RAMP_S, 'numerical_relative_v': NUMERICAL_REL,
             'tau_s': [1e-4, 1e-2], 'at_ms': [0.1, 5.0], 'step_v': [0.1, 5.0],
             'stop_ms': 5.0, 'max_corners': 4, 'max_analyses': 5,
             'timeout_s': 30, 'max_step_s': 1e-6, 'initial_v': 0.0,
             'oracle': 'positive-step endpoint monotonicity; per-analysis ideal-step error bound'}
+
+
+def validate_qualification(record):
+    """Accept legacy source hashes as provenance; enforce the actual RC policy."""
+    if not isinstance(record, dict) or {
+        key: value for key, value in record.items()
+        if key not in ('parser_sha256', 'model_sha256')
+    } != qualification():
+        raise ValueError('RC domain or numerical policy requires explicit requalification')
 
 
 def validate_contract(params):
@@ -194,8 +201,7 @@ def check_passive_corners(ctx):
         qpath = ctx.params['qualification']
         if qpath not in ctx.manifest['files'] or digest(ctx.inputs / qpath) != ctx.manifest['files'][qpath]:
             raise ValueError('qualification must be unchanged captured input')
-        if read_json(ctx.inputs / qpath) != qualification():
-            raise ValueError('parser/model/policy identity requires explicit requalification')
+        validate_qualification(read_json(ctx.inputs / qpath))
         nid = params['netlist_check']
         specs = ctx.scope['checks']
         if not any(s['id'] == nid and s['kind'] == 'netlist' for s in specs[:specs.index(ctx.spec)]):

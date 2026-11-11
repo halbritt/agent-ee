@@ -1,4 +1,4 @@
-"""Native and engineering checks on a captured candidate (Fable-owned).
+"""Native and engineering checks on a captured candidate.
 
 `run_checks(run_dir, deadline, **context)` loads `candidate.json`, iterates
 `scope.checks` through `agent_ee.check_registry.registry` (evaluating each

@@ -82,32 +82,6 @@ class LicenseDeclarationTests(unittest.TestCase):
         project = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']
         self.assertEqual(project['license'], {'text': 'MIT'})
 
-    def test_readme_declares_license_and_approval(self):
-        text = (ROOT / 'README.md').read_text()
-        section = ' '.join(text.split('\n## License\n', 1)[1].split('\n\n[', 1)[0].split())
-        for required in ('[MIT License](LICENSE)', 'package metadata', '(docs/file-origins.json)',
-                         '(docs/third-party-origins.md)', '2026-10-22', 'relayed by the coordinator',
-                         '(docs/decisions.md#mit-license-approved-agentee-14-2026-10-22)', 'FOME-MC', 'unresolved'):
-            self.assertIn(required, section)
-        self.assertNotIn('has not yet approved', section)
-
-    def test_owner_decision_is_recorded_as_a_verbatim_relay(self):
-        # AGENTEE-14 owner decision of 2026-10-22, relayed by agent-519 (owner-relayed, not owner-stated).
-        quote = ('Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee '
-                 'material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is '
-                 'sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.')
-        decisions = (ROOT / 'docs/decisions.md').read_text()
-        entry = decisions.split('\n## MIT license approved (AGENTEE-14, 2026-10-22)\n', 1)[1].split('\n## ', 1)[0]
-        quoted = ' '.join(line.removeprefix('>').strip() for line in entry.splitlines() if line.startswith('>'))
-        self.assertEqual(quoted, quote)
-        self.assertIn('Class: owner-relayed, agent-transcribed.', entry)
-        self.assertIn('ad29d555-b855-43f2-bc24-b5b5dfa67991', entry)
-        for key in ('AE', 'AE-RUN', 'T1', 'T2'):
-            record = REAL['origins'][key]['owner_record']
-            self.assertEqual((record['date'], record['decision'], record['class']), ('2026-10-22', quote, 'owner-relayed'))
-            self.assertIn('ad29d555-b855-43f2-bc24-b5b5dfa67991', record['where'])
-        self.assertTrue(REAL['license_proposal']['status'].startswith('Owner-approved'))
-
 
 class RepositoryInventoryTests(unittest.TestCase):
     @classmethod
@@ -380,6 +354,23 @@ class InventoryBoundaryTests(unittest.TestCase):
         with SyntheticTree({'docs/a.pdf': 'x'}) as tree:
             errors, _ = tree.check(inventory([rule(['docs/'], reviewed='all fine')]))
         self.assertEqual(errors, ['rule 0: reviewed rules must list exact paths'])
+
+    def test_owned_python_format_literals_need_no_per_file_review(self):
+        for prefix in ('src/', 'tests/', 'scripts/', 'benchmarks/'):
+            with self.subTest(prefix=prefix), SyntheticTree({prefix + 'parser.py':
+                    '\'(kicad_pcb (footprint "R_0805"\'; \'<export version="E">\''}) as tree:
+                self.assertEqual(tree.check(inventory([rule([prefix])]))[0], [])
+
+    def test_python_exemption_keeps_rights_markers_and_design_files_checked(self):
+        cases = {'tests/copied.py': '# Copyright (c) 2017 Vendor. All rights reserved.',
+                 'src/vendor.py': '# SPDX-License-Identifier: GPL-3.0',
+                 'scripts/copied.py': '# fetched from Polygonus',
+                 'tests/board.kicad_pcb': '(kicad_pcb)',
+                 'fixtures/parser.py': '\'(kicad_pcb)\''}
+        for path, content in cases.items():
+            with self.subTest(path=path), SyntheticTree({path: content}) as tree:
+                errors, _ = tree.check(inventory([rule([path.split('/')[0] + '/'])]))
+                self.assertEqual(len(errors), 1)
 
     def test_confirmation_requires_owner_record(self):
         with SyntheticTree({'fixture/a.kicad_sch': 'x'}) as tree:

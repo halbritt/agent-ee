@@ -20,8 +20,9 @@ names, explicit `step_v`, `stop_ms`, named `measurements`, `qualification`,
 relative interval `[lower, upper]` containing zero, with lower greater than -1
 and upper at most 1. Explicit `[0, 0]` is required for zero tolerance. Unknown
 parameters, extra/missing references and alternate grids refuse coverage.
-The qualification JSON must be captured and exactly match the bundled contract;
-it becomes immutable under scope/2 as well as scope/3.
+The qualification JSON must be captured and match the bundled domain and policy
+contract, apart from the optional historical source hashes described below.
+It becomes immutable under scope/2 as well as scope/3.
 
 The qualified domain is step amplitude 0.1–5 V, stop 5 ms, observation times
 0.1–5 ms, zero initial capacitor voltage and endpoint RC products 0.1–10 ms.
@@ -55,21 +56,26 @@ An unbounded extra observation remains diagnostic; at least one bounded
 observation is required. Zero tolerance deduplicates to one corner and agrees
 with nominal analysis within the same numerical allowance.
 
-Captured qualification inputs bind parser/model source hashes and the fixed policy.
+Captured qualification inputs describe the supported RC domain and numerical
+policy. New records omit `parser_sha256` and `model_sha256`; existing
+`agent-ee.passive-corners/1` records may include them as historical provenance.
+Those two fields do not affect acceptance. Other unknown fields, changed policy
+or changed numerical limits still require explicit requalification. Captured
+input files must remain unchanged during a run.
+
 Each ensemble records the installed ngspice executable SHA-256 and version before
 starting, and refuses a binary change before or after any analysis. A new run
 can use an updated simulator; every analysis still has to satisfy the independent
 analytic oracle. Retained evidence identifies the simulator actually used, and
-continuing a run requires its recorded runtime. Changing parser/model semantics
-or policy invalidates old qualification inputs and requires reviewing the change,
-updating the captured contract, and rerunning the owned native acceptance corpus.
-Do not merely edit hashes to imply qualification.
-
-`parser_sha256` covers the entire `agent_ee/checks.py` module, so changes to
-native-netlist prerequisites also require this process. If integration changes
-that module again, refresh and requalify against the final integrated bytes.
+continuing a run requires its recorded runtime. Changes to RC calculation or
+parser behavior need the relevant regression checks; unrelated source edits do
+not require refreshing a qualification checksum. A policy or domain change must
+update the contract and its native acceptance tests.
 
 ### 2026-11-06 qualification review (AGENTEE-618)
+
+Historical record: the source-checksum procedure below was replaced on
+2026-11-11 by the domain and policy comparison described above.
 
 The stale parser checksum in the shipped fixture was traced to commit
 `b383dadbdf89befdec29c56c182e1b26ecb1952d`. Its entire change to `checks.py`

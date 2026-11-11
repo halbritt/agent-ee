@@ -432,6 +432,11 @@ def check(root=ROOT, inventory=None, paths=None, relocation=None):
         reasons = (['file type'] if risky_name(path) else
                    facts['content_markers'][path] if path in virtual else
                    content_markers((root / path).read_bytes()))
+        # Parsers and tests contain format syntax; it does not imply copied design data.
+        # Rights notices and upstream markers still need an explicit origin or review.
+        if (rule['kind'] == 'owned-source' and path.endswith('.py')
+                and path.startswith(('src/', 'tests/', 'scripts/', 'benchmarks/'))):
+            reasons = [reason for reason in reasons if reason not in ('KiCad design text', 'netlist export')]
         if reasons:
             errors.append(f'{path}: {", ".join(reasons)} needs a third-party origin or an exact reviewed rule')
     captured = {}
