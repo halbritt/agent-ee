@@ -2470,7 +2470,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 seen.add(entry['board_sha256'])
     report['routing_trials'] = []
     from . import routing_adapter
-    second_trials, first_results = [], {}
+    second_trials, asked, best_failed = [], set(), None
+    # A resumed job has already seen its first trials fail on the router's default grid.
+    resumed_after_failure = bool(state.get('routing_trials'))
     def routing_candidates():
         index, repairs_tried = 0, False
         while True:
@@ -2536,10 +2538,12 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # search from taking the entire portfolio budget. This is scheduling
         # policy, not an engineering relaxation; the outer deadline still wins.
         budget = clock.remaining() / (len(queue) - number)
-        # A resumed job's retained trials count too. An interrupted first trial leaves none.
+        # Every candidate's first trial is the cheap one. The finer grid comes with the second
+        # trials, or first in a job resumed with failed trials retained (an interrupted first
+        # trial leaves none).
         second = selected.get('second_trial')
         grid_step, grid_basis = ((second['grid_step_mm'], second['grid_basis']) if second else router_grid(
-            config, after_failed_route=bool(number or state.get('routing_trials'))))
+            config, after_failed_route=resumed_after_failure))
         trial = {'seed': selected['seed'], 'board_sha256': selected['board_sha256'],
                  'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
                  'budget_basis': 'agent-default/equal-remaining-share',
@@ -2666,19 +2670,22 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             write_json(tmp, {'placement': selected, 'trial': str(receipt), 'trial_sha256': digest(receipt)})
             os.replace(tmp, job_dir / 'routed-incumbent.json')
             break
-        reported = ('reason', 'final', 'route', 'route_selection', 'routed_candidate')
-        if second:
-            # Both trials of this placement failed: the job reports the better board of the two.
-            first = first_results[selected['board_sha256']]
-            if trial_rank(first['final']) <= trial_rank(report['final']):
-                status = first['status']
-                report.update({key: first[key] for key in reported})
-        elif (second_trial_useful(status, routed, report['final']) and selected['board_sha256'] not in first_results
-                and (other := other_grid(grid_step, grid_basis)) is not None):
-            first_results[selected['board_sha256']] = {'status': status, **{key: report[key] for key in reported}}
+        if (not second and second_trial_useful(status, routed, report['final'])
+                and selected['board_sha256'] not in asked and (other := other_grid(grid_step, grid_basis)) is not None):
+            asked.add(selected['board_sha256'])
             second_trials.append({**selected, 'second_trial': {
                 'first_trial': number + 1, 'first_elapsed_s': float(routed.get('elapsed_s') or 0.),
                 'grid_step_mm': other[0], 'grid_basis': other[1]}})
+        # No trial has completed so far. The job reports the best board among the failed ones,
+        # also when it is stopped at its deadline during a later trial; an equal later board
+        # does not replace an earlier one.
+        reported = ('reason', 'final', 'route', 'route_selection', 'routed_candidate')
+        rank = trial_rank(report['final'])
+        if best_failed is None or rank < best_failed[0]:
+            best_failed = (rank, {'status': status, **{key: report[key] for key in reported}})
+        else:
+            status = best_failed[1]['status']
+            report.update({key: best_failed[1][key] for key in reported})
     _check_stop(clock, job_dir)
     report['placement'] = chosen_placement(job_dir, deadline_limited=search_limited)
     report['phases'] = clock.phases

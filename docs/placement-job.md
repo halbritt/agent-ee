@@ -317,9 +317,9 @@ Optional `router.grid_step_mm` selects the builtin router's search resolution
 in millimetres, including its coupled differential-pair and remaining-net
 passes. For example, `0.025` requests a 25 micrometre search grid. It does not
 change native widths or clearance requirements. When it is omitted, the first
-routing trial of a job uses the router's own default, and every trial after a
-failed route uses 0.025 mm, including after a failed route retained by a
-resumed job. This is scheduling policy. On two sub-millimetre boards the default
+routing trial of every candidate uses the router's own default; 0.025 mm comes
+with the second trials below, and first in a job resumed with failed routes
+retained. This is scheduling policy. On two sub-millimetre boards the default
 left opens or dangling vias and 0.025 mm routed; on others the default routes
 clean in about a fifth of the time and 0.025 mm does not (AGENTEE-649). Until
 then a job started on 0.025 mm whenever a footprint had pads on different nets
@@ -344,10 +344,11 @@ so that it ends inside the job: its search is cut by the router's stop grace
 (`max(30, budget // 5) + 15` s) and a 60 s allowance for the router's grading
 and the job's final checks, and its entry in `routing_trials` carries
 `second_trial_of` and `checks_allowance_s`. A first trial keeps nothing back,
-as before. A completed second trial completes the job. When both trials of a
-placement fail, the job reports the better board of the two: a checked board
-before none, then fewer open connections, then fewer errors the routing
-introduced; an equal second board does not replace the first (AGENTEE-645).
+as before. A completed second trial completes the job. When no trial
+completes, the job reports the best board among all its failed trials, also
+when it stops at its deadline during a later one: a checked board before none,
+then fewer open connections, then fewer errors the routing introduced; an
+equal later board does not replace an earlier one (AGENTEE-645, AGENTEE-649).
 
 Optional `router.diff_pairs` declares differential pairs. Its only value is
 `"auto"`, which passes `--diff-pairs auto`: kicad-route then pairs nets by name

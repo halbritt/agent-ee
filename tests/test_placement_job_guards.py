@@ -462,21 +462,26 @@ class ControllerBoundaryTests(Fixture):
                 self.assertEqual(json.loads((out / 'incumbent.json').read_text()), entry)
                 self.assertEqual(json.loads((out / 'job-report.json').read_text())['status'], report['status'])
 
-    def _second_trial(self, name, finals, *, remaining=900.0, elapsed=100.0, router=None):
-        """A job whose router returns a board every time and whose final checks return ``finals`` in turn."""
+    def _second_trial(self, name, finals, *, remaining=900.0, elapsed=100.0, router=None, candidates=1):
+        """A job whose router returns a board every time and whose final checks return ``finals`` in turn.
+
+        The first of ``candidates`` placements is the incumbent ('fixture'); the others ('fixture-1', ...)
+        are eligible alternatives."""
         problem, _ = self.problem()
         out = self.dir / name
         config = {'budget_s': 900, 'inputs': {k: {} for k in ('board', 'project', 'intent', 'groups')},
-                  'search': {'shortlist': 1}, 'router': dict({'checkout': 'unused'}, **(router or {}))}
+                  'search': {'shortlist': candidates}, 'router': dict({'checkout': 'unused'}, **(router or {}))}
         values = [(self.board, self.board.read_bytes()), (self.project, b'{}'),
                   (self.board, json.dumps(intent()).encode()), (self.board, json.dumps(groups()).encode())]
         entry = {'index': 0, 'seed': 0, 'board_sha256': 'fixture', 'errors': {}, 'engine_violations': [],
                  'directory': str(self.dir), 'board': str(self.board)}
         output = {'timing': {'prepare_s': 0}, 'status': 'completed', 'counters': {}, 'seeds': [], 'prng': 'probe',
-                  'shortlist': [{'seed': 0, 'cost': '1', 'poses': []}]}
-        def judged(*args, **kwargs):
-            (out / 'incumbent.json').write_text(json.dumps(entry))
-            return {'board': str(self.board), 'board_sha256': 'fixture', 'integrity': 'preserved', 'problems': []}
+                  'shortlist': [{'seed': n, 'cost': str(n + 1), 'poses': [n], 'feasible': True} for n in range(candidates)]}
+        def judged(_board, poses, *args, **kwargs):
+            if poses[0] == 0:
+                (out / 'incumbent.json').write_text(json.dumps(entry))
+            return {'board': str(self.board), 'board_sha256': 'fixture' + (f'-{poses[0]}' if poses[0] else ''),
+                    'integrity': 'preserved', 'problems': []}
         def routed(*args, **kwargs):
             return {'status': 'routed', 'board': str(self.board), 'elapsed_s': elapsed,
                     'preflight': {k: None for k in job.ROUTER_IDENTITY}}
@@ -533,6 +538,26 @@ class ControllerBoundaryTests(Fixture):
                 self.assertEqual(report['reason'], f'{kept} open connection(s)')
                 self.assertEqual([t['final']['opens'] for t in report['routing_trials']], list(opens))
                 self.assertFalse((self.dir / name / 'routed-incumbent.json').exists())
+
+    def test_every_candidate_gets_the_cheap_grid_first_and_the_best_failed_board_is_reported(self):
+        # Matched benchmark, flat_hierarchy after AGENTEE-648: the first candidate routed with no open
+        # connection, the next two were started on the 0.025 mm grid, one delivered no board, and the
+        # job reported nothing where it had a board.
+        for name, opens, kept in (('later-better', (4, 1), 1), ('earlier-better', (1, 4), 1), ('equal', (2, 2), 2)):
+            with self.subTest(name=name):
+                finals = [dict(self._final(n), trial=k) for k, n in enumerate(opens)]
+                # 150 s left: no second trial fits, so only the two first trials run.
+                report, route = self._second_trial(name, finals, remaining=150.0, candidates=2)
+                self.assertEqual([c.kwargs['grid_step_mm'] for c in route.call_args_list], [None, None])
+                self.assertEqual([t['board_sha256'] for t in report['routing_trials']], ['fixture', 'fixture-1'])
+                self.assertEqual([t['final']['opens'] for t in report['routing_trials']], list(opens))
+                self.assertEqual(report['status'], 'verification_failed')
+                self.assertEqual(report['final']['opens'], kept)
+                best = 1 if name == 'later-better' else 0           # an equal later board does not replace
+                self.assertEqual(report['final']['trial'], best)
+                self.assertEqual(report['route_selection']['board_sha256'], ('fixture', 'fixture-1')[best])
+                self.assertEqual(report['reason'], f'{kept} open connection(s)')
+                self.assertEqual(len(report['second_trials_not_started']), 2)
 
     def test_no_second_trial_without_the_time_or_against_a_declared_grid(self):
         # 150 s left: a 60 s allowance and the router's 45 s stop grace leave a 45 s search,
