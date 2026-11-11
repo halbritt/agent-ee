@@ -312,6 +312,65 @@ class ErrorAttributionTests(unittest.TestCase):
         self.assertEqual(count(job.classify_errors(report, owners, baseline, {job._key(edge), job._key(pair)}, moved=[])),
                          {'pre_existing': 2, 'placement_introduced': 0, 'routing_introduced': 1})
 
+    def test_error_inside_one_footprint_is_pre_existing_without_the_input_reporting_it(self):
+        # Benchmark r5 tigard: the unplaced input was a pile of footprints, KiCad stopped
+        # reporting clearance at 499 findings, and 19 pad pairs of resistor networks that
+        # the report left out were booked as placement-introduced on every candidate.
+        def finding(kind, *uuids):
+            return {'type': kind, 'severity': 'error', 'items': [{'uuid': u} for u in uuids]}
+        owners = {'pad-1': 'rn', 'pad-2': 'rn', 'label': 'rn', 'zone': 'rn', 'pad-x': 'other'}
+        rigid = {'pad-1', 'pad-2', 'pad-x'}
+        inside = finding('clearance', 'pad-1', 'pad-2')
+        label = finding('silk_over_copper', 'label', 'pad-1')    # the label step moves fields
+        fill = finding('starved_thermal', 'pad-1', 'zone')       # a fill depends on what is around it
+        between = finding('clearance', 'pad-1', 'pad-x')
+        report = {'violations': [inside, label, fill, between]}
+        split = job.classify_errors(report, owners, set(), rigid=rigid)
+        self.assertEqual(split['pre_existing'], [inside])
+        self.assertEqual(split['placement_introduced'], [label, fill, between])
+        # Without the rigid items the input has to report the finding, as before.
+        self.assertEqual(job.classify_errors(report, owners, set())['placement_introduced'], report['violations'])
+        # After routing: the same finding on the placed board is still pre-existing; one that
+        # only the routed board has is the routing's.
+        placed = job.error_keys({'violations': [inside]})
+        self.assertEqual(job.classify_errors(report, owners, set(), placed, rigid=rigid),
+                         {'pre_existing': [inside], 'placement_introduced': [],
+                          'routing_introduced': [label, fill, between]})
+        self.assertEqual(job.classify_errors({'violations': [inside]}, owners, set(), job.error_keys({'violations': []}),
+                                             rigid=rigid)['routing_introduced'], [inside])
+        # A finding the input does report is counted once, not twice.
+        twice = {'violations': [inside, inside]}
+        split = job.classify_errors(twice, owners, job.error_keys({'violations': [inside]}), rigid=rigid)
+        self.assertEqual(len(split['pre_existing']), 2)
+
+
+class RigidItemTests(Boards):
+    def test_pads_and_drawings_are_rigid_and_fields_and_zones_are_not(self):
+        import pcbnew
+
+        def add_footprint_zone(k, board):
+            fp = next(f for f in board.GetFootprints() if f.GetReference() == 'U1')
+            zone = k.ZONE(fp)
+            zone.SetLayer(k.F_Cu)
+            outline = zone.Outline()
+            outline.NewOutline()
+            for x, y in ((9, 8), (11, 8), (11, 10), (9, 10)):
+                outline.Append(x * MM, y * MM)
+            fp.Add(zone)
+        self.edit(add_footprint_zone)
+        board = pcbnew.LoadBoard(str(self.board))
+        rigid, owners = job._rigid(board), job._owners(board)
+        fp = next(f for f in board.GetFootprints() if f.GetReference() == 'U1')
+        uuids = lambda items: {item.m_Uuid.AsString() for item in items}
+        self.assertTrue(uuids(fp.Pads()))
+        self.assertLessEqual(uuids(fp.Pads()), rigid)
+        self.assertLessEqual(uuids(fp.GraphicalItems()) - uuids(fp.GetFields()), rigid)
+        self.assertFalse(uuids(fp.GetFields()) & rigid)
+        self.assertEqual(len(list(fp.Zones())), 1)
+        self.assertFalse(uuids(fp.Zones()) & rigid)
+        # Fields and zones still belong to their footprint for the rule that reads the input.
+        self.assertLessEqual(uuids(fp.GetFields()) | uuids(fp.Zones()), set(owners))
+
 
 if __name__ == '__main__':
     unittest.main()

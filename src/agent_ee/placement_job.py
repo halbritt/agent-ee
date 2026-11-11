@@ -1266,6 +1266,19 @@ def _owners(board):
     return owner
 
 
+def _rigid(board):
+    """UUIDs of the items that keep their place inside their footprint whatever this job does.
+
+    These are a footprint's pads and drawings. Its fields are left out, because the label step
+    moves them; its zones are left out, because their fill depends on the copper around them."""
+    rigid = set()
+    for fp in board.GetFootprints():
+        fields = {field.m_Uuid.AsString() for field in fp.GetFields()}
+        rigid.update(uuid for uuid in (item.m_Uuid.AsString() for item in list(fp.Pads()) + list(fp.GraphicalItems()))
+                     if uuid not in fields)
+    return rigid
+
+
 def _key(v):
     return (v['type'], tuple(sorted(i.get('uuid', '') for i in v.get('items', []))))
 
@@ -1275,14 +1288,23 @@ def error_keys(report):
     return Counter(_key(v) for v in report['violations'] if v.get('severity') == 'error')
 
 
-def classify_errors(report, owners, baseline_keys, placed_keys=None, moved=None):
+def classify_errors(report, owners, baseline_keys, placed_keys=None, moved=None, rigid=None):
     """Split native errors into pre-existing / placement-introduced / routing-introduced.
 
-    Pre-existing: the unchanged input reports the same (type, items), and either
-    every item belongs to one footprint or, when ``moved`` (the UUIDs of the
-    footprints this placement moved) is known, no item belongs to a moved
-    footprint. Placement-introduced: any other error present on the placed
-    board. Routing-introduced: new relative to the placed board.
+    Pre-existing, by the input: the unchanged input reports the same (type, items), and
+    either every item belongs to one footprint or, when ``moved`` (the UUIDs of the
+    footprints this placement moved) is known, no item belongs to a moved footprint.
+
+    Pre-existing, by geometry: every item is a rigid member of one footprint (``rigid``,
+    see :func:`_rigid`), and the placed board has the finding too when ``placed_keys`` is
+    given. A placement moves a footprint as a whole, so such a finding is the same
+    wherever the footprint is, and the input need not report it. It often does not:
+    KiCad stops reporting a type at a limit (499 clearance findings and 199 of several
+    other types on KiCad 10), and the unplaced input of a placement job, a pile of
+    footprints, has more. Without ``rigid`` only the first rule applies.
+
+    Placement-introduced: any other error present on the placed board.
+    Routing-introduced: new relative to the placed board.
 
     The key sets are multisets (:func:`error_keys`; a plain set counts each key
     once). One finding of the input accounts for one finding here, and likewise
@@ -1295,12 +1317,18 @@ def classify_errors(report, owners, baseline_keys, placed_keys=None, moved=None)
         if v.get('severity') != 'error':
             continue
         key = _key(v)
-        footprints = {owners.get(i.get('uuid')) for i in v.get('items', [])}
-        if in_input[key] > 0 and ((len(footprints) == 1 and None not in footprints)
-                                  or (moved is not None and not footprints & set(moved))):
+        items = v.get('items', [])
+        footprints = {owners.get(i.get('uuid')) for i in items}
+        one_footprint = len(footprints) == 1 and None not in footprints
+        before_routing = on_placed is None or on_placed[key] > 0
+        if (one_footprint and rigid is not None and before_routing
+                and all(i.get('uuid') in rigid for i in items)):
+            in_input[key] -= in_input[key] > 0
+            cause = 'pre_existing'
+        elif in_input[key] > 0 and (one_footprint or (moved is not None and not footprints & set(moved))):
             in_input[key] -= 1
             cause = 'pre_existing'
-        elif on_placed is None or on_placed[key] > 0:
+        elif before_routing:
             cause = 'placement_introduced'
         else:
             cause = 'routing_introduced'
@@ -2316,7 +2344,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         shortlist = diagnostics
     report['engine_feasible'] = any(c.get('feasible') for c in shortlist)
     import pcbnew
-    owners = _owners(pcbnew.LoadBoard(str(board_path)))
+    native_input = pcbnew.LoadBoard(str(board_path))
+    owners, rigid = _owners(native_input), _rigid(native_input)
     with clock.phase('judge'):
         _check_stop(clock, job_dir)
         (job_dir / f'input-drc-a{attempt}').mkdir()
@@ -2344,7 +2373,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                      clock=clock, cancel_dir=job_dir)
                 report_, exec_, labels = place_labels(check, report_, exec_, project_bytes, rules_bytes,
                                                       clock=clock, cancel_dir=job_dir)
-                split = classify_errors(report_, owners, base_keys, moved=check.get('moved'))
+                split = classify_errors(report_, owners, base_keys, moved=check.get('moved'), rigid=rigid)
                 entry.update(status='checked', integrity=check['integrity'], integrity_problems=check['problems'],
                              moved_footprints=check.get('moved'), labels=labels,
                              mechanics=check_mechanics(directory / 'board.kicad_pcb', normalized, clock=clock, cancel_dir=job_dir),
@@ -2548,7 +2577,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                            local_routing=local_seed,
                                            input_board=board_path, input_board_sha256=sha256_bytes(board_bytes),
                                            reject_silk_graphics=config.get('reject_silk_graphic_conflicts') is True,
-                                           reject_track_dangling=config.get('reject_track_dangling') is True)
+                                           reject_track_dangling=config.get('reject_track_dangling') is True,
+                                           rigid=rigid)
             if local_seed is not None and report['final'].get('board'):
                 seed_check = report['final']['local_routing']
                 if (routed.get('copper_policy') != 'preserve_existing'
@@ -2817,7 +2847,7 @@ def _cleanup_local_router_stubs(board, report, receipt, directory, *, owned_zone
 def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, refinement=None, clock=None, cancel_dir=None,
                  owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None,
                  input_board=None, input_board_sha256=None, local_routing=None, reject_silk_graphics=False,
-                 reject_track_dangling=False):
+                 reject_track_dangling=False, rigid=None):
     groups, intent, rails = (_bundle(normalized)[k] for k in ('groups', 'intent', 'rails'))
     import pcbnew
     clock = clock or Clock(300)
@@ -2969,7 +2999,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
                 or ac_result.get('requirement') != ac_match):
             ac_result['status'] = 'FAIL'
             ac_result.setdefault('defects', []).append('final AC result does not bind the saved board and requirement')
-    split = classify_errors(report_, owners, base_keys, placed_keys, moved=incumbent.get('moved_footprints'))
+    split = classify_errors(report_, owners, base_keys, placed_keys, moved=incumbent.get('moved_footprints'), rigid=rigid)
     edge_intent = check_edge_intent(board, normalized, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, normalized, clock=clock, cancel_dir=cancel_dir)
     block_result = check_block_contract(board, normalized, clock=clock, cancel_dir=cancel_dir)

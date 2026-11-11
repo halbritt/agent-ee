@@ -744,10 +744,18 @@ rules, including stricter coupling limits, always remain in force.
    put it; unchanged fixed parts; and unchanged non-footprint board content (two
    normalizations: SaveBoard's standard layer user names, and zone fill results).
    Native DRC (`kicad-cli pcb drc --severity-all --refill-zones`) errors are
-   split into **pre-existing** (the same finding on the unchanged input, with
-   all items in one footprint or none of them in a footprint this candidate
-   moved) and **placement-introduced**. On a board where nothing moved, every
-   error the input already had is therefore pre-existing. A finding is its
+   split into **pre-existing** and **placement-introduced**. An error is
+   pre-existing in two cases. First, the unchanged input reports the same
+   finding, with all items in one footprint or none of them in a footprint
+   this candidate moved. Second, every item is a pad or a drawing of one
+   footprint: a placement moves a footprint as a whole, so that finding is the
+   same wherever the footprint is, and the input need not report it. KiCad
+   stops reporting a type at a limit (499 clearance findings and 199 of
+   several other types on KiCad 10), and an unplaced input, a pile of
+   footprints, has more than that (AGENTEE-646). A footprint's fields and
+   zones are not covered by the second case: the label step moves fields, and
+   a zone's fill depends on the copper around it. On a board where nothing
+   moved, every error the input already had is pre-existing. A finding is its
    type and its items; each finding of the input accounts for one finding of
    the candidate, so a board that reports the same finding more often than
    its input has the extra ones as introduced. Pre-existing errors are counted
