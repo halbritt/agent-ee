@@ -1,0 +1,7 @@
+{
+ "note": "Rules stated for a board whose source carries no project file, so that both tools design to one named rule set instead of KiCad's defaults, which nobody chose for the board. The values are the fab capability at no extra cost as upstream KRT's `standard` fab tier states it (py_router/fab_tiers.py at e6bc31e2): stock KRT's own standard tier is legal under them. The Default net class takes the same values as the minimums. Every other rule keeps the value KiCad wrote.",
+ "by_copper_layers": {
+  "1-2": {"clearance": 0.127, "track_width": 0.127, "via_diameter": 0.45, "via_drill": 0.2, "hole_to_hole": 0.2, "board_edge": 0.2},
+  "3+": {"clearance": 0.1, "track_width": 0.0889, "via_diameter": 0.45, "via_drill": 0.2, "hole_to_hole": 0.2, "board_edge": 0.2}
+ }
+}

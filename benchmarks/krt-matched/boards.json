@@ -13,5 +13,9 @@
   "complex_hierarchy": {"class": "independent", "source": "sources/kicad-demos/demos/complex_hierarchy/complex_hierarchy.kicad_pcb"},
   "stickhub": {"class": "independent", "source": "sources/kicad-demos/demos/stickhub/StickHub.kicad_pcb"}
  },
+ "fab_rules_boards": {
+  "esp_prog_fabrules": {"class": "krt", "source": "KiCadRoutingTools/kicad_files/esp_prog.kicad_pcb", "prep": "--fab-rules"},
+  "tigard_fabrules": {"class": "krt", "source": "KiCadRoutingTools/kicad_files/tigard.kicad_pcb", "prep": "--fab-rules"}
+ },
  "debug_board": {"sonde_u": "KiCadRoutingTools/kicad_files/sonde_u.kicad_pcb"}
 }

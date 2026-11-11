@@ -111,6 +111,27 @@ def remove_pours(src, dst):
     pcbnew.SaveBoard(str(dst), board)
 
 
+def state_fab_rules(norm):
+    """Write the stated fab rules (fab-rules.json) into the project file pcbnew made for a board without one."""
+    import pcbnew
+    layers = pcbnew.LoadBoard(str(norm)).GetCopperLayerCount()
+    tier = '1-2' if layers <= 2 else '3+'
+    values = json.loads((Path(__file__).parent / 'fab-rules.json').read_text())['by_copper_layers'][tier]
+    project_path = norm.with_suffix('.kicad_pro')
+    project = json.loads(project_path.read_text())
+    rules = project['board']['design_settings']['rules']
+    rules.update(min_clearance=values['clearance'], min_track_width=values['track_width'],
+                 min_via_diameter=values['via_diameter'], min_through_hole_diameter=values['via_drill'],
+                 min_hole_to_hole=values['hole_to_hole'], min_copper_edge_clearance=values['board_edge'])
+    default = [c for c in project['net_settings']['classes'] if c['name'] == 'Default']
+    if len(default) != 1:
+        raise SystemExit('the normalized project has no single Default net class')
+    default[0].update(clearance=values['clearance'], track_width=values['track_width'],
+                      via_diameter=values['via_diameter'], via_drill=values['via_drill'])
+    project_path.write_text(json.dumps(project, indent=2) + '\n')
+    return {'copper_layers': layers, 'tier': tier, 'values': values}
+
+
 def lock_set(norm_board):
     """Placement-arm locks: source locks, un-netted footprints, connector/hole/switch prefixes."""
     import pcbnew
@@ -239,11 +260,13 @@ def input_report(root, name, suffix=''):
 
 
 def rules_origin(root):
-    """Whether the board's rules are its source project's or KiCad's defaults."""
+    """Whether the board's rules are its source project's, stated fab rules, or KiCad's defaults."""
     try:
         record = json.loads((root / 'prep.json').read_text())
     except (OSError, ValueError):
         return 'unknown'
+    if record.get('stated_fab_rules'):
+        return f"stated fab rules ({record['stated_fab_rules']['tier']} layers, fab-rules.json)"
     own = record.get('source_has_project_file')
     if own is None:
         source = Path(record.get('source', ''))
@@ -274,6 +297,11 @@ def prep(args):
     edit_board(norm, norm)                                   # normalize: load and save in this KiCad
     if not norm.with_suffix('.kicad_pro').is_file():
         raise SystemExit('pcbnew wrote no project file beside the normalized board')
+    stated = None
+    if args.fab_rules:                                       # only for a board that has no rules of its own
+        if src.with_suffix('.kicad_pro').is_file():
+            raise SystemExit('the source has its own project file; its rules are not replaced')
+        stated = state_fab_rules(norm)
     variants = {'': norm}
     if args.no_pours:                                        # the preregistered zone fallback
         bare = root / 'norm-nopours' / norm.name
@@ -296,7 +324,7 @@ def prep(args):
         write_json(place_in.parent / 'groups.json', groups_for(place_in) if place_in.is_file() else {})
         write_json(root / f'prep{suffix}.json', {
             'source': str(src), 'source_sha256': sha256(src), 'normalized_sha256': sha256(norm),
-            'source_has_project_file': src.with_suffix('.kicad_pro').is_file(),
+            'source_has_project_file': src.with_suffix('.kicad_pro').is_file(), 'stated_fab_rules': stated,
             'route_in': str(route_in), 'route_in_sha256': sha256(route_in), 'locked_refs': locked,
             'place_in': str(place_in), 'make_unplaced': made,
             'place_in_sha256': sha256(place_in) if place_in.is_file() else None})
@@ -345,8 +373,11 @@ def checkout_version():
 
 # ---- the two tools ---------------------------------------------------------------------
 
-def krt_route(board_in, out_dir, rules_board):
-    """Stock KRT, README default: route.py IN OUT."""
+KRT_HELD = ['--escalation', 'board', '--no-fix-drc-settings']   # never below the board's declared floors
+
+
+def krt_route(board_in, out_dir, rules_board, options=()):
+    """Stock KRT, README default: route.py IN OUT. options adds a labelled variant's flags."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     staged = out_dir / 'in' / Path(board_in).name
@@ -354,7 +385,7 @@ def krt_route(board_in, out_dir, rules_board):
     shutil.copyfile(board_in, staged)
     copy_rules(rules_board, staged)
     out = out_dir / 'routed.kicad_pcb'
-    record = run([KRT_PY, '-X', 'utf8', 'py_router/route.py', staged, out], out_dir / 'route.log',
+    record = run([KRT_PY, '-X', 'utf8', 'py_router/route.py', staged, out, *options], out_dir / 'route.log',
                  cwd=KRT, timeout=BUDGET_S)
     record['output'] = str(out) if out.is_file() else None
     return record
@@ -486,6 +517,8 @@ def route_arm(args):
     arm = 'route' + suffix
     if 'krt' in args.tools:
         result(root, name, arm, 'krt', krt_route(route_in, root / 'runs' / f'{arm}-krt', norm), norm)
+    if 'krt-held' in args.tools:                             # secondary: KRT told to keep the board's floors
+        result(root, name, arm, 'krt-held', krt_route(route_in, root / 'runs' / f'{arm}-krt-held', norm, KRT_HELD), norm)
     if 'agent-ee' in args.tools:
         record = agent_ee_job(route_in, norm, groups_for(route_in), f'{name}-{arm}', root / 'runs' / f'{arm}-agent-ee')
         done = result(root, name, arm, 'agent-ee', record, norm)
@@ -613,8 +646,9 @@ def rescore(_args):
 
 def summary(_args):
     rescore(_args)
-    chosen = set(json.loads((Path(__file__).parent / 'boards.json').read_text())['boards'])
-    rows, passing = [], {}
+    listed = json.loads((Path(__file__).parent / 'boards.json').read_text())
+    chosen, stated = set(listed['boards']), set(listed.get('fab_rules_boards', {}))
+    rows, passing, passing_stated = [], {}, {}
     for path in sorted(RUNS.glob('boards/*/results/*.json')):
         data = json.loads(path.read_text())
         if 'arm' not in data or data.get('tool') == 'unrouted input':
@@ -623,11 +657,12 @@ def summary(_args):
         s, r = data.get('score') or {}, data.get('run') or {}
         suffix = '-nopours' if 'nopours' in data['arm'] else ''
         v = verdict(s, input_report(root, data['board'], suffix))
-        if data['board'] in chosen:                 # the debug board is listed but never counted
+        counted = passing if data['board'] in chosen else passing_stated if data['board'] in stated else None
+        if counted is not None:                     # the debug board is listed but never counted
             cell = (data['arm'], data['tool'])
-            passing.setdefault(cell, [[], 0])[1] += 1
+            counted.setdefault(cell, [[], 0])[1] += 1
             if v['passes']:
-                passing[cell][0].append(data['board'])
+                counted[cell][0].append(data['board'])
         rows.append([data['board'], data['arm'], data['tool'], 'yes' if v['passes'] else 'no', s.get('unconnected'),
                      v.get('introduced_errors'), json.dumps(v.get('introduced_by_type')) if s else None,
                      s.get('drc_errors'), json.dumps(s.get('drc_errors_by_type')) if s else None, s.get('drc_warnings'),
@@ -640,13 +675,19 @@ def summary(_args):
     table = lambda head_, rows_: ['| ' + ' | '.join(head_) + ' |', '|' + ' --- |' * len(head_),
                                   *('| ' + ' | '.join('' if v is None else str(v) for v in row) + ' |' for row in rows_)]
     print('\n'.join(table(head, rows)))
-    board_rows = [[arm, tool, len(names), total, ', '.join(names)] for (arm, tool), (names, total) in sorted(passing.items())]
+    count_rows = lambda counted: [[arm, tool, len(names), total, ', '.join(names)]
+                                  for (arm, tool), (names, total) in sorted(counted.items())]
+    board_rows, stated_rows = count_rows(passing), count_rows(passing_stated)
     board_head = ['arm', 'tool', 'boards passing', 'of', 'which']
     print('\nPasses: 0 open connections and no DRC error beyond the unrouted input\'s, against the board\'s own rules. '
           'Boards of the chosen set only.\n')
     print('\n'.join(table(board_head, board_rows)))
+    if stated_rows:
+        print('\nThe same for the boards prepared with stated fab rules (their source has no project file).\n')
+        print('\n'.join(table(board_head, stated_rows)))
     write_json(RUNS / 'summary.json', {'cells': [dict(zip(head, row)) for row in rows],
-                                       'passing': [dict(zip(board_head, row)) for row in board_rows]})
+                                       'passing': [dict(zip(board_head, row)) for row in board_rows],
+                                       'passing_stated_fab_rules': [dict(zip(board_head, row)) for row in stated_rows]})
 
 
 def main():
@@ -661,6 +702,8 @@ def main():
             p.add_argument('--no-pours', action='store_true', help='the zone-fallback variant')
         if name == 'prep':
             p.add_argument('source')
+            p.add_argument('--fab-rules', action='store_true',
+                           help='for a source without a project file: state the rules of fab-rules.json')
         if name == 'reuse':
             p.add_argument('source', help='the earlier run directory whose prepared inputs to copy')
         if name == 'place':
@@ -668,7 +711,8 @@ def main():
             p.add_argument('--capped', action='store_true', help='agent-ee only: the earlier default, 100,000 steps per seed')
             p.add_argument('--seed-offset', type=int, default=0, help='agent-ee only: add to every seed number')
         if name in ('route', 'place'):
-            p.add_argument('--tools', nargs='+', default=['krt', 'agent-ee'], choices=['krt', 'agent-ee'])
+            p.add_argument('--tools', nargs='+', default=['krt', 'agent-ee'],
+                           choices=['krt', 'agent-ee'] + ['krt-held'] * (name == 'route'))
     args = parser.parse_args()
     args.func(args)
 

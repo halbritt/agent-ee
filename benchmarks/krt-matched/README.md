@@ -125,6 +125,20 @@ Nothing is keyed on a board. Every rule below applies to every board.
   none (esp_prog and tigard in the first set). On such a board a tool that
   chooses its own widths is not lowering anyone's rules; read those rows with
   that in mind.
+- **Stated fab rules** (variant, since 2026-11-11): a board whose source has
+  no project file gets a second preparation under another name (`boards.json`,
+  `fab_rules_boards`): `prep NAME SOURCE --fab-rules` writes the values of
+  `fab-rules.json` for the board's layer count into the project file pcbnew
+  made, as minimums and as the Default net class. Both tools then design to
+  the same named rules. The values are the no-extra-cost fab capability as
+  upstream KRT's `standard` tier states it, so KRT's own standard tier is
+  legal under them. `prep --fab-rules` refuses a source that has rules of its
+  own. `summary` counts these boards in their own table.
+- **KRT held to the board's floors** (secondary routing cell): `route NAME
+  --tools krt-held` runs stock KRT with `--escalation board
+  --no-fix-drc-settings`, its own options for never going below the board's
+  declared minimums and not rewriting the project file. The primary KRT cell
+  stays `route.py IN OUT` with no option.
 - **Refusal**: when `place run` refuses a routing-arm board, `kicad-route run`
   is run directly with the adapter's base flags as a labelled secondary cell.
 
