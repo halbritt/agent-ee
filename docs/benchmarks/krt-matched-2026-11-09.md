@@ -1228,10 +1228,10 @@ prescribes when the project's rules are the user's own
   router, which stock KRT shares, and it is fixed since (AGENTEE-650): on
   both flat_hierarchy boards agent-ee's router now delivers every via at its
   class size with no open connection. Its job accepts the board in the
-  routing arm (72 s against 486 s) and in three of four runs of the placement
-  arm (412 to 540 s against 840 s). The run that failed came back with a
-  starved thermal relief, which the router before the change produces on the
-  same placement. The job's repair for that error did not run on a
+  routing arm (67 to 75 s against 486 s) and in four of five runs of the
+  placement arm (398 to 540 s against 840 s). The run that failed came back
+  with a starved thermal relief, which the router before the change produces
+  on the same placement. The job's repair for that error did not run on a
   through-hole board; it does now and clears two of the three placements
   that had it (AGENTEE-654). KRT's boards keep 12 of 13 such vias at 0.6 mm.
 
@@ -1634,6 +1634,24 @@ These runs used the same stand-in for the image as above, with kicad-route
 `51303e0` mounted as the router. Results are in
 `~/.local/share/agent-ee/standin650/`.
 
+Launchpad answered again about three hours later. The image was rebuilt and
+installs kicad-route `51303e0`. agent-ee's router-related test modules pass
+on it (31 modules, 816 tests), and the cells were run once more through the
+benchmark's own harness (run r14, `krt-matched-20261111-r14/`):
+
+| Cell, run r14 | Job status | Open / new errors | Vias | `Wide` vias below 1.0 mm | Track, mm | Time |
+|---|---|---|---|---|---|---|
+| flat_hierarchy, routing arm | `completed` | **0 / 0** | 42 | none | 1,674 | 67 s |
+| tigard with fab rules, routing arm | `completed` | **0 / 0** | 143 | | 1,802 | 52 s |
+| flat_hierarchy, placement arm | `completed` | **0 / 0** | 37 | none | 1,416 | 398 s |
+| The same placement, KRT's router held | | **0 / 0** | 41 | 18 of 18 | 1,417 | 19 s |
+
+The two routing cells have the copper of the stand-in runs, item by item. The
+placement cell completed on its first placement again: four completed runs
+of five since AGENTEE-650. On that placement KRT's router, held to the
+board's rules, passes the verdict too, with four more vias, the same length
+of track, and every via of the class `Wide` at 0.6 mm.
+
 ### What changed in the tool
 
 - AGENTEE-640 (`f4e1a294`): the job no longer rejects a board for errors the
@@ -1738,10 +1756,11 @@ Stock KRT's default cells and its placements are from 2026-11-09. KRT is its
 scripts run once, not the agent-driven procedure it documents (see "KRT's own
 procedure"). That procedure was run once, on one board, by one executor; on
 the other boards no figure here says what it would deliver. What is measured
-after AGENTEE-650 and 654 is one run each, except the placement cell of
-flat_hierarchy, which ran four times. KiCad's defaults are the rule set for
-three boards. The benchmark's groups and locks are mechanical: no engineer
-declared a rail, an edge part or a part that overhangs the outline.
+after AGENTEE-650 and 654 is one run each on a given router and image,
+except the placement cell of flat_hierarchy, which ran five times. KiCad's
+defaults are the rule set for three boards. The benchmark's groups and locks
+are mechanical: no engineer declared a rail, an edge part or a part that
+overhangs the outline.
 
 Every change of this section was found by studying these boards, and no board
 outside the set has been run since. Each is a general rule (what a sheet
