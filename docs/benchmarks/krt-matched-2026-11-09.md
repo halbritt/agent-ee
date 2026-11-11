@@ -1225,9 +1225,9 @@ prescribes when the project's rules are the user's own
   `Wide` are 0.6 mm where the class asks 1.0 mm. That was a defect of the
   router, which stock KRT shares, and it is fixed since (AGENTEE-650): on
   both flat_hierarchy boards agent-ee's router now delivers every via at its
-  class size with no open connection, and the grading that rejected them
-  passes. KRT's boards keep 12 of 13 such vias at 0.6 mm. The cells through
-  agent-ee's own job are not rerun yet.
+  class size with no open connection, and its job accepts the board in both
+  arms (72 s and 540 s, against 486 s and 840 s). KRT's boards keep 12 of 13
+  such vias at 0.6 mm.
 
 ### Routing arm (designer's placement, pours kept)
 
@@ -1520,11 +1520,35 @@ check them.
 
 The two rows "after" are runs with the flags and environment agent-ee's job
 passes, in the test image of the runs above, with the router sources of
-`bcaaa31` in place of the image's own. The cells through agent-ee's own job
-need an image built with `bcaaa31`. That build rechecks KiCad's package index
-on Launchpad, which did not answer when this was written (2026-11-11), so
-those cells are not rerun yet and the job's status on this board after the
-change is not measured.
+`bcaaa31` in place of the image's own.
+
+agent-ee's own job was then run on these cells, with the inputs and settings
+of r12 and r11 and nothing else changed, and on tigard with fab rules as a
+board with one via size:
+
+| Cell | Job status | Open / new errors | `Wide` vias at 1.0 mm | At 0.6 mm | All vias | Track, mm | Time |
+|---|---|---|---|---|---|---|---|
+| flat_hierarchy, routing arm, before (r12) | `verification_failed` | **0 / 0** | 3 | 15 | 37 | 1,672 | 486 s |
+| flat_hierarchy, routing arm, after | `completed` | **0 / 0** | 21 | 0 | 42 | 1,674 | 72 s |
+| flat_hierarchy, placement arm, before (r11) | `verification_failed` | **0 / 0** | 1 | 25 | 49 | 1,499 | 840 s |
+| flat_hierarchy, placement arm, after | `completed` | **0 / 0** | 16 | 0 | 40 | 1,681 | 540 s |
+| tigard with fab rules, routing arm, before (r12) | `completed` | **0 / 0** | | | 143 | 1,802 | 76 s |
+| tigard with fab rules, routing arm, after | `completed` | **0 / 0** | | | 143 | 1,802 | 65 s |
+
+The job now accepts flat_hierarchy in both arms, with every via at its class
+size. In the routing cell its board is the one the direct run delivered. In
+the placement cell the search found other placements than in r11, as it is
+limited by time, and the job routed three of them. The first two came back
+with one new error each, a thermal relief of a pour starved by the routing,
+and the job rejected them. The third is clean and is the board reported. On
+tigard with fab rules the routed copper is the same as in r12, item by item.
+
+These job runs used the test image of the runs above with a clean checkout
+of `bcaaa31` mounted in place of the image's router; the job records that
+commit as its router. An image built with `bcaaa31` could not be made when
+this was written: the build rechecks KiCad's package index on Launchpad,
+which did not answer on 2026-11-11. Results are in
+`~/.local/share/agent-ee/standin650/`.
 
 kicad-route's own test fixture, a different board, showed the same defect: a
 test had written it down as a limit of the backend. One via of a three-pad
@@ -1630,10 +1654,10 @@ Stock KRT's default cells and its placements are from 2026-11-09. KRT is its
 scripts run once, not the agent-driven procedure it documents (see "KRT's own
 procedure"). That procedure was run once, on one board, by one executor; on
 the other boards no figure here says what it would deliver. What is measured
-after AGENTEE-650 is two direct runs of the router, one per board. KiCad's
-defaults are the rule set for three boards. The benchmark's groups and locks
-are mechanical: no engineer declared a rail, an edge part or a part that
-overhangs the outline.
+after AGENTEE-650 is one run per cell: two direct runs of the router and
+three runs of the job. KiCad's defaults are the rule set for three boards.
+The benchmark's groups and locks are mechanical: no engineer declared a rail,
+an edge part or a part that overhangs the outline.
 
 Every change of this section was found by studying these boards, and no board
 outside the set has been run since. Each is a general rule (what a sheet
