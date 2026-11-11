@@ -15,9 +15,12 @@ of derived envelopes is not body separation, and the controller never says so.
 
 Acceptance is not decided here. A candidate is promoted to the job incumbent
 only after its saved board reloads with every identity, lock, rule and
-transform preserved and native DRC shows no placement-introduced error. Errors
-inside one footprint that the unchanged input already has (esp_prog's U2
-artwork) stay FAILED physical checks: such an incumbent is never "clean".
+transform preserved and native DRC shows no placement-introduced error. A
+routed board is eligible when native DRC with refilled zones reports no open
+connection and no error beyond those of the input board, its protected
+content is unchanged and every declared check passes (AGENTEE-640). An error
+the unchanged input already reports is counted as pre-existing and rejects
+nothing; the report never calls a board "clean".
 """
 import argparse
 from collections import Counter
@@ -1249,6 +1252,11 @@ def _key(v):
     return (v['type'], tuple(sorted(i.get('uuid', '') for i in v.get('items', []))))
 
 
+def error_keys(report):
+    """The errors of a native DRC report as a multiset of (type, items) keys."""
+    return Counter(_key(v) for v in report['violations'] if v.get('severity') == 'error')
+
+
 def classify_errors(report, owners, baseline_keys, placed_keys=None, moved=None):
     """Split native errors into pre-existing / placement-introduced / routing-introduced.
 
@@ -1256,20 +1264,31 @@ def classify_errors(report, owners, baseline_keys, placed_keys=None, moved=None)
     every item belongs to one footprint or, when ``moved`` (the UUIDs of the
     footprints this placement moved) is known, no item belongs to a moved
     footprint. Placement-introduced: any other error present on the placed
-    board. Routing-introduced: new relative to the placed board."""
+    board. Routing-introduced: new relative to the placed board.
+
+    The key sets are multisets (:func:`error_keys`; a plain set counts each key
+    once). One finding of the input accounts for one finding here, and likewise
+    for the placed board: a board that reports the same (type, items) more often
+    than its input has the extra findings as introduced, never as pre-existing."""
     split = {'pre_existing': [], 'placement_introduced': [], 'routing_introduced': []}
+    in_input = Counter(baseline_keys)
+    on_placed = None if placed_keys is None else Counter(placed_keys)
     for v in report['violations']:
         if v.get('severity') != 'error':
             continue
         key = _key(v)
         footprints = {owners.get(i.get('uuid')) for i in v.get('items', [])}
-        if key in baseline_keys and ((len(footprints) == 1 and None not in footprints)
-                                     or (moved is not None and not footprints & set(moved))):
-            split['pre_existing'].append(v)
-        elif placed_keys is None or key in placed_keys:
-            split['placement_introduced'].append(v)
+        if in_input[key] > 0 and ((len(footprints) == 1 and None not in footprints)
+                                  or (moved is not None and not footprints & set(moved))):
+            in_input[key] -= 1
+            cause = 'pre_existing'
+        elif on_placed is None or on_placed[key] > 0:
+            cause = 'placement_introduced'
         else:
-            split['routing_introduced'].append(v)
+            cause = 'routing_introduced'
+        if cause != 'routing_introduced' and on_placed is not None and on_placed[key] > 0:
+            on_placed[key] -= 1         # the placed board's finding is this one
+        split[cause].append(v)
     return split
 
 
@@ -2233,7 +2252,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # Every DRC of this job refills zones, so a board with pours is judged on a current fill.
         base_report, base_exec = drc(board_path, job_dir / f'input-drc-a{attempt}', refill=True, label='native-drc',
                                      clock=clock, cancel_dir=job_dir)
-        base_keys = {_key(v) for v in base_report['violations'] if v.get('severity') == 'error'}
+        base_keys = error_keys(base_report)
         def judge_candidate(cand, index):
             _check_stop(clock, job_dir)
             decoupling_loop_nm = int(cand.get('terms', {}).get('decoupling_loop', 0))
@@ -2273,7 +2292,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             return entry
         trials = [judge_candidate(cand, index) for index, cand in enumerate(shortlist)]
         report['shortlist'] = trials
-        report['input_drc'] = {**base_exec, 'errors': len(base_keys)}
+        report['input_drc'] = {**base_exec, 'errors': sum(base_keys.values())}
     incumbent = read_json(job_dir / 'incumbent.json') if (job_dir / 'incumbent.json').exists() else None
     diagnostic = read_json(job_dir / 'best-diagnostic.json') if (job_dir / 'best-diagnostic.json').exists() else None
     keys = ('index', 'seed', 'board_sha256', 'errors', 'engine_violations')
@@ -2774,7 +2793,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     if sorted(placed_nodes, key=canonical) != sorted(final_nodes, key=canonical):
         problems.append('router changed protected native content (footprints, pads, graphics, setup, outline or drawings)')
     placed_report = read_json(Path(incumbent['directory']) / 'native-drc.json')
-    placed_keys = {_key(v) for v in placed_report['violations'] if v.get('severity') == 'error'}
+    placed_keys = error_keys(placed_report)
     _check_stop(clock, cancel_dir)
     report_, exec_ = drc(board, final_dir, refill=True, label='native-drc', clock=clock, cancel_dir=cancel_dir)
     drc_report_path = final_dir / 'native-drc.json'
@@ -2891,15 +2910,32 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
             problems.append(f"unprotected via-in-pad: {s['ref']} pad {s['pad']} at {s['position_mm']} mm lacks Type VII fill/cap")
     silk_conflicts = _silk_graphic_conflicts(report_)
     track_conflicts = _unrepairable_track_warnings(report_, reject_track_dangling=reject_track_dangling)
-    failed = (problems or (reject_silk_graphics and silk_conflicts) or track_conflicts or any(split.values())
-              or general_loops is not None and general_loops['outcome'] not in ('pass', 'info')
-              or report_['unconnected_items'] or edge_intent['status'] != 'pass'
-              or locality['status'] not in ('pass', 'info', 'not_declared')
-              or block_result['status'] not in ('pass', 'info', 'not_declared')
-              or mechanics_result['status'] not in ('pass', 'not_declared')
-              or impedance_result is not None and impedance_result.get('status') != 'PASS'
-              or length_result is not None and length_result.get('status') != 'PASS'
-              or ac_result is not None and ac_result.get('status') != 'PASS')
+    # Every reason this board is not eligible, in words; none means eligible. An error the
+    # input board already reports is counted under `errors.pre_existing` and is no reason:
+    # neither the placement nor the routing made it.
+    errors = _error_summary(split)
+    rejections = list(problems)
+    if report_['unconnected_items']:
+        rejections.append(f"{len(report_['unconnected_items'])} open connection(s)")
+    for cause in ('placement_introduced', 'routing_introduced'):
+        if split[cause]:
+            rejections.append(f"{errors[cause]['count']} {cause.replace('_', '-')} DRC error(s): "
+                              + ', '.join(f'{kind} {count}' for kind, count in sorted(errors[cause]['by_type'].items())))
+    if reject_silk_graphics and silk_conflicts:
+        rejections.append(f'{len(silk_conflicts)} silkscreen conflict(s) that moving a field cannot fix')
+    if track_conflicts:
+        rejections.append(f'{len(track_conflicts)} dangling track warning(s)')
+    declared = [('edge intent', edge_intent['status'], ('pass',)),
+                ('electrical locality', locality['status'], ('pass', 'info', 'not_declared')),
+                ('block contract', block_result['status'], ('pass', 'info', 'not_declared')),
+                ('mechanics', mechanics_result['status'], ('pass', 'not_declared'))]
+    declared += [(name, result.get(key), passing) for name, result, key, passing in (
+        ('decoupling loops', general_loops, 'outcome', ('pass', 'info')),
+        ('pair impedance', impedance_result, 'status', ('PASS',)),
+        ('length matching', length_result, 'status', ('PASS',)),
+        ('AC matching', ac_result, 'status', ('PASS',))) if result is not None]
+    rejections += [f'{name} check: {status}' for name, status, passing in declared if status not in passing]
+    failed = bool(rejections)
     return {'status': 'checked', 'board': str(board), 'board_sha256': final_board_sha256,
             **({'local_stub_cleanup': local_stub_cleanup} if local_stub_cleanup is not None else {}),
             **({'local_decoupling': general_local_check} if general_local_check is not None else {}),
@@ -2910,12 +2946,13 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
             **({'length_matching': length_result} if length_result is not None else {}),
             **({'ac_matching': ac_result} if ac_result is not None else {}),
             'integrity': 'violated' if problems else 'preserved',
-            'eligibility': 'INELIGIBLE' if failed else 'eligible',
+            'eligibility': 'INELIGIBLE' if failed else 'eligible', 'rejections': rejections,
             'identity_problems': problems, 'rule_files': rule_files,
             'drc': exec_, 'opens': len(report_['unconnected_items']), 'silk_graphic_conflicts': silk_conflicts,
             **({'track_dangling_conflicts': track_conflicts} if reject_track_dangling else {}),
-            'errors': _error_summary(split), 'warnings': _warnings(report_),
-            'physical_checks': 'FAILED' if failed else 'no native errors',
+            'errors': errors, 'warnings': _warnings(report_),
+            'physical_checks': ('FAILED' if failed else 'no native errors' if not split['pre_existing'] else
+                                f"no introduced native errors ({len(split['pre_existing'])} already in the input)"),
             'edge_intent': edge_intent, 'locality': locality, 'block_contract': block_result, 'mechanics': mechanics_result, 'metrics': metrics,
             'group_views': group_views, 'evidence_complete': group_views['status'] == 'rendered'}
 

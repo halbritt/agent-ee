@@ -675,8 +675,13 @@ rules, including stricter coupling limits, always remain in force.
    split into **pre-existing** (the same finding on the unchanged input, with
    all items in one footprint or none of them in a footprint this candidate
    moved) and **placement-introduced**. On a board where nothing moved, every
-   error the input already had is therefore pre-existing. Pre-existing errors
-   still make the final board `INELIGIBLE`; the split only says who caused them.
+   error the input already had is therefore pre-existing. A finding is its
+   type and its items; each finding of the input accounts for one finding of
+   the candidate, so a board that reports the same finding more often than
+   its input has the extra ones as introduced. Pre-existing errors are counted
+   (`errors.pre_existing`) and reject nothing: neither the placement nor the
+   routing made them (AGENTEE-640). `input_drc.errors` is the number of
+   errors the input reports.
    Before writing, `materialize(..., normalized=...)` derives protected UUIDs from
    source-board native locks and the captured fixed intent. Any protected x, y,
    rotation or side difference, or a protected `moved: true` row, refuses the
@@ -734,9 +739,18 @@ rules, including stricter coupling limits, always remain in force.
    DRC with `--refill-zones`; opens; errors split into pre-existing,
    placement-introduced and routing-introduced; warnings by type; measured route
    length (segments and arcs, by layer), vias, geometric via-in-pad (via centre
-   inside native pad copper), grouping and declared-edge setbacks. Pre-existing
-   errors stay FAILED physical checks: the report claims `accepted: false,
-   clean: false`.
+   inside native pad copper), grouping and declared-edge setbacks.
+
+   **Eligibility (AGENTEE-640).** The final board is `eligible` when native
+   DRC reports no open connection and no placement- or routing-introduced
+   error, the protected content is unchanged and every declared check
+   passes. `rejections` lists every reason it is not, in words (`4 open
+   connection(s)`, `3 routing-introduced DRC error(s): shorting_items 3`, an
+   identity problem, a failed declared check); an eligible board has none.
+   Errors the input board already reports reject nothing.
+   `physical_checks` then reads `no introduced native errors (N already in
+   the input)` instead of `no native errors`, and the report's
+   claims stay `accepted: false, clean: false`.
    Edge identity is checked again from saved native geometry in a fresh bounded
    process, with board/project/rule bytes checked for changes. A violation makes
    the final board ineligible and the job `intent_failed`, even with clean DRC.
@@ -749,7 +763,11 @@ rules, including stricter coupling limits, always remain in force.
    the engine found no hard-feasible state (`engine_feasible: false`): the routed
    board is then only the exploratory route of a diagnostic candidate, and its
    router and native outcomes stay in `routing_trials`. Job status
-   `verification_failed` also rejects native errors or opens;
+   `verification_failed` also rejects introduced native errors or opens, and
+   a result the router's own grading rejected (`route.router_accepted:
+   false`; its reasons are in `route.classification.reasons`). The router
+   grades more than native DRC errors: new warnings, new copper below its net
+   class width or via size, changes to pours and to copper it had to keep.
    `placement_failed` rejects an otherwise eligible exploratory route with no
    feasible incumbent. `completed` requires an eligible final board and a valid
    incumbent. It remains a placement/routing milestone, not manufacturing
