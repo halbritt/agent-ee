@@ -89,6 +89,40 @@ fn contour_count(g: &Value) -> Result<()> {
     Ok(())
 }
 
+/// A set of board layers or board sides as bits (AGENTEE-637). Two items meet only when their
+/// sets share a layer: a pad on the front copper layer and a pad on the back one never do, and
+/// a through pad meets both. Every bit set stands for an item whose layers the problem does not
+/// state; it meets every other item, as every item did before layers were read.
+pub type Layers = u64;
+pub const EVERY_LAYER: Layers = u64::MAX;
+
+/// Layer names in the order a problem first states them; a name's position is its bit.
+#[derive(Default)]
+struct LayerNames(Vec<String>);
+
+impl LayerNames {
+    fn set(&mut self, names: Option<&Value>, what: &str) -> Result<Layers> {
+        let Some(names) = names.filter(|v| !v.is_null()) else { return Ok(EVERY_LAYER) };
+        let names = names.as_array().with_context(|| format!("{what} layers must be a list of layer names"))?;
+        ensure!(!names.is_empty(), "{what} layers must name at least one layer");
+        let mut set: Layers = 0;
+        for name in names {
+            let name = name.as_str().filter(|n| !n.is_empty())
+                .with_context(|| format!("{what} layer name must be nonempty text"))?;
+            let bit = match self.0.iter().position(|known| known == name) {
+                Some(bit) => bit,
+                None => {
+                    ensure!(self.0.len() < Layers::BITS as usize, "{what}: more than {} distinct layers", Layers::BITS);
+                    self.0.push(name.to_string());
+                    self.0.len() - 1
+                }
+            };
+            set |= 1 << bit;
+        }
+        Ok(set)
+    }
+}
+
 /// Axis-aligned box [x0, y0, x1, y1] in nanometres.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
@@ -308,10 +342,14 @@ pub struct Footprint {
     /// Copper boxes with the native clearance each item requires.
     pub copper: Vec<Copper>,
     pub holes: Vec<Copper>,
-    /// Solder-mask apertures (pad box grown by its mask expansion, mask graphics).
-    pub mask: Vec<Rect>,
-    /// Inferred routing space; soft preference only, never a hard owner rule.
-    pub escape: Vec<Rect>,
+    /// Solder-mask apertures (pad box grown by its mask expansion, mask graphics), each with
+    /// the mask layers it opens.
+    pub mask: Vec<(Rect, Layers)>,
+    /// Inferred routing space with the copper layers of its pads; soft preference only,
+    /// never a hard owner rule.
+    pub escape: Vec<(Rect, Layers)>,
+    /// The board side the part is mounted on; every side when the problem does not state it.
+    pub sides: Layers,
     pub pads: Vec<Pad>,
     pub group: Option<usize>,
     pub edge: Option<EdgeRule>,
@@ -321,6 +359,8 @@ pub struct Footprint {
 pub struct Copper {
     bounds: Rect,
     clearance: i64,
+    /// The copper layers the item is on; a drill is on every layer.
+    layers: Layers,
     /// None preserves the legacy conservative-box contract and objective.
     polygons: Option<Vec<Polygon>>,
     // Convex pieces and boundary edges are prepared once, then only transformed.
@@ -373,7 +413,7 @@ impl Copper {
             };
             (a.clone(), b.clone(), bounds)
         }).collect();
-        Ok(Self { bounds, clearance, polygons, parts, part_bounds, edges })
+        Ok(Self { bounds, clearance, layers: EVERY_LAYER, polygons, parts, part_bounds, edges })
     }
 
     fn at(&self, pose: &Pose) -> Self {
@@ -386,7 +426,7 @@ impl Copper {
         let part_bounds = self.part_bounds.at(&origin, &position, pose.q);
         let edges = self.edges.iter().map(|(a, b, bounds)|
             (transform(a), transform(b), bounds.at(&origin, &position, pose.q))).collect();
-        Self { bounds: place_rect(&self.bounds, pose), clearance: self.clearance,
+        Self { bounds: place_rect(&self.bounds, pose), clearance: self.clearance, layers: self.layers,
                polygons, parts, part_bounds, edges }
     }
 
@@ -781,6 +821,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
     let groups_in = input["groups"].as_array().cloned().unwrap_or_default();
     let mut footprints: Vec<Footprint> = Vec::new();
     let mut ref_index: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    let (mut copper_layers, mut mask_layers) = (LayerNames::default(), LayerNames::default());
     for (i, row) in rows.iter().enumerate() {
         let role = match text(row, "role")? {
             "movable" => Role::Movable,
@@ -806,8 +847,22 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         ensure!(role != Role::Movable || occupancy.is_some(), "{}: movable part without occupancy", uuids[i]);
         ensure!(!matches!(role, Role::FixedCopperMark | Role::SilkOnly) || occupancy.is_none(),
             "{}: a fixed copper mark or silk-only graphic has no body occupancy", uuids[i]);
+        // The side and the layers a problem states decide which items of two footprints can
+        // meet (AGENTEE-637). What it does not state meets everything, as before.
+        let sides: Layers = match row.get("side").filter(|v| !v.is_null()) {
+            None => EVERY_LAYER,
+            Some(v) => match v.as_str() {
+                Some("F") => 1,
+                Some("B") => 2,
+                _ => bail!("{}: side must be \"F\" or \"B\"", uuids[i]),
+            },
+        };
         let copper = row["copper_local_nm"].as_array().context("copper_local_nm")?
-            .iter().map(|r| Copper::parse(r, clearance_nm)).collect::<Result<Vec<_>>>()?;
+            .iter().map(|r| {
+                let mut item = Copper::parse(r, clearance_nm)?;
+                item.layers = copper_layers.set(r.get("geometry").and_then(|g| g.get("layers")), "copper")?;
+                Ok(item)
+            }).collect::<Result<Vec<_>>>()?;
         let holes = match row.get("holes_local_nm") {
             Some(v) => v.as_array().context("holes_local_nm")?.iter()
                 .map(|r| {
@@ -820,12 +875,16 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
             None => Vec::new(),
         };
         ensure!(role != Role::SilkOnly || holes.is_empty(), "silk-only graphic carries holes");
+        // A mask aperture is a box, or a box with the mask layers it opens.
         let mask = row.get("mask_local_nm").and_then(Value::as_array).cloned().unwrap_or_default()
-            .iter().map(|r| Rect::parse(r, "mask")).collect::<Result<Vec<_>>>()?;
+            .iter().map(|r| match r.get("rect_nm") {
+                Some(rect) => Ok((Rect::parse(rect, "mask")?, mask_layers.set(r.get("layers"), "mask")?)),
+                None => Ok((Rect::parse(r, "mask")?, EVERY_LAYER)),
+            }).collect::<Result<Vec<_>>>()?;
         let escape = match row.get("escape_local_nm") {
             Some(v) => v.as_array().context("escape_local_nm")?.iter().map(|r| {
                 ensure!(r["authority"] == "agent-heuristic/1", "escape space must be labelled agent-heuristic/1");
-                Rect::parse(&r["rect_nm"], "escape space")
+                Ok((Rect::parse(&r["rect_nm"], "escape space")?, copper_layers.set(r.get("layers"), "escape space")?))
             }).collect::<Result<Vec<_>>>()?,
             None => Vec::new(),
         };
@@ -939,7 +998,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         }
         footprints.push(Footprint {
             uuid: uuids[i].clone(), alias: alias[i].clone(), native_ref, role, initial, rotations,
-            occupancy, occupancy_rung: rung, source_body, access, copper, holes, mask, escape, pads, group: None, edge,
+            occupancy, occupancy_rung: rung, source_body, access, copper, holes, mask, escape, sides, pads, group: None, edge,
         });
     }
     let physical_reference = |reference: &str, context: &str| -> Result<usize> {
@@ -1233,6 +1292,7 @@ struct PlacedCopper {
     pose: Pose,
     bounds: Rect,
     clearance: i64,
+    layers: Layers,
     native: bool,
     exact: std::cell::OnceCell<Copper>,
 }
@@ -1240,7 +1300,8 @@ struct PlacedCopper {
 impl PlacedCopper {
     fn new(footprint: usize, item: usize, hole: bool, local: &Copper, pose: &Pose) -> Self {
         Self { footprint, item, hole, pose: *pose, bounds: place_rect(&local.bounds, pose),
-               clearance: local.clearance, native: local.polygons.is_some(), exact: std::cell::OnceCell::new() }
+               clearance: local.clearance, layers: local.layers, native: local.polygons.is_some(),
+               exact: std::cell::OnceCell::new() }
     }
 
     fn exact(&self, p: &Prepared) -> &Copper {
@@ -1270,8 +1331,9 @@ struct Placed {
     edge_seat: Option<Rect>,
     copper: Vec<PlacedCopper>,
     holes: Vec<PlacedCopper>,
-    mask: Vec<Rect>,
-    escape: Vec<Rect>,
+    mask: Vec<(Rect, Layers)>,
+    escape: Vec<(Rect, Layers)>,
+    sides: Layers,
     reach: Option<Rect>,
 }
 
@@ -1286,16 +1348,16 @@ fn placed(p: &Prepared, f: usize, pose: &Pose) -> Placed {
     let edge_seat = fp.edge.as_ref().and_then(|e| e.seat).map(|r| place_rect(&r, pose)).or(body);
     let copper: Vec<PlacedCopper> = fp.copper.iter().enumerate().map(|(i, c)| PlacedCopper::new(f, i, false, c, pose)).collect();
     let holes: Vec<PlacedCopper> = fp.holes.iter().enumerate().map(|(i, c)| PlacedCopper::new(f, i, true, c, pose)).collect();
-    let mask: Vec<Rect> = fp.mask.iter().map(|r| place_rect(r, pose)).collect();
-    let escape: Vec<Rect> = fp.escape.iter().map(|r| place_rect(r, pose)).collect();
+    let mask: Vec<(Rect, Layers)> = fp.mask.iter().map(|(r, layers)| (place_rect(r, pose), *layers)).collect();
+    let escape: Vec<(Rect, Layers)> = fp.escape.iter().map(|(r, layers)| (place_rect(r, pose), *layers)).collect();
     let mut reach = body;
     for g in copper.iter().map(|c| c.bounds.grown(c.clearance))
         .chain(holes.iter().map(|h| h.bounds.grown(h.clearance.max(p.hole_to_hole_nm))))
-        .chain(mask.iter().map(|m| m.grown(p.mask_web_nm)))
-        .chain(escape.iter().copied()) {
+        .chain(mask.iter().map(|(m, _)| m.grown(p.mask_web_nm)))
+        .chain(escape.iter().map(|(e, _)| *e)) {
         reach = Some(reach.map_or(g, |r| r.union(&g)));
     }
-    Placed { body, edge_seat, copper, holes, mask, escape, reach }
+    Placed { body, edge_seat, copper, holes, mask, escape, sides: fp.sides, reach }
 }
 
 // Source-body mechanics is separate from courtyard/copper pairs. Recompute the
@@ -1378,6 +1440,7 @@ fn interacts(p: &Prepared, a: usize, b: usize) -> bool {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct PairChecks {
     body: (i128, i64),
+    body_hole: (i128, i64),
     copper: (i128, i64),
     hole_copper: (i128, i64),
     hole_hole: (i128, i64),
@@ -1386,9 +1449,9 @@ struct PairChecks {
 }
 
 impl PairChecks {
-    fn rules(&self) -> [(&'static str, (i128, i64)); 5] {
-        [("body", self.body), ("copper", self.copper), ("hole_copper", self.hole_copper),
-         ("hole_hole", self.hole_hole), ("mask_web", self.mask_web)]
+    fn rules(&self) -> [(&'static str, (i128, i64)); 6] {
+        [("body", self.body), ("body_hole", self.body_hole), ("copper", self.copper),
+         ("hole_copper", self.hole_copper), ("hole_hole", self.hole_hole), ("mask_web", self.mask_web)]
     }
 }
 
@@ -1402,19 +1465,36 @@ fn pair_checks(p: &Prepared, a: &Placed, b: &Placed) -> PairChecks {
     };
     // Conservative boxes are a congestion preference, not a clearance verdict.
     for (spaces, copper) in [(&a.escape, &b.copper), (&b.escape, &a.copper)] {
-        for space in spaces {
+        for (space, layers) in spaces {
             for item in copper {
-                c.escape += space.overlap(&item.bounds);
+                if layers & item.layers != 0 {
+                    c.escape += space.overlap(&item.bounds);
+                }
             }
         }
     }
-    if let (Some(x), Some(y)) = (&a.body, &b.body) {
-        found(&mut c.body, x.overlap(y));
+    if a.sides & b.sides != 0 {
+        if let (Some(x), Some(y)) = (&a.body, &b.body) {
+            found(&mut c.body, x.overlap(y));
+        }
+    } else {
+        // Parts on opposite sides may share board area, but no body sits over a hole of the
+        // other part: a pin or a screw passes through the board there.
+        for (body, holes) in [(&a.body, &b.holes), (&b.body, &a.holes)] {
+            if let Some(body) = body {
+                for hole in holes {
+                    found(&mut c.body_hole, body.overlap(&hole.bounds));
+                }
+            }
+        }
     }
-    // Bounds prune distant items; native outer polygons decide pad clearance.
+    // Bounds prune distant items; native outer polygons decide pad clearance. Copper on
+    // different layers never meets; a drill (below) meets every layer.
     for ca in &a.copper {
         for cb in &b.copper {
-            found(&mut c.copper, ca.overlap(p, cb));
+            if ca.layers & cb.layers != 0 {
+                found(&mut c.copper, ca.overlap(p, cb));
+            }
         }
     }
     // Drills use board hole rules, independently of pad copper overrides.
@@ -1430,11 +1510,13 @@ fn pair_checks(p: &Prepared, a: &Placed, b: &Placed) -> PairChecks {
             found(&mut c.hole_hole, ha.overlap_at_clearance(p, hb, p.hole_to_hole_nm));
         }
     }
-    // Mask apertures of different footprints keep the native minimum web.
-    for ma in &a.mask {
+    // Mask apertures of different footprints keep the native minimum web on a mask layer both open.
+    for (ma, la) in &a.mask {
         let g = ma.grown(p.mask_web_nm);
-        for mb in &b.mask {
-            found(&mut c.mask_web, g.overlap(mb));
+        for (mb, lb) in &b.mask {
+            if la & lb != 0 {
+                found(&mut c.mask_web, g.overlap(mb));
+            }
         }
     }
     c
@@ -4031,6 +4113,167 @@ mod tests {
         }
         assert!(rows.iter().all(|v| v["kind"] == "pair"), "no part breaks a rule of its own here: {rows:?}");
         assert_eq!(pairs, full_evaluate(&p, &poses).hard_count);
+    }
+
+    /// The test part with a stated side, its two pads on `copper` layers and their apertures on `mask`.
+    fn sided(n: u32, r: &str, x: i64, y: i64, side: &str, copper: &[&str], mask: &[&str]) -> Value {
+        let mut row = fp(&uuid(n), r, "movable", x, y, r);
+        row["side"] = json!(side);
+        let boxes: [[i64; 4]; 2] = [[-900_000, -300_000, -300_000, 300_000], [300_000, -300_000, 900_000, 300_000]];
+        row["copper_local_nm"] = json!(boxes.iter().enumerate().map(|(i, b)| json!({
+            "rect_nm": b, "clearance_nm": 0,
+            "geometry": {"status": "conservative_native_polygon", "kind": "rect", "tolerance_nm": 1000,
+                         "pad_uuid": format!("{}-{}", uuid(n), i + 1), "layers": copper,
+                         "polygons": [[[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]]]}})).collect::<Vec<_>>());
+        row["mask_local_nm"] = json!(boxes.iter().map(|b| json!({
+            "rect_nm": [b[0] - 50_000, b[1] - 50_000, b[2] + 50_000, b[3] + 50_000], "layers": mask})).collect::<Vec<_>>());
+        row
+    }
+
+    fn drilled(mut row: Value, rect: [i64; 4]) -> Value {
+        row["holes_local_nm"] = json!([{"rect_nm": rect, "clearance_nm": 150_000,
+            "geometry": {"status": "conservative_native_polygon", "kind": "hole", "tolerance_nm": 1000,
+                "pad_uuid": row["pads"][0]["uuid"],
+                "polygons": [[[rect[0], rect[1]], [rect[2], rect[1]], [rect[2], rect[3]], [rect[0], rect[3]]]]}}]);
+        row
+    }
+
+    fn sided_board(parts: Vec<Value>) -> Value {
+        let mut raw = input(vec![]);
+        raw["footprints"] = json!(parts);
+        raw["groups"] = json!([]);
+        raw
+    }
+
+    /// The rules the first two parts break at their initial poses, or Null when they break none.
+    fn broken(parts: Vec<Value>) -> Value {
+        let p = prepare(&sided_board(parts)).unwrap();
+        let poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+        let rows = violations(&p, &poses);
+        let terms = full_evaluate(&p, &poses);
+        assert!(rows.iter().all(|v| v["kind"] == "pair"), "{rows:?}");
+        assert_eq!(terms.hard_count, rows.iter().map(|v| v["count"].as_i64().unwrap()).sum::<i64>());
+        assert_eq!(rows.is_empty(), terms.hard == 0);
+        rows.first().map_or(Value::Null, |v| v["rules"].clone())
+    }
+
+    #[test]
+    fn parts_on_opposite_sides_share_board_area() {
+        let top = || sided(1, "C1", 5_000_000, 5_000_000, "F", &["F.Cu"], &["F.Mask"]);
+        let under = |side, copper: &[&str], mask: &[&str]| sided(2, "C2", 5_000_000, 5_000_000, side, copper, mask);
+        // The same spot on the other side of the board: nothing meets.
+        assert_eq!(broken(vec![top(), under("B", &["B.Cu"], &["B.Mask"])]), Value::Null);
+        // On the same side every rule is broken: one body, each pad on its twin, each aperture too.
+        assert_eq!(broken(vec![top(), under("F", &["F.Cu"], &["F.Mask"])]), json!({"body": 1, "copper": 2, "mask_web": 2}));
+        // A through part on the back has copper and apertures on both layers: they meet, its body does not.
+        assert_eq!(broken(vec![top(), under("B", &["F.Cu", "B.Cu"], &["F.Mask", "B.Mask"])]),
+                   json!({"copper": 2, "mask_web": 2}));
+        // Each rule follows its own layers.
+        assert_eq!(broken(vec![top(), under("B", &["B.Cu"], &["F.Mask"])]), json!({"mask_web": 2}));
+        assert_eq!(broken(vec![top(), under("B", &["In1.Cu", "F.Cu"], &["B.Mask"])]), json!({"copper": 2}));
+        assert_eq!(broken(vec![top(), under("F", &["B.Cu"], &["B.Mask"])]), json!({"body": 1}));
+        // A part that states no side meets both sides, and copper or mask without layers meets
+        // every layer, as every item did before sides were read.
+        let mut unstated = under("B", &["B.Cu"], &["B.Mask"]);
+        unstated.as_object_mut().unwrap().remove("side");
+        assert_eq!(broken(vec![top(), unstated]), json!({"body": 1}));
+        let mut boxes = fp(&uuid(2), "C2", "movable", 5_000_000, 5_000_000, "C2");
+        boxes["side"] = json!("B");
+        boxes["mask_local_nm"] = json!([[-950_000, -350_000, -250_000, 350_000]]);
+        assert_eq!(broken(vec![top(), boxes]), json!({"copper": 2, "mask_web": 1}));
+    }
+
+    #[test]
+    fn no_body_sits_over_a_hole_of_a_part_on_the_other_side() {
+        // A through part on the front: its first pad is drilled, its copper is on both layers.
+        let pin = || drilled(sided(1, "J1", 5_000_000, 5_000_000, "F", &["F.Cu", "B.Cu"], &["F.Mask", "B.Mask"]),
+                             [-800_000, -200_000, -400_000, 200_000]);
+        // A back-side part below it whose body reaches up over the drill; its pads stay clear.
+        let under = |side: &str, y: i64| {
+            let mut row = sided(2, "C2", 4_400_000, y, side, &["B.Cu"], &["B.Mask"]);
+            row["occupancy"]["local_rect_nm"] = json!([-1_000_000, -1_600_000, 1_000_000, 500_000]);
+            row
+        };
+        assert_eq!(broken(vec![pin(), under("B", 6_200_000)]), json!({"body_hole": 1}));
+        // Lower, its body clears the drill and may lie under the body of the through part.
+        assert_eq!(broken(vec![pin(), under("B", 6_900_000)]), Value::Null);
+        // On the same side the body rule already keeps the two apart.
+        assert_eq!(broken(vec![pin(), under("F", 6_200_000)]), json!({"body": 1}));
+    }
+
+    #[test]
+    fn stated_sides_keep_the_incremental_and_full_evaluations_equal() {
+        let mut parts = vec![
+            sided(1, "A1", 3_000_000, 3_000_000, "F", &["F.Cu"], &["F.Mask"]),
+            sided(2, "B1", 6_000_000, 3_000_000, "B", &["B.Cu"], &["B.Mask"]),
+            drilled(sided(3, "J1", 3_000_000, 7_000_000, "F", &["F.Cu", "B.Cu"], &["F.Mask", "B.Mask"]),
+                    [-800_000, -200_000, -400_000, 200_000]),
+            sided(4, "B2", 6_000_000, 7_000_000, "B", &["B.Cu"], &["B.Mask"]),
+            fp(&uuid(5), "R5", "movable", 9_000_000, 5_000_000, "R5"),
+        ];
+        parts[0]["escape_local_nm"] = json!([{"authority": "agent-heuristic/1", "layers": ["F.Cu"],
+                                              "rect_nm": [1_000_000, -500_000, 4_000_000, 500_000]}]);
+        let p = prepare(&sided_board(parts)).unwrap();
+        let mut rng = Rng::new(637);
+        let mut state = SearchState::new(&p, p.footprints.iter().map(|f| f.initial).collect()).unwrap();
+        let mut crossed = 0;
+        for step in 0..1500 {
+            let f = rng.below(p.footprints.len() as u64) as usize;
+            // A small area, so parts of both sides often lie over each other.
+            let pose = Pose { x: rng.range(2_000_000, 7_000_000), y: rng.range(2_000_000, 8_000_000), q: rng.range(0, 3) };
+            let before = state.digest();
+            let trial = state.evaluate(&p, &[(f, pose)]).unwrap();
+            if step % 3 == 0 {
+                state.reject(trial);
+                assert_eq!(state.digest(), before);
+            } else {
+                state.commit(&p, trial).unwrap();
+            }
+            assert_eq!(state.totals, full_evaluate(&p, &state.poses), "step {step}");
+            let (a, b) = (placed(&p, 0, &state.poses[0]), placed(&p, 1, &state.poses[1]));
+            if a.body.unwrap().overlap(&b.body.unwrap()) > 0 && pair_terms(&p, &a, &b).hard_count == 0 { crossed += 1; }
+        }
+        assert!(crossed > 0, "a front and a back part lay over each other without a finding");
+    }
+
+    #[test]
+    fn escape_space_is_filled_only_by_copper_on_its_layers() {
+        let overlap = |layers: Value, copper: &[&str]| {
+            let mut pair = sided(1, "J1", 5_000_000, 5_000_000, "F", &["F.Cu"], &["F.Mask"]);
+            pair["escape_local_nm"] = json!([{"authority": "agent-heuristic/1", "rect_nm": [1_000_000, -500_000, 4_000_000, 500_000]}]);
+            if !layers.is_null() { pair["escape_local_nm"][0]["layers"] = layers; }
+            let other = sided(2, "R9", 8_000_000, 5_000_000, "B", copper, &["B.Mask"]);
+            let p = prepare(&sided_board(vec![pair, other])).unwrap();
+            full_evaluate(&p, &p.footprints.iter().map(|f| f.initial).collect::<Vec<_>>()).escape
+        };
+        assert_eq!(overlap(json!(["F.Cu"]), &["B.Cu"]), 0);
+        assert!(overlap(json!(["F.Cu"]), &["F.Cu"]) > 0);
+        assert!(overlap(json!(["F.Cu"]), &["F.Cu", "B.Cu"]) > 0);
+        assert!(overlap(Value::Null, &["B.Cu"]) > 0, "a space without layers is filled by copper on any layer");
+    }
+
+    #[test]
+    fn sides_and_layers_are_validated() {
+        let cases: Vec<(&str, Box<dyn Fn(&mut Value)>, &str)> = vec![
+            ("side", Box::new(|row| row["side"] = json!("top")), "side must be \"F\" or \"B\""),
+            ("side type", Box::new(|row| row["side"] = json!(1)), "side must be \"F\" or \"B\""),
+            ("copper list", Box::new(|row| row["copper_local_nm"][0]["geometry"]["layers"] = json!("F.Cu")), "copper layers must be a list"),
+            ("copper empty", Box::new(|row| row["copper_local_nm"][0]["geometry"]["layers"] = json!([])), "copper layers must name at least one layer"),
+            ("copper name", Box::new(|row| row["copper_local_nm"][0]["geometry"]["layers"] = json!([7])), "copper layer name must be nonempty text"),
+            ("mask empty", Box::new(|row| row["mask_local_nm"][0]["layers"] = json!([])), "mask layers must name at least one layer"),
+            ("mask rect", Box::new(|row| row["mask_local_nm"][0]["rect_nm"] = json!([0, 0, 0, 0])), "mask is empty or inverted"),
+        ];
+        for (name, change, message) in cases {
+            let mut row = sided(1, "C1", 5_000_000, 5_000_000, "F", &["F.Cu"], &["F.Mask"]);
+            change(&mut row);
+            let error = format!("{:#}", prepare(&sided_board(vec![row])).unwrap_err());
+            assert!(error.contains(message), "{name}: {error}");
+        }
+        // More copper layers than the set can hold are refused, never folded together.
+        let many: Vec<String> = (0..=Layers::BITS).map(|n| format!("In{n}.Cu")).collect();
+        let many: Vec<&str> = many.iter().map(String::as_str).collect();
+        let row = sided(1, "C1", 5_000_000, 5_000_000, "F", &many, &["F.Mask"]);
+        assert!(format!("{:#}", prepare(&sided_board(vec![row])).unwrap_err()).contains("more than 64 distinct layers"));
     }
 
     #[test]

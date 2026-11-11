@@ -576,6 +576,23 @@ rules, including stricter coupling limits, always remain in force.
    check allows a pad 2 nm from the engine's exact turn; quarter-turn parts
    remain exact.
 
+   **Sides (AGENTEE-637).** Each footprint row states its mounting side
+   (`side`: `F` or `B`), each pad's copper the copper layers it is on
+   (`geometry.layers`) and each mask aperture the mask layers it opens
+   (`mask_local_nm[].layers`). Two footprints are checked against each other
+   only where they can meet: bodies on the same side, copper on a shared
+   copper layer, mask apertures on a shared mask layer. A drill is on every
+   layer, so the hole-to-copper and hole-to-hole checks apply to every pair,
+   and the copper of a through pad meets both sides. Parts on opposite sides
+   may therefore share board area, as native DRC allows. One check exists
+   only for them: no body lies over a hole of a part on the other side
+   (`body_hole`), because a pin or a screw passes through the board there;
+   native DRC has no such rule. The engine never moves a part to the other
+   side. A row, copper item or aperture that states no side or layers meets
+   everything, which is how every problem was read before; until then a part
+   on the back and a part on the front could not share board area, and a
+   two-sided design that a person built was infeasible for the engine.
+
    **Routing-only jobs (AGENTEE-636).** When every footprint is natively
    locked or has a declared fixed pose, nothing can move and the capture
    record says `routing_only: true`. Unless the intent declares a check that
@@ -658,9 +675,9 @@ rules, including stricter coupling limits, always remain in force.
    An `evaluate` request re-evaluates explicit pose vectors (predicted native pad
    positions, terms, violations) without searching.
    A `pair` violation names the rules its two footprints break and how often
-   (`rules`: `body`, `copper`, `hole_copper`, `hole_hole`, `mask_web`), so a
-   rejected placement says which constraint rejects it; the counts add up to
-   the row's `count`.
+   (`rules`: `body`, `body_hole`, `copper`, `hole_copper`, `hole_hole`,
+   `mask_web`), so a rejected placement says which constraint rejects it; the
+   counts add up to the row's `count`.
    Pad copper uses KiCad's native `TransformShapeToPolygon`, `ERROR_OUTSIDE`,
    with a 1 µm curve tolerance. Circle, rectangle, oval/obround, roundrect and
    custom pads carry labelled `conservative_native_polygon` contours in the

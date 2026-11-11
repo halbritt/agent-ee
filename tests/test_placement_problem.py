@@ -161,6 +161,35 @@ class BuilderTests(unittest.TestCase):
                 self.assertNotEqual(captured['problem_sha256'],
                                     problem_builder.capture(board(), unstated)[0]['problem_sha256'])
 
+    def test_rows_carry_the_mounting_side_and_layers(self):
+        # AGENTEE-637: parts on opposite sides may share board area, so the engine is told the side.
+        description = board()
+        description['footprints'][1]['side'] = 'B'
+        description['footprints'][3]['side'] = 'unsupported'      # only a known side is stated
+        description['footprints'][0]['mask_local_nm'] = [{'rect_nm': [-1, -1, 1, 1], 'layers': ['F.Mask']}]
+        captured, _ = problem_builder.capture(description, bundle())
+        rows = {r['native_ref']: r for r in captured['footprints']}
+        self.assertEqual((rows['R1']['side'], rows['C1']['side']), ('F', 'B'))
+        self.assertNotIn('side', rows['H1'])
+        self.assertEqual(rows['R1']['mask_local_nm'], [{'rect_nm': [-1, -1, 1, 1], 'layers': ['F.Mask']}])
+        self.assertEqual({r['native_ref']: r.get('side') for r in evaluated(bundle(), description)['footprints']},
+                         {r['native_ref']: r.get('side') for r in captured['footprints']})
+
+    def test_escape_space_names_the_copper_layers_of_its_pads(self):
+        row = {'uuid': 'owner', 'native_ref': 'J7', 'occupancy': {'local_rect_nm': [-2 * MM, -2 * MM, 2 * MM, 2 * MM]},
+               'pads': [{'uuid': 'p', 'net': '/io/DP', 'local_nm': [1_800_000, -325_000]},
+                        {'uuid': 'n', 'net': '/io/DN', 'local_nm': [1_800_000, 325_000]}],
+               'copper_local_nm': [
+                   {'rect_nm': [1_400_000, -475_000, 2_200_000, -175_000], 'geometry': {'pad_uuid': 'p', 'layers': ['F.Cu']}},
+                   {'rect_nm': [1_400_000, 175_000, 2_200_000, 475_000], 'geometry': {'pad_uuid': 'n', 'layers': ['F.Cu', 'B.Cu']}}]}
+        hint, = problem_builder.escape_hints(row, width=200_000, gap=250_000, clearance=150_000)
+        self.assertEqual(hint['layers'], ['B.Cu', 'F.Cu'])
+        for item in row['copper_local_nm']:
+            del item['geometry']['layers']
+        unlayered, = problem_builder.escape_hints(row, width=200_000, gap=250_000, clearance=150_000)
+        self.assertNotIn('layers', unlayered)
+        self.assertEqual({k: v for k, v in hint.items() if k != 'layers'}, unlayered)
+
     def test_decoupling_loop_intent_is_ingested_and_carries_weights(self):
         normalized = bundle(decoupling=[{
             'id': 'loop-1', 'ic_ref': 'R1', 'cap_ref': 'C1',

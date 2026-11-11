@@ -63,8 +63,11 @@ class MaskGraphicCaptureTests(Fixture):
                                                           board_margin=margin, side=side, turn=turn)
                         problem, _ = job.capture(path, job.normalize_intent(intent(), groups()))
                         row = next(f for f in problem['footprints'] if f['native_ref'] == 'R1')
-                        self.assertEqual(row['mask_local_nm'][-1], expected)
+                        self.assertEqual(row['mask_local_nm'][-1]['rect_nm'], expected)
                         self.assertEqual(len(row['mask_local_nm']), 3)
+                        # AGENTEE-637: every aperture names the mask layer it opens, and the row its side.
+                        self.assertEqual([m['layers'] for m in row['mask_local_nm']], [[side + '.Mask']] * 3)
+                        self.assertEqual(row['side'], side)
 
     def test_live_native_graphic_override_and_nonpositive_conservatism(self):
         # KiCad 10 does not serialize local margins on explicit mask-layer graphics.
@@ -81,6 +84,7 @@ class MaskGraphicCaptureTests(Fixture):
                     actual = job.classify_footprint(fp, captured)
                     self.assertEqual(actual['mask'][-1], expected)
                     self.assertEqual(len(actual['mask']), 3)
+                    self.assertEqual(actual['mask_layers'], [[side + '.Mask']] * 3)
 
     def test_mask_text_and_textbox_keep_effective_native_bounds(self):
         import pcbnew
@@ -99,5 +103,5 @@ class MaskGraphicCaptureTests(Fixture):
                                 int(box.GetRight() - origin.x), int(box.GetBottom() - origin.y)]
                     problem, _ = job.capture(path, job.normalize_intent(intent(), groups()))
                     row = next(f for f in problem['footprints'] if f['native_ref'] == 'R1')
-                    self.assertEqual(row['mask_local_nm'][-1], expected)
+                    self.assertEqual(row['mask_local_nm'][-1], {'rect_nm': expected, 'layers': [side + '.Mask']})
                     self.assertEqual(len(row['mask_local_nm']), 3)

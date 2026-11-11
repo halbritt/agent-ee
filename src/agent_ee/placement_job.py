@@ -502,15 +502,19 @@ def classify_footprint(fp, captured):
         if layers.get('User.Drawings') else {}
     mask = [_grow(_bbox(p), _mask_expansion(p)) for p in pads if _on_mask(p)] + [
         _mask_graphic_bbox(g) for g in graphics if pcbnew.LayerName(g.GetLayer()) in ('F.Mask', 'B.Mask')]
+    # The mask layers each aperture opens, in the same order: apertures on different layers never meet.
+    mask_layers = [[pcbnew.LayerName(l) for l in (pcbnew.F_Mask, pcbnew.B_Mask) if p.IsOnLayer(l)]
+                   for p in pads if _on_mask(p)] + [
+        [pcbnew.LayerName(g.GetLayer())] for g in graphics if pcbnew.LayerName(g.GetLayer()) in ('F.Mask', 'B.Mask')]
     fab = [g for g in graphics if pcbnew.LayerName(g.GetLayer()) == FAB[side] and g.GetClass() == 'PCB_SHAPE']
     silk = [g for g in graphics if pcbnew.LayerName(g.GetLayer()) == SILK_OF[side] and g.GetClass() == 'PCB_SHAPE']
     facts = {'silk_only': False, 'mark_eligible': False, 'bodiless': False, 'occupancy': None, 'refusal': None,
              'diagnostics': [],
-             'mask': mask, 'classified_layers': classified,
+             'mask': mask, 'mask_layers': mask_layers, 'classified_layers': classified,
              'seats': {'body:fab': _union([_bbox(g) for g in fab]) if fab else None,
                        'body:silk': _union([_bbox(g) for g in silk]) if silk else None}}
     if not pads and not zones and graphics and set(layers) <= set(SILK):
-        return dict(facts, silk_only=True, mask=[])
+        return dict(facts, silk_only=True, mask=[], mask_layers=[])
     body_layers = {FAB[side], SILK_OF[side], f'{side}.CrtYd'} & set(layers)
     facts['mark_eligible'] = bool(pads) and not body_layers and all(not p.GetNetname() for p in pads)
     courtyards = captured['courtyards']
@@ -669,7 +673,8 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
             'copper_local_nm': [c for p in fp.Pads() if (c := _pad_copper(p, origin, q)) is not None]
                 + [{'rect_nm': _local_rect(_bbox(g), origin, q), 'clearance_nm': 0}
                    for g in fp.GraphicalItems() if pcbnew.LayerName(g.GetLayer()) in COPPER],
-            'mask_local_nm': [_local_rect(b, origin, q) for b in native['mask']],
+            'mask_local_nm': [{'rect_nm': _local_rect(b, origin, q), 'layers': layers}
+                              for b, layers in zip(native['mask'], native['mask_layers'])],
             'holes_local_nm': [h for p in fp.Pads()
                                if (h := _pad_hole(p, origin, q, int(settings.m_HoleClearance))) is not None],
             'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),

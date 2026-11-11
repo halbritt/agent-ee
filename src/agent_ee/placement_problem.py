@@ -194,6 +194,8 @@ def escape_hints(row, *, width, gap, clearance):
         nets[pad['net']].append(pad)
     boxes = {c.get('geometry', {}).get('pad_uuid'): c['rect_nm']
              for c in row['copper_local_nm']}
+    layers = {c.get('geometry', {}).get('pad_uuid'): c.get('geometry', {}).get('layers') or []
+              for c in row['copper_local_nm']}
     result = []
     for name in sorted(nets):
         suffix = next((s for s in ('_P', '+', 'P') if name.endswith(s)), None)
@@ -223,9 +225,12 @@ def escape_hints(row, *, width, gap, clearance):
         else:
             rect[normal + 2] = rect[normal]
             rect[normal] -= depth
+        # The space is on the copper layers of its two pads: copper on another layer does not fill it.
+        on = sorted({*layers[p['uuid']], *layers[n['uuid']]})
         result.append({'authority': 'agent-heuristic/1', 'kind': 'differential-terminal-space',
                        'nets': [name, mate], 'pads': [p['uuid'], n['uuid']], 'rect_nm': rect,
-                       'width_nm': width, 'gap_nm': gap, 'clearance_nm': clearance})
+                       'width_nm': width, 'gap_nm': gap, 'clearance_nm': clearance,
+                       **({'layers': on} if on else {})})
     return result
 
 
@@ -261,6 +266,8 @@ def _document(board, *, fixed_poses, edges, groups, rails):
             occupancy = fp['occupancy']
         q = fp['quarter_turns']
         row = {'uuid': fp['uuid'], 'native_ref': fp['ref'], 'role': kind,
+               # The mounting side: parts on opposite sides may share board area (AGENTEE-637).
+               **({'side': fp['side']} if fp.get('side') in ('F', 'B') else {}),
                'pose': {'x_nm': fp['position_nm'][0], 'y_nm': fp['position_nm'][1], 'quarter_turns': q,
                         **({'residual_deg': fp['residual_deg']} if fp.get('residual_deg') else {})},
                'occupancy': ({k: v for k, v in occupancy.items() if k in ('status', 'label', 'rung')}
