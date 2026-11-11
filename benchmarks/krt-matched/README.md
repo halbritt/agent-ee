@@ -142,7 +142,12 @@ Nothing is keyed on a board. Every rule below applies to every board.
   the same named rules. The values are the no-extra-cost fab capability as
   upstream KRT's `standard` tier states it, so KRT's own standard tier is
   legal under them. `prep --fab-rules` refuses a source that has rules of its
-  own. `summary` counts these boards in their own table.
+  own. `summary` counts these boards in their own table and names the
+  revision of `fab-rules.json` each was prepared with. Revision 1 left the
+  copper-to-hole clearance at KiCad's default 0.25 mm, which a stated via
+  beside a stated track cannot meet on a board of three or more layers
+  (0.225 mm); its results on tigard are superseded. Revision 2 states 0.2 mm,
+  and `prep` now refuses a rule set that is inconsistent in that way.
 - **KRT held to the board's floors** (secondary routing cell): `route NAME
   --tools krt-held` runs stock KRT with `--escalation board
   --no-fix-drc-settings`, its own options for never going below the board's

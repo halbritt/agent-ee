@@ -1,7 +1,28 @@
 {
- "note": "Rules stated for a board whose source carries no project file, so that both tools design to one named rule set instead of KiCad's defaults, which nobody chose for the board. The values are the fab capability at no extra cost as upstream KRT's `standard` fab tier states it (py_router/fab_tiers.py at e6bc31e2): stock KRT's own standard tier is legal under them. The Default net class takes the same values as the minimums. Every other rule keeps the value KiCad wrote.",
+ "note": "Rules stated for a board whose source carries no project file, so that both tools design to one named rule set instead of KiCad's defaults, which nobody chose for the board. The values are the fab capability at no extra cost as upstream KRT states it (py_router/fab_tiers.py `standard` tier and routing_defaults.NPTH_TO_TRACK_CLEARANCE at e6bc31e2): stock KRT's own standard tier is legal under them. The Default net class takes the same values as the minimums. Every other rule keeps the value KiCad wrote.",
  "by_copper_layers": {
-  "1-2": {"clearance": 0.127, "track_width": 0.127, "via_diameter": 0.45, "via_drill": 0.2, "hole_to_hole": 0.2, "board_edge": 0.2},
-  "3+": {"clearance": 0.1, "track_width": 0.0889, "via_diameter": 0.45, "via_drill": 0.2, "hole_to_hole": 0.2, "board_edge": 0.2}
+  "1-2": {
+   "clearance": 0.127,
+   "track_width": 0.127,
+   "via_diameter": 0.45,
+   "via_drill": 0.2,
+   "hole_to_hole": 0.2,
+   "board_edge": 0.2,
+   "hole_clearance": 0.2
+  },
+  "3+": {
+   "clearance": 0.1,
+   "track_width": 0.0889,
+   "via_diameter": 0.45,
+   "via_drill": 0.2,
+   "hole_to_hole": 0.2,
+   "board_edge": 0.2,
+   "hole_clearance": 0.2
+  }
+ },
+ "revision": 2,
+ "revisions": {
+  "1": "2026-11-11: clearance, track width, via diameter and drill, hole to hole, board edge. Copper-to-hole clearance was left at KiCad's default 0.25 mm, which the 3+ layer values cannot meet: a via of the stated size beside a track at the stated spacing has 0.125 + 0.10 = 0.225 mm from hole to copper. Results under revision 1 on a 3+ layer board mostly measure that one leftover default.",
+  "2": "2026-11-11: states hole_clearance 0.2 mm (upstream KRT's copper-to-hole fab floor). prep refuses a rule set in which a legal via beside a legal track is illegal."
  }
 }

@@ -116,20 +116,27 @@ def state_fab_rules(norm):
     import pcbnew
     layers = pcbnew.LoadBoard(str(norm)).GetCopperLayerCount()
     tier = '1-2' if layers <= 2 else '3+'
-    values = json.loads((Path(__file__).parent / 'fab-rules.json').read_text())['by_copper_layers'][tier]
+    stated = json.loads((Path(__file__).parent / 'fab-rules.json').read_text())
+    values = stated['by_copper_layers'][tier]
+    # A stated via beside a stated track at the stated spacing must itself be legal.
+    reach = (values['via_diameter'] - values['via_drill']) / 2 + values['clearance']
+    if values['hole_clearance'] > reach + 1e-9:
+        raise SystemExit(f"fab-rules.json ({tier} layers): hole clearance {values['hole_clearance']} mm exceeds the "
+                         f'{reach:g} mm a stated via leaves beside a stated track')
     project_path = norm.with_suffix('.kicad_pro')
     project = json.loads(project_path.read_text())
     rules = project['board']['design_settings']['rules']
     rules.update(min_clearance=values['clearance'], min_track_width=values['track_width'],
                  min_via_diameter=values['via_diameter'], min_through_hole_diameter=values['via_drill'],
-                 min_hole_to_hole=values['hole_to_hole'], min_copper_edge_clearance=values['board_edge'])
+                 min_hole_to_hole=values['hole_to_hole'], min_copper_edge_clearance=values['board_edge'],
+                 min_hole_clearance=values['hole_clearance'])
     default = [c for c in project['net_settings']['classes'] if c['name'] == 'Default']
     if len(default) != 1:
         raise SystemExit('the normalized project has no single Default net class')
     default[0].update(clearance=values['clearance'], track_width=values['track_width'],
                       via_diameter=values['via_diameter'], via_drill=values['via_drill'])
     project_path.write_text(json.dumps(project, indent=2) + '\n')
-    return {'copper_layers': layers, 'tier': tier, 'values': values}
+    return {'copper_layers': layers, 'tier': tier, 'values': values, 'revision': stated.get('revision')}
 
 
 def lock_set(norm_board):
@@ -280,7 +287,8 @@ def rules_origin(root):
     except (OSError, ValueError):
         return 'unknown'
     if record.get('stated_fab_rules'):
-        return f"stated fab rules ({record['stated_fab_rules']['tier']} layers, fab-rules.json)"
+        stated = record['stated_fab_rules']
+        return f"stated fab rules ({stated['tier']} layers, fab-rules.json revision {stated.get('revision') or 1})"
     own = record.get('source_has_project_file')
     if own is None:
         source = Path(record.get('source', ''))
