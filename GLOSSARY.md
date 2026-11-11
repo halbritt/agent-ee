@@ -75,15 +75,45 @@ _Avoid_: problem JSON
 **Candidate pose**:
 One proposed position, rotation and side for a footprint, carrying its provenance and the constraints it was judged against.
 
-**Pinned router run**:
-One attempt by the pinned kicad-route checkout on a candidate, with preflight, run and one classification of its result as accepted, policy-failed or refused.
-_Avoid_: router call, KRT run
+**Router attempt**:
+One attempt by the kicad-route checkout on a candidate, with preflight, run and one classification of its result as accepted, policy-failed or refused. The attempt records the router commit it used.
+_Avoid_: router call, KRT run, pinned router run
 
 **agent-ee.local-routing-seed/1**:
 A normalized data-driven schema for local decoupling loops, return paths, and ground-tie geometry derived from board geometry models rather than single-board heuristics.
 
-**Pin**:
-The exact kicad-route commit and code hashes agent-ee is qualified against; a run on any other code is refused.
+**Router version**:
+The kicad-route commit an attempt ran, fixed for that attempt and recorded in its report. agent-ee names no required commit; before 2026-11-03 a committed table did, and that table is retired (`docs/routing-adapter.md`).
+_Avoid_: pin
+
+## Board outcomes
+
+The terms results are reported in (`AGENTS.md`, `docs/benchmarks/`).
+
+**Open connection**:
+A pair of pads on one net that the saved board does not join with copper; KiCad reports it as an unconnected item.
+_Avoid_: unrouted net (a net can be partly routed)
+
+**The board's own rules**:
+The design rules the board's project files state, unrelaxed. A board without a project file has KiCad's defaults, or stated fabrication rules that the report names.
+
+**New error**:
+A DRC error on the output board that its unrouted input did not have, matched by type and by the descriptions of its items.
+
+**Remaining violation**:
+Any ERC or DRC violation on the saved board, new or inherited from the source design. A board with remaining violations is not clean, whatever the benchmark verdict.
+
+**Benchmark cell**:
+One tool configuration run on one prepared board. It passes with no open connection and no new error under the board's own rules. A pass compares tools; it does not release a board.
+
+**Below-class feature**:
+A track or via narrower or smaller than its net class asks while still at or above the board's minimums. Native DRC does not report it, so it is counted beside the verdict.
+
+**Placement quality**:
+How well the final component coordinates meet the placement request: grouping, connector edges, keep-outs and decoupling distance. Complete routing and clean DRC do not measure it.
+
+**Fabrication release**:
+The claim that one saved board can be ordered. It lists every remaining violation and below-class feature, the electrical and placement checks that ran, and the supplier and physical checks that did not.
 
 ## Fabrication
 

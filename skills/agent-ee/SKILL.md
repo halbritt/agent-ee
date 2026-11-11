@@ -5,20 +5,49 @@ description: Generates KiCad boards from engineering requirements (parts, schema
 
 # agent-ee
 
-To generate a board, use `agent-ee design generate REQUIREMENTS` (requirements
-document to design statement), `agent-ee design compile` and
-`agent-ee build run PLAN --out RUN`; see the [README](../../README.md) for what
-these support today. The rest of this skill covers reviewing an existing
-design, which is one stage of the generator and the older of the two uses.
+Use the installed `agent-ee` CLI. Source, scope examples and the
+[README](../../README.md) are at `~/git/agent-ee`; the README says what each
+stage supports today and what it does not. The [full manual](../../docs/README.md)
+has the exact contracts, operator workflows and troubleshooting. Run
+`agent-ee doctor` first to see which tools this host has.
 
-Use the installed `agent-ee` CLI. Source and scope examples live at
-`~/git/agent-ee`; read its [README](../../README.md) for setup and scope authoring.
-The CLI coordinates checks and fresh initial reviewers; it does not need manual
-reviewer-prompt coordination. Select an explicit [review profile](../../docs/reviewer-profiles.md) for Claude, Codex
-or Agy subscription calls. There is no implicit model default. Tools are enabled
-for investigation; keep source design read-only and experiments separate. Do not add an OpenRouter fallback on auth/quota failure.
-The [full manual](../../docs/README.md) includes exact scope/check/result
-contracts, operator workflows, troubleshooting and extension instructions.
+## Generate a board
+
+- `agent-ee design generate REQUIREMENTS` turns a requirements document into a
+  design statement; `agent-ee design compile DESIGN` validates it and writes
+  the build bundle ([design capture and compile](../../docs/design-compile.md)).
+- `agent-ee build run PLAN --out RUN` runs the stages from requirements to the
+  fabrication package ([build workflow](../../docs/build-workflow.md)). A
+  build resumes after an edit to agent-ee and records the change; it refuses a
+  changed plan, input source or native tool.
+- `agent-ee place run CONFIG --out JOB_DIR` places and routes an existing
+  board, and `agent-ee place metrics BOARD` measures a placement
+  ([placement job](../../docs/placement-job.md)).
+
+Judge the result on the saved board, and say which claim you are making. No
+open connection and no new DRC error under the board's own rules is the
+benchmark measure; it is not a fabrication release. A release lists every
+remaining violation, including ones the source design already had, every
+track or via below its net class's size, the electrical and placement checks
+that ran, and the supplier and physical checks that did not. Do not relax a
+rule, limit or requirement to get a pass. When a run fails, look for a tool
+defect first; report an invalid or unsupported input as that.
+
+## Check an existing design
+
+`agent-ee review SCOPE --checks-only --out /fresh/path/review` runs the
+declared native and engineering checks on a captured copy of the design with
+no model calls. This is the ordinary way to check a board. The command exits
+1 even when every check passes, because it records the model review as not
+done; read the check results in `REPORT.md` and `result.json`.
+
+The steps below are the older review workflow, which adds model reviewers and
+adjudication on top of the checks. It stays supported and is optional: use it
+when the owner or the task asks for it, not as a step every design or change
+must pass. It needs an explicit [review profile](../../docs/reviewer-profiles.md)
+for Claude, Codex or Agy subscription calls; there is no implicit model
+default. Keep the source design read-only and experiments separate. Do not add
+an OpenRouter fallback on auth/quota failure.
 
 1. Inspect the design requirements and native artifacts. Declare the actual
    review scope in an `agent-ee.scope/2` JSON file, including external libraries,
@@ -50,10 +79,9 @@ contracts, operator workflows, troubleshooting and extension instructions.
    --finding ID --checks CHECK_IDS --reason 'evidence-based closure explanation'`.
    The old defect remains visible in its original candidate.
 
-For authorized automatic repair, use `agent-ee campaign CONFIG --out NEW` with
-an explicit subscription implementation definition and review profile. One agent
-writes a disposable candidate; fresh independent reviewers and centralized
-adjudication evaluate it. Declare mutable design inputs, iteration and time
+For authorized automatic repair in that workflow, `agent-ee campaign CONFIG --out NEW`
+takes an explicit subscription implementation definition and review profile. One agent
+writes a disposable candidate; reviewers and adjudication evaluate it. Declare mutable design inputs, iteration and time
 budgets. Do not bypass regression, repeated-design or trade-off stops by resetting
 history. `agent-ee verify-campaign CAMPAIGN` validates retained history and state.
 

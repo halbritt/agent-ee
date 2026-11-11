@@ -7,13 +7,9 @@
 This is the historical builder agreement. The current
 [manual](README.md), [scope reference](scope-reference.md) and
 [result reference](result-reference.md) describe the implemented operator
-contracts. Builder ownership assignments below record the original work split;
-they are not ongoing restrictions on repository maintenance.
+contracts.
 
 Python 3.12, standard library; installed KiCad `pcbnew` runs in `/usr/bin/python3`.
-Implementation owners: coordinator candidate/executor/CLI/reviewers; Fable native
-and engineering checks + fixtures; Argon finding validation/adjudication + tests.
-Do not edit another owner's files without coordination. Shared filesystem/branch.
 
 ## Run layout
 

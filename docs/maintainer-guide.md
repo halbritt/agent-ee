@@ -195,11 +195,20 @@ actual inference through the intended route before claiming integration.
 
 ## Policy, schema and release changes
 
-The implementation hashes every Python module and records runtime fingerprints.
-Python edits invalidate old policy freshness, including edits unrelated to one
-particular check. A process also compares loaded policy with on-disk policy, so
-do not change implementation files underneath an active demonstration and then
-claim the resulting run exercised a consistent version.
+A run records the agent-ee source it ran under (a digest of every module) and
+the native tool versions. What a later edit to agent-ee does depends on the
+kind of run:
+
+- A build (`agent-ee build run`) keeps the source digests as provenance only.
+  It resumes under an edited agent-ee and records the difference in
+  `tool_changes`; it still refuses a changed plan, input source or native tool
+  runtime ([build workflow](build-workflow.md)).
+- A retained review or campaign still treats an edited agent-ee as a changed
+  implementation: a finished run reports the difference, and work that
+  continues on the run is refused until it is rerun. This is the behaviour of
+  the existing review commands. Do not add the comparison to new code.
+
+Do not edit agent-ee underneath a run you intend to report as one version.
 
 Changes to schema `/1` fields require corresponding updates to validators,
 runtime output schemas, CLI projection, tests, examples and manual.

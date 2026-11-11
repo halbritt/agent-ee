@@ -14,8 +14,9 @@ product's hardware qualification.
 | Operate the 7-stage build in production (staging, checkpoints, resumption) | [Operator runbook](operator-runbook.md) |
 | Understand the 7-stage generative synthesis pipeline and candidate immutability | [Architecture & pipeline guide](architecture-pipeline.md) |
 | Benchmark generator, emitter, and dual-gate benchmark performance | [Benchmarking guide](benchmarking-guide.md) |
+| See how placement and routing compare with stock KiCadRoutingTools on real boards | [Matched benchmark](benchmarks/krt-matched-2026-11-09.md) |
 | Resolve stage-by-stage errors (ERC, placement timeouts, unrouted nets, DRC) | [Generator troubleshooting & FAQ](troubleshooting-faq.md) |
-| Understand 18 core domain concepts and candidate lifecycle contracts | [Domain glossary](../GLOSSARY.md) |
+| Understand the core terms, including the terms board results are reported in | [Domain glossary](../GLOSSARY.md) |
 | Understand the 5-tier test suite architecture and runner commands | [E2E test suite infrastructure](../TEST_INFRA.md) |
 | Understand the five closed-loop invariants and migration | [Closed-loop overview](closed-loop.md) |
 | Declare stage gates and interpret absent design content | [Staged campaigns](staged-campaign.md) |
@@ -33,7 +34,7 @@ product's hardware qualification.
 | Run a review, investigate findings and verify a repair | [Operator guide](operator-guide.md) |
 | Inspect a saved board or captured candidate in 3D | [3D PCB viewer](pcb-viewer.md) |
 | Render top, bottom and isometric board images | [Native 3D renders](pcb-renders.md) |
-| Read the ticket-by-ticket record of implemented capabilities | [Capability log](capability-log.md) |
+| Read the ticket-by-ticket record of implemented capabilities up to 2026-10-25 (frozen) | [Capability log](capability-log.md) |
 | Read the independent audits and their corrective plans | [Audits](audit/README.md) |
 | Read the 2026-10-25 recovery plan (historical record, not current guidance) | [Recovery plan](planning/2026-10-25-recovery/recovery-plan.md), [finding register](planning/2026-10-25-recovery/findings.md), [backlog](planning/2026-10-25-recovery/backlog.md) |
 | Build a captured design through the seven stages to a fabrication package | [Build workflow](build-workflow.md), [system acceptance map](system-acceptance.md) |
@@ -112,7 +113,11 @@ and omitted engineering areas.
 the implementation. [Fixture provenance](../fixtures/rc/PROVENANCE.md) identifies
 the adapted native fixture and its source.
 
-The following are builder records, not the current operator reference:
+The following are builder records, not the current operator reference. The
+[planning records](planning/README.md), the
+[qualification records](qualification/README.md) and the
+[capability log](capability-log.md) are frozen: they stay in place because
+tests and other documents read them, and they are not templates for new work.
 
 - [Original implementation agreement](contracts.md).
 - [Fable assessment](fable-assessment.md) and [Argon assessment](argon-assessment.md).

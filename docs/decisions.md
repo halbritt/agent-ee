@@ -7,6 +7,67 @@ with [implementation review dispositions](closed-loop-review.md) and
 single-writer campaigns and empirical re-review while preserving the original
 candidate/reviewer/adjudicator information boundary.
 
+## Machinery guidance remediation and benchmark standing (2026-11-11)
+
+Agent-written record, not owner wording; the owner can amend it. On 2026-11-11
+the owner asked for a review, by agents on more than one model, of the guidance
+and enforcement that had steered work on this repository toward process
+machinery, and for the remediations they agreed on to be carried out
+(AGENTEE-634). This entry records what was agreed for this repository. It
+applies the [2026-11-09 direction](#direction-2026-11-09-capability-over-machinery)
+and narrows the first draft of that application.
+
+- [AGENTS.md](../AGENTS.md) is the current guidance. It separates three
+  claims: a software change is done, a benchmark cell passes, and a board is
+  ready for fabrication. Passing ERC and DRC, or complete routing, does not
+  establish electrical correctness or placement quality, and a board that
+  carries violations inherited from its source design is not clean.
+- New work does not add records whose subject is the work itself (receipts,
+  seals, custody records, review seats, adjudication, grants). What protects
+  a board or the host stays: stale and wrong-file detection on inputs and
+  outputs, ordinary file locks, sandboxed native tools with deadlines,
+  resource limits, and failure when a tool fails or an output is missing.
+- The existing review, campaign, adjudication and stage-receipt commands and
+  their file formats stay supported as they are. They are not extended,
+  deleted, split out or used as a pattern. Decisions below that define them
+  remain true of that code.
+- A failed board run is investigated as a tool defect first. An invalid input
+  or an unsupported case is reported as that, and no board, rule or limit is
+  tuned to obtain a pass.
+- No rule here requires a second reviewer, or a reviewer on a different model,
+  for every change. Whether "reviewer class differs from implementer" was ever
+  a standing owner rule is unresolved history
+  ([retired process documents](history/README.md)); a second opinion is asked
+  for when the engineering is uncertain or the owner asks.
+- `docs/planning/`, `docs/qualification/` and `docs/capability-log.md` are
+  frozen records. They stay in place because tests and scripts read them, and
+  they are not templates for new work.
+- Changes to tests and scanners that follow from this review are made in
+  their own commits and described there.
+
+Benchmark standing. The 2026-11-09 entry says no real-board comparison with
+stock KRT existed. One has been run since:
+[the matched benchmark](benchmarks/krt-matched-2026-11-09.md). As of
+2026-11-11 its own summary is the limit of the claim: placing and routing on
+its own, agent-ee delivers two of the six boards with no open connection and no
+new error, and KRT's scripts run once deliver one of six; routing the
+designer's placement, the two are level. The report states that these numbers
+support "better than KRT's scripts run once, by one board" and do not support
+"better than KRT" in general, and that no tool passes four of the boards.
+Quote the report's newest "Result in brief", not this paragraph, once the
+report moves on.
+
+The measure. The benchmark report records that on 2026-11-10 the owner
+accepted three recommendations: move the router onto current upstream KRT,
+judge a result by whether it is fully routed and clean against the board's own
+rules, and stop pulling parts toward the anchor of a group derived from a
+schematic sheet. That is relayed through the report, not quoted from the
+owner, and it is noted here so that the measure has an entry. It is not a new
+ruling.
+
+This entry and the documentation change that carries it make no claim about
+any board.
+
 ## Direction 2026-11-09: capability over machinery
 
 Direct owner instructions, 2026-11-09, verbatim, given to agent-1347 after an
@@ -25,10 +86,13 @@ The assessment found no real-board comparison against stock KRT, and found
 that about a quarter of the source and about a third of the commits since
 2026-10-25 served custody, review-process or test-runner machinery. The owner
 then directed that its recommendations become Plane work items (AGENTEE-627 to
-AGENTEE-634) and that the work start.
+AGENTEE-634) and that the work start. (The comparison has been run since; see
+[the 2026-11-11 entry](#machinery-guidance-remediation-and-benchmark-standing-2026-11-11).)
 
 What follows is the recording agent's application of that instruction. It is
-not owner wording, and the owner can amend it.
+not owner wording, and the owner can amend it. The
+[2026-11-11 entry](#machinery-guidance-remediation-and-benchmark-standing-2026-11-11)
+narrows it.
 
 - [AGENTS.md](../AGENTS.md) is the current guidance. Progress is measured by
   board outcomes on boards the tool was not tuned for.
@@ -37,9 +101,8 @@ not owner wording, and the owner can amend it.
   in this file as an owner quotation. On 2026-11-09 the owner was shown that
   passage and its planned narrowing and answered, verbatim: "that's all
   agent-authored interpretation". It is therefore not an owner directive and
-  places no obligation on new work. What new work keeps, as engineering
-  practice: record tool versions, treat a tool failure as a failure, and let
-  native checks on the saved board decide.
+  places no obligation on new work. What new work keeps is ordinary
+  engineering practice, which [AGENTS.md](../AGENTS.md) lists.
 - [Done requires each stage through its declared step](#done-requires-each-stage-through-its-declared-step-amends-decision-1)
   stays true of the existing campaign code. It is not a pattern for new work:
   new stages do not add receipts.
@@ -569,6 +632,11 @@ AGENTEE-98 is reworded to the telemetry pod and parents the pod epic AGENTEE-157
 
 ## Generation benchmark external series anchor (AGENTEE-285)
 
+*Status 2026-11-11: this describes the existing generation benchmark freeze,
+which stays as it is. It was designed against a writer falsifying its own
+records, which the [relayed 2026-10-22 ruling](#decisions-relayed-2026-10-22-agent-519-quiz-answers-and-agent-509-relays)
+places outside the threat model. Do not copy the approach into new work.*
+
 The AGENTEE-278 review reproduced coordinated check resealing, caller generation
 claim rewrites and retained task metadata re-stratification. Local hashes cannot
 authenticate the writer of those hashes. The benchmark therefore freezes a
@@ -634,6 +702,12 @@ fails closed on owner, withdrawn or non-autonomous decisions and on
 unrecognized delegations. Like owner acceptance, it records a selection
 exception only: the actual rating and thermal evidence are still judged.
 Direct-owner declarations are unchanged.
+
+*Status 2026-11-11: the two paragraphs below describe how the existing
+`assembly_readiness` check anchors a delegated decision. The check and its
+tables stay as they are. They were written against an agent composing its own
+grant, which the [relayed 2026-10-22 ruling](#decisions-relayed-2026-10-22-agent-519-quiz-answers-and-agent-509-relays)
+places outside the threat model. Do not copy the approach into new work.*
 
 Review of that first form (HOLD H1-H3) showed that captured files cannot carry
 authority. An agent could write its own grant and decisions and capture them,

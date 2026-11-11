@@ -6,7 +6,7 @@ This runbook provides production operations procedures for deploying, executing,
 
 ## 1. System Readiness and Environment Verification
 
-Production builds require a deterministic, pinned native EDA toolchain. Before initiating builds or scheduling automated pipelines, verify host readiness using the built-in diagnostic probe:
+Production builds require the native EDA toolchain below; each run records the versions it used. Before initiating builds or scheduling automated pipelines, verify host readiness using the built-in diagnostic probe:
 
 ```bash
 ./bin/agent-ee doctor --checks-only
@@ -202,9 +202,9 @@ Key container constraints:
 
 ---
 
-## 6. Output Custody, Verification, and Delivery
+## 6. Output Verification and Delivery
 
-### Cryptographic Run Verification (`agent-ee verify`)
+### Checking a Finished Run (`agent-ee verify`)
 
 To confirm that an executed build has not been modified or corrupted since completion:
 
@@ -220,7 +220,7 @@ To verify candidate snapshot files without checking the original working source 
 ./bin/agent-ee verify runs/telemetry-pod-v1 --snapshot-only
 ```
 
-### Validating the Sealed Package
+### Checking the Fabrication Package
 
 Captured inputs from preflight reside in `<run-dir>/source/`. Candidate artifacts generated at each stage reside in stage-isolated directories under `<run-dir>/stages/<index>-<stage>-<hex>/candidate/`. Operators can locate the exact active candidate directory by inspecting `<run-dir>/build-report.json` under the `"candidate"` key.
 

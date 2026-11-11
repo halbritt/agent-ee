@@ -1,5 +1,12 @@
 # Capability log
 
+> Frozen record, last extended 2026-10-25. It stays because the README and
+> the manual link to it. Do not add entries and do not copy its form: new
+> capability is reported as measured board outcomes in
+> [docs/benchmarks/](benchmarks/krt-matched-2026-11-09.md) and in the commit
+> that adds it ([AGENTS.md](../AGENTS.md)). An entry here is a claim about
+> software at the time it was written, not about any board.
+
 This page is the detailed, ticket-by-ticket record of what has been implemented
 in agent-ee, moved here from the README on 2026-10-25 so the README can describe
 the product and its current state briefly. Entries are kept as written; each is

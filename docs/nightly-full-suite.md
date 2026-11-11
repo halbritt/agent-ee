@@ -1,5 +1,29 @@
 # Local nightly suite and GitHub completion
 
+## In brief
+
+The full test suite runs once a night on the owner's host, inside the
+container image, on the exact commit of `origin/main`. It takes about two
+hours. It is the one place every test runs; an ordinary change runs only the
+tests for what it touched ([AGENTS.md](../AGENTS.md)).
+
+- A run is **complete** when its log holds one full strict verdict that agrees
+  with the exit status. A complete run with problems is a failure, not a pass.
+- The result is compared with the previous complete run. A new problem, or an
+  old one of a changed kind, is a regression.
+- Reporting is optional and separate from the tests. By default a regression
+  files one Plane issue per commit and the commit gets a GitHub status.
+  `--skip-plane` runs the suite without filing in Plane, and
+  `--skip-gh-status` without the GitHub status. Neither changes what the suite
+  runs or how its verdict is read.
+- Hosted GitHub CI runs no tests. It only checks that a complete local verdict
+  exists for the commit.
+- Run one full native suite on a host at a time. Do not start a second one
+  beside the nightly.
+
+The sections below are the reference for the controller's existing behaviour:
+what it records, when it refuses, and how an incomplete attempt is handled.
+
 AGENTEE-619 keeps actual tests on the admitted local runner. GitHub runs
 `scripts/check_full_suite_recency.py`. The latest `local-full-suite` status must
 carry `strict-complete <exact SHA> <original finish> problems=N`. Completed
@@ -14,7 +38,7 @@ Completion does not assert quality or acceptance. A completed suite with problem
 keeps its GitHub failure status, including an unchanged baseline. Public status
 descriptions contain counts and timestamps without private paths or logs.
 
-## Nightly execution and custody
+## Nightly execution
 
 `scripts/nightly_full_suite.py run` fetches `origin/main` and selects its exact
 commit/tree. Fetch failure cannot fall back to a local HEAD. Foreign or dirty
@@ -98,19 +122,19 @@ the attempt is retained as incomplete, `reconciliation.json` records
 try that commit again. A missing exit or a runner killed by signal leaves the
 marker in place and blocks even `--force`: native cleanup is uncertain. A
 timeout permits retry only if the runner's TERM cleanup returned normally.
-The lead inspects unresolved attempts before retrying. A generic exit code never
+Inspect an unresolved attempt before retrying. A generic exit code never
 establishes completion.
 
 ## Explicit baseline initialization and one full gate
 
-Missing state refuses normal execution. The lead may select
+Missing state refuses normal execution. The operator may select
 `run --initialize-baseline` for a reviewed candidate-bound native run. Existing
 or corrupt state cannot be overwritten. Only a complete verdict records the
 baseline, preserving inherited problems without filing them as new regressions.
 Comparison counts are null because there was no prior run. A failing baseline
 still publishes failure. Unversioned legacy state requires reconciliation.
 
-To preserve the single composed gate rule before landing, the lead may instead
+To preserve the single composed gate rule before landing, the operator may instead
 select `qualify` on an exact clean candidate. It uses the normal runtime entrypoint,
 records the complete source/runtime/input evidence and problem inventory, and
 publishes the actual completion once. It does not initialize nightly state.
@@ -122,7 +146,7 @@ python3 -B scripts/nightly_full_suite.py qualify \
   --weight 2 --jobs 2
 ```
 
-Native capacity still needs a separate lead grant. The controller chooses a
+A full native run still has to be admitted on the host like any other. The controller chooses a
 fresh evidence directory; existing evidence directories refuse. `-B` avoids
 controller bytecode in the candidate before its clean-tree check.
 
@@ -222,7 +246,7 @@ Git. Inventories do not claim native execution.
 
 `--max-hours` remains accepted for compatibility without expiring a completed
 exact commit. The historical `test_stale_status_fails` name remains with the
-lead-approved changed expectation. Legacy unmarked statuses cannot establish
+operator-approved changed expectation. Legacy unmarked statuses cannot establish
 completion because the old runner could publish them without a complete verdict.
 
 ## Retention and operational gates
@@ -233,7 +257,7 @@ applied by default (the owner required no hard halt), but history accounting
 still runs and is recorded in `retention-check.json`. Completed unchanged-main
 skips and reporting retries still work. The byte check includes run outputs and
 indexed kept scratch. One admitted run can cross a threshold; the next is held.
-Nothing is automatically deleted. Worktrees, inputs, outputs and scratch remain selected until the lead
+Nothing is automatically deleted. Worktrees, inputs, outputs and scratch remain selected until the operator
 reconciles, exports and explicitly releases them. Missing selected scratch blocks
 new work; there is no age-based purge.
 
@@ -251,4 +275,4 @@ device/inode across run outputs, retained worktrees and indexed scratch, without
 following links or charging other agents' histories. Index/path/receipt failures
 hold admission with actionable `retention-check.json`; unknown accounting is
 reported as unknown, never zero. No new last-tested SHA or completion status is
-fabricated. Existing unindexed history requires lead reconciliation.
+fabricated. Existing unindexed history requires reconciliation by the operator.

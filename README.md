@@ -14,8 +14,14 @@ For explicit board and circuit decisions, use [design capture and compile](docs/
 The owner's direction since 2026-10-17 is the generator
 ([decisions](docs/decisions.md)); the review workflow is one of its stages,
 not the product. This README describes what the generator can do today and
-what it cannot. The ticket-by-ticket history of implemented capabilities is in
-the [capability log](docs/capability-log.md).
+what it cannot. The ticket-by-ticket history of implemented capabilities up to
+2026-10-25 is in the [capability log](docs/capability-log.md), a frozen record.
+
+How its placement and routing compare with stock KiCadRoutingTools on real
+boards is measured in the
+[matched benchmark](docs/benchmarks/krt-matched-2026-11-09.md). Its newest
+"Result in brief" section is the current standing; it does not support a
+general claim that agent-ee is better.
 
 ## Status at a glance (2026-11-03)
 
@@ -55,7 +61,7 @@ What the normal entrypoint does not do today:
 - **Engineering verification is as good as the authored map.** Only checks the
   map names are run; the mandatory set is ERC, DRC, netlist, geometry, parts
   membership, placement, envelope, fab profile, assembly readiness and package.
-- **Automated end-to-end testing.** The repository includes a comprehensive 283-test, 5-tier automated end-to-end test suite in `tests/e2e/run_tests.sh` (documented in [TEST_INFRA.md](TEST_INFRA.md)), covering stage harnesses, boundary conditions, cross-feature combinations, real-world application scenarios, and white-box adversarial stress testing. Complete 7-stage manufacturing package generation was demonstrated on the retained 17-part acquisition board run.
+- **Automated end-to-end testing.** The repository includes a 5-tier automated end-to-end test suite in `tests/e2e/run_tests.sh` (documented in [TEST_INFRA.md](TEST_INFRA.md)), covering stage harnesses, boundary cases, combinations of features, workflow scenarios on synthetic fixtures and failure modes. Complete 7-stage manufacturing package generation was demonstrated on the retained 17-part acquisition board run.
 - **Independent AI review is not part of the build.** The package stage runs
   checks only. The review and campaign commands provide reviewers and
   adjudication for a captured candidate separately.
