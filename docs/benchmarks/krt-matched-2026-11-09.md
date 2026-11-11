@@ -1028,14 +1028,16 @@ and after the tool changes of 2026-11-10 and 11.
 **Every KRT figure here is for KRT's scripts run once**: its placer with the
 benchmark's mechanical groups, its router at its defaults or held, and its
 label script. KRT documents a much longer procedure for an AI agent to run
-around those scripts, and that procedure was not run. What it is, and a
-bounded check of what it could change on the board that separates the tools,
-is under "KRT's own procedure" below.
+around those scripts. That procedure was run on one board only, the one that
+separates the tools, and it did not change the verdict there. What it is and
+what it delivered is under "KRT's own procedure" below.
 
 Same prepared boards as before (hashes checked), 900 s budget, KiCad 10.0.8,
-kicad-route `f074b4a`, stock KRT `e6bc31e2`. KRT's default cells and its
-placements are those of 2026-11-09 and were not rerun; its label step and its
-held routes were run on those placements on 2026-11-11. agent-ee "before" is
+kicad-route `f074b4a`, stock KRT `e6bc31e2`. The router change of AGENTEE-650
+(kicad-route `bcaaa31`) came after every run in the tables; what was measured
+with it is under "A net class with its own via size". KRT's default cells and
+its placements are those of 2026-11-09 and were not rerun; its label step and
+its held routes were run on those placements on 2026-11-11. agent-ee "before" is
 `776030a9` (routing cells) and `13181913` or `094d6594` (placement cells);
 agent-ee "now" is `1c352464` in both arms. Raw results under
 `~/.local/share/agent-ee/`: `krt-matched-20261109/` (KRT),
@@ -1117,12 +1119,11 @@ and datasheet layouts, places 12 seeds, trial-routes the six the placer's
 objective rates best and keeps the one that routes best, routes that board
 by a plan written for it, tidies the labels, and has a second agent verify
 the result. Its own cap for a run is ten hours. The benchmark keeps the
-first seed the objective names and routes it once. The procedures were not
-run, so nothing here says how agent-ee compares with KRT used as its authors
-intend.
+first seed the objective names and routes it once.
 
-Two things can be said about the board that separates the tools,
-complex_hierarchy, without running them.
+Three things were established about the board that separates the tools,
+complex_hierarchy: what the procedure says, what its choice of seed could
+change, and what one full run of it delivers.
 
 KRT's procedure has no step aimed at the errors that fail its board there.
 Its finish step says so: "no DONE grader reads silk", the label tidy is the
@@ -1152,11 +1153,39 @@ Every error is a silkscreen finding. None of the six passes. By the
 procedure's own order (fewest vias, then least copper) it would keep seed 7,
 the benchmark's.
 
-Not measured: the placement an agent's own groups would give, the trial
-routes themselves (the procedure ranks seeds on a fast route, the table uses
-the full held route), and KRT's routing plan in place of one `route.py` run.
-"KRT held" is the routing the procedure prescribes when the project's rules
-are the user's own (`--escalation board --no-fix-drc-settings`).
+That table keeps the benchmark's mechanical groups and one `route.py` run.
+The procedure itself was then run once on this board, in full mode
+(AGENTEE-652), by an agent that is not this report's author: Claude Opus as
+a worker in a private copy of the KRT checkout, from the benchmark's
+unplaced board with the project's schematic beside it, as the procedure
+expects. Nobody was there to answer its questions, the project's rules were
+declared the user's own, and the worker was not told the benchmark's verdict
+or any earlier result. It took about 20 minutes. The agent chose six
+functional groups from the schematic's sheets and blocks, placed 12 seeds,
+trial-routed six under the two routing recipes the procedure prescribes for
+a two-layer through-hole board and confirmed the close ones at full level,
+kept seed 4, routed it both ways and kept the route with no via, tidied the
+labels (88 silkscreen findings before, 8 after), filled the zones, and had a
+second agent verify the board, which passed it.
+
+| complex_hierarchy | Open | New errors | Vias | Track, mm | KRT's own grade |
+|---|---|---|---|---|---|
+| KRT's scripts once (held routing, label step) | 0 | 10 | 17 | 948 | done |
+| KRT's full procedure | 0 | 8 | 0 | 935 | done |
+| agent-ee (run r11) | **0** | **0** | 32 | 1,142 | |
+
+The eight errors are silkscreen findings (silk_overlap 7, silk_over_copper
+1). So on the one board tried the procedure does not change the verdict:
+KRT's board fails it, and KRT calls that board done. It does route the board
+better than either tool's automatic run, with no via at all. The scored cell
+is `place-procedure-krt-full-procedure` in `krt-matched-20261109/`; the run's
+folder and the worker's deviations from the procedure (no REPORT.md, one
+refused replication step, estimated net currents) are listed in AGENTEE-652.
+
+Still not measured: the procedure on any other board, and a second run or a
+second executor on this one. "KRT held" is the routing the procedure
+prescribes when the project's rules are the user's own
+(`--escalation board --no-fix-drc-settings`).
 
 ### Result in brief
 
@@ -1168,14 +1197,17 @@ are the user's own (`--escalation board --no-fix-drc-settings`).
   board's rules (two of eight, with tigard). Before the changes of this
   section agent-ee delivered one of six (complex_hierarchy; one of eight).
 - So the claim the numbers support is: better than KRT's scripts run once,
-  by one board. They do not support "better than KRT": KRT's documented use
-  is an agent-driven procedure around those scripts, and it was not run.
+  by one board. KRT's documented use is an agent-driven procedure around
+  those scripts. It was run on that one board and did not change the verdict
+  there; on the other boards it was not run, so the numbers do not support
+  "better than KRT" in general.
 - The board that separates the tools on the six is complex_hierarchy: KRT's
   board keeps 10 silkscreen errors after KRT's own label step, agent-ee's has
-  none. The bounded check of KRT's procedure on that board: none of the six
-  placements its judge would choose from passes (2 to 13 errors each), and
-  KRT's own grade calls its board done, because its graders do not read
-  silkscreen. What an agent's own grouping would give is not measured.
+  none. None of the six placements KRT's judge would choose from passes (2
+  to 13 errors each), and one full run of KRT's procedure by an independent
+  agent ends with 8 silkscreen errors on a board KRT's own grade calls done:
+  its graders do not read silkscreen. That run routes the board with no via,
+  which neither tool's automatic run does.
 - Routing the designer's placement, the counts are level: two of six for
   KRT's router at its defaults, held, and for agent-ee. With the fab-rules
   variants it is two of eight for KRT's router at its defaults and three of
@@ -1188,9 +1220,14 @@ are the user's own (`--escalation board --no-fix-drc-settings`).
   against 1,499 mm). On flat_hierarchy KRT narrows 7.5 mm of a power net
   below its class width to get there; agent-ee's board has no track below its
   class.
-- agent-ee's own job accepts fewer boards than the verdict passes: it rejects
-  flat_hierarchy in both arms because vias of the class `Wide` are 0.6 mm
-  where the class asks 1.0 mm (AGENTEE-650).
+- In these runs agent-ee's own job accepts fewer boards than the verdict
+  passes: it rejects flat_hierarchy in both arms because vias of the class
+  `Wide` are 0.6 mm where the class asks 1.0 mm. That was a defect of the
+  router, which stock KRT shares, and it is fixed since (AGENTEE-650): on
+  both flat_hierarchy boards agent-ee's router now delivers every via at its
+  class size with no open connection, and the grading that rejected them
+  passes. KRT's boards keep 12 of 13 such vias at 0.6 mm. The cells through
+  agent-ee's own job are not rerun yet.
 
 ### Routing arm (designer's placement, pours kept)
 
@@ -1222,9 +1259,9 @@ agent-ee's own job accepts two of these boards (`completed`):
 complex_hierarchy in 72 s, and now tigard with fab rules in 76 s. Before, its
 job chose the 0.025 mm grid for tigard, which left two vias of one net 0.1 mm
 apart; KiCad reports that as a warning, the job rejected its board for it and
-stopped. It still rejects flat_hierarchy, for a reason the verdict does not
-see (next table), and takes 486 s there, because the rejected board gets a
-second trial.
+stopped. In these runs it rejects flat_hierarchy, for a reason the verdict
+does not see (next table) and AGENTEE-650 has since removed, and takes 486 s
+there, because the rejected board gets a second trial.
 
 This column was measured twice, in run r9 at an earlier state of the same
 change and in r12 at the final commit. The router delivered the same copper
@@ -1244,9 +1281,13 @@ What the verdict does not see, on the passing cells:
 | tigard with fab rules, agent-ee before | 1 (hole_to_hole) | none |
 | tigard with fab rules, agent-ee now | 0 | none |
 
-No engine here takes a via size per net class: upstream's `--via-size` is one
-value for a run. agent-ee's job rejects a board for such vias; KRT does not
-check them (AGENTEE-650).
+Both engines read a via size per net class. In these runs neither used it to
+search a net of more than two pads, and the vias such a net was given at the
+Default size stayed that size wherever the larger one did not fit. agent-ee's
+job rejects a board for such vias; KRT does not check them. The cause, the
+fix in agent-ee's router and what was measured with it are under "A net class
+with its own via size" below. The first version of this section said that no
+engine takes a via size per net class. That was wrong.
 
 ### Placement and routing (pours kept)
 
@@ -1289,7 +1330,7 @@ Cells are open connections / new errors. KRT's cells include its label step.
   starved_thermal 4, track_width 4; StickHub solder_mask_bridge 59.
 - The job's own status is `completed` on complex_hierarchy and on tigard
   with fab rules. On flat_hierarchy it is `verification_failed`, for the via
-  size of the class `Wide` alone.
+  size of the class `Wide` alone (fixed since, AGENTEE-650).
 - Time to place and route the boards agent-ee passes: flat_hierarchy 840 s
   (KRT 258 s), complex_hierarchy 415 s (KRT 175 s), tigard with fab rules
   398 s (KRT 771 s). 330 s of each agent-ee job is a search whose length the
@@ -1429,6 +1470,70 @@ grid leaves fewer connections open (tigard 9 against 17, ESP32-DevKit-LiPo 18
 against 21, StickHub 2 against 4); on agent-ee's old flat_hierarchy placement
 it leaves more (4 against 3).
 
+### A net class with its own via size (AGENTEE-650)
+
+flat_hierarchy puts four nets in the class `Wide`, whose via is 1.0 mm with a
+0.7 mm drill. The Default class's is 0.6 mm with 0.4 mm. In the runs above
+both tools deliver most vias of those nets at the Default size:
+
+| flat_hierarchy | Vias of class `Wide` at 1.0 mm | At 0.6 mm |
+|---|---|---|
+| Designer's placement, KRT's router held | 1 | 12 |
+| Designer's placement, agent-ee (r12) | 3 | 15 |
+| KRT's placement, KRT's router held | 1 | 12 |
+| agent-ee's placement, agent-ee (r11) | 1 | 25 |
+
+KiCad's DRC compares a via with the board's minimum, 0.5 mm here, not with
+its class, so the verdict passes all four boards. kicad-route's own grading
+does not, and for that reason alone agent-ee's job rejected its own board in
+both arms (`verification_failed`). Its further trials could not change a via
+size, and they took 409 of the routing cell's 486 s and 407 of the placement
+cell's 840 s.
+
+The cause is in the engine, and current upstream KRT has it as the fork does.
+The engine reads the via size of each net's class. It searches a two-pad net
+with that via. A net with more than two pads it searches with the run's via,
+the Default class's, and afterwards enlarges each via only where the class
+via happens to fit. The others it delivers small and reports as below the
+requested size. The pad escape of its rescue step draws the run's via too.
+
+kicad-route `bcaaa31` searches every net with its own class via, and gives a
+net that has one no pad escape. Such a net gets its class via, or a
+connection stays open and is reported. Nothing changes on a board whose
+classes share one via size.
+
+Measured so far with direct runs of the router on the two flat_hierarchy
+boards agent-ee routed above, scored by the verdict:
+
+| flat_hierarchy, agent-ee's router | Open / new errors | `Wide` vias at 1.0 mm | At 0.6 mm | All vias | Track, mm | kicad-route's grading | Router time |
+|---|---|---|---|---|---|---|---|
+| Designer's placement, before (first trial of r12) | **0 / 0** | 3 | 15 | 37 | 1,672 | FAIL | 53 s |
+| Designer's placement, after | **0 / 0** | 21 | 0 | 42 | 1,674 | PASS | 50 s |
+| agent-ee's placement of r11, before (first trial) | **0 / 0** | 1 | 25 | 49 | 1,499 | FAIL | 65 s |
+| The same placement, after | **0 / 0** | 22 | 0 | 51 | 1,502 | PASS | 73 s |
+
+Every via of the class now has the class size, for five and two more vias
+and 2 and 3 mm more track, and no connection is left open. The grading that
+rejected both boards passes them, and it was the job's only reason to reject
+them. KRT's boards keep 12 of their 13 `Wide` vias at 0.6 mm; KRT does not
+check them.
+
+The two rows "after" are runs with the flags and environment agent-ee's job
+passes, in the test image of the runs above, with the router sources of
+`bcaaa31` in place of the image's own. The cells through agent-ee's own job
+need an image built with `bcaaa31`. That build rechecks KiCad's package index
+on Launchpad, which did not answer when this was written (2026-11-11), so
+those cells are not rerun yet and the job's status on this board after the
+change is not measured.
+
+kicad-route's own test fixture, a different board, showed the same defect: a
+test had written it down as a limit of the backend. One via of a three-pad
+net of the class Power was delivered at 0.6 mm with a 0.3 mm drill where the
+class asks 0.8 mm and 0.4 mm. With the change both vias of that net have the
+class size and the run passes every check. In kicad-route's whole suite, run
+on the change and on the commit before it, that was the only test whose
+outcome differed.
+
 ### What changed in the tool
 
 - AGENTEE-640 (`f4e1a294`): the job no longer rejects a board for errors the
@@ -1457,6 +1562,10 @@ it leaves more (4 against 3).
   overlap, the body of a footprint is its package outline with the pads, not
   its courtyard. It landed after the runs above and changes StickHub alone
   among these boards; its cell is run r13, under the defects below.
+- AGENTEE-650 (kicad-route `bcaaa31`): the router searches every net with
+  its own class via, and a net that has one gets no pad escape at the
+  Default size. It landed after the runs above; what it changes is under "A
+  net class with its own via size".
 - AGENTEE-643 (`0c7df73e`, `8fd0db46`, `13181913`, `094d6594`, `60788324`,
   and `krt-judged` with this report): in the harness, the verdict, the stated
   fab rules, the "KRT held" cells of both arms, KRT's label step, and the
@@ -1464,12 +1573,6 @@ it leaves more (4 against 3).
 
 ### Tool defects this round exposed and did not fix
 
-- No router here takes a via size per net class, and agent-ee's job rejects
-  a board whose vias are smaller than their class asks (AGENTEE-650). So the
-  job does not accept flat_hierarchy, which passes the verdict in both arms.
-  A board rejected only for that still gets second trials on the other grid,
-  which cannot change a via size: in the placement cell they took 346 s of
-  routing and delivered no board.
 - When the router needs all the remaining time the job ends `deadline`, and
   with no earlier trial it has no board to report (flat_hierarchy in run
   r10). A first trial keeps no time back for the router's stop grace and
@@ -1521,15 +1624,16 @@ finish and the job had no board. complex_hierarchy passes in every run, with
 placement routes at 1,187 mm). Other sessions were running on the host
 throughout: the load on its 12 threads was 3 to 13 at the start of most
 cells, 16 to 19 during StickHub's placement cell in r5, up to 21 for some
-minutes during r10 and 23 at the start of StickHub's cell in r11. Six
-boards, eight with the fab-rules variants; a difference of one board is one
-board. Stock KRT's default cells and its placements are from 2026-11-09. KRT
-is its scripts run once, not the agent-driven procedure it documents (see
-"KRT's own procedure"): an agent running that procedure would group the
-parts itself, choose among six trial-routed seeds and route by a plan, and no
-figure here says what it would deliver. KiCad's defaults are the rule set for
-three boards. The benchmark's groups and locks are mechanical: no engineer
-declared a rail, an edge part or a part that overhangs the outline.
+minutes during r10 and 23 at the start of StickHub's cell in r11. Six boards,
+eight with the fab-rules variants; a difference of one board is one board.
+Stock KRT's default cells and its placements are from 2026-11-09. KRT is its
+scripts run once, not the agent-driven procedure it documents (see "KRT's own
+procedure"). That procedure was run once, on one board, by one executor; on
+the other boards no figure here says what it would deliver. What is measured
+after AGENTEE-650 is two direct runs of the router, one per board. KiCad's
+defaults are the rule set for three boards. The benchmark's groups and locks
+are mechanical: no engineer declared a rail, an edge part or a part that
+overhangs the outline.
 
 Every change of this section was found by studying these boards, and no board
 outside the set has been run since. Each is a general rule (what a sheet
