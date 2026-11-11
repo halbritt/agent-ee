@@ -1225,9 +1225,11 @@ prescribes when the project's rules are the user's own
   `Wide` are 0.6 mm where the class asks 1.0 mm. That was a defect of the
   router, which stock KRT shares, and it is fixed since (AGENTEE-650): on
   both flat_hierarchy boards agent-ee's router now delivers every via at its
-  class size with no open connection, and its job accepts the board in both
-  arms (72 s and 540 s, against 486 s and 840 s). KRT's boards keep 12 of 13
-  such vias at 0.6 mm.
+  class size with no open connection. Its job accepts the board in the
+  routing arm (72 s against 486 s) and in one of two runs of the placement
+  arm (540 s against 840 s). The other run failed on a starved thermal
+  relief, which the router before the change produces on the same placement
+  (AGENTEE-654). KRT's boards keep 12 of 13 such vias at 0.6 mm.
 
 ### Routing arm (designer's placement, pours kept)
 
@@ -1535,13 +1537,37 @@ board with one via size:
 | tigard with fab rules, routing arm, before (r12) | `completed` | **0 / 0** | | | 143 | 1,802 | 76 s |
 | tigard with fab rules, routing arm, after | `completed` | **0 / 0** | | | 143 | 1,802 | 65 s |
 
-The job now accepts flat_hierarchy in both arms, with every via at its class
-size. In the routing cell its board is the one the direct run delivered. In
-the placement cell the search found other placements than in r11, as it is
-limited by time, and the job routed three of them. The first two came back
-with one new error each, a thermal relief of a pour starved by the routing,
-and the job rejected them. The third is clean and is the board reported. On
-tigard with fab rules the routed copper is the same as in r12, item by item.
+The job now accepts flat_hierarchy in the routing arm, where its board is the
+one the direct run delivered, and every via has its class size in both arms.
+On tigard with fab rules the routed copper is the same as in r12, item by
+item.
+
+The placement cell depends on the run, as it did before the change. The
+search is limited by time and finds other placements each time. In the run of
+the table the job routed three of them. The first two came back with one new
+error each, a ground pad whose thermal relief the routing had starved, and
+the job rejected them. The third is clean and is the board reported. A second
+run of the cell ended `verification_failed` after 768 s: its first placement
+came back with the same kind of error, the retry on the finer grid left four
+connections open, and no time was left for another placement. The board it
+reports has no open connection and one new error, so it fails the verdict.
+
+The change is not the cause of that error. The four placements routed in the
+two runs were routed again with the router before the change:
+
+| Placement | Before: open / new errors | `Wide` vias at 0.6 mm | After: open / new errors | `Wide` vias at 0.6 mm |
+|---|---|---|---|---|
+| Run 1, first | 0 / 1 | 21 of 22 | 0 / 1 | 0 of 23 |
+| Run 1, second | 0 / 1 | 27 of 28 | 0 / 1 | 0 of 23 |
+| Run 1, third | **0 / 0** | 14 of 17 | **0 / 0** | 0 of 16 |
+| Run 2, first | 0 / 1 | 15 of 15 | 0 / 1 | 0 of 18 |
+
+Both routers starve a thermal relief on the same three placements, and the
+same error appeared once before, in r10. The job has a repair for it, a
+second route with the spokes of the starved pad reserved, and that repair did
+not run. kicad-route's report of starved pads does not recognise a
+through-hole pad, and the job applies the repair only to pours it generated
+itself (AGENTEE-654, open).
 
 These job runs used the test image of the runs above with a clean checkout
 of `bcaaa31` mounted in place of the image's router; the job records that
@@ -1654,8 +1680,9 @@ Stock KRT's default cells and its placements are from 2026-11-09. KRT is its
 scripts run once, not the agent-driven procedure it documents (see "KRT's own
 procedure"). That procedure was run once, on one board, by one executor; on
 the other boards no figure here says what it would deliver. What is measured
-after AGENTEE-650 is one run per cell: two direct runs of the router and
-three runs of the job. KiCad's defaults are the rule set for three boards.
+after AGENTEE-650 is two direct runs of the router and four runs of the job,
+two of them of the placement cell. KiCad's defaults are the rule set for
+three boards.
 The benchmark's groups and locks are mechanical: no engineer declared a rail,
 an edge part or a part that overhangs the outline.
 
