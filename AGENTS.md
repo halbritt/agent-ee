@@ -72,6 +72,10 @@ any of these claims unless the owner asks for one.
 - If existing machinery blocks an ordinary change, remove the block and say so
   in the commit. Do not remove a supported file format, command or public
   behaviour to do it.
+- Do not give a private or in-memory structure a schema string and version,
+  and do not add a refusal for an identity or record mismatch that no board
+  and no host depends on. File formats that users or other tools read keep
+  their versions. An error names the condition that was violated.
 - Record the tool versions and commits a run used. Use each dependency at its
   current version, fix that version for a run and record it.
 - The "non-negotiable evidence model" text in older documents is
