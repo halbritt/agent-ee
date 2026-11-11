@@ -45,8 +45,6 @@ def is_container_environment():
 
 @functools.lru_cache(maxsize=None)
 def prerequisite_problem(native=False, tools=()):
-    if native and not is_container_environment():
-        return 'native execution refused on host: native work runs only inside the container image; run via ae-ci-exec'
     if shutil.which('bwrap') is None:
         return 'bwrap not found on PATH'
     with tempfile.TemporaryDirectory(prefix='agent-ee-prerequisites-') as tmp:
@@ -88,6 +86,27 @@ def prerequisite_problem(native=False, tools=()):
                 return 'pcbnew not installed for sandbox /usr/bin/python3'
             if result.returncode:
                 raise AssertionError('pcbnew prerequisite probe failed: ' + result.stderr)
+            from agent_ee.kicad_install import line_release, read_install_record
+            installed = read_install_record()
+            result = subprocess.run(sandbox_argv(root / 'inputs', root / 'work', ['kicad-cli', 'version']),
+                                    capture_output=True, text=True, timeout=15)
+            if result.returncode:
+                raise AssertionError(f'kicad-cli version prerequisite probe failed ({result.returncode}): '
+                                     + result.stderr.strip())
+            version = result.stdout.strip()
+            if line_release(version) is None:
+                return f'kicad-cli reports non-10.x KiCad release: {version!r}'
+            if installed is not None and installed['record']['version'] != version:
+                raise AssertionError(f"kicad-cli version {version!r} disagrees with install record "
+                                     f"{installed['record']['version']!r}")
+            result = subprocess.run(sandbox_argv(root / 'inputs', root / 'work',
+                ['/usr/bin/python3', '-c', 'import pcbnew; print(pcbnew.GetBuildVersion())']),
+                capture_output=True, text=True, timeout=15)
+            if result.returncode:
+                raise AssertionError('pcbnew import prerequisite probe failed: ' + result.stderr.strip())
+            build = result.stdout.strip()
+            if build != version and not build.startswith(version + '-'):
+                return f'pcbnew build version {build!r} does not match kicad-cli release {version!r}'
             scope = Path(__file__).resolve().parents[1] / 'fixtures/rc/control.scope.json'
             for item in json.loads(scope.read_text())['inputs']:
                 source = Path(item['path'])

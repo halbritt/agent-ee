@@ -132,11 +132,15 @@ class LaneGatePlannerTests(unittest.TestCase):
                 elif fmt == 'lines':
                     lines = output.splitlines()
                     self.assertIn('test_fab_consistency', lines)
-                    self.assertIn('test_file_origins', lines)
+                    self.assertIn('test_architecture_boundaries', lines)
+                    self.assertNotIn('test_file_origins', lines)
+                    self.assertNotIn('test_tool_source', lines)
                 else:  # space
                     tokens = output.split()
                     self.assertIn('test_fab_consistency', tokens)
-                    self.assertIn('test_file_origins', tokens)
+                    self.assertIn('test_architecture_boundaries', tokens)
+                    self.assertNotIn('test_file_origins', tokens)
+                    self.assertNotIn('test_tool_source', tokens)
 
     def test_git_change_base_and_dirty_handling(self):
         """Unknown change base reports error; clean git diff against HEAD works."""
@@ -187,6 +191,101 @@ class LaneGatePlannerTests(unittest.TestCase):
                 '--allow-dirty'
             ], capture_output=True, text=True)
             self.assertEqual(proc_allowed.returncode, 0)
+
+    def test_core_scanners_exclude_tool_source_and_select_it_by_dependency(self):
+        """test_tool_source is not in CORE_SCANNERS, but still runs when imported or touched."""
+        self.assertEqual(
+            lane_gate_planner.CORE_SCANNERS,
+            ['test_architecture_boundaries', 'test_native_run_guard', 'test_tree_hygiene'],
+        )
+        ordinary = lane_gate_planner.plan_lane_gate(ROOT, ['tests/test_fab_consistency.py'])
+        self.assertNotIn('test_tool_source', ordinary['modules'])
+        self.assertNotIn('test_file_origins', ordinary['modules'])
+
+        src_leaf = lane_gate_planner.plan_lane_gate(ROOT, ['src/agent_ee/acquisition.py'])
+        self.assertIn('test_acquisition_film', src_leaf['modules'])
+        self.assertNotIn('test_tool_source', src_leaf['modules'])
+        self.assertNotIn('test_file_origins', src_leaf['modules'])
+
+        dep_plan = lane_gate_planner.plan_lane_gate(ROOT, ['src/agent_ee/stage_receipts.py'])
+        self.assertIn('test_tool_source', dep_plan['analysis']['reverse_dependent_test_modules'])
+        self.assertIn('test_tool_source', dep_plan['modules'])
+        self.assertNotIn('test_file_origins', dep_plan['modules'])
+
+        touched_plan = lane_gate_planner.plan_lane_gate(ROOT, ['tests/test_tool_source.py'])
+        self.assertIn('test_tool_source', touched_plan['modules'])
+
+    def test_origins_scanner_selected_for_origin_inputs_and_non_code_paths(self):
+        """test_file_origins runs for origin code/data and non-code paths, not owned code edits."""
+        for trigger in (
+            'scripts/check_origins.py',
+            'tests/test_file_origins.py',
+            'docs/file-origins.json',
+            'docs/relocated-artifacts.json',
+            '.gitignore',
+            'pyproject.toml',
+            'docs/architecture.md',
+            'fixtures/rc/control.scope.json',
+            'tests/fixtures/sample.py',
+        ):
+            with self.subTest(trigger=trigger):
+                plan = lane_gate_planner.plan_lane_gate(ROOT, [trigger])
+                self.assertIn('test_file_origins', plan['modules'])
+
+        for code_edit in (
+            'src/agent_ee/local_decoupling.py',
+            'tests/test_fab_consistency.py',
+            'scripts/lane_gate_planner.py',
+            'crates/placement_engine/src/main.rs',
+        ):
+            with self.subTest(code_edit=code_edit):
+                plan = lane_gate_planner.plan_lane_gate(ROOT, [code_edit])
+                self.assertNotIn('test_file_origins', plan['modules'])
+
+    def test_git_change_base_selects_origins_on_added_or_renamed_code_paths(self):
+        """Git --change-base detects added/renamed/deleted code paths and selects test_file_origins."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / 'src/agent_ee').mkdir(parents=True)
+            (repo / 'tests').mkdir()
+            for name in ('test_file_origins.py', 'test_tree_hygiene.py'):
+                (repo / 'tests' / name).write_text('')
+            (repo / 'src/agent_ee/existing.py').write_text('X = 1\n')
+            (repo / 'src/agent_ee/old_name.py').write_text('Y = 1\n')
+            subprocess.run(['git', 'init'], cwd=repo, capture_output=True, check=True)
+            subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=repo, check=True)
+            subprocess.run(['git', 'config', 'user.name', 'Tester'], cwd=repo, check=True)
+            subprocess.run(['git', 'add', '.'], cwd=repo, check=True)
+            subprocess.run(['git', 'commit', '-m', 'init'], cwd=repo, capture_output=True, check=True)
+
+            # In-place modification of existing owned .py does not select test_file_origins
+            (repo / 'src/agent_ee/existing.py').write_text('X = 2\n')
+            subprocess.run(['git', 'commit', '-am', 'modify'], cwd=repo, capture_output=True, check=True)
+            mod_out = subprocess.run([
+                sys.executable, str(ROOT / 'scripts/lane_gate_planner.py'),
+                '--root', str(repo), '--change-base', 'HEAD~1', '--format', 'json',
+            ], capture_output=True, text=True, check=True).stdout
+            self.assertNotIn('test_file_origins', json.loads(mod_out)['modules'])
+
+            # Adding a new .py selects test_file_origins
+            (repo / 'src/agent_ee/brand_new.py').write_text('Z = 1\n')
+            subprocess.run(['git', 'add', 'src/agent_ee/brand_new.py'], cwd=repo, check=True)
+            subprocess.run(['git', 'commit', '-m', 'add'], cwd=repo, capture_output=True, check=True)
+            add_out = subprocess.run([
+                sys.executable, str(ROOT / 'scripts/lane_gate_planner.py'),
+                '--root', str(repo), '--change-base', 'HEAD~1', '--format', 'json',
+            ], capture_output=True, text=True, check=True).stdout
+            self.assertIn('test_file_origins', json.loads(add_out)['modules'])
+
+            # Renaming a .py selects test_file_origins
+            subprocess.run(['git', 'mv', 'src/agent_ee/old_name.py', 'src/agent_ee/new_name.py'],
+                           cwd=repo, check=True)
+            subprocess.run(['git', 'commit', '-m', 'rename'], cwd=repo, capture_output=True, check=True)
+            ren_out = subprocess.run([
+                sys.executable, str(ROOT / 'scripts/lane_gate_planner.py'),
+                '--root', str(repo), '--change-base', 'HEAD~1', '--format', 'json',
+            ], capture_output=True, text=True, check=True).stdout
+            self.assertIn('test_file_origins', json.loads(ren_out)['modules'])
 
 
 if __name__ == '__main__':

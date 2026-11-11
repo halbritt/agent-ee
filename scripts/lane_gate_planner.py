@@ -20,11 +20,50 @@ SCHEMA = 'agent-ee.lane-gate-plan/1'
 
 CORE_SCANNERS = [
     'test_architecture_boundaries',
-    'test_file_origins',
     'test_native_run_guard',
-    'test_tool_source',
     'test_tree_hygiene',
 ]
+
+ORIGINS_SCANNER = 'test_file_origins'
+
+ORIGIN_INPUT_FILES = frozenset({
+    'scripts/check_origins.py',
+    'tests/test_file_origins.py',
+    'docs/file-origins.json',
+    'docs/relocated-artifacts.json',
+    'docs/third-party-origins.md',
+    '.gitignore',
+    '.gitattributes',
+    'pyproject.toml',
+    'LICENSE',
+})
+
+
+def is_owned_code_path(rel_posix: str) -> bool:
+    """True for owned code modules whose in-place edits do not alter file-origin inventory."""
+    p = Path(rel_posix)
+    parts = p.parts
+    if len(parts) < 2:
+        return False
+    top = parts[0]
+    if top == 'tests' and len(parts) >= 2 and parts[1] == 'fixtures':
+        return False
+    if top in ('src', 'tests', 'scripts', 'benchmarks') and p.suffix == '.py':
+        return True
+    if top == 'crates' and p.suffix == '.rs':
+        return True
+    return False
+
+
+def origins_selection_reason(norm_changed: list[str], structural_paths: set[str]) -> str | None:
+    """Return why test_file_origins is warranted, or None for ordinary in-place code edits."""
+    if structural_paths:
+        return 'added, deleted, or renamed path in git diff'
+    if any(f in ORIGIN_INPUT_FILES for f in norm_changed):
+        return 'origin scanner or metadata changed'
+    if any(not is_owned_code_path(f) for f in norm_changed):
+        return 'non-code path changed'
+    return None
 
 
 def path_to_src_module(rel_path: Path) -> str | None:
@@ -181,17 +220,27 @@ def find_reverse_dependent_tests(root: Path, affected_src_modules: set[str]) -> 
     return matched_tests
 
 
-def plan_lane_gate(root: Path, changed_files: list[str], change_base: str | None = None, head: str | None = None) -> dict:
+def _norm_rel_posix(root: Path, raw_path: str) -> str:
+    p = Path(raw_path)
+    if p.is_absolute():
+        try:
+            p = p.relative_to(root)
+        except ValueError:
+            pass
+    return p.as_posix()
+
+
+def plan_lane_gate(
+    root: Path,
+    changed_files: list[str],
+    change_base: str | None = None,
+    head: str | None = None,
+    *,
+    structural_paths: set[str] | tuple[str, ...] = (),
+) -> dict:
     """Generate structured lane gate plan from list of changed files."""
-    norm_changed = []
-    for f in changed_files:
-        p = Path(f)
-        if p.is_absolute():
-            try:
-                p = p.relative_to(root)
-            except ValueError:
-                pass
-        norm_changed.append(p.as_posix())
+    norm_changed = [_norm_rel_posix(root, f) for f in changed_files]
+    norm_structural = {_norm_rel_posix(root, f) for f in structural_paths}
 
     touched_test_modules = set()
     changed_src_modules = set()
@@ -213,8 +262,11 @@ def plan_lane_gate(root: Path, changed_files: list[str], change_base: str | None
         transitive_src_modules = get_transitive_dependents(changed_src_modules, rev_deps)
         reverse_dependent_test_modules = find_reverse_dependent_tests(root, transitive_src_modules)
 
-    # Core repository scanners are always included for repository health
+    # Core repository scanners run on every lane; origins runs when path/content type warrants it
     repo_scanners = [s for s in CORE_SCANNERS if (root / 'tests' / f'{s}.py').exists()]
+    origins_reason = origins_selection_reason(norm_changed, norm_structural)
+    if origins_reason and (root / 'tests' / f'{ORIGINS_SCANNER}.py').exists():
+        repo_scanners = sorted([*repo_scanners, ORIGINS_SCANNER])
 
     all_modules = sorted(touched_test_modules | reverse_dependent_test_modules | set(repo_scanners))
 
@@ -229,7 +281,10 @@ def plan_lane_gate(root: Path, changed_files: list[str], change_base: str | None
     for t in sorted(reverse_dependent_test_modules):
         reasons.append(f'reverse dependent: {t} imports affected agent_ee modules')
     for s in repo_scanners:
-        reasons.append(f'repository scanner: {s}')
+        if s == ORIGINS_SCANNER and origins_reason:
+            reasons.append(f'repository scanner: {s} ({origins_reason})')
+        else:
+            reasons.append(f'repository scanner: {s}')
     for f in image_changes:
         reasons.append(f'{f}: execution image changed; full suite required')
 
@@ -267,8 +322,12 @@ def plan_lane_gate(root: Path, changed_files: list[str], change_base: str | None
     }
 
 
-def get_git_diff_paths(root: Path, change_base: str, allow_dirty: bool = False) -> tuple[list[str], str, str]:
-    """Retrieve changed files from git diff between change_base and HEAD."""
+def get_git_diff_changes(
+    root: Path,
+    change_base: str,
+    allow_dirty: bool = False,
+) -> tuple[list[str], set[str], str, str]:
+    """Retrieve changed files and non-modify structural paths from git diff against HEAD."""
     if not allow_dirty:
         status = subprocess.run(
             ['git', 'status', '--porcelain', '--untracked-files=all'],
@@ -296,13 +355,29 @@ def get_git_diff_paths(root: Path, change_base: str, allow_dirty: bool = False) 
     head_sha = head_proc.stdout.strip()
 
     diff_proc = subprocess.run(
-        ['git', 'diff', '--name-only', '-z', '--no-renames', base_sha, 'HEAD', '--'],
+        ['git', 'diff', '--name-status', '-z', '--no-renames', base_sha, 'HEAD', '--'],
         cwd=root, capture_output=True, text=True
     )
     if diff_proc.returncode != 0:
         raise RuntimeError(f'git diff failed: {diff_proc.stderr.strip()}')
 
-    paths = [p for p in diff_proc.stdout.split('\0') if p]
+    tokens = diff_proc.stdout.split('\0')
+    if tokens and tokens[-1] == '':
+        tokens.pop()
+    paths = []
+    structural_paths = set()
+    for idx in range(0, len(tokens) - 1, 2):
+        code, path = tokens[idx], tokens[idx + 1]
+        if path:
+            paths.append(path)
+            if code != 'M':
+                structural_paths.add(path)
+    return paths, structural_paths, base_sha, head_sha
+
+
+def get_git_diff_paths(root: Path, change_base: str, allow_dirty: bool = False) -> tuple[list[str], str, str]:
+    """Retrieve changed files from git diff between change_base and HEAD."""
+    paths, _, base_sha, head_sha = get_git_diff_changes(root, change_base, allow_dirty)
     return paths, base_sha, head_sha
 
 
@@ -326,6 +401,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     changed_files = []
+    structural_paths = set()
     change_base = None
     head = None
 
@@ -334,12 +410,16 @@ def main(argv: list[str] | None = None) -> int:
         change_base = args.change_base
     elif args.change_base:
         try:
-            changed_files, change_base, head = get_git_diff_paths(root, args.change_base, args.allow_dirty)
+            changed_files, structural_paths, change_base, head = get_git_diff_changes(
+                root, args.change_base, args.allow_dirty
+            )
         except RuntimeError as err:
             sys.stderr.write(f'lane_gate_planner: error: {err}\n')
             return 1
 
-    plan = plan_lane_gate(root, changed_files, change_base=change_base, head=head)
+    plan = plan_lane_gate(
+        root, changed_files, change_base=change_base, head=head, structural_paths=structural_paths
+    )
 
     if args.write_plan:
         out_path = Path(args.write_plan)

@@ -222,7 +222,7 @@ class GateBoundaryTests(unittest.TestCase):
                     self.addCleanup(prerequisite_problem.cache_clear)
                     results = [subprocess.CompletedProcess([], 0, '', ''),
                                subprocess.CompletedProcess([], code, '', stderr)]
-                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict, 'AE_CONTAINER': '1'}), \
+                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}), \
                             patch('toolchain.shutil.which', return_value='/usr/bin/bwrap'), \
                             patch('toolchain.subprocess.run', side_effect=results):
                         try:
@@ -244,7 +244,7 @@ class GateBoundaryTests(unittest.TestCase):
                     prerequisite_problem.cache_clear()
                     self.addCleanup(prerequisite_problem.cache_clear)
                     results = [subprocess.CompletedProcess([], code, '', '') for code in responses]
-                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict, 'AE_CONTAINER': '1'}), \
+                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}), \
                             patch('toolchain.shutil.which', return_value='/usr/bin/bwrap'), \
                             patch('toolchain.subprocess.run', side_effect=results):
                         expected = AssertionError if strict == '1' else unittest.SkipTest
@@ -277,39 +277,85 @@ class NativeRunHostGuardTests(unittest.TestCase):
         from toolchain import prerequisite_problem
         prerequisite_problem.cache_clear()
 
-    def test_native_probe_refuses_on_host_even_with_pcbnew_installed(self):
-        """Host environment without container markers must refuse native execution."""
+    def test_native_probe_admits_host_by_actual_prerequisites(self):
+        """Host environment without container markers admits native execution when prerequisites pass."""
         from unittest.mock import patch
         import toolchain
         clean_env = {k: v for k, v in os.environ.items()
                      if k not in ('AE_CONTAINER', 'AE_CI_CONTAINER')}
+        results = [
+            subprocess.CompletedProcess([], 0, '', ''),
+            subprocess.CompletedProcess([], 0, '', ''),
+            subprocess.CompletedProcess([], 0, '', ''),
+            subprocess.CompletedProcess([], 0, '', ''),
+            subprocess.CompletedProcess([], 0, '10.0.8\n', ''),
+            subprocess.CompletedProcess([], 0, '10.0.8-10.0.8~ubuntu24.04.1\n', ''),
+        ]
         with patch.dict(os.environ, clean_env, clear=True), \
-             patch('toolchain.is_container_environment', return_value=False):
+             patch('toolchain.is_container_environment', return_value=False), \
+             patch('toolchain.shutil.which', return_value='/usr/bin/bwrap'), \
+             patch('agent_ee.kicad_install.read_install_record', return_value=None), \
+             patch('toolchain.subprocess.run', side_effect=results), \
+             patch.object(Path, 'glob', side_effect=lambda *_: iter([Path('/usr/share/kicad/mock')])):
             toolchain.prerequisite_problem.cache_clear()
-            problem = toolchain.prerequisite_problem(native=True)
-            self.assertEqual(
-                problem,
-                'native execution refused on host: native work runs only inside the container image; run via ae-ci-exec'
-            )
+            self.assertIsNone(toolchain.prerequisite_problem(native=True))
 
-    def test_require_toolchain_native_refuses_on_host_in_both_modes(self):
-        """require_toolchain(native=True) raises SkipTest normally and AssertionError in strict mode."""
+    def test_native_probe_treats_non_10x_or_mismatched_kicad_as_prerequisite(self):
+        """Non-10.x kicad-cli or mismatched pcbnew build skips normally and fails in strict mode."""
         from unittest.mock import patch
         import toolchain
-        clean_env = {k: v for k, v in os.environ.items()
-                     if k not in ('AE_CONTAINER', 'AE_CI_CONTAINER')}
-        for strict in ('0', '1'):
-            with self.subTest(strict=strict):
-                toolchain.prerequisite_problem.cache_clear()
-                env = dict(clean_env, AGENT_EE_REQUIRE_TOOLCHAIN=strict)
-                with patch.dict(os.environ, env, clear=True), \
-                     patch('toolchain.is_container_environment', return_value=False):
-                    expected = AssertionError if strict == '1' else unittest.SkipTest
-                    with self.assertRaises(expected) as ctx:
-                        toolchain.require_toolchain(native=True)
-                    msg = str(ctx.exception)
-                    self.assertIn('native execution refused on host', msg)
-                    self.assertIn('ae-ci-exec', msg)
+        cases = (
+            ('9.0.7\n', '9.0.7\n', 'non-10.x KiCad release'),
+            ('10.0.8-rc1\n', '10.0.8-rc1\n', 'non-10.x KiCad release'),
+            ('10.0.8\n', '9.0.7-ubuntu1\n', 'pcbnew build version'),
+        )
+        for cli_ver, pcb_ver, expected_text in cases:
+            for strict in ('0', '1'):
+                with self.subTest(cli_ver=cli_ver.strip(), pcb_ver=pcb_ver.strip(), strict=strict):
+                    toolchain.prerequisite_problem.cache_clear()
+                    results = [
+                        subprocess.CompletedProcess([], 0, '', ''),
+                        subprocess.CompletedProcess([], 0, '', ''),
+                        subprocess.CompletedProcess([], 0, '', ''),
+                        subprocess.CompletedProcess([], 0, '', ''),
+                        subprocess.CompletedProcess([], 0, cli_ver, ''),
+                        subprocess.CompletedProcess([], 0, pcb_ver, ''),
+                    ]
+                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}), \
+                         patch('toolchain.is_container_environment', return_value=False), \
+                         patch('toolchain.shutil.which', return_value='/usr/bin/bwrap'), \
+                         patch('agent_ee.kicad_install.read_install_record', return_value=None), \
+                         patch('toolchain.subprocess.run', side_effect=results):
+                        expected = AssertionError if strict == '1' else unittest.SkipTest
+                        with self.assertRaisesRegex(expected, expected_text):
+                            toolchain.require_toolchain(native=True)
+
+    def test_native_version_or_pcbnew_import_crash_fails_in_both_modes(self):
+        """Broken kicad-cli version or pcbnew import fails in both normal and strict modes."""
+        from unittest.mock import patch
+        import toolchain
+        failures = (
+            ([subprocess.CompletedProcess([], 0, '', '')] * 4
+             + [subprocess.CompletedProcess([], 2, '', 'cli boom')],
+             'kicad-cli version prerequisite probe failed'),
+            ([subprocess.CompletedProcess([], 0, '', '')] * 4
+             + [subprocess.CompletedProcess([], 0, '10.0.8\n', ''),
+                subprocess.CompletedProcess([], 1, '', 'ImportError: libwx missing')],
+             'pcbnew import prerequisite probe failed'),
+        )
+        for seq, expected_text in failures:
+            for strict in ('0', '1'):
+                with self.subTest(expected=expected_text, strict=strict):
+                    toolchain.prerequisite_problem.cache_clear()
+                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}), \
+                         patch('toolchain.shutil.which', return_value='/usr/bin/bwrap'), \
+                         patch('agent_ee.kicad_install.read_install_record', return_value=None), \
+                         patch('toolchain.subprocess.run', side_effect=list(seq)):
+                        try:
+                            with self.assertRaisesRegex(AssertionError, expected_text):
+                                toolchain.require_toolchain(native=True)
+                        except unittest.SkipTest as exc:
+                            self.fail(f'broken native binary was skipped: {exc}')
 
     def test_native_probe_accepts_when_container_marker_present(self):
         """When container marker is present, native execution is admitted."""
