@@ -1014,3 +1014,525 @@ such groups, not that grouping is wrong when an engineer declares it.
 One run per cell, so differences of a few vias are within unknown noise. The
 runs started after other sessions restarted on the host; the load was below 4
 at the start and was not recorded afterwards. KRT's rows were not rerun.
+
+## The accepted measure, and where both tools stand (2026-11-11)
+
+On 2026-11-10 the owner accepted three recommendations: move the router onto
+current upstream KRT, judge a result by whether it is fully routed and clean
+against the board's own rules, and stop pulling parts toward the anchor of a
+group that was derived from a schematic sheet. This section applies that
+measure to every run so far, adds KRT's own label step and a rule-obeying
+configuration of KRT to the comparison, and reports agent-ee's cells before
+and after the tool changes of 2026-11-10 and 11.
+
+**Every KRT figure here is for KRT's scripts run once**: its placer with the
+benchmark's mechanical groups, its router at its defaults or held, and its
+label script. KRT documents a much longer procedure for an AI agent to run
+around those scripts, and that procedure was not run. What it is, and a
+bounded check of what it could change on the board that separates the tools,
+is under "KRT's own procedure" below.
+
+Same prepared boards as before (hashes checked), 900 s budget, KiCad 10.0.8,
+kicad-route `f074b4a`, stock KRT `e6bc31e2`. KRT's default cells and its
+placements are those of 2026-11-09 and were not rerun; its label step and its
+held routes were run on those placements on 2026-11-11. agent-ee "before" is
+`776030a9` (routing cells) and `13181913` or `094d6594` (placement cells);
+agent-ee "now" is `1c352464` in both arms. Raw results under
+`~/.local/share/agent-ee/`: `krt-matched-20261109/` (KRT),
+`krt-matched-20261111/` (KRT held, routing arm), `krt-matched-20261111-fab2/`
+(stated fab rules), `-r5/` and `-r6/` (agent-ee before), `-r11/` (agent-ee
+now, placement arm), `-r12/` (agent-ee now, routing arm), `-r7/`, `-r9/` and
+`-r10/` (intermediate states of the same changes), `-r13/` (StickHub's
+placement cell with AGENTEE-647).
+
+### The verdict
+
+A cell **passes** when the board has no open connection and no DRC error
+beyond the errors of the unrouted input, scored by
+`kicad-cli pcb drc --severity-all --refill-zones` beside the board's own rule
+files. A finding is matched by its type and the descriptions of its items, so
+an error the source design already has does not count against a tool.
+`bench.py summary` prints the verdict for every cell (AGENTEE-643).
+
+What "the board's own rules" are:
+
+- esp_prog, tigard and ESP32-DevKit-LiPo come without a project file, so
+  their own rules are KiCad's defaults. tigard cannot be routed under them:
+  the pads of its resistor networks are 0.15 mm apart and the default
+  clearance is 0.2 mm. esp_prog and tigard are therefore also run with stated
+  fab rules (`fab-rules.json`: the `standard` tier of upstream KRT's own
+  table, plus a 0.2 mm copper-to-hole clearance in revision 2). Revision 1
+  left KiCad's 0.25 mm default for that one rule, which the tier's via cannot
+  meet; its tigard results are void.
+- "KRT held" is stock KRT with `--escalation board --no-fix-drc-settings`: it
+  may deliver a net below its net class's width or via size, but not below
+  the board's stated minimums, and it does not rewrite the project's rules.
+  KRT at its defaults goes below the board's minimums. These are the flags
+  KRT's own procedure prescribes when the project's rules are the user's own.
+- On esp_prog every tool's new errors are between new copper of one net and a
+  copper polygon of U2 that has no net and lies over that net's pad. No tool
+  passes it; AGENTEE-641 measured a floor of one error.
+
+Two things the verdict does not see are reported beside it:
+
+- **New warnings.** A rule the board sets to `warning` does not fail a cell.
+- **Features below their net class's size.** KiCad's DRC compares a track or
+  a via with the board's minimums, not with its net class. A router can pass
+  the verdict by delivering a power net narrower than its class asks.
+
+### KRT's own label step
+
+agent-ee's job moves labels after it has placed the parts (AGENTEE-644).
+KRT's placer does not, and the first runs compared agent-ee with KRT's
+untidied board. KRT's placement instructions end with a separate step: tidy
+the reference labels with `py_placer/beautify_labels.py`, and keep the result
+only when KiCad counts fewer silkscreen findings. The harness now runs that
+on the board KRT placed and routed, by KRT's own keep rule (cells
+`...-labels`). Every KRT placement cell below includes it.
+
+| Board | Silkscreen findings before | After KRT's label step | Of those, errors under the board's rules |
+|---|---|---|---|
+| esp_prog | 59 | 56 | 0 |
+| flat_hierarchy | 70 | 37 | 0 |
+| tigard | 46 | 46, tidied board not kept | 0 |
+| ESP32-DevKit-LiPo | 405 | 361 | 0 |
+| complex_hierarchy | 74 | 10 | 10 |
+| StickHub | 7 | 1 | 0 |
+
+complex_hierarchy is the one board whose rules make silkscreen findings
+errors. Ten remain after KRT's step: nine labels on the drawn silk of a
+neighbouring part, which the script says it does not check, and the polarity
+mark of D303 on a pad of D304, which no label step can move. agent-ee's board
+has none. The step changes no pass or fail on any board.
+
+### KRT's own procedure
+
+KRT's scripts as run here are its placer (`place_simple.py`, default seeds,
+the benchmark's mechanical groups), its router (`route.py`, at its defaults
+or held) and its label script. That is not how KRT documents its use. It
+ships two procedures written for an AI agent, `plan-pcb-placement` (1,663
+lines) and `plan-pcb-routing` (4,184 lines). In them the agent sorts the
+parts into functional groups by its own judgement, declares connector edges
+and datasheet layouts, places 12 seeds, trial-routes the six the placer's
+objective rates best and keeps the one that routes best, routes that board
+by a plan written for it, tidies the labels, and has a second agent verify
+the result. Its own cap for a run is ten hours. The benchmark keeps the
+first seed the objective names and routes it once. The procedures were not
+run, so nothing here says how agent-ee compares with KRT used as its authors
+intend.
+
+Two things can be said about the board that separates the tools,
+complex_hierarchy, without running them.
+
+KRT's procedure has no step aimed at the errors that fail its board there.
+Its finish step says so: "no DONE grader reads silk", the label tidy is the
+one step that looks at silkscreen, and that script "does not see drawn silk,
+a part's own outline included". The benchmark runs that step by the
+procedure's own keep rule. Nine of the ten errors left are labels on the
+drawn silk of a neighbouring part and one is a polarity mark on a pad. KRT's
+own grade of that board (`grade.py --mode full --whose-rules users-own`)
+reads `done: true`, `drc: 0`: by KRT's gate the run would end there.
+
+The seed choice would not change it either. The procedure trial-routes the
+six seeds the placer names and keeps the one that routes best. Each of those
+six was finished here the way the procedure finishes a board (routed by KRT
+held, labels tidied by its keep rule) and scored by the verdict
+(`bench.py krt-judged`; cells `place-judged-...` in `krt-matched-20261109/`):
+
+| Seed, in the placer's order | Open | Errors after routing | Errors after the label step | Vias | Track, mm |
+|---|---|---|---|---|---|
+| 7, the one the benchmark kept | 0 | 74 | 10 | 17 | 948 |
+| 8 | 0 | 57 | 2 | 20 | 973 |
+| 10 | 0 | 71 | 2 | 22 | 1,083 |
+| 11 | 0 | 76 | 5 | 24 | 1,124 |
+| 5 | 0 | 61 | 4 | 18 | 1,023 |
+| 2 | 0 | 80 | 13 | 24 | 1,088 |
+
+Every error is a silkscreen finding. None of the six passes. By the
+procedure's own order (fewest vias, then least copper) it would keep seed 7,
+the benchmark's.
+
+Not measured: the placement an agent's own groups would give, the trial
+routes themselves (the procedure ranks seeds on a fast route, the table uses
+the full held route), and KRT's routing plan in place of one `route.py` run.
+"KRT held" is the routing the procedure prescribes when the project's rules
+are the user's own (`--escalation board --no-fix-drc-settings`).
+
+### Result in brief
+
+- Placing and routing on its own, agent-ee now delivers two of the six
+  boards fully routed with no new error (flat_hierarchy and
+  complex_hierarchy), and three of eight with the two fab-rules variants
+  (tigard). KRT's scripts, run once with its label step, deliver one of six
+  at their defaults (flat_hierarchy; one of eight) and one of six held to the
+  board's rules (two of eight, with tigard). Before the changes of this
+  section agent-ee delivered one of six (complex_hierarchy; one of eight).
+- So the claim the numbers support is: better than KRT's scripts run once,
+  by one board. They do not support "better than KRT": KRT's documented use
+  is an agent-driven procedure around those scripts, and it was not run.
+- The board that separates the tools on the six is complex_hierarchy: KRT's
+  board keeps 10 silkscreen errors after KRT's own label step, agent-ee's has
+  none. The bounded check of KRT's procedure on that board: none of the six
+  placements its judge would choose from passes (2 to 13 errors each), and
+  KRT's own grade calls its board done, because its graders do not read
+  silkscreen. What an agent's own grouping would give is not measured.
+- Routing the designer's placement, the counts are level: two of six for
+  KRT's router at its defaults, held, and for agent-ee. With the fab-rules
+  variants it is two of eight for KRT's router at its defaults and three of
+  eight for KRT's router held and for agent-ee.
+- No tool passes esp_prog, tigard under KiCad's defaults, ESP32-DevKit-LiPo
+  or StickHub in either arm. In the placement arm agent-ee and KRT's scripts
+  held each leave 23 to 31 connections open on the last three; KRT's scripts
+  at their defaults leave 1 to 23 open and add 385 to 846 errors.
+- Where both pass, KRT's board has less copper (flat_hierarchy 1,271 mm
+  against 1,499 mm). On flat_hierarchy KRT narrows 7.5 mm of a power net
+  below its class width to get there; agent-ee's board has no track below its
+  class.
+- agent-ee's own job accepts fewer boards than the verdict passes: it rejects
+  flat_hierarchy in both arms because vias of the class `Wide` are 0.6 mm
+  where the class asks 1.0 mm (AGENTEE-650).
+
+### Routing arm (designer's placement, pours kept)
+
+Cells are open connections / new errors. A bold cell passes.
+
+| Board | Rules | KRT's router, default | KRT's router, held | agent-ee before | agent-ee now | As designed |
+|---|---|---|---|---|---|---|
+| esp_prog | KiCad defaults | 0 / 69 | 0 / 4 | 0 / 3 | 0 / 3 | source has no tracks |
+| flat_hierarchy | own | **0 / 0** | **0 / 0** | **0 / 0** | **0 / 0** | source has no tracks |
+| tigard | KiCad defaults | 0 / 546 | 11 / 0 | 9 / 0 | 9 / 0 | source has no tracks |
+| ESP32-DevKit-LiPo | KiCad defaults | 4 / 706 | 10 / 20 | 18 / 3 | 18 / 2 | 0 / 34 |
+| complex_hierarchy | own | **0 / 0** | **0 / 0** | **0 / 0** | **0 / 0** | **0 / 0** |
+| StickHub | own | 0 / 43 | 6 / 22 | 2 / 35 | 2 / 36 | **0 / 0** |
+| esp_prog, fab rules r2 | stated | 0 / 10 | 0 / 4 | 0 / 2 | 0 / 2 | source has no tracks |
+| tigard, fab rules r2 | stated | 0 / 42 | **0 / 0** | **0 / 0** | **0 / 0** | source has no tracks |
+
+New errors by type, where a cell fails: KRT default on tigard, track_width
+199, clearance 179, drill_out_of_range 55, via_diameter 55, annular_width 52,
+hole_clearance 6 (199 is KiCad's limit for one finding type, so the true
+count may be higher); on tigard with fab rules, annular_width 12,
+drill_out_of_range 12, via_diameter 12, hole_clearance 6: twelve vias below
+the stated minimum. StickHub's new errors are solder_mask_bridge for every
+tool (KiCad's count of these varies by a few between runs of the same
+board). ESP32-DevKit-LiPo as designed has 34 errors its unrouted input does
+not have, 31 of them copper too close to the board edge under KiCad's
+defaults.
+
+agent-ee's own job accepts two of these boards (`completed`):
+complex_hierarchy in 72 s, and now tigard with fab rules in 76 s. Before, its
+job chose the 0.025 mm grid for tigard, which left two vias of one net 0.1 mm
+apart; KiCad reports that as a warning, the job rejected its board for it and
+stopped. It still rejects flat_hierarchy, for a reason the verdict does not
+see (next table), and takes 486 s there, because the rejected board gets a
+second trial.
+
+This column was measured twice, in run r9 at an earlier state of the same
+change and in r12 at the final commit. The router delivered the same copper
+on every board both times. KiCad's count differs on two of them: StickHub
+has 37 and 36 solder_mask_bridge findings, and on esp_prog with fab rules the
+same two findings are two clearance errors in one run and a clearance error
+and a short in the other.
+
+What the verdict does not see, on the passing cells:
+
+| Cell | New warnings | Below net class size |
+|---|---|---|
+| flat_hierarchy, KRT default and held | 1 (silk_overlap) | 12 vias of class `Wide` at 0.6 mm (class: 1.0 mm) |
+| flat_hierarchy, agent-ee | 0 | 15 vias of class `Wide` at 0.6 mm |
+| complex_hierarchy, all three | 0 | none |
+| tigard with fab rules, KRT held | 0 | none |
+| tigard with fab rules, agent-ee before | 1 (hole_to_hole) | none |
+| tigard with fab rules, agent-ee now | 0 | none |
+
+No engine here takes a via size per net class: upstream's `--via-size` is one
+value for a run. agent-ee's job rejects a board for such vias; KRT does not
+check them (AGENTEE-650).
+
+### Placement and routing (pours kept)
+
+Cells are open connections / new errors. KRT's cells include its label step.
+"agent-ee" is agent-ee placing and routing on its own.
+
+| Board | Rules | KRT's scripts, default routing | KRT's scripts, held routing | agent-ee before | agent-ee now | agent-ee's placement now, KRT held routing |
+|---|---|---|---|---|---|---|
+| esp_prog | KiCad defaults | 0 / 11 | 0 / 3 | 1 / 1 | 0 / 1 | 0 / 1 |
+| flat_hierarchy | own | **0 / 0** | **0 / 0** | 3 / 0 | **0 / 0** | **0 / 0** |
+| tigard | KiCad defaults | 1 / 846 | 23 / 0 | no result (`deadline`) | 28 / 0 | 19 / 0 |
+| ESP32-DevKit-LiPo | KiCad defaults | 23 / 398 | 24 / 75 | no result (`deadline`) | 31 / 8 | 24 / 19 |
+| complex_hierarchy | own | 0 / 10 | 0 / 10 | **0 / 0** | **0 / 0** | **0 / 0** |
+| StickHub | own | 21 / 385 | 25 / 49 | no result (`deadline`) | 24 / 59 | 26 / 43 |
+| esp_prog, fab rules r2 | stated | 0 / 8 | 0 / 8 | 0 / 1 | 0 / 1 | 0 / 1 |
+| tigard, fab rules r2 | stated | 0 / 34 | **0 / 0** | 11 / 0 | **0 / 0** | **0 / 0** |
+
+- **Before**, agent-ee had no board on tigard, ESP32-DevKit-LiPo and StickHub:
+  the job ended `deadline`. **Now** every cell has a board.
+- On ESP32-DevKit-LiPo and StickHub the job's status is
+  `placement_infeasible`: its search found no placement without a hard
+  conflict in its own model (the reasons are under the defects below). It
+  then routes its best candidate as an exploratory result and says so. Those
+  boards are the cells shown.
+- tigard under KiCad's defaults: three placements were routed (35, 28 and 48
+  open) and the time left allowed no second trial. Neither tool can finish
+  this board under these rules (see the verdict).
+- esp_prog: all four placements route with no open connection and one new
+  error each, on both grids. It is the finding described under the verdict,
+  new copper of one net against the net-less polygon of U2, reported as a
+  clearance error or as a short, and one is the floor AGENTEE-641 measured.
+  KRT's placement routed by KRT held has three of them.
+- New errors by type where a cell fails. KRT default: tigard clearance 499,
+  track_width 199 (both at KiCad's limit), drill_out_of_range 42,
+  via_diameter 42, annular_width 36, hole_clearance 28; ESP32-DevKit-LiPo
+  track_width 174, clearance 115, and 109 others; StickHub track_width 199,
+  solder_mask_bridge 55, and 131 others. KRT held: ESP32-DevKit-LiPo
+  track_width 28, shorting_items 20, solder_mask_bridge 20, and 7 others;
+  StickHub solder_mask_bridge 49. agent-ee now: ESP32-DevKit-LiPo
+  starved_thermal 4, track_width 4; StickHub solder_mask_bridge 59.
+- The job's own status is `completed` on complex_hierarchy and on tigard
+  with fab rules. On flat_hierarchy it is `verification_failed`, for the via
+  size of the class `Wide` alone.
+- Time to place and route the boards agent-ee passes: flat_hierarchy 840 s
+  (KRT 258 s), complex_hierarchy 415 s (KRT 175 s), tigard with fab rules
+  398 s (KRT 771 s). 330 s of each agent-ee job is a search whose length the
+  budget sets.
+
+Where both tools pass, KRT's board has less copper: flat_hierarchy 36 vias
+and 1,271 mm against agent-ee's 49 and 1,499 mm; tigard with fab rules 160
+vias and 1,906 mm against 168 and 1,974 mm.
+
+What the verdict does not see, on the passing cells:
+
+| Cell | New warnings | Below net class size |
+|---|---|---|
+| flat_hierarchy, KRT (default and held routing) | 35 (silk_overlap 24, silk_over_copper 11) | 7.5 mm of class `Wide` track at 0.2 mm (class: 0.5 mm), 2 mm more in tapers, 12 vias at 0.6 mm |
+| flat_hierarchy, agent-ee now | 33 (silk_overlap 19, silk_over_copper 14) | 25 vias of class `Wide` at 0.6 mm; no track below its class |
+| complex_hierarchy, agent-ee before and now | 0 | none |
+| tigard with fab rules, KRT held routing | 23 (silk_over_copper 18, silk_overlap 5) | none |
+| tigard with fab rules, agent-ee now | 25 (silk_over_copper 23, silk_overlap 2) | none |
+
+The new warnings are silkscreen that did not move while the parts did. On
+flat_hierarchy all 33 of agent-ee's, and 31 of KRT's 35, are between the
+board's own annotation texts ("VCC ON", "PWR ON", "I2C PROM") and a part that
+now sits on them. On tigard 16 of agent-ee's 25 are logo artwork and a part
+that now sits on it, 7 are the label "MODE" of a switch that stays in place,
+and 2 are a moved part's outline over a pad of that switch; KRT's 23 are of
+the same kinds. Neither tool keeps moved parts clear of such content where
+the board's rules only warn (AGENTEE-651). On complex_hierarchy, where the
+rules make it an error, agent-ee's capture reserves that content and its
+board has none.
+
+### Why agent-ee's placements were worse, and what changed
+
+On tigard with the fab's rules stated, stock KRT held to the rules routes
+KRT's own placement with no open connection, and left 10 open on agent-ee's
+placement. The same router, so the difference was the placement.
+
+The placer's cost had a term that added one link for every pair of parts in a
+group that share a net. The benchmark's groups are mechanical, one per
+schematic sheet, and tigard is one sheet: one group of 85 parts, 1,982 such
+links, 1,225 of them on GND and 406 on +3V3, because the benchmark declares
+no rail. In the placer's own model:
+
+| Placement of tigard | Wire (half perimeter), mm | Link term, mm | Routed by KRT held |
+|---|---|---|---|
+| Designer's | 1,427 | 28,014 | (routing arm) 0 open |
+| KRT's | 1,487 | 29,358 | 0 open, passes |
+| agent-ee before, the two valid candidates | 1,859 and 1,976 | 19,776 and 19,641 | 10 open |
+| agent-ee now, run r10, four valid candidates | 1,396 to 1,561 | none | 1 open |
+| agent-ee now, run r11, the two valid candidates | 1,407 and 1,612 | none | 0 open, passes |
+
+The search was minimising the link term, which is mostly "every GND part
+close to every other GND part", and paid for it with a quarter to a third
+more wire. AGENTEE-637 had removed the pull toward the anchor for a sheet
+group and kept these links; the weight test behind that change had switched
+both off. A sheet group now adds no cost at all (AGENTEE-648). Groups an
+engineer declares are unchanged; for those the pairwise form still grows with
+the square of a net's members, which is not addressed here.
+
+The same change on the other boards, lowest wire among the candidates in the
+placer's model, before and now: flat_hierarchy 1,810 and 1,256 mm; tigard
+under KiCad's defaults 1,907 and 1,442; esp_prog 219 and 198;
+ESP32-DevKit-LiPo 1,173 and 1,100 and StickHub 668 and 405 (both among
+candidates with hard conflicts).
+
+complex_hierarchy is the one board here whose sheets are functional blocks
+(three groups, 94 links), and its routed length went from 851 mm before to
+883 mm in r10 and 1,142 mm in r11. So the old and the new engine were run
+side by side on its captured problem: four searches each, two of each at a
+time, so that the host's load fell on both alike. Wire of the candidate each
+search ranked first: 1,070, 1,017, 1,022 and 946 mm with the links; 983,
+1,026, 1,012 and 957 mm without. Over all 16 seeds of each the mean is
+1,093 mm with the links and 1,038 mm without. The change costs this board
+nothing. One search differs from the next by about a tenth, and the 874 mm
+candidate behind the 851 mm of the run before was one seed of four.
+
+Three smaller changes to the job's routing schedule came out of the same
+cells (AGENTEE-645, 649):
+
+- A placement whose routing fails for something the routing made gets one
+  second trial on the router's other grid, with the time the first trials
+  left. No one grid is better on every board (table further down).
+- Every candidate's first trial uses the router's default grid, which is
+  about five times faster than 0.025 mm. Before, a board with pads under 1 mm
+  pitch started on 0.025 mm: on tigard three valid candidates each got a
+  third of the time on that grid and none finished, while the default grid
+  routes the first in under a minute.
+- A job in which no trial completes reports the best board among its failed
+  trials, not the last one.
+
+On flat_hierarchy the new placements route with no open connection and no
+track below its class width on agent-ee's own router (before: 3 open). KRT's
+own pass on that board narrows 7.5 mm of a power net to 0.2 mm.
+
+### What KRT does to complete agent-ee's old flat_hierarchy placement
+
+Kept for the record, because it explains the earlier "agent-ee placement,
+KRT routing" passes. Stock upstream KRT (0.23.9) on agent-ee's flat_hierarchy
+placement of run r5, one setting changed at a time:
+
+| Run | Open | New errors | Class `Wide` track below 0.5 mm |
+|---|---|---|---|
+| kicad-route's flag and environment set (no relaxation) | 2 | 1 | none |
+| the same with `--escalation board` | 2 | 1 | none |
+| the same, wide nets may neck down into pads | 0 | 1 | 31 mm at 0.2 mm |
+| the same, KRT's terminal escalation allowed | 0 | 1 | 98 mm at 0.4 mm |
+| the same flags, KRT's default environment | 0 | 0 | 95 mm at 0.4 mm |
+| KRT held (`--escalation board --no-fix-drc-settings`) | 0 | 0 | 12 mm at 0.2 mm |
+| KRT held, wide nets may not neck down | 0 | 0 | 95 mm at 0.4 mm |
+
+Every run that completes that placement delivers three or four nets of the
+class `Wide` narrower than the class asks, and says so (29 to 31 features).
+All of it is above the board's own minimum of 0.2 mm, so KiCad's DRC accepts
+it. kicad-route forbids it and left connections open. With the placement
+fixed, the question did not arise on this board again.
+
+### The same engines on the fab-rules boards, both grids
+
+Direct router runs on the designer's placement, 900 s budget, open
+connections / new errors, and the verdict of kicad-route's own grading, which
+also rejects a new warning. "Candidate" is upstream KRT `772003a6` with the
+local changes kept so far (AGENTEE-642, not landed); "upstream, strict" is
+upstream unchanged with kicad-route's flags.
+
+| Board | Engine | Default grid | 0.025 mm grid |
+|---|---|---|---|
+| tigard, fab rules r2 | kicad-route `f074b4a` | 0 / 0, graded PASS (23 s) | 0 / 0, graded FAIL: 1 hole_to_hole warning (130 s) |
+| tigard, fab rules r2 | candidate | 0 / 0, PASS (27 s) | 0 / 0, PASS (124 s) |
+| tigard, fab rules r2 | upstream, strict | 0 / 0, PASS (24 s) | 0 / 0, PASS (147 s) |
+| esp_prog, fab rules r2 | kicad-route `f074b4a` | 0 / 4 | 0 / 2 |
+| esp_prog, fab rules r2 | candidate | 0 / 4 | 0 / 2 |
+| esp_prog, fab rules r2 | upstream, strict | 0 / 4 | 0 / 2 |
+
+With the rules stated correctly every rule-obeying engine routes tigard
+completely. The 163 hole-clearance errors of revision 1 came from the rule
+set, not from a router. On the boards under KiCad's defaults the 0.025 mm
+grid leaves fewer connections open (tigard 9 against 17, ESP32-DevKit-LiPo 18
+against 21, StickHub 2 against 4); on agent-ee's old flat_hierarchy placement
+it leaves more (4 against 3).
+
+### What changed in the tool
+
+- AGENTEE-640 (`f4e1a294`): the job no longer rejects a board for errors the
+  input already had, does not count KiCad's teardrop zones as changed
+  content, renders the group views for any closed outline, and states each
+  rejection in words.
+- AGENTEE-644 (`a5bb2151`): after placing the parts the job moves the labels
+  that native DRC names in a silkscreen finding to a free place beside their
+  part, and counts fixed silkscreen content as occupied. This is what takes
+  complex_hierarchy from 78 errors to 0.
+- AGENTEE-637 (`776030a9`): a group derived from a schematic sheet applies no
+  pull toward its anchor. Parts on opposite sides of the board meet only
+  where they physically can.
+- AGENTEE-646 (`acaf5662`): an error between pads or drawings of one
+  footprint is not booked as caused by the placement. KiCad stops listing a
+  finding type at a limit (499 clearance findings, 199 of several others),
+  and the unplaced input, a pile of footprints, has more; the input report
+  left out 22 such errors on tigard, every placement there was called
+  invalid, and the job only ever routed a diagnostic candidate.
+- AGENTEE-645 (`5f3a9cb1`, `22896240`): the second routing trial, and whether
+  the placement or the routing made a rejection (`final.made_by`).
+- AGENTEE-648 (`21a27bf3`): a sheet group links none of its members.
+- AGENTEE-649 (`ce38bd2d`, `1c352464`): the cheap grid first for every
+  candidate; the best failed board is the one reported.
+- AGENTEE-647 (`87417c9a`): on a board whose own rules ignore courtyard
+  overlap, the body of a footprint is its package outline with the pads, not
+  its courtyard. It landed after the runs above and changes StickHub alone
+  among these boards; its cell is run r13, under the defects below.
+- AGENTEE-643 (`0c7df73e`, `8fd0db46`, `13181913`, `094d6594`, `60788324`,
+  and `krt-judged` with this report): in the harness, the verdict, the stated
+  fab rules, the "KRT held" cells of both arms, KRT's label step, and the
+  seeds KRT's judge would choose from.
+
+### Tool defects this round exposed and did not fix
+
+- No router here takes a via size per net class, and agent-ee's job rejects
+  a board whose vias are smaller than their class asks (AGENTEE-650). So the
+  job does not accept flat_hierarchy, which passes the verdict in both arms.
+  A board rejected only for that still gets second trials on the other grid,
+  which cannot change a via size: in the placement cell they took 346 s of
+  routing and delivered no board.
+- When the router needs all the remaining time the job ends `deadline`, and
+  with no earlier trial it has no board to report (flat_hierarchy in run
+  r10). A first trial keeps no time back for the router's stop grace and
+  grading: doing so would cut runs that now finish late.
+- Moved parts land on silkscreen that stays in place where the board's rules
+  only warn (AGENTEE-651; the warnings in the table above).
+- StickHub does not route from either tool's placement. Its own rules set
+  courtyard overlap to `ignore`. The board is 16.5 x 40 mm and its courtyards
+  add up to 772 mm2 on 1,320 mm2 of two sides; the designer overlaps 143
+  pairs of them and turns 39 of 94 parts by 45 degrees. In the runs above the
+  placer took the courtyard as a hard body whatever the board says, so every
+  candidate had hard conflicts and the job reported `placement_infeasible`.
+  AGENTEE-647 takes the package outline as the body on such a board. With it
+  (run r13) one seed of four finds a placement without a hard conflict, the
+  other three keep one each (a part body over the mounting hole H1), native
+  DRC finds no error the placement made, and the job ends
+  `verification_failed` for its routing instead. The board still does not
+  route: 27 open and 34 new errors on agent-ee's router (24 and 59 from the
+  exploratory candidate before), 26 open with KRT held. The designer's
+  placement routes with 2 open on agent-ee's router and 6 with KRT held, so
+  on this board the placement of both tools is the larger gap.
+- The engine models a part at 45 degrees by the upright rectangle around it.
+  The designer's StickHub placement, which passes DRC, has 143 body conflicts
+  in that model, 92 of them with a turned part, and 62 pad-opening conflicts,
+  all with a turned part.
+- ESP32-DevKit-LiPo: the two 19-pin header rows are as long as the board is
+  tall. In the designer's own placement their courtyards overhang the
+  outline by 0.13 mm and their pads are inside KiCad's default edge
+  clearance (38 errors in the unrouted input). The engine requires a part it
+  may move to lie inside the outline, the source does not lock the headers,
+  and the benchmark's mechanical intent declares no edge part, so every
+  placement is `placement_infeasible`. This is a limit of the benchmark's
+  intent more than a defect: the job names the two headers.
+- tigard with fab rules, 0.025 mm grid: the router places two vias of net
+  VREF 0.1 mm apart, and on tigard under KiCad's defaults, default grid, a
+  via in a pad of J1. Its own grading reports both. The causes in the engine
+  were not looked for, because the engine is being replaced.
+- The upstream engine with the local changes kept so far fails 12 of
+  kicad-route's tests against 2 on main (AGENTEE-642). Not landed.
+
+### Limits
+
+One run per cell, except where more are named. The placement search is
+limited by time, so a busier host gives it fewer steps and a different
+placement. With the new placer, flat_hierarchy's placement cell ran three
+times: it passes in r7 and r11, and in r10 the first routing trial did not
+finish and the job had no board. complex_hierarchy passes in every run, with
+851 mm of track before, 883 mm in r10 and 1,142 mm in r11 (the designer's
+placement routes at 1,187 mm). Other sessions were running on the host
+throughout: the load on its 12 threads was 3 to 13 at the start of most
+cells, 16 to 19 during StickHub's placement cell in r5, up to 21 for some
+minutes during r10 and 23 at the start of StickHub's cell in r11. Six
+boards, eight with the fab-rules variants; a difference of one board is one
+board. Stock KRT's default cells and its placements are from 2026-11-09. KRT
+is its scripts run once, not the agent-driven procedure it documents (see
+"KRT's own procedure"): an agent running that procedure would group the
+parts itself, choose among six trial-routed seeds and route by a plan, and no
+figure here says what it would deliver. KiCad's defaults are the rule set for
+three boards. The benchmark's groups and locks are mechanical: no engineer
+declared a rail, an edge part or a part that overhangs the outline.
+
+Every change of this section was found by studying these boards, and no board
+outside the set has been run since. Each is a general rule (what a sheet
+group may cost, which grid goes first, what counts as the placement's error,
+what the body of a part is) and none names a board, but the set cannot show
+how far they carry.

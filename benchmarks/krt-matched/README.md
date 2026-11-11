@@ -53,6 +53,7 @@ python3 $B prep NAME SOURCE --no-pours && python3 $B route NAME --no-pours && py
 ```
 
 Optional extras: `krt-spread NAME` routes every seed KRT's placer wrote;
+`krt-judged NAME` finishes each seed KRT's placer names for judging (below);
 `place NAME --tools agent-ee --seed-offset N` repeats agent-ee's search on
 other seeds; `place NAME --tools agent-ee --search-b` uses the search setting
 of `docs/benchmarks/placement-job-2026-10-24.md` (12 seeds, 10,000 steps,
@@ -165,11 +166,28 @@ Nothing is keyed on a board. Every rule below applies to every board.
   `krt-then-krt-held-route-labels` with `--held`). `place-labels NAME` adds
   the cells to an earlier run. Compare agent-ee, whose job moves labels
   itself, with these cells, not with the cells without the step.
+- **The seeds KRT's judge would choose from** (`krt-judged NAME`, after
+  `place`): KRT's placement procedure trial-routes the seeds its placer names
+  in `judge.json` and keeps the one that routes best, where this benchmark
+  keeps the first named. `krt-judged` routes each named seed with KRT held to
+  the board's floors, runs the label finish on it and scores both boards, as
+  cells of the arm `place-judged`. It bounds what that choice of seed could
+  change on a board. It is not a run of the procedure.
 - **Refusal**: when `place run` refuses a routing-arm board, `kicad-route run`
   is run directly with the adapter's base flags as a labelled secondary cell.
 
 ## Limits
 
 One run per cell. Groups and the lock rule are mechanical, not an engineer's
-floorplan. KRT is run at defaults, not through its agent-driven planning
-skills. See the report for the limits of a specific run.
+floorplan.
+
+Every KRT cell is KRT's scripts run once: `place_simple.py` at its default
+seeds, `route.py` at its defaults or held, and the label script. KRT
+documents its use as two procedures run by an AI agent
+(`.claude/skills/plan-pcb-placement` and `plan-pcb-routing`), in which the
+agent groups the parts by function, chooses among trial-routed seeds, plans
+the routing and has a second agent verify the board. Those procedures are not
+run here, so a result of this benchmark compares agent-ee with KRT's scripts,
+not with KRT used as its authors intend. Quote it that way.
+
+See the report for the limits of a specific run.

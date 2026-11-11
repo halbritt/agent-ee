@@ -722,6 +722,28 @@ def krt_spread(args):
                krt_route(bare, root / 'runs' / key, norm), norm)
 
 
+def krt_judged(args):
+    """Finish every seed KRT's placer names for judging, not only the one this benchmark keeps.
+
+    KRT's placement procedure (plan-pcb-placement, 3.6 to 3.9) trial-routes the seeds judge.json
+    names and keeps the one that routes best; the benchmark keeps the first named. This routes each
+    named seed with stock KRT held to the board's floors and runs KRT's label finish on it, as cells
+    of the arm ``place-judged``: what that procedure's choice of seed could change on a board. It
+    is not a run of the procedure, whose agent also chooses the groups and plans the routing."""
+    name = args.name
+    root = RUNS / 'boards' / name
+    norm = root / 'norm' / f'{name}.kicad_pcb'
+    order = json.loads((root / 'runs' / 'place-krt' / 'judge.json').read_text())['judge']
+    for seed in order:
+        tool = f'krt-seed{seed}-then-krt-held-route'
+        key = f'place-judged-{tool}'
+        bare = root / 'runs' / key / 'placement' / norm.name
+        edit_board(root / 'runs' / 'place-krt' / f's{seed}.kicad_pcb', bare, strip=True)
+        result(root, name, 'place-judged', tool, krt_route(bare, root / 'runs' / key, norm, KRT_HELD), norm,
+               {'placement': {'kept_seed': seed, 'judge_order': order}})
+        krt_labels(root, name, 'place-judged', tool)
+
+
 def baseline(args):
     """Score the unrouted routing-arm input, so pre-existing findings can be told from new ones."""
     root = RUNS / 'boards' / args.name
@@ -801,7 +823,7 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     for name, func in (('prep', prep), ('reuse', reuse), ('baseline', baseline), ('route', route_arm),
                        ('place', place_arm), ('place-held', place_held), ('place-labels', place_labels),
-                       ('krt-spread', krt_spread),
+                       ('krt-spread', krt_spread), ('krt-judged', krt_judged),
                        ('summary', summary)):
         p = sub.add_parser(name)
         p.set_defaults(func=func)
