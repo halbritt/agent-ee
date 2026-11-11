@@ -111,6 +111,20 @@ Nothing is keyed on a board. Every rule below applies to every board.
   plus via count and track length read with pcbnew, plus wall-clock time.
   KRT outputs get a second score beside the project file KRT wrote
   (`score_tool_rules`), because KRT lowers rule minimums to what it routed.
+- **Verdict** (since 2026-11-10): a cell passes when its board has 0 open
+  connections and no DRC error beyond those the unrouted routing input
+  already has, against the board's own rule files. Vias, track length and
+  time only rank cells that pass. A finding is matched to the input's by its
+  type and the items it names, without positions, so a finding the design
+  carries (two pads of one footprint closer than the rule) is not charged to
+  a tool, and one a tool removes earns nothing. `summary` prints the verdict
+  per cell and, per arm and tool, how many boards of the chosen set pass.
+  `reference as-designed` rows score the source board where it is routed.
+- **Rules origin**: `summary` says for each board whether its rules come from
+  the source's project file or are KiCad's defaults because the source has
+  none (esp_prog and tigard in the first set). On such a board a tool that
+  chooses its own widths is not lowering anyone's rules; read those rows with
+  that in mind.
 - **Refusal**: when `place run` refuses a routing-arm board, `kicad-route run`
   is run directly with the adapter's base flags as a labelled secondary cell.
 

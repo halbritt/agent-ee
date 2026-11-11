@@ -194,6 +194,65 @@ def score(board, rules_board, out_dir):
     return result
 
 
+def findings(report):
+    """The error findings of a native DRC report, each as (type, its items' descriptions).
+
+    The descriptions name the items (pad, footprint, zone, layer) without a position, so a
+    finding of the unrouted input is recognised again after the parts moved."""
+    drc = json.loads(Path(report).read_text())
+    return sorted((row['type'], tuple(sorted(item['description'] for item in row.get('items', []))))
+                  for row in drc.get('violations', []) if row.get('severity') == 'error')
+
+
+def introduced(report, input_report):
+    """The error findings of report that the unrouted input does not already have, by type."""
+    left = findings(input_report)
+    new = {}
+    for finding in findings(report):
+        if finding in left:
+            left.remove(finding)
+        else:
+            new[finding[0]] = new.get(finding[0], 0) + 1
+    return dict(sorted(new.items()))
+
+
+def verdict(score_, input_report):
+    """A board passes when nothing is left open and it has no error the unrouted input lacks.
+
+    The score is native DRC against the board's own rule files, never the tool's."""
+    if not score_ or 'unconnected' not in score_:
+        return {'passes': False, 'why': 'no scored board'}
+    new = introduced(Path(score_['scored_board']).parent / 'drc.json', input_report)
+    count = sum(new.values())
+    why = [f"{score_['unconnected']} open"] * bool(score_['unconnected']) + [f'{count} introduced errors'] * bool(count)
+    return {'passes': not why, 'why': ', '.join(why), 'open': score_['unconnected'],
+            'introduced_errors': count, 'introduced_by_type': new}
+
+
+def input_report(root, name, suffix=''):
+    """The DRC report of the unrouted routing input, scored now when an earlier step did not."""
+    report = root / 'score' / f'baseline-route-in{suffix}' / 'drc.json'
+    if not report.is_file():
+        norm = root / 'norm' / f'{name}.kicad_pcb'
+        score(root / f'route-in{suffix}' / norm.name, norm, report.parent)
+    return report
+
+
+def rules_origin(root):
+    """Whether the board's rules are its source project's or KiCad's defaults."""
+    try:
+        record = json.loads((root / 'prep.json').read_text())
+    except (OSError, ValueError):
+        return 'unknown'
+    own = record.get('source_has_project_file')
+    if own is None:
+        source = Path(record.get('source', ''))
+        if not source.is_file():
+            return 'unknown (source not present)'
+        own = source.with_suffix('.kicad_pro').is_file()
+    return 'source project file' if own else 'KiCad defaults (the source has no project file)'
+
+
 def tail(path, n=40):
     try:
         return Path(path).read_text(errors='replace').splitlines()[-n:]
@@ -237,6 +296,7 @@ def prep(args):
         write_json(place_in.parent / 'groups.json', groups_for(place_in) if place_in.is_file() else {})
         write_json(root / f'prep{suffix}.json', {
             'source': str(src), 'source_sha256': sha256(src), 'normalized_sha256': sha256(norm),
+            'source_has_project_file': src.with_suffix('.kicad_pro').is_file(),
             'route_in': str(route_in), 'route_in_sha256': sha256(route_in), 'locked_refs': locked,
             'place_in': str(place_in), 'make_unplaced': made,
             'place_in_sha256': sha256(place_in) if place_in.is_file() else None})
@@ -553,24 +613,40 @@ def rescore(_args):
 
 def summary(_args):
     rescore(_args)
-    rows = []
+    chosen = set(json.loads((Path(__file__).parent / 'boards.json').read_text())['boards'])
+    rows, passing = [], {}
     for path in sorted(RUNS.glob('boards/*/results/*.json')):
         data = json.loads(path.read_text())
-        if 'arm' not in data:
+        if 'arm' not in data or data.get('tool') == 'unrouted input':
             continue
+        root = path.parents[1]
         s, r = data.get('score') or {}, data.get('run') or {}
-        rows.append([data['board'], data['arm'], data['tool'], s.get('unconnected'), s.get('drc_errors'),
-                     json.dumps(s.get('drc_errors_by_type')) if s else None, s.get('drc_warnings'), s.get('vias'),
-                     s.get('track_length_mm'), (data.get('score_tool_rules') or {}).get('drc_errors'),
+        suffix = '-nopours' if 'nopours' in data['arm'] else ''
+        v = verdict(s, input_report(root, data['board'], suffix))
+        if data['board'] in chosen:                 # the debug board is listed but never counted
+            cell = (data['arm'], data['tool'])
+            passing.setdefault(cell, [[], 0])[1] += 1
+            if v['passes']:
+                passing[cell][0].append(data['board'])
+        rows.append([data['board'], data['arm'], data['tool'], 'yes' if v['passes'] else 'no', s.get('unconnected'),
+                     v.get('introduced_errors'), json.dumps(v.get('introduced_by_type')) if s else None,
+                     s.get('drc_errors'), json.dumps(s.get('drc_errors_by_type')) if s else None, s.get('drc_warnings'),
+                     s.get('vias'), s.get('track_length_mm'), (data.get('score_tool_rules') or {}).get('drc_errors'),
                      r.get('job_elapsed_s') or r.get('wall_s'), r.get('exit_code'),
-                     r.get('job_status') or ('timeout' if r.get('timed_out') else '')])
-    head = ['board', 'arm', 'tool', 'unconnected', 'errors', 'errors by type', 'warnings', 'vias', 'length mm',
-            'errors (tool-written rules)', 'seconds', 'exit', 'status']
-    print('| ' + ' | '.join(head) + ' |')
-    print('|' + ' --- |' * len(head))
-    for row in rows:
-        print('| ' + ' | '.join('' if v is None else str(v) for v in row) + ' |')
-    write_json(RUNS / 'summary.json', [dict(zip(head, row)) for row in rows])
+                     r.get('job_status') or ('timeout' if r.get('timed_out') else ''), rules_origin(root)])
+    head = ['board', 'arm', 'tool', 'passes', 'unconnected', 'introduced errors', 'introduced by type', 'errors',
+            'errors by type', 'warnings', 'vias', 'length mm', 'errors (tool-written rules)', 'seconds', 'exit',
+            'status', 'rules']
+    table = lambda head_, rows_: ['| ' + ' | '.join(head_) + ' |', '|' + ' --- |' * len(head_),
+                                  *('| ' + ' | '.join('' if v is None else str(v) for v in row) + ' |' for row in rows_)]
+    print('\n'.join(table(head, rows)))
+    board_rows = [[arm, tool, len(names), total, ', '.join(names)] for (arm, tool), (names, total) in sorted(passing.items())]
+    board_head = ['arm', 'tool', 'boards passing', 'of', 'which']
+    print('\nPasses: 0 open connections and no DRC error beyond the unrouted input\'s, against the board\'s own rules. '
+          'Boards of the chosen set only.\n')
+    print('\n'.join(table(board_head, board_rows)))
+    write_json(RUNS / 'summary.json', {'cells': [dict(zip(head, row)) for row in rows],
+                                       'passing': [dict(zip(board_head, row)) for row in board_rows]})
 
 
 def main():
