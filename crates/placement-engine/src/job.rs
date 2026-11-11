@@ -1373,59 +1373,80 @@ fn interacts(p: &Prepared, a: usize, b: usize) -> bool {
     *ra != Role::SilkOnly && *rb != Role::SilkOnly && (*ra == Role::Movable || *rb == Role::Movable)
 }
 
-/// Pair term between two different footprints.
-fn pair_terms(p: &Prepared, a: &Placed, b: &Placed) -> Terms {
-    let mut t = Terms::default();
+/// The hard findings of one pair of footprints, by the rule that made them, as
+/// (overlap in nm^2, number of findings), and the soft escape overlap.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct PairChecks {
+    body: (i128, i64),
+    copper: (i128, i64),
+    hole_copper: (i128, i64),
+    hole_hole: (i128, i64),
+    mask_web: (i128, i64),
+    escape: i128,
+}
+
+impl PairChecks {
+    fn rules(&self) -> [(&'static str, (i128, i64)); 5] {
+        [("body", self.body), ("copper", self.copper), ("hole_copper", self.hole_copper),
+         ("hole_hole", self.hole_hole), ("mask_web", self.mask_web)]
+    }
+}
+
+fn pair_checks(p: &Prepared, a: &Placed, b: &Placed) -> PairChecks {
+    let mut c = PairChecks::default();
+    let found = |slot: &mut (i128, i64), overlap: i128| {
+        if overlap > 0 {
+            slot.0 += overlap;
+            slot.1 += 1;
+        }
+    };
     // Conservative boxes are a congestion preference, not a clearance verdict.
     for (spaces, copper) in [(&a.escape, &b.copper), (&b.escape, &a.copper)] {
         for space in spaces {
             for item in copper {
-                t.escape += space.overlap(&item.bounds);
+                c.escape += space.overlap(&item.bounds);
             }
         }
     }
     if let (Some(x), Some(y)) = (&a.body, &b.body) {
-        let o = x.overlap(y);
-        if o > 0 {
-            t.hard += o;
-            t.hard_count += 1;
-        }
+        found(&mut c.body, x.overlap(y));
     }
     // Bounds prune distant items; native outer polygons decide pad clearance.
     for ca in &a.copper {
         for cb in &b.copper {
-            let o = ca.overlap(p, cb);
-            if o > 0 {
-                t.hard += o;
-                t.hard_count += 1;
-            }
+            found(&mut c.copper, ca.overlap(p, cb));
         }
     }
     // Drills use board hole rules, independently of pad copper overrides.
     for (holes, copper) in [(&a.holes, &b.copper), (&b.holes, &a.copper)] {
         for hole in holes {
-            for c in copper {
-                let o = hole.overlap_at_clearance(p, c, hole.clearance);
-                if o > 0 { t.hard += o; t.hard_count += 1; }
+            for item in copper {
+                found(&mut c.hole_copper, hole.overlap_at_clearance(p, item, hole.clearance));
             }
         }
     }
     for ha in &a.holes {
         for hb in &b.holes {
-            let o = ha.overlap_at_clearance(p, hb, p.hole_to_hole_nm);
-            if o > 0 { t.hard += o; t.hard_count += 1; }
+            found(&mut c.hole_hole, ha.overlap_at_clearance(p, hb, p.hole_to_hole_nm));
         }
     }
     // Mask apertures of different footprints keep the native minimum web.
     for ma in &a.mask {
         let g = ma.grown(p.mask_web_nm);
         for mb in &b.mask {
-            let o = g.overlap(mb);
-            if o > 0 {
-                t.hard += o;
-                t.hard_count += 1;
-            }
+            found(&mut c.mask_web, g.overlap(mb));
         }
+    }
+    c
+}
+
+/// Pair term between two different footprints.
+fn pair_terms(p: &Prepared, a: &Placed, b: &Placed) -> Terms {
+    let c = pair_checks(p, a, b);
+    let mut t = Terms { escape: c.escape, ..Terms::default() };
+    for (_, (overlap, count)) in c.rules() {
+        t.hard += overlap;
+        t.hard_count += count;
     }
     t
 }
@@ -1871,10 +1892,15 @@ pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
         }
         for b in a + 1..at.len() {
             if interacts(p, a, b) {
-                let t = pair_terms(p, &at[a], &at[b]);
-                if t.hard_count > 0 {
+                let checks = pair_checks(p, &at[a], &at[b]);
+                let count: i64 = checks.rules().iter().map(|(_, (_, n))| n).sum();
+                if count > 0 {
+                    // Which rules the pair breaks, so a rejected placement names its constraint.
+                    let rules: serde_json::Map<String, Value> = checks.rules().iter().filter(|(_, (_, n))| *n > 0)
+                        .map(|(rule, (_, n))| (rule.to_string(), json!(n))).collect();
                     out.push(json!({"ref": p.footprints[a].native_ref, "with": p.footprints[b].native_ref,
-                        "uuid": p.footprints[a].uuid, "with_uuid": p.footprints[b].uuid, "kind": "pair", "count": t.hard_count}));
+                        "uuid": p.footprints[a].uuid, "with_uuid": p.footprints[b].uuid, "kind": "pair", "count": count,
+                        "rules": rules}));
                 }
             }
         }
@@ -3970,6 +3996,41 @@ mod tests {
         poses[2] = Pose { x: 1_500_000, y: 1_500_000, q: 0 };
         let hit = full_evaluate(&p, &poses);
         assert!(hit.hard > 0, "copper-on-copper with the mark must be a hard violation");
+    }
+
+    #[test]
+    fn a_pair_violation_names_the_rules_that_made_it() {
+        let mut raw = input(vec![]);
+        raw["rules"]["hole_to_hole_clearance_nm"] = json!(400_000);
+        for f in [2, 3] {
+            raw["footprints"][f]["holes_local_nm"] = json!([{
+                "rect_nm": [-500_000, -250_000, 500_000, 250_000], "clearance_nm": 150_000,
+                "geometry": {"status": "conservative_native_polygon", "kind": "hole", "tolerance_nm": 1000,
+                    "pad_uuid": raw["footprints"][f]["pads"][0]["uuid"],
+                    "polygons": [[[-500_000, -250_000], [500_000, -250_000], [500_000, 250_000], [-500_000, 250_000]]]}}]);
+        }
+        let p = prepare(&raw).unwrap();
+        let mut poses: Vec<Pose> = p.footprints.iter().map(|f| f.initial).collect();
+        poses[3] = poses[2];
+        let rows = violations(&p, &poses);
+        let rules = |a: &str, b: &str| rows.iter()
+            .find(|v| v["kind"] == "pair" && v["ref"] == a && v["with"] == b).map(|v| v["rules"].clone());
+        // R1 and R2 start on one spot: their bodies overlap and each pad lies on its twin.
+        assert_eq!(rules("R1", "R2"), Some(json!({"body": 1, "copper": 2})));
+        // R4 on R3, both with a drill and a mask aperture: every pair rule is broken and named.
+        let stacked = rules("R3", "R4").expect("R3 and R4 violate");
+        for rule in ["body", "copper", "hole_copper", "hole_hole", "mask_web"] {
+            assert!(stacked[rule].as_i64().unwrap() > 0, "{rule}: {stacked}");
+        }
+        // The rules of a pair add up to its count, and the pairs to the evaluation's hard findings.
+        let mut pairs = 0;
+        for row in rows.iter().filter(|v| v["kind"] == "pair") {
+            let by_rule: i64 = row["rules"].as_object().unwrap().values().map(|n| n.as_i64().unwrap()).sum();
+            assert_eq!(by_rule, row["count"].as_i64().unwrap(), "{row}");
+            pairs += by_rule;
+        }
+        assert!(rows.iter().all(|v| v["kind"] == "pair"), "no part breaks a rule of its own here: {rows:?}");
+        assert_eq!(pairs, full_evaluate(&p, &poses).hard_count);
     }
 
     #[test]

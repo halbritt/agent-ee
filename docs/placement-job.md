@@ -657,6 +657,10 @@ rules, including stricter coupling limits, always remain in force.
    checks before routing.
    An `evaluate` request re-evaluates explicit pose vectors (predicted native pad
    positions, terms, violations) without searching.
+   A `pair` violation names the rules its two footprints break and how often
+   (`rules`: `body`, `copper`, `hole_copper`, `hole_hole`, `mask_web`), so a
+   rejected placement says which constraint rejects it; the counts add up to
+   the row's `count`.
    Pad copper uses KiCad's native `TransformShapeToPolygon`, `ERROR_OUTSIDE`,
    with a 1 µm curve tolerance. Circle, rectangle, oval/obround, roundrect and
    custom pads carry labelled `conservative_native_polygon` contours in the
