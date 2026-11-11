@@ -1034,8 +1034,10 @@ what it delivered is under "KRT's own procedure" below.
 
 Same prepared boards as before (hashes checked), 900 s budget, KiCad 10.0.8,
 kicad-route `f074b4a`, stock KRT `e6bc31e2`. The router change of AGENTEE-650
-(kicad-route `bcaaa31`) came after every run in the tables; what was measured
-with it is under "A net class with its own via size". KRT's default cells and
+(kicad-route `bcaaa31`) and the repair of AGENTEE-654 (kicad-route `51303e0`,
+agent-ee `ba8cd5c4`) came after every run in the tables; what was measured
+with them is under "A net class with its own via size" and the subsection
+after it. KRT's default cells and
 its placements are those of 2026-11-09 and were not rerun; its label step and
 its held routes were run on those placements on 2026-11-11. agent-ee "before" is
 `776030a9` (routing cells) and `13181913` or `094d6594` (placement cells);
@@ -1226,10 +1228,12 @@ prescribes when the project's rules are the user's own
   router, which stock KRT shares, and it is fixed since (AGENTEE-650): on
   both flat_hierarchy boards agent-ee's router now delivers every via at its
   class size with no open connection. Its job accepts the board in the
-  routing arm (72 s against 486 s) and in one of two runs of the placement
-  arm (540 s against 840 s). The other run failed on a starved thermal
-  relief, which the router before the change produces on the same placement
-  (AGENTEE-654). KRT's boards keep 12 of 13 such vias at 0.6 mm.
+  routing arm (72 s against 486 s) and in three of four runs of the placement
+  arm (412 to 540 s against 840 s). The run that failed came back with a
+  starved thermal relief, which the router before the change produces on the
+  same placement. The job's repair for that error did not run on a
+  through-hole board; it does now and clears two of the three placements
+  that had it (AGENTEE-654). KRT's boards keep 12 of 13 such vias at 0.6 mm.
 
 ### Routing arm (designer's placement, pours kept)
 
@@ -1565,9 +1569,7 @@ two runs were routed again with the router before the change:
 Both routers starve a thermal relief on the same three placements, and the
 same error appeared once before, in r10. The job has a repair for it, a
 second route with the spokes of the starved pad reserved, and that repair did
-not run. kicad-route's report of starved pads does not recognise a
-through-hole pad, and the job applies the repair only to pours it generated
-itself (AGENTEE-654, open).
+not run. Why, and what changed, is the next subsection.
 
 These job runs used the test image of the runs above with a clean checkout
 of `bcaaa31` mounted in place of the image's router; the job records that
@@ -1583,6 +1585,54 @@ class asks 0.8 mm and 0.4 mm. With the change both vias of that net have the
 class size and the run passes every check. In kicad-route's whole suite, run
 on the change and on the commit before it, that was the only test whose
 outcome differed.
+
+### A starved thermal relief on a through-hole board (AGENTEE-654)
+
+When new copper leaves a pad fewer spokes to its pour than the zone asks,
+KiCad reports `starved_thermal`, an error under flat_hierarchy's rules.
+agent-ee's job has a repair for it: it asks kicad-route which pads the new
+copper starved and routes the same unrouted placement again with the spoke
+corridors of those pads reserved. On flat_hierarchy that repair never ran,
+for two reasons.
+
+- kicad-route's report of starved pads took a finding's pad from the item
+  whose text starts with "Pad", which is how KiCad names a surface-mount pad.
+  A through-hole pad is "PTH pad 8 [GND] of P3". On a through-hole board the
+  report listed no pad, and the job had nothing to reserve. Fixed in
+  kicad-route `51303e0`.
+- The job ran its repairs only on pours it had generated itself. A board that
+  brings its own pours got none. The thermal retry starts again from the
+  unrouted input and changes no copper the board brought, so every job has it
+  now (`ba8cd5c4`). The other repair, which reroutes a net on the routed
+  board, stays limited to copper the job generated.
+
+The three placements above whose first route starved a ground pad were given
+to the job again, each with every part fixed:
+
+| Placement | Before (router `bcaaa31`) | After (router `51303e0`, job `ba8cd5c4`) |
+|---|---|---|
+| Run 1, first | route rejected, 0 / 1 | `completed` in 127 s: first route rejected, retry with the pad's two corridors reserved accepted. **0 / 0**, 39 vias, 1,349 mm |
+| Run 1, second | route rejected, 0 / 1 | `completed` in 137 s, the same way. **0 / 0**, 45 vias, 1,580 mm |
+| Run 2, first | route rejected, 0 / 1 | `verification_failed` in 413 s: no repair selected, 0 / 1 |
+
+The third is another case. Its pad keeps its spokes, but one of them lands on
+a piece of the pour that the routing cut off from the rest. No corridor is
+crossed, the report attributes the pad to no new copper, and the job has no
+pad to reserve (AGENTEE-655, open).
+
+The cells were then run again with both fixes. The routing cells are
+unchanged: flat_hierarchy `completed` in 75 s with the same board, tigard
+with fab rules in 63 s with the same copper as r12. The placement cell
+`completed` in both of two runs, in 412 s and 422 s, with no open connection,
+no new error, 49 and 48 vias and 1,741 and 1,667 mm of track. In both the
+first placement routed clean, so the repair was not needed there. Over the
+four runs of the placement cell since AGENTEE-650 that makes three completed
+and one failed. The failed one met a placement of the third kind first, which
+this fix does not repair.
+
+These runs used the same stand-in for the image as above, with kicad-route
+`51303e0` mounted as the router. Results are in
+`~/.local/share/agent-ee/standin650/`.
 
 ### What changed in the tool
 
@@ -1616,6 +1666,10 @@ outcome differed.
   its own class via, and a net that has one gets no pad escape at the
   Default size. It landed after the runs above; what it changes is under "A
   net class with its own via size".
+- AGENTEE-654 (kicad-route `51303e0`, agent-ee `ba8cd5c4`): the router's
+  report of starved pads lists through-hole pads, and the job's thermal
+  repair also runs on a board that brings its own pours. Under "A starved
+  thermal relief on a through-hole board".
 - AGENTEE-643 (`0c7df73e`, `8fd0db46`, `13181913`, `094d6594`, `60788324`,
   and `krt-judged` with this report): in the harness, the verdict, the stated
   fab rules, the "KRT held" cells of both arms, KRT's label step, and the
@@ -1623,6 +1677,10 @@ outcome differed.
 
 ### Tool defects this round exposed and did not fix
 
+- On one flat_hierarchy placement the routing cuts a piece of the ground pour
+  off from the rest and leaves a spoke of a ground pad on it. KiCad reports a
+  starved thermal relief, no spoke corridor is crossed, and the job's repair
+  has nothing to reserve (AGENTEE-655).
 - When the router needs all the remaining time the job ends `deadline`, and
   with no earlier trial it has no board to report (flat_hierarchy in run
   r10). A first trial keeps no time back for the router's stop grace and
@@ -1680,11 +1738,10 @@ Stock KRT's default cells and its placements are from 2026-11-09. KRT is its
 scripts run once, not the agent-driven procedure it documents (see "KRT's own
 procedure"). That procedure was run once, on one board, by one executor; on
 the other boards no figure here says what it would deliver. What is measured
-after AGENTEE-650 is two direct runs of the router and four runs of the job,
-two of them of the placement cell. KiCad's defaults are the rule set for
-three boards.
-The benchmark's groups and locks are mechanical: no engineer declared a rail,
-an edge part or a part that overhangs the outline.
+after AGENTEE-650 and 654 is one run each, except the placement cell of
+flat_hierarchy, which ran four times. KiCad's defaults are the rule set for
+three boards. The benchmark's groups and locks are mechanical: no engineer
+declared a rail, an edge part or a part that overhangs the outline.
 
 Every change of this section was found by studying these boards, and no board
 outside the set has been run since. Each is a general rule (what a sheet
