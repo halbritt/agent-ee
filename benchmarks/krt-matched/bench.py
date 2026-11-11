@@ -141,7 +141,10 @@ def lock_set(norm_board):
 
 
 def groups_for(board_path):
-    """One group per schematic sheet; anchor is the member with the most pads."""
+    """One group per schematic sheet; anchor is the member with the most pads.
+
+    The rows hold name, anchor and refs only: this is the file KRT's placer reads, and its
+    reader refuses a key it does not know (placement/grouping.py, GROUP_KEYS)."""
     import pcbnew
     board = pcbnew.LoadBoard(str(board_path))
     sheets = {}
@@ -154,6 +157,17 @@ def groups_for(board_path):
         groups.append({'name': f'g{index}_' + re.sub(r'\W+', '_', sheet).strip('_'),
                        'anchor': fps[0].GetReference(), 'refs': sorted(f.GetReference() for f in fps)})
     return {'schema': 1, 'groups': groups}
+
+
+def sheet_groups(groups):
+    """The groups file as agent-ee reads it: every row states that it was derived from a sheet.
+
+    groups_for builds its rows mechanically, so no engineer declared them. For agent-ee such
+    a group is membership context and applies no anchor pull (AGENTEE-637); the report of each
+    job says which groups pull. This is a second file: the one KRT reads is never given the key."""
+    if 'groups' not in groups:
+        return groups
+    return dict(groups, groups=[dict(row, origin='sheet') for row in groups['groups']])
 
 
 def intent_for(board_path):
@@ -401,7 +415,7 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
     board = inputs / Path(board_in).name
     shutil.copyfile(board_in, board)
     copy_rules(rules_board, board)
-    write_json(inputs / 'groups.json', groups)
+    write_json(inputs / 'groups.json', sheet_groups(groups))
     write_json(inputs / 'intent.json', intent_for(board))
     names = {'board': board.name, 'project': board.with_suffix('.kicad_pro').name,
              'intent': 'intent.json', 'groups': 'groups.json'}
@@ -436,6 +450,7 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
         # How the search used its time and which placement the job offers (AGENTEE-637).
         engine = report.get('engine') or {}
         record.update(job_search=report.get('search'), job_placement=report.get('placement'),
+                      job_groups=report.get('groups'),               # origin and anchor pull of each group
                       engine_budget=engine.get('budget'),
                       engine_seeds=[{k: row.get(k) for k in ('seed', 'status', 'limited_by', 'steps', 'steps_per_s',
                                                              'anneal_s', 'elapsed_s', 'feasible', 'best_cost',
