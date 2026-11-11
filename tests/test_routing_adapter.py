@@ -178,5 +178,23 @@ class BoardPairIntentTests(unittest.TestCase):
             self.assertEqual((unreadable['status'], unreadable['failure_kind']), ('missing_output', 'environment'))
 
 
+class SearchBudgetTests(unittest.TestCase):
+    def test_search_grace_and_checks_fit_the_share_and_one_more_second_would_not(self):
+        # kicad-route waits max(30, budget // 5) s for a clean stop, then 10 s and 5 s more.
+        self.assertEqual([routing_adapter.stop_grace_s(b) for b in (1, 149, 150, 155, 404)], [45, 45, 45, 46, 95])
+        for share in (106, 150, 195, 254, 255, 256, 300, 390, 560, 740, 900, 3600):
+            with self.subTest(share=share):
+                budget = routing_adapter.search_budget_s(share, 60)
+                self.assertGreaterEqual(budget, 1)
+                self.assertLessEqual(budget + routing_adapter.stop_grace_s(budget) + 60, share)
+                self.assertGreater(budget + 1 + routing_adapter.stop_grace_s(budget + 1) + 60, share)
+        self.assertEqual(routing_adapter.search_budget_s(560, 60), 404)
+
+    def test_a_share_without_room_for_a_search_says_so(self):
+        for share in (0, 60, 105):
+            with self.subTest(share=share):
+                self.assertLess(routing_adapter.search_budget_s(share, 60), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

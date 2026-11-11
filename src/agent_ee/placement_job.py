@@ -395,6 +395,52 @@ def router_grid(config, problem, *, after_failed_route):
     return None, 'router-default'
 
 
+# A second routing trial of a placement, on the router's other grid, must end inside the job's
+# time: the board of the first trial is already known, and a job cut off at its deadline would
+# lose it. Its search is therefore stopped early enough for the router's stop grace
+# (routing_adapter.search_budget_s) and for this allowance, the router's grading of its own
+# result plus the job's final checks. Measured on six boards of 21 to 94 footprints (the matched
+# benchmark of 2026-11-11): 21 to 25 s of grading and 3 to 10 s of final checks.
+ROUTE_CHECK_ALLOWANCE_S = 60
+
+
+def second_trial_useful(status, routed, final):
+    """Whether another routing search of the same placement can change a failed trial's outcome.
+
+    It can when the router ran out of search time, when its own grading rejected its board, or
+    when the final checks reject only what the routing made (``final['made_by']``): open
+    connections, errors and dangling tracks it introduced, and the checks that measure routed
+    copper. It cannot when the placement itself is rejected, because that stays the same."""
+    if status == 'route_failed':
+        return routed.get('status') == 'no_candidate'
+    if status != 'verification_failed':
+        return False
+    made_by = final.get('made_by') or {}
+    return not made_by.get('placement') and (routed.get('router_accepted') is False or bool(made_by.get('routing')))
+
+
+def other_grid(grid_step, grid_basis):
+    """The grid of a placement's second routing trial, or None when the plan declares the grid.
+
+    No one grid is better for every board: on the matched benchmark's fine-pitch boards the
+    0.025 mm grid left fewer connections open on three and added a pair of vias too close
+    together on a fourth, which the router's default grid routed clean."""
+    if grid_basis == 'declared':
+        return None
+    return (FINE_ROUTER_GRID_MM if grid_step is None else None), 'other-grid-after-failed-route'
+
+
+def trial_rank(final):
+    """Order of two failed routing trials of one placement; the smaller is the better board.
+
+    A checked board comes before none, then fewer open connections, then fewer errors the
+    routing introduced."""
+    if not isinstance(final, dict) or not isinstance(final.get('opens'), int):
+        return (1, 0, 0)
+    introduced = ((final.get('errors') or {}).get('routing_introduced') or {}).get('count', 0)
+    return (0, final['opens'], introduced)
+
+
 def check_mechanics(path, normalized, *, clock=None, cancel_dir=None):
     if 'mechanics' not in normalized:
         return {'status': 'not_declared'}
@@ -1822,12 +1868,18 @@ ROUTER_IDENTITY = ('commit', 'clean', 'code_sha256', 'code_files', 'executable_s
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
           bus=None, length_match=None, ac_match=None, local_decoupling=None,
-          defer_local_fallback=False, local_fallback_reason=None, diff_pairs=None):
+          defer_local_fallback=False, local_fallback_reason=None, diff_pairs=None, checks_s=None):
     """kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
     the CLI is invoked with the adapter's own argv shape and identity checks, on a
-    clean checkout whose commit the adapter preflight records."""
+    clean checkout whose commit the adapter preflight records.
+
+    ``budget_s`` is this trial's share of the job's time. Without ``checks_s`` the router
+    may search for all of it, and a search that does so is cut off with the job. With
+    ``checks_s`` the search gets only what leaves room for the router's stop grace and
+    that many seconds of checks afterwards (``routing_adapter.search_budget_s``), so the
+    trial ends inside its share."""
     from . import routing_adapter
     clock = clock or Clock(timeout_s)
     _check_stop(clock, cancel_dir)
@@ -1966,6 +2018,11 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     # The CLI accepts integral seconds. Refuse sub-second remainder rather than
     # inventing a minimum extension; the outer clock also bounds all descendants.
     remaining = min(budget_s - (time.monotonic() - started), clock.remaining())
+    if checks_s is not None:
+        remaining = routing_adapter.search_budget_s(remaining, checks_s)
+        if remaining < 1:
+            # A trial that keeps time for its checks ends in order when none is left for a search.
+            return {'status': 'no_time_for_search', 'preflight': check, 'elapsed_s': time.monotonic() - started}
     if remaining < 1:
         if planes is None:
             raise JobStopped('deadline')
@@ -1998,8 +2055,12 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             if route_clock.remaining() < 1:
                 break
             retry_dir = route_dir / ('repair-' + feedback['kind'])
+            repair_s = (route_clock.remaining() if checks_s is None
+                        else routing_adapter.search_budget_s(route_clock.remaining(), checks_s))
+            if repair_s < 1:
+                break
             retry, pads = routing_adapter.board_retry_argv(
-                argv, retry_dir, route_clock.remaining(), feedback, pads, record.get('board'))
+                argv, retry_dir, repair_s, feedback, pads, record.get('board'))
             attempts.append({'argv': retry, 'status': 'running'})
             record = _route_attempt(retry_dir, argv=retry, env=env,
                                     clock=route_clock, cancel_dir=cancel_dir)
@@ -2422,6 +2483,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 queue.append(entry)
                 seen.add(entry['board_sha256'])
     report['routing_trials'] = []
+    from . import routing_adapter
+    second_trials, first_results = [], {}
     def routing_candidates():
         index, repairs_tried = 0, False
         while True:
@@ -2446,6 +2509,20 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                             seen.add(entry['board_sha256'])
                     maximum = len(local_contract['relations']) if local_contract else 0
                     queue[index:] = sorted(queue[index:], key=lambda row: -row.get('generated_relation_count', maximum))
+            if index >= len(queue) and second_trials:
+                # Second trials use only the time the first trials left, in equal shares, and one
+                # starts only when its share lets the search run as long as the first trial took.
+                waiting = sorted(second_trials, key=lambda row: row['second_trial']['first_elapsed_s'])
+                second_trials.clear()
+                while waiting and routing_adapter.search_budget_s(clock.remaining() / len(waiting), ROUTE_CHECK_ALLOWANCE_S) < max(
+                        1., waiting[-1]['second_trial']['first_elapsed_s']):
+                    late = waiting.pop()
+                    report.setdefault('second_trials_not_started', []).append({
+                        'seed': late['seed'], 'board_sha256': late['board_sha256'],
+                        'first_trial': late['second_trial']['first_trial'],
+                        'grid_step_mm': late['second_trial']['grid_step_mm'],
+                        'reason': 'the job has less time left than the first trial took'})
+                queue.extend(waiting)
             if index >= len(queue):
                 return
             yield index, queue[index]
@@ -2474,11 +2551,15 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # policy, not an engineering relaxation; the outer deadline still wins.
         budget = clock.remaining() / (len(queue) - number)
         # A resumed job's retained trials count too. An interrupted first trial leaves none.
-        grid_step, grid_basis = router_grid(config, problem, after_failed_route=bool(number or state.get('routing_trials')))
+        second = selected.get('second_trial')
+        grid_step, grid_basis = ((second['grid_step_mm'], second['grid_basis']) if second else router_grid(
+            config, problem, after_failed_route=bool(number or state.get('routing_trials'))))
         trial = {'seed': selected['seed'], 'board_sha256': selected['board_sha256'],
                  'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
                  'budget_basis': 'agent-default/equal-remaining-share',
                  'grid_step_mm': grid_step, 'grid_basis': grid_basis}
+        if second:
+            trial.update(second_trial_of=second['first_trial'], checks_allowance_s=ROUTE_CHECK_ALLOWANCE_S)
         if 'original_router_budget_s' in selected:
             trial['original_router_budget_s'] = selected['original_router_budget_s']
             trial['deferral_budget_reduced'] = budget < selected['original_router_budget_s']
@@ -2531,7 +2612,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            intra_pair_match=matching, planes=plane_bytes, pair_layers=pair_layers, pair_impedance=impedance,
                            bus=bus, length_match=length_match, ac_match=ac_match, local_decoupling=local_contract,
                            defer_local_fallback=len(queue) > 1,
-                           local_fallback_reason=selected.get('local_fallback_reason'), diff_pairs=diff_pairs)
+                           local_fallback_reason=selected.get('local_fallback_reason'), diff_pairs=diff_pairs,
+                           checks_s=ROUTE_CHECK_ALLOWANCE_S if second else None)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             if routed.get('failure_kind') == 'environment':
                 trial.update(status=routed['status'], route=report['route'])
@@ -2598,6 +2680,19 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             write_json(tmp, {'placement': selected, 'trial': str(receipt), 'trial_sha256': digest(receipt)})
             os.replace(tmp, job_dir / 'routed-incumbent.json')
             break
+        reported = ('reason', 'final', 'route', 'route_selection', 'routed_candidate')
+        if second:
+            # Both trials of this placement failed: the job reports the better board of the two.
+            first = first_results[selected['board_sha256']]
+            if trial_rank(first['final']) <= trial_rank(report['final']):
+                status = first['status']
+                report.update({key: first[key] for key in reported})
+        elif (second_trial_useful(status, routed, report['final']) and selected['board_sha256'] not in first_results
+                and (other := other_grid(grid_step, grid_basis)) is not None):
+            first_results[selected['board_sha256']] = {'status': status, **{key: report[key] for key in reported}}
+            second_trials.append({**selected, 'second_trial': {
+                'first_trial': number + 1, 'first_elapsed_s': float(routed.get('elapsed_s') or 0.),
+                'grid_step_mm': other[0], 'grid_basis': other[1]}})
     _check_stop(clock, job_dir)
     report['placement'] = chosen_placement(job_dir, deadline_limited=search_limited)
     report['phases'] = clock.phases
@@ -3072,6 +3167,12 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
         ('AC matching', ac_result, 'status', ('PASS',))) if result is not None]
     rejections += [f'{name} check: {status}' for name, status, passing in declared if status not in passing]
     failed = bool(rejections)
+    # Which rejections the placement made and which the routing made: another routing search of the
+    # same placement can change only the second kind (second_trial_useful).
+    made_by = {'placement': bool(problems or split['placement_introduced'] or (reject_silk_graphics and silk_conflicts)
+                                 or any(status not in passing for _, status, passing in declared[:4])),
+               'routing': bool(report_['unconnected_items'] or split['routing_introduced'] or track_conflicts
+                               or any(status not in passing for _, status, passing in declared[4:]))}
     return {'status': 'checked', 'board': str(board), 'board_sha256': final_board_sha256,
             **({'local_stub_cleanup': local_stub_cleanup} if local_stub_cleanup is not None else {}),
             **({'local_decoupling': general_local_check} if general_local_check is not None else {}),
@@ -3082,7 +3183,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
             **({'length_matching': length_result} if length_result is not None else {}),
             **({'ac_matching': ac_result} if ac_result is not None else {}),
             'integrity': 'violated' if problems else 'preserved',
-            'eligibility': 'INELIGIBLE' if failed else 'eligible', 'rejections': rejections,
+            'eligibility': 'INELIGIBLE' if failed else 'eligible', 'rejections': rejections, 'made_by': made_by,
             'identity_problems': problems, 'rule_files': rule_files,
             'drc': exec_, 'opens': len(report_['unconnected_items']), 'silk_graphic_conflicts': silk_conflicts,
             **({'track_dangling_conflicts': track_conflicts} if reject_track_dangling else {}),

@@ -320,6 +320,26 @@ default left opens or dangling vias and 0.025 mm routed. The pinned CLI rejects
 non-finite, sub-nanometre or incompatible controls. Each entry in `routing_trials`
 records its `grid_step_mm` and `grid_basis`.
 
+No one grid is better on every board, so a placement whose routing trial fails
+for something the routing made gets one second trial on the other grid
+(0.025 mm after the router's default, the default after 0.025 mm; never against a
+declared `router.grid_step_mm`). That is: the router ran out of search time, its
+own grading rejected its board, or the final checks reject open connections,
+errors or dangling tracks the routing introduced, or a check of routed copper
+(`final.made_by.routing`). A trial whose placement is rejected
+(`final.made_by.placement`) gets none. Second trials start after every candidate has
+had its first trial and use only the time those left, in equal shares. One
+starts only when its share lets the search run as long as the first trial took;
+otherwise `second_trials_not_started` names it. A second trial keeps time back
+so that it ends inside the job: its search is cut by the router's stop grace
+(`max(30, budget // 5) + 15` s) and a 60 s allowance for the router's grading
+and the job's final checks, and its entry in `routing_trials` carries
+`second_trial_of` and `checks_allowance_s`. A first trial keeps nothing back,
+as before. A completed second trial completes the job. When both trials of a
+placement fail, the job reports the better board of the two: a checked board
+before none, then fewer open connections, then fewer errors the routing
+introduced; an equal second board does not replace the first (AGENTEE-645).
+
 Optional `router.diff_pairs` declares differential pairs. Its only value is
 `"auto"`, which passes `--diff-pairs auto`: kicad-route then pairs nets by name
 (`_P`/`_N`, `+`/`-`, or a final `P`/`N` when both nets exist), routes those pairs

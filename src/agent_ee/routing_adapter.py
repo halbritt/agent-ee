@@ -913,6 +913,28 @@ def router_env(env=None):
     return result
 
 
+def stop_grace_s(budget_s):
+    """The longest kicad-route lets its engine run past ``--budget`` before it grades the result.
+
+    At the budget it asks the engine to stop and waits max(30, budget // 5) s, then terminates it
+    (10 s) and kills it (5 s): kicad-route ``cli.run_budgeted`` and ``campaign.stop_grace``."""
+    return max(30, int(budget_s) // 5) + 15
+
+
+def search_budget_s(share_s, checks_s):
+    """The largest whole ``--budget`` whose search, stop grace and ``checks_s`` all fit in ``share_s``.
+
+    ``checks_s`` is the time kept for what follows the search: the router's own grading and
+    the caller's checks of the result. A value below 1 means ``share_s`` has no room for a search."""
+    room = share_s - checks_s
+    budget = int((room - 15) * 5 / 6)
+    if budget < 150:                        # up to 150 s the grace is its 30 s minimum
+        return min(int(room - 45), 149)
+    while budget + 1 + stop_grace_s(budget + 1) <= room:
+        budget += 1
+    return budget
+
+
 def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owned_copper=False, budget_s,
                      grid_step_mm=None, pair_layers=None, pair_impedance=None, intra_pair_match=None,
                      bus=None, length_match=None, ac_match=None, diff_pairs=None):

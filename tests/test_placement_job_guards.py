@@ -458,6 +458,95 @@ class ControllerBoundaryTests(Fixture):
                 self.assertEqual(json.loads((out / 'incumbent.json').read_text()), entry)
                 self.assertEqual(json.loads((out / 'job-report.json').read_text())['status'], report['status'])
 
+    def _second_trial(self, name, finals, *, remaining=900.0, elapsed=100.0, router=None):
+        """A job whose router returns a board every time and whose final checks return ``finals`` in turn."""
+        problem, _ = self.problem()
+        out = self.dir / name
+        config = {'budget_s': 900, 'inputs': {k: {} for k in ('board', 'project', 'intent', 'groups')},
+                  'search': {'shortlist': 1}, 'router': dict({'checkout': 'unused'}, **(router or {}))}
+        values = [(self.board, self.board.read_bytes()), (self.project, b'{}'),
+                  (self.board, json.dumps(intent()).encode()), (self.board, json.dumps(groups()).encode())]
+        entry = {'index': 0, 'seed': 0, 'board_sha256': 'fixture', 'errors': {}, 'engine_violations': [],
+                 'directory': str(self.dir), 'board': str(self.board)}
+        output = {'timing': {'prepare_s': 0}, 'status': 'completed', 'counters': {}, 'seeds': [], 'prng': 'probe',
+                  'shortlist': [{'seed': 0, 'cost': '1', 'poses': []}]}
+        def judged(*args, **kwargs):
+            (out / 'incumbent.json').write_text(json.dumps(entry))
+            return {'board': str(self.board), 'board_sha256': 'fixture', 'integrity': 'preserved', 'problems': []}
+        def routed(*args, **kwargs):
+            return {'status': 'routed', 'board': str(self.board), 'elapsed_s': elapsed,
+                    'preflight': {k: None for k in job.ROUTER_IDENTITY}}
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(job, 'verified_input', side_effect=lambda _entry, label:
+                dict(zip(('board', 'project', 'intent', 'groups'), values))[label]))
+            stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
+            stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
+            stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))
+            stack.enter_context(patch.object(job.Clock, 'remaining', side_effect=lambda: remaining))
+            stack.enter_context(patch.object(job, 'materialize', side_effect=judged))
+            stack.enter_context(patch.object(job, 'promote', return_value=False))
+            stack.enter_context(patch.object(job, 'retain_diagnostic', return_value=False))
+            stack.enter_context(patch.object(job, 'drc', return_value=({'violations': [], 'unconnected_items': []}, {})))
+            route = stack.enter_context(patch.object(job, 'route', side_effect=routed))
+            stack.enter_context(patch.object(job, 'final_checks', side_effect=list(finals)))
+            report = job.run_job(config, out)
+        self.assertEqual(json.loads((out / 'job-report.json').read_text())['status'], report['status'])
+        return report, route
+
+    @staticmethod
+    def _final(opens):
+        return {'integrity': 'preserved', 'edge_intent': {'status': 'pass'}, 'physical_checks': 'checked',
+                'eligibility': 'INELIGIBLE' if opens else 'eligible', 'opens': opens,
+                'rejections': [f'{opens} open connection(s)'] if opens else [],
+                'made_by': {'placement': False, 'routing': bool(opens)},
+                'errors': {'routing_introduced': {'count': 0, 'by_type': {}}}}
+
+    def test_a_failed_route_is_tried_once_more_on_the_other_grid(self):
+        # Matched benchmark, tigard with stated fab rules: the 0.025 mm grid left two vias of one net
+        # 0.1 mm apart and the job stopped there; the router's default grid routes that board clean.
+        report, route = self._second_trial('second-completes', [self._final(3), self._final(0)])
+        self.assertEqual(report['status'], 'completed')
+        self.assertNotIn('reason', report)
+        self.assertEqual([t['status'] for t in report['routing_trials']], ['verification_failed', 'completed'])
+        self.assertEqual([c.kwargs['grid_step_mm'] for c in route.call_args_list], [None, job.FINE_ROUTER_GRID_MM])
+        # Only the second trial keeps time back: the first board is already known by then.
+        self.assertEqual([c.kwargs['checks_s'] for c in route.call_args_list], [None, job.ROUTE_CHECK_ALLOWANCE_S])
+        second = report['routing_trials'][1]
+        self.assertEqual((second['grid_basis'], second['second_trial_of'], second['board_sha256']),
+                         ('other-grid-after-failed-route', 1, 'fixture'))
+        self.assertEqual(report['final']['opens'], 0)
+
+    def test_two_failed_trials_report_the_better_board(self):
+        for name, opens, kept in (('first-better', (3, 5), 3), ('second-better', (3, 1), 1), ('equal', (2, 2), 2)):
+            with self.subTest(name=name):
+                finals = [dict(self._final(opens[0]), trial='first'), dict(self._final(opens[1]), trial='second')]
+                report, route = self._second_trial(name, finals)
+                self.assertEqual(route.call_count, 2)
+                self.assertEqual(report['status'], 'verification_failed')
+                self.assertEqual(report['final']['opens'], kept)
+                # An equal second board does not replace the first.
+                self.assertEqual(report['final']['trial'], 'second' if name == 'second-better' else 'first')
+                self.assertEqual(report['reason'], f'{kept} open connection(s)')
+                self.assertEqual([t['final']['opens'] for t in report['routing_trials']], list(opens))
+                self.assertFalse((self.dir / name / 'routed-incumbent.json').exists())
+
+    def test_no_second_trial_without_the_time_or_against_a_declared_grid(self):
+        # 150 s left: a 60 s allowance and the router's 45 s stop grace leave a 45 s search,
+        # less than the 100 s the first trial took.
+        report, route = self._second_trial('no-time', [self._final(3)], remaining=150.0)
+        self.assertEqual((route.call_count, report['status'], report['final']['opens']), (1, 'verification_failed', 3))
+        self.assertEqual(report['second_trials_not_started'], [{
+            'seed': 0, 'board_sha256': 'fixture', 'first_trial': 1, 'grid_step_mm': job.FINE_ROUTER_GRID_MM,
+            'reason': 'the job has less time left than the first trial took'}])
+        report, route = self._second_trial('declared', [self._final(3)], router={'grid_step_mm': 0.1})
+        self.assertEqual((route.call_count, report['status']), (1, 'verification_failed'))
+        self.assertNotIn('second_trials_not_started', report)
+        # A rejected placement stays rejected whatever the router does next.
+        placement = dict(self._final(3), made_by={'placement': True, 'routing': True})
+        report, route = self._second_trial('placement-rejected', [placement])
+        self.assertEqual((route.call_count, report['status']), (1, 'verification_failed'))
+        self.assertNotIn('second_trials_not_started', report)
+
     def test_a_search_cut_short_by_its_time_still_yields_the_best_placement(self):
         # AGENTEE-637: the search's own deadline is not the job's. Candidates found so far are
         # checked and routed, and a job stopped later still names the placement it checked.

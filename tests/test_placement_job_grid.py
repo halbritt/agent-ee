@@ -28,6 +28,41 @@ class RouterGridTests(unittest.TestCase):
                 self.assertEqual(job.router_grid(config, board, after_failed_route=failed), expected)
 
 
+class SecondTrialTests(unittest.TestCase):
+    def test_other_grid_is_the_one_the_first_trial_did_not_use(self):
+        self.assertEqual(job.other_grid(None, 'router-default'), (.025, 'other-grid-after-failed-route'))
+        self.assertEqual(job.other_grid(.025, 'fine-pitch-pads'), (None, 'other-grid-after-failed-route'))
+        self.assertEqual(job.other_grid(.025, 'after-failed-route'), (None, 'other-grid-after-failed-route'))
+        self.assertIsNone(job.other_grid(.1, 'declared'))
+
+    def test_failed_trials_are_ranked_by_board_then_opens_then_introduced_errors(self):
+        def final(opens, introduced=0):
+            return dict(opens=opens, errors=dict(routing_introduced=dict(count=introduced)))
+        ordered = [final(0, 2), final(1), final(1, 3), final(4), dict(status='unavailable'), None]
+        ranks = [job.trial_rank(row) for row in ordered]
+        self.assertEqual(ranks, sorted(ranks))
+        self.assertEqual(len(set(ranks)), 5)            # no board at all ranks the same either way
+        self.assertEqual(job.trial_rank(dict(opens=2)), (0, 2, 0))
+
+    def test_second_trial_is_for_what_the_routing_made(self):
+        def final(placement, routing):
+            return dict(made_by=dict(placement=placement, routing=routing))
+        routed = dict(status='routed')
+        cases = [('verification_failed', routed, final(False, True), True),
+                 ('verification_failed', routed, final(True, True), False),      # the placement stays rejected
+                 ('verification_failed', routed, final(False, False), False),
+                 ('verification_failed', dict(routed, router_accepted=False), final(False, False), True),
+                 ('verification_failed', dict(routed, router_accepted=False), final(True, False), False),
+                 ('verification_failed', routed, {}, False),
+                 ('route_failed', dict(status='no_candidate'), dict(status='unavailable'), True),
+                 ('route_failed', dict(status='plane_failed'), dict(status='unavailable'), False),
+                 ('integrity_failed', routed, final(False, True), False),
+                 ('placement_infeasible', routed, final(False, True), False)]
+        for status, route, checks, expected in cases:
+            with self.subTest(status=status, route=route, checks=checks):
+                self.assertEqual(job.second_trial_useful(status, route, checks), expected)
+
+
 class SilkGraphicConflictTests(unittest.TestCase):
     def test_only_findings_that_name_no_field_make_a_board_ineligible(self):
         def finding(kind, *descriptions):
