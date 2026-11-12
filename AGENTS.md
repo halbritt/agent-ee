@@ -96,8 +96,11 @@ any of these claims unless the owner asks for one.
 ## Working here
 
 ```sh
+mise tasks ls                                        # host task entry points
+mise run test:unit -- test_<module>                  # focused module via host:exec (requires toolchain)
+mise run check                                       # docs + file-origins checks
 bin/agent-ee doctor                                  # toolchain on this host
-PYTHONPATH=src:tests /usr/bin/python3 -m unittest test_<module>   # one module
+PYTHONPATH=src:tests /usr/bin/python3 -m unittest test_<module>   # direct module run
 python3 scripts/check_docs.py                        # links and examples
 python3 scripts/check_origins.py                     # run after git add
 ```

@@ -651,6 +651,7 @@
         "docker/kicad-happy/",
         "docker/kicad-route/",
         "docker/ngspice/",
+        "mise.toml",
         "pyproject.toml",
         "profiles/",
         "skills/"

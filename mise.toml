@@ -1,0 +1,44 @@
+# Host-native task entry points wrapping agent-ee's existing unittest, pytest, and repository checks.
+# Tasks-only configuration: requires focused targets for unittest (never runs 0 tests or the 2h nightly suite by accident)
+# and sets AGENT_EE_REQUIRE_TOOLCHAIN=1 so missing native prerequisites fail instead of skipping.
+
+[tasks.test]
+description = "Run fast host smoke (docs, origins, doctor & native prerequisite checks; NOT the 2h nightly suite), or forward targets to test:unit"
+run = '''sh -eu -c '
+if [ "$#" -gt 0 ]; then
+  exec mise run test:unit -- "$@"
+fi
+mise run check
+exec mise run host:exec -- env AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests /usr/bin/python3 -m unittest test_doctor test_toolchain
+' sh'''
+
+[tasks."test:unit"]
+description = "Run focused unittest modules or test IDs on the host with native prerequisites required; pass targets after --"
+run = '''sh -eu -c '
+if [ "$#" -eq 0 ]; then
+  echo "error: specify focused unittest module(s), e.g.: mise run test:unit -- test_doctor (empty unittest runs 0 tests; full suite is ~2h nightly)" >&2
+  exit 2
+fi
+exec mise run host:exec -- env AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests /usr/bin/python3 -m unittest "$@"
+' sh'''
+
+[tasks."test:integration"]
+description = "Run host end-to-end checks under tests/e2e/ (or pass specific e2e files/pytest flags after --) with native prerequisites required"
+run = '''sh -eu -c '
+if [ "$#" -eq 0 ]; then
+  exec mise run host:exec -- env AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests /usr/bin/python3 -m pytest tests/e2e/
+fi
+exec mise run host:exec -- env AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests /usr/bin/python3 -m pytest "$@"
+' sh'''
+
+[tasks."check:docs"]
+description = "Check documentation links and JSON, Python, shell, and Mermaid code blocks"
+run = "mise run host:exec -- /usr/bin/python3 scripts/check_docs.py"
+
+[tasks."check:origins"]
+description = "Verify docs/file-origins.json classifies every tracked file"
+run = "mise run host:exec -- /usr/bin/python3 scripts/check_origins.py"
+
+[tasks.check]
+description = "Run documentation and file-origin checks"
+depends = ["check:docs", "check:origins"]
