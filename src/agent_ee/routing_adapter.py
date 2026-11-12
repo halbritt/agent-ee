@@ -982,6 +982,49 @@ def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owne
     return argv
 
 
+ROUTER_RECIPE = 'auto'
+
+
+def router_recipe(checkout):
+    """The search-cost recipe a job may try on its router, or None when that router has none.
+
+    kicad-route `run --recipe auto` (kicad-route 8a9488f, 2026-11-11) gives a two-layer board
+    equal layer costs and a via cost of 600 and leaves a board of more layers at the engine's own
+    costs. An older router does not know the option and refuses the whole command, so it is
+    offered only when the checkout's command line declares it."""
+    try:
+        declared = '"--recipe"' in (Path(checkout) / 'src/kicad_route/cli.py').read_text(errors='replace')
+    except OSError:
+        return None
+    return ROUTER_RECIPE if declared else None
+
+
+def copper_layer_count(board_path):
+    """Copper layers a board file declares in its layer table, or None when it cannot be read."""
+    try:
+        text = Path(board_path).read_text(errors='replace')
+    except OSError:
+        return None
+    table = re.search(r'\(layers\b(.*?)\n\t\)', text, re.S)
+    return len(re.findall(r'\(\d+ "[^"]+\.Cu" ', table.group(1))) if table else None
+
+
+def board_recipe_argv(argv, out_dir, budget_s, recipe):
+    """The command of a board route again from the same input, at a kicad-route cost recipe."""
+    again = list(argv)
+    again[again.index('--out') + 1] = str(out_dir)
+    again[again.index('--budget') + 1] = str(int(budget_s))
+    return again + ['--recipe', recipe]
+
+
+def new_via_count(record):
+    """Vias the router added in a bound attempt (routing.stats.new_vias of its result), or None."""
+    try:
+        return int(json.loads(Path(record['result_path']).read_bytes())['routing']['stats']['new_vias'])
+    except (KeyError, OSError, TypeError, ValueError):
+        return None
+
+
 def board_route_env(checkout, home):
     """Build the isolated subprocess environment for a board-level kicad-route run.
 

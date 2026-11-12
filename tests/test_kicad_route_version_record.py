@@ -313,6 +313,8 @@ class RouterCommandCacheTest(unittest.TestCase):
         'board_retry_argv': lambda: routing_adapter.board_retry_argv(
             routing_adapter.board_route_argv('/k', '/staged', '/out', budget_s=5), '/retry', 5,
             {'kind': 'thermal_corridors', 'pads': []}, [], '/b.kicad_pcb')[0],
+        'board_recipe_argv': lambda: routing_adapter.board_recipe_argv(
+            routing_adapter.board_route_argv('/k', '/staged', '/out', budget_s=5), '/again/out', 5, 'auto'),
         'spokes_argv': lambda: routing_adapter.spokes_argv('/k', '/run'),
         'preflight_stackup_argv': lambda: routing_adapter.preflight_stackup_argv('/k', '/b.kicad_pcb', 'F.Cu'),
         'preflight_delay_argv': lambda: routing_adapter.preflight_delay_argv('/k', '/b.kicad_pcb', ['N']),

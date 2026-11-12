@@ -1,5 +1,7 @@
 """Declared pair request and honest coverage, independent of routing completeness."""
+import json
 from pathlib import Path
+import tempfile
 import unittest
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
@@ -102,6 +104,49 @@ class PairCoverageTests(unittest.TestCase):
             extra.SetStart(k.VECTOR2I(start.x, start.y)); extra.SetEnd(k.VECTOR2I(start.x, start.y + 100000))
             board.Add(extra)
             self.assertFalse(route_coverage(board, 'CAN+')['complete'], 'multiple copper endpoints in a pad')
+
+
+class BoardRecipeTests(unittest.TestCase):
+    """What a job needs to try its router's via-saving costs on a board."""
+
+    def test_only_a_router_that_declares_the_option_has_a_recipe(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            self.assertIsNone(routing_adapter.router_recipe(root / 'absent'))
+            (root / 'src/kicad_route').mkdir(parents=True)
+            (root / 'src/kicad_route/cli.py').write_text('p.add_argument("--budget", type=int)\n')
+            self.assertIsNone(routing_adapter.router_recipe(root))
+            (root / 'src/kicad_route/cli.py').write_text(
+                'p.add_argument("--budget", type=int)\np.add_argument("--recipe", choices=["auto"])\n')
+            self.assertEqual(routing_adapter.router_recipe(root), 'auto')
+
+    def test_the_second_command_is_the_first_with_the_recipe_its_own_output_and_budget(self):
+        argv = routing_adapter.board_route_argv('/router', '/staged', '/out', budget_s=100, owned_copper=True)
+        again = routing_adapter.board_recipe_argv(argv, '/again/out', 41.9, 'auto')
+        self.assertEqual(again[-2:], ['--recipe', 'auto'])
+        self.assertEqual((again[again.index('--out') + 1], again[again.index('--budget') + 1]), ('/again/out', '41'))
+        self.assertEqual(again[again.index('--dir') + 1], '/staged')              # the same unrouted input
+        self.assertEqual(again[again.index('--protect') + 1], 'locked')           # and the same copper policy
+        self.assertNotIn('--recipe', argv)
+        self.assertEqual(argv[argv.index('--budget') + 1], '100')                 # the first command is not changed
+
+    def test_layer_count_and_new_vias_are_read_from_the_files(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            board = root / 'board.kicad_pcb'
+            board.write_text('(kicad_pcb\n\t(layers\n\t\t(0 "F.Cu" signal)\n\t\t(2 "B.Cu" signal)\n'
+                             '\t\t(9 "F.Adhes" user "F.Adhesive")\n\t)\n)\n')
+            self.assertEqual(routing_adapter.copper_layer_count(board), 2)
+            board.write_text(board.read_text().replace('(2 "B.Cu" signal)',
+                                                       '(4 "In1.Cu" signal)\n\t\t(6 "In2.Cu" power "GND")\n\t\t(2 "B.Cu" signal)'))
+            self.assertEqual(routing_adapter.copper_layer_count(board), 4)
+            self.assertIsNone(routing_adapter.copper_layer_count(root / 'absent.kicad_pcb'))
+            result = root / 'result.json'
+            result.write_text(json.dumps({'routing': {'stats': {'new_vias': 7}}}))
+            self.assertEqual(routing_adapter.new_via_count({'result_path': str(result)}), 7)
+            result.write_text('{}')
+            self.assertIsNone(routing_adapter.new_via_count({'result_path': str(result)}))
+            self.assertIsNone(routing_adapter.new_via_count({}))
 
 
 class BoardPairIntentTests(unittest.TestCase):

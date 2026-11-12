@@ -29,6 +29,64 @@ class RoutingFeedbackTests(Fixture):
             self.assertEqual(result['attempts'][0]['feedback']['recovery'], 'not_applied')
             self.assertFalse(result['router_accepted'])
 
+    def routed(self, name, vias, accepted=True):
+        """A router result on disk and the attempt record that binds it."""
+        path = self.dir / f'result-{name}.json'
+        write_json(path, {'routing': {'stats': {'new_vias': vias}}})
+        return {'status': 'routed', 'router_accepted': accepted, 'board': str(self.board), 'result_path': str(path)}
+
+    def route_twice(self, first, second, *, recipes=True, name='r'):
+        from tests.kicad_route_fixture import commit_all
+        checkout = make_checkout(self.dir / f'router-{name}', 'complete')[0]
+        if recipes:
+            (checkout / 'src/kicad_route/cli.py').write_text('p.add_argument("--recipe", choices=["auto"])\n')
+            commit_all(checkout, 'the router declares --recipe')
+        with patch.object(job, '_produce_planes', return_value={}), \
+                patch.object(job, '_route_feedback', return_value=None), \
+                patch.object(job, '_route_attempt', side_effect=[dict(first), dict(second)]) as run:
+            result = job.route(self.dir, self.dir / f'route-{name}', checkout, budget_s=100, timeout_s=100,
+                               home=self.dir / f'home-{name}', planes=b'{}')
+        return result, run
+
+    def test_an_accepted_two_layer_board_is_routed_again_and_the_fewer_vias_kept(self):
+        """The job routes as before; a board the router accepted is routed once more at the router's
+        via-saving costs, from the same input, and that board is the result when the router accepts
+        it too and it has fewer vias."""
+        result, run = self.route_twice(self.routed('first', 42), self.routed('second', 2))
+        self.assertEqual(run.call_count, 2)
+        first, second = (call.kwargs['argv'] for call in run.call_args_list)
+        self.assertNotIn('--recipe', first)
+        self.assertEqual(second[-2:], ['--recipe', 'auto'])
+        self.assertEqual(second[second.index('--dir') + 1], first[first.index('--dir') + 1])
+        self.assertTrue(result['result_path'].endswith('result-second.json'))
+        self.assertEqual(result['attempts'][1]['fewer_vias'],
+                         {'recipe': 'auto', 'kept': True, 'vias_before': 42, 'vias': 2})
+
+    def test_the_first_board_stays_unless_the_second_is_accepted_and_has_fewer_vias(self):
+        """On a two-layer board with a ground pour the via-saving costs left 2 vias for 42 and starved
+        three thermal reliefs: the router rejects that board and the job keeps the one it had."""
+        for name, second, reason in (
+                ('rejected', self.routed('s1', 2, accepted=False), 'the router did not accept this board'),
+                ('no-fewer', self.routed('s2', 42), 'no fewer vias'),
+                ('no-board', {'status': 'no_candidate'}, 'the router did not accept this board')):
+            with self.subTest(name):
+                result, run = self.route_twice(self.routed('f-' + name, 42), second, name=name)
+                self.assertEqual(run.call_count, 2)
+                self.assertTrue(result['result_path'].endswith(f'result-f-{name}.json'))
+                self.assertEqual(result['router_accepted'], True)
+                self.assertEqual(result['attempts'][1]['fewer_vias']['kept'], False)
+                self.assertEqual(result['attempts'][1]['fewer_vias']['reason'], reason)
+
+    def test_no_second_routing_without_something_to_gain(self):
+        """Not for a router that has no recipes, a board the router did not accept, or one without vias."""
+        for name, first, recipes in (('old-router', self.routed('o', 42), False),
+                                     ('rejected', self.routed('x', 42, accepted=False), True),
+                                     ('no-vias', self.routed('z', 0), True)):
+            with self.subTest(name):
+                result, run = self.route_twice(first, {'status': 'no_candidate'}, recipes=recipes, name='n-' + name)
+                self.assertEqual(run.call_count, 1)
+                self.assertEqual(len(result['attempts']), 1)
+
     def authored_track(self):
         """One authored track on the fixture board: the job then owns no copper."""
         import pcbnew

@@ -318,6 +318,22 @@ artwork cannot remove dangling copper. Other warnings retain their existing
 policy. The router may replace a one-layer joining via with track inside copper;
 this flag still rejects the remaining dangling-track case.
 
+A two-layer board that the router accepted, and that has vias, is routed once
+more from the same input with the router's via-saving costs (`kicad-route run
+--recipe auto`: both layers at one price, a via at 600). The second board is the
+result only when the router accepts it too and it has fewer vias; otherwise the
+first board stays, also when the time runs out. It is started only when the
+route's share has as much time left as the first routing took, and never on a
+router that does not declare the option. Each attempt in `route.attempts`
+records it under `fewer_vias` (`kept`, `vias_before`, `vias`, and the reason
+when the first board stayed). Measured with the job on two boards of the
+matched benchmark (2026-11-11, kicad-route 8a9488f): complex_hierarchy 14 vias
+to 0, kept; flat_hierarchy, whose back layer is a ground pour, 42 vias to 2 with
+three starved thermal reliefs, rejected by the router, so its 42-via board
+stays and the job completes as before (153 s instead of 106 s). The costs are
+not used for the first routing: on that board they make the job fail, and
+neither reserved spoke corridors nor other cost settings avoid it.
+
 Optional `router.grid_step_mm` selects the builtin router's search resolution
 in millimetres, including its coupled differential-pair and remaining-net
 passes. For example, `0.025` requests a 25 micrometre search grid. It does not

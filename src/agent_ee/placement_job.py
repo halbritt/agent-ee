@@ -2045,7 +2045,9 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         pair_impedance=pair_impedance, intra_pair_match=intra_pair_match,
         bus=bus, length_match=length_match, ac_match=ac_match, diff_pairs=diff_pairs)
     env = routing_adapter.board_route_env(checkout, home)
+    first_started = time.monotonic()
     record = _route_attempt(route_dir, argv=argv, env=env, clock=clock, cancel_dir=cancel_dir)
+    first_s = time.monotonic() - first_started
     attempts = [dict(record)]
     used, pads = set(), []
     # At most one retry for each demonstrated defect class, within the original
@@ -2088,6 +2090,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
             if attempts[-1].get('status') == 'running':
                 attempts[-1]['status'] = 'deadline'
             break
+    record = _fewer_vias(record, attempts, argv, route_dir, checkout, staged, env=env, first_s=first_s,
+                         checks_s=checks_s, route_clock=route_clock, clock=clock, cancel_dir=cancel_dir)
     record.update(attempts=attempts, elapsed_s=time.monotonic() - started, preflight=check,
                   copper_policy=('locked_local_copper_from_track_free_input' if owned_copper and local_record is not None and local_record['protected']
                                  else 'generated_from_track_free_input' if owned_copper else 'preserve_existing'))
@@ -2097,6 +2101,51 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         record['local_decoupling'] = local_record
         record['generated_relation_count'] = len(local_record['relations'])
     return record
+
+
+def _fewer_vias(record, attempts, argv, route_dir, checkout, staged, *, env, first_s, checks_s, route_clock,
+                clock, cancel_dir):
+    """Route an accepted two-layer board once more at the router's via-saving costs; keep the fewer vias.
+
+    kicad-route's two-layer recipe prices both layers alike and a via at 600. On five two-layer
+    boards of the router's lab that took the vias from 14, 2, 42, 19 and 138 to 0, 0, 3, 2 and 35.
+    It is not a setting to route with outright: on flat_hierarchy, whose back layer is a ground
+    pour, it left 2 vias where the engine's costs leave 42 and starved three thermal reliefs, and
+    neither reserved spoke corridors nor four other cost settings avoided that. So the board is
+    routed as before, and only a board the router accepted is routed again from the same input.
+    The second board replaces the first when the router accepts it too and it has fewer vias.
+    Anything else, also running out of time, leaves the first board as the result. It needs as
+    much time as the first routing took, and is not started when the route's share has less."""
+    from . import routing_adapter
+    recipe = routing_adapter.router_recipe(checkout)
+    vias = routing_adapter.new_via_count(record)
+    if (recipe is None or record.get('status') != 'routed' or record.get('router_accepted') is not True
+            or not vias or routing_adapter.copper_layer_count(Path(staged) / 'board.kicad_pcb') != 2):
+        return record
+    share = route_clock.remaining()
+    budget = share if checks_s is None else routing_adapter.search_budget_s(share, checks_s)
+    if budget < max(1, first_s):
+        attempts[-1]['fewer_vias'] = {'recipe': recipe, 'tried': False, 'reason': 'no time left for a second routing'}
+        return record
+    directory = route_dir / 'fewer-vias'
+    again = routing_adapter.board_recipe_argv(argv, directory / 'out', budget, recipe)
+    attempts.append({'argv': again, 'status': 'running'})
+    try:
+        second = _route_attempt(directory, argv=again, env=env, clock=route_clock, cancel_dir=cancel_dir)
+    except JobStopped as exc:
+        if exc.status != 'deadline' or clock.remaining() <= 0:
+            raise
+        attempts[-1].update(status='deadline', fewer_vias={'recipe': recipe, 'kept': False,
+                                                           'reason': 'the route ran out of time'})
+        return record
+    fewer = routing_adapter.new_via_count(second)
+    kept = (second.get('status') == 'routed' and second.get('router_accepted') is True
+            and fewer is not None and fewer < vias)
+    attempts[-1] = {**second, 'fewer_vias': {
+        'recipe': recipe, 'kept': kept, 'vias_before': vias, 'vias': fewer,
+        **({} if kept else {'reason': 'the router did not accept this board' if second.get('router_accepted') is not True
+                            else 'no fewer vias'})}}
+    return second if kept else record
 
 
 # ---------------------------------------------------------------- job
