@@ -917,7 +917,10 @@ def stop_grace_s(budget_s):
     """The longest kicad-route lets its engine run past ``--budget`` before it grades the result.
 
     At the budget it asks the engine to stop and waits max(30, budget // 5) s, then terminates it
-    (10 s) and kills it (5 s): kicad-route ``cli.run_budgeted`` and ``campaign.stop_grace``."""
+    (10 s) and kills it (5 s): kicad-route ``cli.run_budgeted`` and ``campaign.stop_grace``.
+    The passes the router runs after the engine, its closing rounds and its pour repair, take
+    their time from the budget and from what the engine left of that wait, and no more
+    (kicad-route 25a58a5; before it a pour repair could add ten minutes)."""
     return max(30, int(budget_s) // 5) + 15
 
 

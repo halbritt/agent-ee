@@ -1603,7 +1603,39 @@ def tool_env(layout):
             'GIT_CEILING_DIRECTORIES': f'{layout["candidate"]}:{staged_root(layout)}:{work}'}
 
 
-def expected_settings(request, rule_floor, pairs=None, reported=None):
+# The owned router chooses its own search grid when it is given none, and the adapter gives
+# none (kicad-route cfd6ef2, its docs/routing.md "Search grid and keep-outs"). The run counts
+# the board's connected pads on the 0.1 mm and on the 5 mil lattice and records the counts as
+# settings.grid_basis. When more than half of them sit on the 5 mil lattice, and more than on
+# the 0.1 mm one, it searches on 0.127 mm (settings.grid_step_mm) and reserves the board's
+# minimum of thermal spokes for every thermal pad (settings.reserve_spokes 0). A router from
+# before that change records none of the three.
+ROUTER_PAD_GRID_MM = 0.127
+GRID_BASIS_KEYS = ('pads', 'on_0.1', 'on_0.127')
+
+
+def router_grid_settings(settings):
+    """What a builtin run's settings say about the router's own search grid, as fixed settings.
+
+    {} when the run recorded no pad counts (a router without the rule; a grid step it records
+    all the same then differs from the fixed settings). Otherwise the keys the router's rule
+    gives for the recorded counts. None when the counts are not counts."""
+    if not isinstance(settings, dict) or 'grid_basis' not in settings:
+        return {}
+    basis = settings['grid_basis']
+    if (not isinstance(basis, dict) or set(basis) != set(GRID_BASIS_KEYS) or
+            not all(_is_int(basis[k]) and basis[k] >= 0 for k in GRID_BASIS_KEYS) or
+            max(basis['on_0.1'], basis['on_0.127']) > basis['pads']):
+        return None
+    if basis['on_0.127'] * 2 > basis['pads'] and basis['on_0.127'] > basis['on_0.1']:
+        return {'grid_basis': basis, 'grid_step_mm': ROUTER_PAD_GRID_MM, 'reserve_spokes': 0}
+    return {'grid_basis': basis}
+
+
+def expected_settings(request, rule_floor, pairs=None, reported=None, grid=None):
+    """The settings a run of this request records. rule_floor, pairs, reported and grid are
+    what the run itself derived and recorded (grid: router_grid_settings of its settings);
+    everything else is fixed by the adapter's own argv."""
     # The tool echoes the --backend it was given; a reported alias of the requested backend is that echo.
     backend = reported if canonical_backend(reported) == canonical_backend(request['backend']) else request['backend']
     settings = {'backend': backend, 'budget_s': request['budget_s'], 'protect': 'existing',
@@ -1621,6 +1653,8 @@ def expected_settings(request, rule_floor, pairs=None, reported=None):
         # KICADROUTE-91 (a0ed434 onward) records the declaration it loaded in the run
         # settings as common.sha256_of(policy): a different policy is a different attempt.
         settings['experiment_policy_sha256'] = experiment_policy_identity(request['experiment_policy'])['policy_sha256']
+    if grid and canonical_backend(request['backend']) == 'builtin':
+        settings.update(grid)
     return settings
 
 
@@ -1730,7 +1764,11 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
     floor = settings.get('rule_floor_sha256') if isinstance(settings, dict) else None
     pairs = settings.get('pairs') if isinstance(settings, dict) and paired else None
     reported = settings.get('backend') if isinstance(settings, dict) else None
-    if settings != expected_settings(request, floor, pairs, reported) or not (floor is None or isinstance(floor, str)):
+    grid = router_grid_settings(settings)
+    if grid is None:
+        return 'contradiction', ['result settings.grid_basis is not the pad counts of the router\'s grid rule']
+    if (settings != expected_settings(request, floor, pairs, reported, grid) or
+            not (floor is None or isinstance(floor, str))):
         return 'contradiction', ['result settings differ from the fixed adapter settings']
     if not discovered:
         return 'contradiction', ['result.json without exactly one attempt directory']

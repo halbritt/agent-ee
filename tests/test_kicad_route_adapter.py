@@ -334,6 +334,47 @@ class AdapterPolicyTest(unittest.TestCase):
                 self.assert_no_proposal(case, 'contradiction', attempt.EXIT_CONTRADICTION)
                 self.assertEqual(case.report['semantics']['coverage'], 'unknown')
 
+    def test_the_routers_own_search_grid_is_accepted_only_as_its_rule_gives_it(self):
+        # kicad-route cfd6ef2: a builtin run that is given no grid step records the pad counts it
+        # decided on, and on a board drawn in mils also the 0.127 mm step and the spoke
+        # reservation that goes with it. The adapter gives no step, so every real run has the counts.
+        metric = {'pads': 40, 'on_0.1': 31, 'on_0.127': 2}
+        mils = {'pads': 40, 'on_0.1': 3, 'on_0.127': 36}
+        half = {'pads': 40, 'on_0.1': 3, 'on_0.127': 20}
+        for grid in ({'grid_basis': metric}, {'grid_basis': half},
+                     {'grid_basis': mils, 'grid_step_mm': 0.127, 'reserve_spokes': 0}):
+            with self.subTest(accepted=grid):
+                case = self.case({'name': 'complete', 'grid_settings': grid}).run()
+                self.assertEqual(case.exit, 0, case.report['semantics'])
+                self.assertEqual(case.verify()['proposal'], 'eligible')
+                self.assertEqual(json.loads((case.work / 'routing/attempt/result.json').read_text())['settings'],
+                                 attempt.expected_settings(attempt.parse_request(REQUEST), None, grid=grid))
+        settings = 'result settings differ from the fixed adapter settings'
+        counts = "result settings.grid_basis is not the pad counts of the router's grid rule"
+        refused = (
+            ({'grid_step_mm': 0.127}, settings),                                            # a step without counts
+            ({'grid_basis': metric, 'grid_step_mm': 0.127, 'reserve_spokes': 0}, settings),   # the rule keeps 0.1 mm
+            ({'grid_basis': half, 'grid_step_mm': 0.127, 'reserve_spokes': 0}, settings),     # half is not most
+            ({'grid_basis': mils}, settings),                                               # the rule moves the grid
+            ({'grid_basis': mils, 'grid_step_mm': 0.127}, settings),                        # and reserves spokes
+            ({'grid_basis': mils, 'grid_step_mm': 0.05, 'reserve_spokes': 0}, settings),      # another step
+            ({'grid_basis': metric, 'reserve_spokes': 0}, settings),                        # a reservation alone
+            ({'grid_basis': {**metric, 'on_0.127': 41}}, counts),                           # more than all pads
+            ({'grid_basis': {'pads': 40}}, counts),
+            ({'grid_basis': {**metric, 'on_0.05': 0}}, counts),
+            ({'grid_basis': {**metric, 'pads': True}}, counts),
+            ({'grid_basis': {**metric, 'on_0.1': -1}}, counts),
+            ({'grid_basis': None}, counts))
+        for grid, reason in refused:
+            with self.subTest(refused=grid):
+                case = self.case({'name': 'complete', 'grid_settings': grid}).run()
+                self.assert_no_proposal(case, 'contradiction', attempt.EXIT_CONTRADICTION)
+                self.assertEqual(case.report['semantics']['reasons'], [reason])
+        # Only the owned router has the rule: another backend's settings never take the keys.
+        other = attempt.parse_request(REQUEST + ['--backend', 'freerouting'])
+        self.assertEqual(attempt.expected_settings(other, None, grid={'grid_basis': metric}),
+                         attempt.expected_settings(other, None))
+
     def sibling_case(self, siblings):
         """An input root with library directories and a top-level file beside the
         project, as the pod's."""
