@@ -96,19 +96,35 @@ any of these claims unless the owner asks for one.
 ## Working here
 
 ```sh
-mise tasks ls                                        # host task entry points
-mise run test:unit -- test_<module>                  # focused module via host:exec (requires toolchain)
-mise run check                                       # docs + file-origins checks
-bin/agent-ee doctor                                  # toolchain on this host
-PYTHONPATH=src:tests /usr/bin/python3 -m unittest test_<module>   # direct module run
-python3 scripts/check_docs.py                        # links and examples
-python3 scripts/check_origins.py                     # run after git add
+mise tasks ls                              # every test and check entry point, with what it runs
+mise run test:unit -- test_<module>        # one module or test ID on this host (toolchain required)
+mise run test:affected                     # after a commit: the modules the change needs, against origin/main
+mise run test:strict -- test_a test_b      # named modules, one process each; a skip fails
+mise run test:integration                  # the end-to-end tiers under tests/e2e/
+mise run test:engine                       # the Rust placement engine's own tests
+mise run test:image -- <command>           # in the CI image, for what this host lacks
+mise run check                             # docs, file origins (after git add), conflict markers
+mise run doctor                            # toolchain on this host
 ```
 
-Run the tests for what you changed. The full suite takes about two hours and
-runs nightly on the owner's host ([nightly suite](docs/nightly-full-suite.md));
-do not run it for an ordinary change. Use `git-wt create <slug>` for a
-worktree, land on `main`, and leave nothing unmerged.
+Each task wraps the repository's own command, which `mise tasks info <task>`
+shows and which still runs directly, for example
+`PYTHONPATH=src:tests /usr/bin/python3 -m unittest test_<module>`. The tasks add
+the host's admission and a deadline (the shared `host:exec`), and they require
+the toolchain instead of skipping. The strict runner asks the host for one unit
+of capacity per worker (`TEST_JOBS`, default 2), so on a busy host
+`TEST_JOBS=1 mise run test:affected` starts sooner. Exit 75 with
+`native-admit: not admitted` means the host was too busy to start the run, not
+that a test failed.
+
+Run the tests for what you changed. `test:affected` selects them with
+`scripts/lane_gate_planner.py`: the test modules the change touches, the tests
+of what depends on it, and the checks that scan the whole tree. It needs the
+change committed. The full suite takes about two hours and runs nightly on the
+owner's host ([nightly suite](docs/nightly-full-suite.md)); do not run it for
+an ordinary change. It has no task, and a change that selects all of it (the
+image's inputs) is refused by `test:affected` with the reason. Use
+`git-wt create <slug>` for a worktree, land on `main`, and leave nothing unmerged.
 
 Focused native tests can run directly on a host with compatible KiCad 10.x,
 `pcbnew`, ngspice, libraries and working Bubblewrap. Missing prerequisites skip

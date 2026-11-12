@@ -4,9 +4,13 @@
 This document describes the layout and runner of the end-to-end tests under `tests/e2e/`, written during the general-tool architecture work (`AGENTEE-571`..`577`, findings `F-01`..`F-04`, `F-09`). Most of them run on temporary directories and synthetic fixtures; they are not board runs and say nothing about board quality. The rest of the suite is under `tests/`, and the [nightly suite](docs/nightly-full-suite.md) runs all of it.
 
 ## Unified Test Runner
-The test suite can be run via pytest or the provided runner script:
+The test suite can be run via its mise task, pytest or the provided runner script:
 
 ```bash
+# Host task: admission, a deadline, and the native toolchain required instead of skipped
+mise run test:integration
+mise run test:integration -- tests/e2e/test_tier4_scenarios.py -v
+
 # Direct runner script
 ./tests/e2e/run_tests.sh
 

@@ -1,6 +1,16 @@
 # Host-native task entry points wrapping agent-ee's existing unittest, pytest, and repository checks.
 # Tasks-only configuration: requires focused targets for unittest (never runs 0 tests or the 2h nightly suite by accident)
 # and sets AGENT_EE_REQUIRE_TOOLCHAIN=1 so missing native prerequisites fail instead of skipping.
+#
+# Each task wraps a command the repository already documents (AGENTS.md, TEST_INFRA.md, docs/container.md):
+#   test:unit, test:affected, test:strict   unittest modules on this host
+#   test:integration                        the end-to-end tiers under tests/e2e/
+#   test:engine                             the Rust placement engine's own tests
+#   test:image                              a command in the CI image, for what this host lacks
+#   check, doctor                           repository checks and the toolchain report
+# The whole suite has no task. It runs nightly through scripts/nightly_full_suite.py, which does its own
+# admission, and one full suite at a time is the host's limit (docs/nightly-full-suite.md).
+# No test launches a real agent (the reviewer harness tests use scripted stand-ins), so there is no test:agent.
 
 [tasks.test]
 description = "Run fast host smoke (docs, origins, doctor & native prerequisite checks; NOT the 2h nightly suite), or forward targets to test:unit"
@@ -22,6 +32,64 @@ fi
 exec mise run host:exec -- env AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests /usr/bin/python3 -m unittest "$@"
 ' sh'''
 
+[tasks."test:affected"]
+description = "Run the tests a committed change needs: the lane planner's modules (touched tests, tests of what depends on the change, tree scanners) against a base ref, default origin/main"
+run = '''sh -eu -c '
+base="${1:-origin/main}"
+plan=$(/usr/bin/python3 scripts/lane_gate_planner.py --change-base "$base" --format json)
+modules=$(printf "%s" "$plan" | /usr/bin/python3 -c "
+import json, sys
+plan = json.load(sys.stdin)
+if plan[\"mode\"] == \"full\":
+    sys.exit(\"error: this change selects the whole suite (\" + plan[\"reasons\"][0] + \"); that is the nightly run, see docs/nightly-full-suite.md. Name modules with test:strict, or use test:image.\")
+print(\" \".join(plan[\"modules\"]))
+")
+count=$(printf "%s\n" $modules | grep -c . || true)
+echo "test:affected: $count module(s) against $base: $modules" >&2
+exec mise run test:strict -- $modules
+' sh'''
+
+[tasks."test:strict"]
+description = "Run named unittest modules with the strict runner: one process per module, --jobs N in parallel (default TEST_JOBS or 2; it is the host capacity the run asks for), and a skip fails; pass modules and its options after --"
+run = '''sh -eu -c '
+named=0
+jobs=""
+previous=""
+for word in "$@"; do
+  case "$word" in
+    --full|--change-base|--change-base=*)
+      echo "error: $word selects by change or the whole suite; use test:affected for a change, and the nightly for the suite (docs/nightly-full-suite.md)" >&2
+      exit 2 ;;
+    --jobs=*) jobs="${word#--jobs=}" ;;
+    test_*) named=$((named + 1)) ;;
+  esac
+  if [ "$previous" = "--jobs" ]; then jobs="$word"; fi
+  previous="$word"
+done
+if [ "$named" -eq 0 ]; then
+  echo "error: name the unittest module(s), e.g.: mise run test:strict -- test_doctor test_toolchain (without modules the runner takes all of tests/, the ~2h nightly suite)" >&2
+  exit 2
+fi
+if [ -z "$jobs" ]; then set -- --jobs "${TEST_JOBS:-2}" "$@"; fi
+exec mise run host:exec -- --timeout "${HOST_TEST_TIMEOUT:-60m}" -- env AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests /usr/bin/python3 scripts/strict_suite.py "$@"
+' sh'''
+
+[tasks."test:engine"]
+description = "Run the Rust placement engine's unit and regression tests (cargo test on crates/placement-engine); extra cargo test arguments after --"
+run = '''sh -eu -c '
+exec mise run host:exec -- --timeout "${HOST_TEST_TIMEOUT:-30m}" -- cargo test --locked --manifest-path crates/placement-engine/Cargo.toml "$@"
+' sh'''
+
+[tasks."test:image"]
+description = "Run a command in the CI image built from this checkout (ae-ci-exec, which does its own admission): for tests whose tools this host lacks; pass the command after --"
+run = '''sh -eu -c '
+if [ "$#" -eq 0 ]; then
+  echo "error: give the command to run in the image, e.g.: mise run test:image -- env PYTHONPATH=src:tests AGENT_EE_REQUIRE_TOOLCHAIN=1 python3 -m unittest test_doctor" >&2
+  exit 2
+fi
+exec ae-ci-exec . -- "$@"
+' sh'''
+
 [tasks."test:integration"]
 description = "Run host end-to-end checks under tests/e2e/ (or pass specific e2e files/pytest flags after --) with native prerequisites required"
 run = '''sh -eu -c '
@@ -39,6 +107,14 @@ run = "mise run host:exec -- /usr/bin/python3 scripts/check_docs.py"
 description = "Verify docs/file-origins.json classifies every tracked file"
 run = "mise run host:exec -- /usr/bin/python3 scripts/check_origins.py"
 
+[tasks."check:conflicts"]
+description = "Refuse committed merge-conflict markers anywhere in the tree"
+run = "scripts/check_conflict_markers.sh"
+
 [tasks.check]
-description = "Run documentation and file-origin checks"
-depends = ["check:docs", "check:origins"]
+description = "Run documentation, file-origin and conflict-marker checks"
+depends = ["check:docs", "check:origins", "check:conflicts"]
+
+[tasks.doctor]
+description = "Report the native toolchain agent-ee finds on this host (bin/agent-ee doctor); options after --"
+run = '''sh -eu -c 'exec bin/agent-ee doctor "$@"' sh'''

@@ -213,13 +213,14 @@ fresh review. See the [operator guide](docs/operator-guide.md),
 Development:
 
 ```sh
-# Run the 283-test 5-tier end-to-end test suite:
-./tests/e2e/run_tests.sh
-
-# Run unit tests and documentation checks:
-PYTHONPATH=src:tests pytest tests/
-python3 scripts/check_docs.py
+mise tasks ls                              # the test and check entry points
+mise run test:integration                  # the 5-tier end-to-end suite (tests/e2e/run_tests.sh)
+mise run test:unit -- test_doctor          # the unit tests for what you changed, by module
+mise run check                             # documentation, file origins, conflict markers
 ```
+
+The whole unit suite takes about two hours and runs nightly; see
+[AGENTS.md](AGENTS.md#working-here) for the other tasks and when to use each.
 
 See [TEST_INFRA.md](TEST_INFRA.md) for test tier breakdowns, runner options, and coverage mappings. See the [maintainer guide](docs/maintainer-guide.md), [security](docs/security.md)
 and the [enhancement roadmap](docs/enhancement-roadmap.md).
