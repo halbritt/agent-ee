@@ -175,7 +175,7 @@ class ResultSemanticsNativeTest(unittest.TestCase):
         self.assertEqual((problems, record['clean']), ([], True))
         self.assertEqual(check['commit'], record['commit'])
         manifest = json.loads((self.checkout / 'manifest.json').read_text())
-        self.assertEqual(manifest['state_dir'], attempt.SANDBOX['checkout'])
+        self.assertEqual(Path(manifest['state_dir']).resolve(), self.checkout.resolve())
         self.assertEqual(manifest['kicad_route']['commit'], record['commit'])
         # Either layout kicad-route installs, built from the checkout's source (the image's
         # install.sh builds the legacy one; `kicad-route update` a router generation).

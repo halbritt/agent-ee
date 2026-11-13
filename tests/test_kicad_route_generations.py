@@ -89,6 +89,7 @@ def derive_state(checkout, state, layout, *, copy_venv=False):
              extension_module={**k['extension_module'], 'path': f'{venv_rel}/{inside.as_posix()}'},
              requirements={**k['requirements'], 'path': f'{source_rel}/requirements.txt'},
              venv={**k['venv'], 'path': venv_rel})
+    manifest['freerouting'] = None
     (state / 'manifest.json').write_text(json.dumps(manifest))
     return manifest
 

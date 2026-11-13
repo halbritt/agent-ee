@@ -699,33 +699,14 @@ backend args and pour bound exactly as the declared layer policy implies).
 | — | the adapter's timeout or a cancellation (SIGTERM) | `timeout`, `cancelled` | none; the router's process group is killed | 75, 143 |
 | — | an unexpected fault in the adapter itself | no report | none; `verify()` refuses the attempt | 70 |
 
-Five settings are the run's own and are taken from its record: the rule floor
-digest, the pair plan, the spelling of the backend name, and the owned router's
-search grid and cost recipe. The adapter passes no `--recipe`. A router whose
-default is `auto` routes a two-layer board at its `two-layer` costs (both layers
-at one price, a via at 600) and records `settings.recipe`; a board of more
-layers, and every run of a router whose default is the engine's own costs,
-records none. `two-layer` is accepted as the router's choice; any other value is
-a recipe somebody asked for, which the adapter did not
-(`result settings.recipe is not a recipe the router chooses by itself`). The
-placement job routes an accepted two-layer board once more at that recipe to
-save vias; when the first routing recorded the recipe already it does not
-([placement job](placement-job.md)).
-
-The adapter passes no `--grid-step` either, so the router decides
-(kicad-route `cfd6ef2` onward, its `docs/routing.md`, "Search grid and keep-outs").
-It records how many connected pads sit on the 0.1 mm and on the 5 mil lattice as
-`settings.grid_basis` (`pads`, `on_0.1`, `on_0.127`). When more than half sit on
-the 5 mil lattice, and more than on the 0.1 mm one, it searches on 0.127 mm and
-reserves the board's minimum of thermal spokes for every thermal pad:
-`settings.grid_step_mm` is 0.127 and `settings.reserve_spokes` is 0. The adapter
-applies the same rule to the recorded counts. A run whose step or reservation is
-not what the rule gives for its counts differs from the fixed settings, and counts
-that are not three whole numbers with the two lattice counts at most `pads` have
-their own reason (`result settings.grid_basis is not the pad counts of the
-router's grid rule`). A router from before that change records none of the three
-keys and is accepted as before. The counts are the run's word about its input:
-the adapter does not recount the pads.
+The adapter verifies the settings its own CLI arguments control (`backend`,
+`budget_s`, `protect`, `mode`, `backend_args`, `backend_env`, declared
+`diff_pairs`, `layer_policy` and `experiment_policy` fields, and `rule_floor_sha256`),
+while allowing the builtin router to record its own derived search choices
+(such as `grid_basis`, `grid_step_mm`, `recipe`, and `reserve_spokes: 0`) without
+duplicating the router's internal heuristics in `agent-ee`. The placement job
+skips its second via-saving route on a two-layer board when the first routing
+already recorded `settings.recipe` ([placement job](placement-job.md)).
 
 kicad-route's own `overall_exit` returns 2 for any routing status other than
 COMPLETE after validation passes. The adapter accepts only INCOMPLETE. An

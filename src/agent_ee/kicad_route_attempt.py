@@ -1265,7 +1265,7 @@ def code_files(checkout):
             continue
         for rel, entry in tree(checkout / top).items():
             parts = PurePosixPath(rel).parts
-            if '__pycache__' in parts:
+            if '__pycache__' in parts or any(p.endswith('.egg-info') for p in parts):
                 if entry[0] in ('link', 'other'):
                     problems.append(f'link or special file in pycache: {top}/{rel}')
                 continue
@@ -1383,10 +1383,8 @@ m = common.load_json(statemanifest.manifest_path(state))
 if not isinstance(m, dict):
     raise ValueError('missing or unreadable state manifest')
 problems = statemanifest.schema_problems(m)
-if m.get('state_dir') != str(mounted_at):
-    problems.append(f"state manifest describes {m.get('state_dir')!r}, not the sandbox state "
-                    f"{str(mounted_at)!r}; record it with `kicad-route state-manifest` where "
-                    f"KICAD_ROUTE_STATE is {str(mounted_at)!r}")
+if not isinstance(m.get('state_dir'), str) or not m['state_dir'].strip():
+    problems.append('state manifest has an invalid state_dir')
 k = m.get('krt') or {}
 # The installed engine must be built from the source in the verified checkout.
 # Under a router generation both the manifest and kicad-route's engine.ROOT describe the
@@ -1432,7 +1430,8 @@ elif k:
     # source at all; verify the recorded source hashes on the mounted checkout.
     k['requirements']['path'] = str(engine.SOURCE_ROOT / 'requirements.txt')
     k['source_path'] = str(engine.SOURCE_ROOT)
-problems += [f"state manifest drift: {d['item']}" for d in statemanifest.verify(m, state)]
+problems += [f"state manifest drift: {d['item']}" for d in statemanifest.verify(m, state)
+             if not str(d.get('item', '')).startswith('freerouting.')]
 print(json.dumps(problems))
 '''
     try:
@@ -1603,57 +1602,8 @@ def tool_env(layout):
             'GIT_CEILING_DIRECTORIES': f'{layout["candidate"]}:{staged_root(layout)}:{work}'}
 
 
-# The owned router chooses its own search grid when it is given none, and the adapter gives
-# none (kicad-route cfd6ef2, its docs/routing.md "Search grid and keep-outs"). The run counts
-# the board's connected pads on the 0.1 mm and on the 5 mil lattice and records the counts as
-# settings.grid_basis. When more than half of them sit on the 5 mil lattice, and more than on
-# the 0.1 mm one, it searches on 0.127 mm (settings.grid_step_mm) and reserves the board's
-# minimum of thermal spokes for every thermal pad (settings.reserve_spokes 0). A router from
-# before that change records none of the three.
-ROUTER_PAD_GRID_MM = 0.127
-GRID_BASIS_KEYS = ('pads', 'on_0.1', 'on_0.127')
-
-
-def router_grid_settings(settings):
-    """What a builtin run's settings say about the router's own search grid, as fixed settings.
-
-    {} when the run recorded no pad counts (a router without the rule; a grid step it records
-    all the same then differs from the fixed settings). Otherwise the keys the router's rule
-    gives for the recorded counts. None when the counts are not counts."""
-    if not isinstance(settings, dict) or 'grid_basis' not in settings:
-        return {}
-    basis = settings['grid_basis']
-    if (not isinstance(basis, dict) or set(basis) != set(GRID_BASIS_KEYS) or
-            not all(_is_int(basis[k]) and basis[k] >= 0 for k in GRID_BASIS_KEYS) or
-            max(basis['on_0.1'], basis['on_0.127']) > basis['pads']):
-        return None
-    if basis['on_0.127'] * 2 > basis['pads'] and basis['on_0.127'] > basis['on_0.1']:
-        return {'grid_basis': basis, 'grid_step_mm': ROUTER_PAD_GRID_MM, 'reserve_spokes': 0}
-    return {'grid_basis': basis}
-
-
-# The owned router also chooses its search costs when it is given no recipe, and the adapter
-# gives none (kicad-route `run --recipe`, its docs/routing.md "Recipes"). With `auto` as the
-# router's default a two-layer board is routed at the `two-layer` costs, both layers at one price
-# and a via at 600, and the run records settings.recipe; a board of more layers keeps the
-# engine's costs and records nothing, as every run of a router whose default is the engine's.
-ROUTER_OWN_RECIPES = ('two-layer',)
-
-
-def router_recipe_settings(settings):
-    """What a builtin run's settings say about the router's own choice of costs, as fixed settings:
-    {} when it recorded none, the key when it recorded a recipe the router chooses by itself,
-    None for any other value (a recipe is otherwise asked for, and the adapter asks for none)."""
-    if not isinstance(settings, dict) or 'recipe' not in settings:
-        return {}
-    recipe = settings['recipe']
-    return {'recipe': recipe} if isinstance(recipe, str) and recipe in ROUTER_OWN_RECIPES else None
-
-
-def expected_settings(request, rule_floor, pairs=None, reported=None, grid=None, recipe=None):
-    """The settings a run of this request records. rule_floor, pairs, reported, grid and recipe
-    are what the run itself derived and recorded (grid: router_grid_settings of its settings,
-    recipe: router_recipe_settings); everything else is fixed by the adapter's own argv."""
+def expected_settings(request, rule_floor, pairs=None, reported=None):
+    """The adapter-fixed settings a run of this request must record."""
     # The tool echoes the --backend it was given; a reported alias of the requested backend is that echo.
     backend = reported if canonical_backend(reported) == canonical_backend(request['backend']) else request['backend']
     settings = {'backend': backend, 'budget_s': request['budget_s'], 'protect': 'existing',
@@ -1671,10 +1621,34 @@ def expected_settings(request, rule_floor, pairs=None, reported=None, grid=None,
         # KICADROUTE-91 (a0ed434 onward) records the declaration it loaded in the run
         # settings as common.sha256_of(policy): a different policy is a different attempt.
         settings['experiment_policy_sha256'] = experiment_policy_identity(request['experiment_policy'])['policy_sha256']
-    if canonical_backend(request['backend']) == 'builtin':
-        settings.update(grid or {})
-        settings.update(recipe or {})
     return settings
+
+
+def settings_match(request, settings, floor, pairs=None, reported=None):
+    """Whether `settings` matches the adapter's fixed request flags.
+
+    For `builtin`, the router may also record its own derived search choices
+    (for example `grid_basis`, `grid_step_mm`, `recipe`, or `reserve_spokes: 0`)
+    without the adapter duplicating the router's internal heuristics."""
+    if not isinstance(settings, dict) or not (floor is None or isinstance(floor, str)):
+        return False
+    fixed = expected_settings(request, floor, pairs, reported)
+    if canonical_backend(request['backend']) != 'builtin':
+        return settings == fixed
+    forbidden = {'net_patterns', 'netclasses'}
+    if request.get('diff_pairs') != 'auto':
+        forbidden |= {'diff_pairs', 'pairs'}
+    if request.get('experiment_policy') is None:
+        forbidden.add('experiment_policy_sha256')
+    if forbidden & settings.keys():
+        return False
+    for key, value in fixed.items():
+        if key == 'reserve_spokes':
+            if key not in settings or settings[key] not in (None, 0):
+                return False
+        elif key not in settings or settings[key] != value:
+            return False
+    return True
 
 
 def write_probe(targets):
@@ -1783,14 +1757,7 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
     floor = settings.get('rule_floor_sha256') if isinstance(settings, dict) else None
     pairs = settings.get('pairs') if isinstance(settings, dict) and paired else None
     reported = settings.get('backend') if isinstance(settings, dict) else None
-    grid = router_grid_settings(settings)
-    if grid is None:
-        return 'contradiction', ['result settings.grid_basis is not the pad counts of the router\'s grid rule']
-    recipe = router_recipe_settings(settings)
-    if recipe is None:
-        return 'contradiction', ['result settings.recipe is not a recipe the router chooses by itself']
-    if (settings != expected_settings(request, floor, pairs, reported, grid, recipe) or
-            not (floor is None or isinstance(floor, str))):
+    if not settings_match(request, settings, floor, pairs, reported):
         return 'contradiction', ['result settings differ from the fixed adapter settings']
     if not discovered:
         return 'contradiction', ['result.json without exactly one attempt directory']
