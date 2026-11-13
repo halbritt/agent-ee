@@ -134,6 +134,42 @@ Tests that use the Rust placement engine or external router also need current
 binaries; use the image when the host lacks those dependencies
 ([installation](docs/installation.md#rust-placement-engine)).
 
+Tests that route need `AGENT_EE_KICAD_ROUTE_CHECKOUT`, a clean kicad-route
+checkout whose state this process cannot write. The image has one at
+`/opt/kicad-route`, built from kicad-route's `main` when the image is built. A
+working checkout on the host does not qualify, so with the toolchain required
+such a test fails there with `AGENT_EE_KICAD_ROUTE_CHECKOUT is unset`: that is a
+missing prerequisite, not a failure of the code. Run those modules in the image:
+
+```sh
+mise run test:image -- python3 scripts/strict_suite.py --jobs=1 test_kicad_route_native
+```
+
+A few modules read receipts that are not in the repository
+(`test_routing_experiment_boundary`, the acquisition modules). The main checkout
+has copies under its ignored `build/`; a worktree has none, and the strict
+runner refuses the skips. Select the host's inputs as the nightly does, with a
+new directory outside the worktree for the runner's record
+([container](docs/container.md), "explicit input manifest"):
+
+```sh
+AE_CI_INPUT_MANIFEST=$HOME/.local/share/agent-ee/native-inputs/runtime/nightly-manifest.json \
+AE_CI_EVIDENCE_DIR=$HOME/.local/share/agent-ee/image-runs/$(date -u +%Y%m%dT%H%M%SZ) \
+  mise run test:image -- python3 scripts/strict_suite.py --jobs=1 test_routing_experiment_boundary
+```
+
+A change in kicad-route reaches these tests when the image is next built
+(`AE_CI_REFRESH_HOURS=0` builds it now). The adapter compares what a run records
+with what it asked for, so run them against a router change before that change
+lands ([routing adapter](docs/routing-adapter.md)).
+
+`test:image` mounts this checkout in the container; the tests run on the files
+as they are, not on a copy. While a run is using a checkout, do not edit it, land
+onto its branch or run Python in it on the host: a `.pyc` written under `src/`
+is a change the stage checks refuse (`live_package_source`). Use a second
+worktree for anything else. One strict suite runs on the host at a time; a
+second one waits for it.
+
 One implementer per change is enough. Ask for a second opinion when you are
 unsure about the engineering, not as a ritual.
 
