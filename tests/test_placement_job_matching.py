@@ -96,7 +96,13 @@ class MatchingJobTests(unittest.TestCase):
         self.assertEqual(report['status'], 'verification_failed', report)
         self.assertEqual(report['final']['opens'], 0)
         native = read_json(Path(report['final']['board']).parent / 'native-drc.json')
-        self.assertEqual({v['type'] for v in native['violations']}, {'skew_out_of_range'})
+        # Bumps of 1 mm cannot take up this skew inside 6 mm of uncoupled length. Which of the two
+        # limits the copper then breaks is the router's choice: the engine of kicad-route before
+        # its move onto upstream KRT stopped adding bumps and left the skew, the one since adds
+        # them and exceeds the uncoupled length. Nothing else may be wrong with the board.
+        found = {v['type'] for v in native['violations']}
+        self.assertTrue(found, native)
+        self.assertLessEqual(found, {'skew_out_of_range', 'diff_pair_uncoupled_length_too_long'})
         self.assertFalse((out / 'routed-incumbent.json').exists())
 
     def test_matching_config_rejects_missing_unknown_non_numeric_and_nonfinite_controls(self):

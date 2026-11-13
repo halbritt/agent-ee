@@ -49,23 +49,48 @@ class NativeCanPairTests(unittest.TestCase):
         self.assertTrue(next(c for c in read_json(self.out / 'positive/checks/can-routing.json')
                              ['details']['constraints'] if c['id'] == 'can-skew')['tool_load_witness'])
 
-    def test_single_ended_native_run_retains_explicit_limitation(self):
-        out = self.root / 'single-ended'
+    def single_ended(self, name, rules=None):
+        """Route the probe board without the pair request; rules replaces the gap rule first."""
+        out = self.root / name
         out.mkdir()
         candidate = out / 'candidate'
         probe.prepare(candidate)
+        if rules is not None:
+            path = candidate / 'project/can.kicad_dru'
+            path.write_text(rules(path.read_text()))
         summary = probe.route(candidate, out / 'route', self.checkout, pairs=False)
-        self.assertEqual(summary['proposal'], 'none')
-        self.assertEqual(summary['classification'], 'validation_failed')
+        report = read_json(out / 'route/run/routing/adapter-report.json')
+        native = read_json(out / 'route/run/routing/attempt/result.json')
+        self.assertNotIn('diff_pairs', report['request'])
+        self.assertEqual(native['routing']['status'], 'COMPLETE')
+        # Whatever KiCad says about the copper, nothing claims the pair was routed as a pair.
         self.assertEqual(summary['pair_coverage']['status'], 'unknown')
         self.assertIn('CAN pair routed single-ended', summary['pair_coverage']['limitations'])
-        report = read_json(out / 'route/run/routing/adapter-report.json')
-        self.assertEqual(report['semantics']['pair_coverage'], summary['pair_coverage'])
-        self.assertNotIn('diff_pairs', report['request'])
-        native = read_json(out / 'route/run/routing/attempt/result.json')
-        self.assertEqual(native['routing']['status'], 'COMPLETE')
-        self.assertTrue(any('diff_pair_gap' in reason for reason in report['semantics']['reasons']))
         self.assertFalse(summary['pair_coverage']['acceptance_ready'])
+        self.assertEqual(report['semantics']['pair_coverage'], summary['pair_coverage'])
+        return summary, report
+
+    def test_single_ended_native_run_retains_explicit_limitation(self):
+        # The pads are 0.6 mm apart and the class is 0.25 mm wide, so two straight tracks are
+        # 0.35 mm apart, the declared gap, and the board passes KiCad's rules. It is still a pair
+        # routed single-ended. (The project assigns the class by the patterns CAN\+ and CAN\-.
+        # Until kicad-route a646d34 the engine read a pattern as a glob, routed both nets at the
+        # Default 0.2 mm, 0.4 mm apart, and this test expected KiCad's finding for that.)
+        summary, report = self.single_ended('single-ended')
+        self.assertEqual((summary['classification'], summary['proposal']), ('complete', 'eligible'))
+        self.assertNotIn('Single-ended attempt did not produce an eligible board',
+                         summary['pair_coverage']['limitations'])
+
+    def test_single_ended_copper_outside_the_declared_gap_is_rejected(self):
+        # The same copper against a gap it does not have: KiCad's finding fails the router's own
+        # validation, and no board is proposed.
+        summary, report = self.single_ended('single-ended-gap', lambda text: text.replace(
+            '(min 0.34mm) (max 0.36mm)', '(min 0.19mm) (max 0.21mm)'))
+        self.assertEqual((summary['classification'], summary['proposal']), ('validation_failed', 'none'))
+        self.assertTrue(any('diff_pair_gap' in reason for reason in report['semantics']['reasons']),
+                        report['semantics']['reasons'])
+        self.assertIn('Single-ended attempt did not produce an eligible board',
+                      summary['pair_coverage']['limitations'])
 
 
 if __name__ == '__main__':
