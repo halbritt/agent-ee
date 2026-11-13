@@ -323,8 +323,10 @@ more from the same input with the router's via-saving costs (`kicad-route run
 --recipe auto`: both layers at one price, a via at 600). The second board is the
 result only when the router accepts it too and it has fewer vias; otherwise the
 first board stays, also when the time runs out. It is started only when the
-route's share has as much time left as the first routing took, and never on a
-router that does not declare the option. Each attempt in `route.attempts`
+route's share has as much time left as the first routing took, never on a
+router that does not declare the option, and not when the first routing recorded
+that recipe itself (`settings.recipe`: a router whose default is `auto` chose it
+for the board, and a second routing would be the same one). Each attempt in `route.attempts`
 records it under `fewer_vias` (`kept`, `vias_before`, `vias`, and the reason
 when the first board stayed). Measured with the job on two boards of the
 matched benchmark (2026-11-11, kicad-route 8a9488f): complex_hierarchy 14 vias

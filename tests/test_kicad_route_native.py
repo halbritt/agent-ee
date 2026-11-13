@@ -347,11 +347,14 @@ class NativeKicadRouteTest(unittest.TestCase):
         self.assertEqual(record['schema'], 'kicad-route/attempt/2')
         self.assertEqual(set(record), attempt.ATTEMPT_KEYS | {'pairs', 'pair_routing'})
         self.assertEqual((result['pairs'], record['pairs'], record['pair_routing']), ([], [], {}))
-        # The run records the pad counts it chose its search grid on (kicad-route cfd6ef2 onward).
+        # The run records the pad counts it chose its search grid on (kicad-route cfd6ef2 onward),
+        # and the cost recipe when the router chose one for this two-layer board.
         grid = attempt.router_grid_settings(result['settings'])
         self.assertIn('grid_basis', grid)
+        recipe = attempt.router_recipe_settings(result['settings'])
+        self.assertIn(recipe, ({}, {'recipe': 'two-layer'}))
         self.assertEqual(result['settings'], attempt.expected_settings(
-            {'backend': 'builtin', 'budget_s': 120, 'diff_pairs': 'auto'}, None, [], grid=grid))
+            {'backend': 'builtin', 'budget_s': 120, 'diff_pairs': 'auto'}, None, [], grid=grid, recipe=recipe))
         self.forge_validated_board(work)
         with self.assertRaisesRegex(ValueError, 'not the board the router validated'):
             routing_adapter.verify(work, receipt=receipt)

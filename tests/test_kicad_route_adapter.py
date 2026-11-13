@@ -375,6 +375,24 @@ class AdapterPolicyTest(unittest.TestCase):
         self.assertEqual(attempt.expected_settings(other, None, grid={'grid_basis': metric}),
                          attempt.expected_settings(other, None))
 
+    def test_the_routers_own_recipe_is_accepted_and_no_other(self):
+        # kicad-route with `auto` as its default routes a two-layer board at its two-layer costs and
+        # records that; the adapter asks for no recipe, so any other value is not the router's choice.
+        case = self.case({'name': 'complete', 'grid_settings': {'recipe': 'two-layer'}}).run()
+        self.assertEqual(case.exit, 0, case.report['semantics'])
+        self.assertEqual(case.verify()['proposal'], 'eligible')
+        self.assertEqual(json.loads((case.work / 'routing/attempt/result.json').read_text())['settings'],
+                         attempt.expected_settings(attempt.parse_request(REQUEST), None, recipe={'recipe': 'two-layer'}))
+        for recipe in ('two-layer-bus', 'default', 'auto', '', None, ['two-layer']):
+            with self.subTest(refused=recipe):
+                case = self.case({'name': 'complete', 'grid_settings': {'recipe': recipe}}).run()
+                self.assert_no_proposal(case, 'contradiction', attempt.EXIT_CONTRADICTION)
+                self.assertEqual(case.report['semantics']['reasons'],
+                                 ['result settings.recipe is not a recipe the router chooses by itself'])
+        other = attempt.parse_request(REQUEST + ['--backend', 'freerouting'])
+        self.assertEqual(attempt.expected_settings(other, None, recipe={'recipe': 'two-layer'}),
+                         attempt.expected_settings(other, None))
+
     def sibling_case(self, siblings):
         """An input root with library directories and a top-level file beside the
         project, as the pod's."""

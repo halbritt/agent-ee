@@ -112,8 +112,9 @@ settings = {'backend': opts['--backend'], 'budget_s': int(opts['--budget']), 'pr
             'pour_area_loss_pct': area_bound, 'pour_min_spokes': None, 'backend_args': backend_args,
             'backend_env': {'KICAD_X': '1'} if name == 'backend_env' else {}, 'reserve_spokes': None,
             'stall_s': None, 'barrier': None, 'mode': 'all', 'rule_floor_sha256': None}
-# As kicad-route cfd6ef2 onward: what a builtin run records about its own search grid
-# (grid_basis, and grid_step_mm with reserve_spokes on a board drawn in mils), when a scenario states it.
+# As kicad-route cfd6ef2 onward: what a builtin run records about its own choices, when a scenario
+# states it: the search grid (grid_basis, and grid_step_mm with reserve_spokes on a board drawn in
+# mils) and the cost recipe (recipe).
 settings.update(scenario.get('grid_settings', {}))
 if '--experiment-policy' in opts and scenario.get('settings_policy') != 'omit':
     # As kicad-route a0ed434 onward: the loaded declaration's common.sha256_of, in the run settings.

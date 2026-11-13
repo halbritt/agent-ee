@@ -29,10 +29,11 @@ class RoutingFeedbackTests(Fixture):
             self.assertEqual(result['attempts'][0]['feedback']['recovery'], 'not_applied')
             self.assertFalse(result['router_accepted'])
 
-    def routed(self, name, vias, accepted=True):
+    def routed(self, name, vias, accepted=True, recipe=None):
         """A router result on disk and the attempt record that binds it."""
         path = self.dir / f'result-{name}.json'
-        write_json(path, {'routing': {'stats': {'new_vias': vias}}})
+        write_json(path, {'routing': {'stats': {'new_vias': vias}},
+                          'settings': {} if recipe is None else {'recipe': recipe}})
         return {'status': 'routed', 'router_accepted': accepted, 'board': str(self.board), 'result_path': str(path)}
 
     def route_twice(self, first, second, *, recipes=True, name='r'):
@@ -86,6 +87,14 @@ class RoutingFeedbackTests(Fixture):
                 result, run = self.route_twice(first, {'status': 'no_candidate'}, recipes=recipes, name='n-' + name)
                 self.assertEqual(run.call_count, 1)
                 self.assertEqual(len(result['attempts']), 1)
+
+    def test_no_second_routing_when_the_router_chose_the_recipe_itself(self):
+        """A router whose default is `auto` routed the first board at the via-saving costs and says so."""
+        result, run = self.route_twice(self.routed('own', 42, recipe='two-layer'), {'status': 'no_candidate'}, name='own')
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(result['attempts'][0]['fewer_vias'], {
+            'recipe': 'auto', 'tried': False, 'reason': 'the router routed this board at its two-layer recipe already'})
+        self.assertTrue(result['result_path'].endswith('result-own.json'))
 
     def authored_track(self):
         """One authored track on the fixture board: the job then owns no copper."""

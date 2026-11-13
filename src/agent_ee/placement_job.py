@@ -2115,12 +2115,20 @@ def _fewer_vias(record, attempts, argv, route_dir, checkout, staged, *, env, fir
     routed as before, and only a board the router accepted is routed again from the same input.
     The second board replaces the first when the router accepts it too and it has fewer vias.
     Anything else, also running out of time, leaves the first board as the result. It needs as
-    much time as the first routing took, and is not started when the route's share has less."""
+    much time as the first routing took, and is not started when the route's share has less.
+
+    A router that chooses the recipe itself (kicad-route's `auto` as its default) has routed the
+    first board at those costs already and recorded it; a second routing would be the same one."""
     from . import routing_adapter
     recipe = routing_adapter.router_recipe(checkout)
     vias = routing_adapter.new_via_count(record)
     if (recipe is None or record.get('status') != 'routed' or record.get('router_accepted') is not True
             or not vias or routing_adapter.copper_layer_count(Path(staged) / 'board.kicad_pcb') != 2):
+        return record
+    used = routing_adapter.recorded_recipe(record)
+    if used is not None:
+        attempts[-1]['fewer_vias'] = {'recipe': recipe, 'tried': False,
+                                      'reason': f'the router routed this board at its {used} recipe already'}
         return record
     share = route_clock.remaining()
     budget = share if checks_s is None else routing_adapter.search_budget_s(share, checks_s)

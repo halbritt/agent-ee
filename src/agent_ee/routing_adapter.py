@@ -1020,6 +1020,18 @@ def board_recipe_argv(argv, out_dir, budget_s, recipe):
     return again + ['--recipe', recipe]
 
 
+def recorded_recipe(record):
+    """The cost recipe a bound attempt's run recorded (settings.recipe of its result), or None.
+
+    The router records one only when it is not the engine's own costs: asked for, or chosen by
+    the router itself for the board (kicad-route's default `auto` on a two-layer board)."""
+    try:
+        recipe = json.loads(Path(record['result_path']).read_bytes())['settings'].get('recipe')
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
+        return None
+    return recipe if isinstance(recipe, str) else None
+
+
 def new_via_count(record):
     """Vias the router added in a bound attempt (routing.stats.new_vias of its result), or None."""
     try:

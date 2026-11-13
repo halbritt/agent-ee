@@ -1632,10 +1632,28 @@ def router_grid_settings(settings):
     return {'grid_basis': basis}
 
 
-def expected_settings(request, rule_floor, pairs=None, reported=None, grid=None):
-    """The settings a run of this request records. rule_floor, pairs, reported and grid are
-    what the run itself derived and recorded (grid: router_grid_settings of its settings);
-    everything else is fixed by the adapter's own argv."""
+# The owned router also chooses its search costs when it is given no recipe, and the adapter
+# gives none (kicad-route `run --recipe`, its docs/routing.md "Recipes"). With `auto` as the
+# router's default a two-layer board is routed at the `two-layer` costs, both layers at one price
+# and a via at 600, and the run records settings.recipe; a board of more layers keeps the
+# engine's costs and records nothing, as every run of a router whose default is the engine's.
+ROUTER_OWN_RECIPES = ('two-layer',)
+
+
+def router_recipe_settings(settings):
+    """What a builtin run's settings say about the router's own choice of costs, as fixed settings:
+    {} when it recorded none, the key when it recorded a recipe the router chooses by itself,
+    None for any other value (a recipe is otherwise asked for, and the adapter asks for none)."""
+    if not isinstance(settings, dict) or 'recipe' not in settings:
+        return {}
+    recipe = settings['recipe']
+    return {'recipe': recipe} if isinstance(recipe, str) and recipe in ROUTER_OWN_RECIPES else None
+
+
+def expected_settings(request, rule_floor, pairs=None, reported=None, grid=None, recipe=None):
+    """The settings a run of this request records. rule_floor, pairs, reported, grid and recipe
+    are what the run itself derived and recorded (grid: router_grid_settings of its settings,
+    recipe: router_recipe_settings); everything else is fixed by the adapter's own argv."""
     # The tool echoes the --backend it was given; a reported alias of the requested backend is that echo.
     backend = reported if canonical_backend(reported) == canonical_backend(request['backend']) else request['backend']
     settings = {'backend': backend, 'budget_s': request['budget_s'], 'protect': 'existing',
@@ -1653,8 +1671,9 @@ def expected_settings(request, rule_floor, pairs=None, reported=None, grid=None)
         # KICADROUTE-91 (a0ed434 onward) records the declaration it loaded in the run
         # settings as common.sha256_of(policy): a different policy is a different attempt.
         settings['experiment_policy_sha256'] = experiment_policy_identity(request['experiment_policy'])['policy_sha256']
-    if grid and canonical_backend(request['backend']) == 'builtin':
-        settings.update(grid)
+    if canonical_backend(request['backend']) == 'builtin':
+        settings.update(grid or {})
+        settings.update(recipe or {})
     return settings
 
 
@@ -1767,7 +1786,10 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
     grid = router_grid_settings(settings)
     if grid is None:
         return 'contradiction', ['result settings.grid_basis is not the pad counts of the router\'s grid rule']
-    if (settings != expected_settings(request, floor, pairs, reported, grid) or
+    recipe = router_recipe_settings(settings)
+    if recipe is None:
+        return 'contradiction', ['result settings.recipe is not a recipe the router chooses by itself']
+    if (settings != expected_settings(request, floor, pairs, reported, grid, recipe) or
             not (floor is None or isinstance(floor, str))):
         return 'contradiction', ['result settings differ from the fixed adapter settings']
     if not discovered:
