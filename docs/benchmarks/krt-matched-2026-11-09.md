@@ -1855,7 +1855,7 @@ how far they carry.
 
 ### Tool defects this round exposed and did not fix
 
-- On `esp_prog`, a clearance error (0.17 mm vs 0.20 mm required) occurs between net +3.3V copper and pad polygon 2 of U2 under KiCad default rules.
+- On `esp_prog` and `esp_prog_fabrules`, a clearance error (0.0000 mm actual vs 0.2000 mm required under KiCad default rules; 0.1270 mm under stated fab rules) occurs where `Track [Net-(C1-Pad1)]` on `F.Cu` enters `U2` Pad 2 across `U2`'s overlapping `<no net>` `F.Cu` footprint polygon (alongside the inherited 0.0000 mm vs 0.0508 mm / 0.1270 mm clearance finding between `U2` Pad 2 and that same `<no net>` polygon).
 - On `tigard_fabrules` placement, 5 hole clearance errors occur around dense header pins when parts are clustered closely.
 - On `stickhub`, 2 connections remain unrouted due to dense routing corridors on 2-layer board despite achieving zero native DRC errors.
 
