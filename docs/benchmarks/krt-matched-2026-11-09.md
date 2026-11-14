@@ -1799,8 +1799,8 @@ how far they carry.
 | Item | Version |
 | --- | --- |
 | agent-ee | `86f0678d` (`main`) on all 8 `route` cells and `complex_hierarchy`, `flat_hierarchy`, `tigard_fabrules` `place` cells; `840131dd` (`86f0678d` + docs-only append, `src/` and `crates/` identical) on `esp_prog`, `esp_prog_fabrules`, `stickhub`, `tigard`, `esp32_devkit_lipo` `place` cells |
-| agent-ee CI image | `sha256:44654cf76e1e…` (`agent-ee:exec-cf21b01402d2508c`), invoked by `benchmarks/krt-matched/bench.py` via `ae-ci-exec`; KRT routing and native DRC scoring ran on the host (Ubuntu 26.04.1, Python 3.14.4) |
-| Placement engine | `crates/placement-engine 0.1.0` (`86f0678d`, exact OBB/SAT polygon collision, dynamic step scaling, silkscreen warning reservation) |
+| agent-ee CI image | `sha256:44654cf76e1e…` (`agent-ee:exec-cf21b01402d2508c`, Python 3.12.3, KiCad 10.0.8), invoked by `benchmarks/krt-matched/bench.py` via `ae-ci-exec`; host launcher, KRT routing, and native DRC scoring ran on Ubuntu 26.04.1 (Python 3.14.4, KiCad 10.0.8) |
+| Placement engine | `agent-ee-placement 0.1.0`, image binary sha256 `f3329dff970d…` (`86f0678d`, exact OBB/SAT polygon collision, dynamic step scaling, silkscreen warning reservation) |
 | kicad-route | `6171b0a2` (main), builtin backend "0.23.9" (upstream KRT `4d74f91a`, starved thermal isolated-island repair, structural inner plane layer routing) |
 | KiCad (host & CI) | `kicad-cli` 10.0.8, pcbnew 10.0.8 |
 
