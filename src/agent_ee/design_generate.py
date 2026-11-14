@@ -769,26 +769,22 @@ def router_checkout():
     raw = os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT')
     path = Path(raw) if raw else Path('/opt/kicad-route')
     if not path.is_dir() and not raw:
-        for candidate in (
-            Path(__file__).resolve().parents[2].parent / 'kicad-route',
-            Path('/home/halbritt/git/kicad-route'),
-        ):
+        repo_root = Path(__file__).resolve().parents[2]
+        candidates = [repo_root.parent / 'kicad-route']
+        dot_git = repo_root / '.git'
+        if dot_git.is_file():
+            try:
+                line = dot_git.read_text(encoding='utf-8').strip()
+                if line.startswith('gitdir:'):
+                    gitdir = Path(line.split(':', 1)[1].strip()).resolve()
+                    candidates.append(gitdir.parents[2].parent / 'kicad-route')
+            except OSError:
+                pass
+        for candidate in candidates:
             if (candidate / '.git').exists() or candidate.is_dir():
                 path = candidate
                 os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'] = str(path)
                 break
-        if not path.is_dir():
-            try:
-                res = subprocess.run(['git', 'rev-parse', '--git-common-dir'],
-                                     capture_output=True, text=True, timeout=5)
-                if res.returncode == 0:
-                    common_dir = Path(res.stdout.strip()).resolve()
-                    sibling = common_dir.parent.parent / 'kicad-route'
-                    if (sibling / '.git').exists() or sibling.is_dir():
-                        path = sibling
-                        os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'] = str(path)
-            except (OSError, subprocess.SubprocessError):
-                pass
     if not path.is_dir():
         return dict(path=str(path), error='no kicad-route checkout')
     try:
