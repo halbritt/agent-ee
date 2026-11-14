@@ -1866,3 +1866,12 @@ class RouterRefusalFeedbackTests(ScriptedLoop):
                 'seeds): ' + self.MESSAGE)
         self.assertIn(line, feedback)
         self.assertLess(feedback.index(line), feedback.index('Placement summary'))
+
+    def test_router_checkout_auto_discovery_and_environment(self):
+        with unittest.mock.patch.dict(os.environ, {}, clear=True):
+            rec = loop.router_checkout()
+            self.assertIn('path', rec)
+            if rec.get('error') is None:
+                self.assertIn('commit', rec)
+                self.assertTrue(os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT'))
+

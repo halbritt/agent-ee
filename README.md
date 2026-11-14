@@ -23,37 +23,49 @@ boards is measured in the
 "Result in brief" section is the current standing; it does not support a
 general claim that agent-ee is better.
 
-## Status at a glance (2026-11-03)
+## Status at a glance (2026-11-14)
 
-What works through the normal entrypoint, `agent-ee build run`:
+What works through the build entrypoint, `agent-ee build run`, and the synthesis entrypoint, `agent-ee design generate`:
 
 | Stage | What runs | Demonstrated on |
 | --- | --- | --- |
-| Requirements | Validates an authored spec, its byte-located requirement record and the requirement-to-check map; derives mechanical obligations from the board envelope | 17-part acquisition board |
-| Parts | Binds authored parts, captured datasheets, symbols and footprints to the authored circuit intent | acquisition board |
-| Scaffold | Creates the native project, board outline, stackup, rules and fixed connectors | acquisition board |
-| Schematic | Emits the native schematic from the circuit intent, runs ERC and forward-annotates footprints | acquisition board; 130-part emitter benchmark |
-| Placement and routing | Rust placement search over declared groups, fixed poses, locality and planes; routing by [kicad-route](docs/routing-adapter.md) at the commit each attempt records; native DRC and locality checks on the saved board | acquisition board; esp_prog (placement and routing only) |
-| Artwork | Moves silk reference fields off conflicts under a receipt | acquisition board |
-| Package | Checks-only review (ERC, DRC, parity, interval, SPICE, DFM, assembly readiness and others as mapped), then Gerber/drill/BOM/CPL export bound to the final board hash | acquisition board |
+| Requirements & Synthesis | `design generate` turns prose requirements (`REQUIREMENTS.md`) into an `agent-ee.design/1` statement with trace citations via a subscription author seat; `build run` validates an authored spec, its byte-located requirement record and requirement-to-check map | `design generate`: led-flasher, load-switch, rs485 (benchmark r5b); `build run`: 17-part acquisition board |
+| Parts | Binds authored/selected parts, captured datasheets, symbols and footprints to circuit intent; checks footprint DFM rules | acquisition board; generated r5b designs |
+| Scaffold | Creates native project, board outline, stackup, rules and fixed connectors | acquisition board; generated r5b designs |
+| Schematic | Emits native schematic from circuit intent, runs ERC and forward-annotates footprints | acquisition board; 130-part emitter benchmark; generated r5b designs |
+| Placement and routing | Rust placement search over declared groups, fixed poses, locality and planes; routing by [kicad-route](docs/routing-adapter.md) at the commit each attempt records; native DRC and locality checks on the saved board | acquisition board; generated r5b designs; esp_prog (placement and routing only) |
+| Artwork | Moves silk reference fields off conflicts under a receipt; places silkscreen labels | acquisition board; generated r5b designs |
+| Package | Checks-only review (ERC, DRC, parity, interval, SPICE, DFM, assembly readiness, copper width), then Gerber/drill/BOM/CPL export bound to final board hash | acquisition board; generated r5b designs |
 
-One real design has completed all seven stages to an accepted package: the
+One real pre-authored design has completed all seven stages to an accepted package: the
 17-part TPS7A20 + ADS1115 acquisition board, on 2026-10-24
-([acceptance map](docs/system-acceptance.md)). The run and its sealed copy are
-retained outside the tracked tree. No physical test or supplier preview has
-been performed on it. The esp_prog test board completes placement and routing
-through `agent-ee place run` with zero native DRC errors and zero open
-connections under its project rules; 258 warnings (silkscreen, text height,
-library mismatches) remain, so it is not a manufacturing-ready result.
+([acceptance map](docs/system-acceptance.md)). In autonomous requirements-to-board
+generation (`agent-ee design generate`), benchmark round r5b (2026-11-04) accepted
+three of five boards (`led-flasher`, `load-switch`, `rs485`) from natural-language
+requirements briefs; the two unaccepted boards (`current-monitor` and `usb-regulator`)
+exposed tool defects (unpaired differential net handling, and pre-existing footprint
+NPTH hole clearances) that were subsequently resolved in tooling. Subsequent
+engineering reviews of the accepted boards identified design omissions (such as
+unterminated bus failsafe bias and unbuffered off-board control inputs), which were
+mapped to general check rules rather than board-specific fixes.
 
-What the normal entrypoint does not do today:
+How placement and routing compare with stock KiCadRoutingTools on real boards is
+measured in the [matched benchmark](docs/benchmarks/krt-matched-2026-11-09.md):
+placing and routing on its own, agent-ee delivers 2 of 6 boards clean (and stock
+KRT delivers 1 of 6); routing the designer's placement, the two are level.
 
-- **It does not synthesize a design from prose.** The spec, the requirement
-  record, the requirement-to-check map, the parts manifest, the circuit
-  connectivity, the schematic layout, the board envelope, the placement intent,
-  the functional groups and the plane plan are JSON and Markdown inputs that an
-  agent or engineer authors before the build. The build validates and binds
-  them; it does not choose parts, draw circuits or decide placement intent.
+Current pipeline capabilities and limitations:
+
+- **Prose synthesis is provided by `agent-ee design generate`, not `build run`.**
+  `agent-ee build run` requires structured JSON and Markdown inputs authored before
+  the run. `agent-ee design generate` accepts prose requirements up to 32 KiB and
+  queries an LLM author seat (`codex:gpt-6.1-sol:high` or `agy`) to synthesize
+  `agent-ee.design/1` statements with quoted trace citations before compiling and
+  building the candidate.
+- **Build and routing times depend on search budgets.** Typical placement and
+  routing passes require several to tens of minutes depending on board density and
+  seed count; claims of "manufacturing-ready in under five minutes" do not describe
+  non-trivial boards.
 - **Functional-group and proximity intent are soft.** They steer the placement
   search as cost terms. Final acceptance checks declared pin locality, fixed
   connector edges, planes and native DRC; it does not check that every part
@@ -61,10 +73,14 @@ What the normal entrypoint does not do today:
 - **Engineering verification is as good as the authored map.** Only checks the
   map names are run; the mandatory set is ERC, DRC, netlist, geometry, parts
   membership, placement, envelope, fab profile, assembly readiness and package.
-- **Automated end-to-end testing.** The repository includes a 5-tier automated end-to-end test suite in `tests/e2e/run_tests.sh` (documented in [TEST_INFRA.md](TEST_INFRA.md)), covering stage harnesses, boundary cases, combinations of features, workflow scenarios on synthetic fixtures and failure modes. Complete 7-stage manufacturing package generation was demonstrated on the retained 17-part acquisition board run.
+- **Automated testing runs on the host.** Host-native tests run via `mise` with
+  Bubblewrap sandboxing; the full suite runs nightly on the host. Hosted CI
+  validates commit recency rather than running tests or building images. Sample
+  tables in documentation (such as the "21/25" PCBSchemaGen summary in the
+  benchmarking guide) illustrate schema output formats, not verified measurements.
 - **Independent AI review is not part of the build.** The package stage runs
-  checks only. The review and campaign commands provide reviewers and
-  adjudication for a captured candidate separately.
+  automated checks only. The review and campaign commands provide reviewers and
+  adjudication for a candidate separately.
 
 ## How a build works
 

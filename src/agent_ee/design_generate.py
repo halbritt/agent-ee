@@ -766,7 +766,29 @@ def router_checkout():
     uses AGENT_EE_KICAD_ROUTE_CHECKOUT, else the image's /opt/kicad-route; every routing attempt
     also records the checkout it ran in its own report."""
     from .kicad_route_attempt import checkout_record
-    path = Path(os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT') or '/opt/kicad-route')
+    raw = os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT')
+    path = Path(raw) if raw else Path('/opt/kicad-route')
+    if not path.is_dir() and not raw:
+        for candidate in (
+            Path(__file__).resolve().parents[2].parent / 'kicad-route',
+            Path('/home/halbritt/git/kicad-route'),
+        ):
+            if (candidate / '.git').exists() or candidate.is_dir():
+                path = candidate
+                os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'] = str(path)
+                break
+        if not path.is_dir():
+            try:
+                res = subprocess.run(['git', 'rev-parse', '--git-common-dir'],
+                                     capture_output=True, text=True, timeout=5)
+                if res.returncode == 0:
+                    common_dir = Path(res.stdout.strip()).resolve()
+                    sibling = common_dir.parent.parent / 'kicad-route'
+                    if (sibling / '.git').exists() or sibling.is_dir():
+                        path = sibling
+                        os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'] = str(path)
+            except (OSError, subprocess.SubprocessError):
+                pass
     if not path.is_dir():
         return dict(path=str(path), error='no kicad-route checkout')
     try:
