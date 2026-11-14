@@ -78,15 +78,15 @@ def rule_severities(board):
 def reserve(board):
     """How far capture grows reserved silk content and pad openings (nm), or None.
 
-    Capture reserves silk content only where the board's own project file makes
-    ``silk_overlap`` or ``silk_over_copper`` an error. KiCad's default for both is a
-    warning, so a project that does not name them reserves nothing (None). Otherwise
+    Capture reserves silk content where the board's own project file makes
+    ``silk_overlap`` or ``silk_over_copper`` an error or warning (AGENTEE-651).
+    A project that does not name them or that ignores them reserves nothing (None). Otherwise
     the answer is ``(silk, openings)``: pad openings grow by half the board's
     silkscreen clearance and silk content by that plus the board's curve approximation
     error, by which the openings native DRC tests can exceed the exact pad shapes. Two
     reservations that touch are then at least a whole clearance apart.
     """
-    if not any(rule_severities(board).get(kind) == 'error' for kind in RESERVING):
+    if not any(rule_severities(board).get(kind) in ('error', 'warning') for kind in RESERVING):
         return None
     settings = board.GetDesignSettings()
     half = (max(0, int(settings.m_SilkClearance)) + 1) // 2

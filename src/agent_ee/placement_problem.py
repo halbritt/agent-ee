@@ -270,8 +270,8 @@ def _document(board, *, fixed_poses, edges, groups, rails):
                **({'side': fp['side']} if fp.get('side') in ('F', 'B') else {}),
                'pose': {'x_nm': fp['position_nm'][0], 'y_nm': fp['position_nm'][1], 'quarter_turns': q,
                         **({'residual_deg': fp['residual_deg']} if fp.get('residual_deg') else {})},
-               'occupancy': ({k: v for k, v in occupancy.items() if k in ('status', 'label', 'rung')}
-                             | ({'local_rect_nm': fp['occupancy_local_nm']} if 'box' in occupancy else {})),
+               'occupancy': ({k: v for k, v in occupancy.items() if k in ('status', 'label', 'rung', 'geometry')}
+                             | ({'local_rect_nm': fp['occupancy_local_nm']} if 'box' in occupancy or 'geometry' in occupancy else {})),
                'copper_local_nm': fp['copper_local_nm'], 'mask_local_nm': fp['mask_local_nm'],
                'holes_local_nm': fp['holes_local_nm'], 'pads': fp['pads']}
         if 'mechanics' in board:

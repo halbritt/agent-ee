@@ -451,14 +451,14 @@ class NamedTests(unittest.TestCase):
 
 
 class ReserveTests(Boards):
-    def test_only_an_error_severity_in_the_boards_own_project_reserves(self):
+    def test_an_error_or_warning_severity_in_the_boards_own_project_reserves(self):
         import pcbnew as k
         self.build(lambda k, board: part(k, board, 'R101', 20 * MM, 15 * MM))
         cases = [({}, None), ({'board': {}}, None), ({'board': {'design_settings': {'rule_severities': {}}}}, None)]
         for a in ('error', 'warning', 'ignore'):
             for b in ('error', 'warning', 'ignore'):
                 project = {'board': {'design_settings': {'rule_severities': {'silk_overlap': a, 'silk_over_copper': b}}}}
-                cases.append((project, 'error' in (a, b)))
+                cases.append((project, any(s in ('error', 'warning') for s in (a, b))))
         cases.append(({'board': {'design_settings': {'rule_severities': {'silk_edge_clearance': 'error'}}}}, None))
         for project, reserves in cases:
             with self.subTest(project=project):
@@ -510,11 +510,11 @@ class CaptureTests(SilkBoard):
         return problem, {row['native_ref']: row for row in problem['footprints']}, \
             {row['native_ref']: row for row in record['footprints']}
 
-    def test_capture_is_the_same_where_silk_findings_are_not_errors(self):
+    def test_capture_is_the_same_where_silk_findings_are_not_errors_or_warnings(self):
         plain, rows, records = self.capture({})
         self.assertFalse([ref for ref in rows if ref.startswith('board-text:')])
         self.assertFalse([ref for ref, row in records.items() if 'silk-content' in row['occupancy'].get('sources', [])])
-        for severity in ('warning', 'ignore'):
+        for severity in ('ignore',):
             project = {'board': {'design_settings': {'rule_severities': {'silk_overlap': severity,
                                                                          'silk_over_copper': severity}}}}
             self.assertEqual(self.capture(project)[0], plain, severity)

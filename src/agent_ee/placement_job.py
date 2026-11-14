@@ -507,6 +507,45 @@ def _mask_graphic_bbox(graphic):
     return _grow(_bbox(graphic), margin)
 
 
+def _pad_mask(pad, origin, q):
+    """Conservative native solder-mask aperture contours, in the footprint's local frame."""
+    import pcbnew
+    from .placement_probe import _outer_contours
+    if not _on_mask(pad):
+        return None
+    if pad.Padstack().Mode() != pcbnew.PADSTACK.MODE_NORMAL:
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: per-layer padstack unsupported')
+    kinds = {pcbnew.PAD_SHAPE_CIRCLE: 'circle', pcbnew.PAD_SHAPE_RECT: 'rect',
+             pcbnew.PAD_SHAPE_OVAL: 'oval', pcbnew.PAD_SHAPE_ROUNDRECT: 'roundrect',
+             pcbnew.PAD_SHAPE_CUSTOM: 'custom'}
+    kind = kinds.get(pad.GetShape(pcbnew.PADSTACK.ALL_LAYERS))
+    if kind is None:
+        raise JobRefusal(f'{pad.m_Uuid.AsString()}: unsupported native pad shape')
+    contours, layers = [], []
+    expansion = _mask_expansion(pad)
+    for layer in (pcbnew.F_Mask, pcbnew.B_Mask):
+        if not pad.IsOnLayer(layer):
+            continue
+        poly = pcbnew.SHAPE_POLY_SET()
+        pad.TransformShapeToPolygon(poly, layer, expansion, 1000, pcbnew.ERROR_OUTSIDE)
+        native = _outer_contours(poly)
+        if not native:
+            continue
+        contours.extend([[list(_unrotate(x - origin[0], y - origin[1], q)) for x, y in p]
+                         for p in native])
+        layers.append(pcbnew.LayerName(layer))
+    if not contours:
+        return None
+    points = [p for contour in contours for p in contour]
+    return {'rect_nm': [min(p[0] for p in points), min(p[1] for p in points),
+                        max(p[0] for p in points), max(p[1] for p in points)],
+            'layers': layers,
+            'geometry': {'status': 'conservative_native_polygon', 'kind': kind,
+                         'tolerance_nm': 1000, 'polygons': contours,
+                         'layers': layers, 'pad_uuid': pad.m_Uuid.AsString(),
+                         'note': 'native ERROR_OUTSIDE; holes filled; layers projected together'}}
+
+
 def _union(boxes):
     return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
@@ -662,6 +701,7 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
     """
     import pcbnew
     from . import silk_labels
+    from .placement_probe import _outer_contours
     by_uuid = {f['uuid']: f for f in facts['footprints']}
     if len(by_uuid) != len(facts['footprints']):
         raise JobRefusal('duplicate native footprint UUID')
@@ -708,6 +748,54 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
                     box=_union([native['occupancy']['box'], *boxes]),
                     sources=[*native['occupancy'].get('sources', []), source])
         box = (native['occupancy'] or {}).get('box')
+        occupancy_local_nm = _local_rect(box, origin, q) if box else None
+        if native['occupancy'] is not None and box and residual:
+            polys = None
+            occ_kind = 'derived'
+            if native['occupancy'].get('rung') == 'courtyard' and captured['side'] in captured.get('courtyards', {}):
+                polys = [[list(_unrotate(x - origin[0], y - origin[1], q)) for x, y in poly]
+                         for poly in captured['courtyards'][captured['side']]['polygons']]
+                occ_kind = 'courtyard'
+            else:
+                angle_deg = fp.GetOrientation().AsDegrees()
+                rad_0 = -math.radians(angle_deg)
+                cos_0, sin_0 = math.cos(rad_0), math.sin(rad_0)
+                pts = []
+                for g in fp.GraphicalItems():
+                    if pcbnew.LayerName(g.GetLayer()) in (FAB[captured['side']], SILK_OF[captured['side']]) and g.GetClass() == 'PCB_SHAPE':
+                        poly = pcbnew.SHAPE_POLY_SET()
+                        g.TransformShapeToPolygon(poly, g.GetLayer(), 0, 1000, pcbnew.ERROR_OUTSIDE)
+                        for c in _outer_contours(poly):
+                            for x, y in c:
+                                gx_u = (x - origin[0]) * cos_0 - (y - origin[1]) * sin_0
+                                gy_u = (x - origin[0]) * sin_0 + (y - origin[1]) * cos_0
+                                pts.append((gx_u, gy_u))
+                for p in fp.Pads():
+                    p_pos = p.GetPosition()
+                    px_u = (p_pos.x - origin[0]) * cos_0 - (p_pos.y - origin[1]) * sin_0
+                    py_u = (p_pos.x - origin[0]) * sin_0 + (p_pos.y - origin[1]) * cos_0
+                    size = p.GetSize(pcbnew.PADSTACK.ALL_LAYERS)
+                    hx, hy = size.x / 2.0, size.y / 2.0
+                    for dx in (-hx, hx):
+                        for dy in (-hy, hy):
+                            pts.append((px_u + dx, py_u + dy))
+                if pts:
+                    x0, y0, x1, y1 = min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)
+                    rad_r = math.radians(residual)
+                    cos_r, sin_r = math.cos(rad_r), math.sin(rad_r)
+                    corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+                    obb_poly = [[int(round(x * cos_r - y * sin_r)), int(round(x * sin_r + y * cos_r))] for x, y in corners]
+                    polys = [obb_poly]
+            if polys:
+                all_pts = [pt for poly in polys for pt in poly]
+                occupancy_local_nm = [min(pt[0] for pt in all_pts), min(pt[1] for pt in all_pts),
+                                      max(pt[0] for pt in all_pts), max(pt[1] for pt in all_pts)]
+                native['occupancy'] = dict(native['occupancy'], geometry={
+                    'status': 'conservative_native_polygon',
+                    'kind': occ_kind,
+                    'tolerance_nm': 1000,
+                    'polygons': polys,
+                })
         footprints.append({
             'uuid': uuid, 'ref': captured['ref'], 'side': captured['side'], 'locked': captured['locked'],
             'position_nm': origin, 'rotation_deg': captured['rotation_deg'], 'quarter_turns': q,
@@ -716,13 +804,15 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
             'bodiless': native['bodiless'],
             'occupancy': native['occupancy'], 'occupancy_refusal': native['refusal'],
             'occupancy_diagnostics': native['diagnostics'],
-            'occupancy_local_nm': _local_rect(box, origin, q) if box else None,
+            'occupancy_local_nm': occupancy_local_nm,
             'classified_layers': native['classified_layers'],
             'copper_local_nm': [c for p in fp.Pads() if (c := _pad_copper(p, origin, q)) is not None]
                 + [{'rect_nm': _local_rect(_bbox(g), origin, q), 'clearance_nm': 0}
                    for g in fp.GraphicalItems() if pcbnew.LayerName(g.GetLayer()) in COPPER],
-            'mask_local_nm': [{'rect_nm': _local_rect(b, origin, q), 'layers': layers}
-                              for b, layers in zip(native['mask'], native['mask_layers'])],
+            'mask_local_nm': [m for p in fp.Pads() if (m := _pad_mask(p, origin, q)) is not None]
+                + [{'rect_nm': _local_rect(_mask_graphic_bbox(g), origin, q),
+                    'layers': [pcbnew.LayerName(g.GetLayer())]}
+                   for g in fp.GraphicalItems() if pcbnew.LayerName(g.GetLayer()) in ('F.Mask', 'B.Mask')],
             'holes_local_nm': [h for p in fp.Pads()
                                if (h := _pad_hole(p, origin, q, int(settings.m_HoleClearance))) is not None],
             'pads': [{'uuid': p.m_Uuid.AsString(), 'number': p.GetNumber(), 'net': p.GetNetname(),

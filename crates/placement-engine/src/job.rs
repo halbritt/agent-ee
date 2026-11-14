@@ -335,7 +335,7 @@ pub struct Footprint {
     pub role: Role,
     pub initial: Pose,
     pub rotations: Vec<i64>,
-    pub occupancy: Option<Rect>,
+    pub occupancy: Option<Copper>,
     pub occupancy_rung: Option<String>,
     pub source_body: Option<Rect>,
     pub access: Option<Rect>,
@@ -344,7 +344,7 @@ pub struct Footprint {
     pub holes: Vec<Copper>,
     /// Solder-mask apertures (pad box grown by its mask expansion, mask graphics), each with
     /// the mask layers it opens.
-    pub mask: Vec<(Rect, Layers)>,
+    pub mask: Vec<Copper>,
     /// Inferred routing space with the copper layers of its pads; soft preference only,
     /// never a hard owner rule.
     pub escape: Vec<(Rect, Layers)>,
@@ -376,15 +376,19 @@ fn rect_polygon(r: &Rect) -> Polygon {
 
 impl Copper {
     fn parse(value: &Value, default_clearance: i64) -> Result<Self> {
-        let bounds = Rect::parse(value.get("rect_nm").unwrap_or(value), "copper")?;
-        let clearance = if value.get("rect_nm").is_some() {
+        Self::parse_named(value, default_clearance, "copper")
+    }
+
+    fn parse_named(value: &Value, default_clearance: i64, name: &str) -> Result<Self> {
+        let bounds = Rect::parse(value.get("rect_nm").or_else(|| value.get("local_rect_nm")).unwrap_or(value), name)?;
+        let clearance = if value.get("clearance_nm").is_some() {
             int(value, "clearance_nm")?
         } else { default_clearance };
         ensure!(clearance >= 0, "negative copper clearance");
         let polygons = if let Some(g) = value.get("geometry") {
             contour_count(g)?;
             ensure!(g["status"] == "conservative_native_polygon", "unsupported copper geometry status");
-            ensure!(matches!(text(g, "kind")?, "circle" | "rect" | "oval" | "roundrect" | "custom" | "hole"),
+            ensure!(matches!(text(g, "kind")?, "circle" | "rect" | "oval" | "roundrect" | "custom" | "hole" | "courtyard" | "polygon" | "derived"),
                 "unsupported copper geometry kind");
             ensure!(int(g, "tolerance_nm")? == 1000, "unsupported copper polygon tolerance");
             let contours = g["polygons"].as_array().context("native copper polygons")?
@@ -847,7 +851,7 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
                 ensure!(OCCUPANCY_RUNGS.contains(&rung), "{}: unknown occupancy rung {rung:?}", uuids[i]);
                 ensure!(occ["label"] == "derived_occupancy" || rung == "courtyard",
                     "{}: derived occupancy must be labelled derived_occupancy", uuids[i]);
-                (Some(Rect::parse(&occ["local_rect_nm"], "occupancy")?), Some(rung.to_string()))
+                (Some(Copper::parse_named(occ, 0, "occupancy")?), Some(rung.to_string()))
             }
             Some("none") => (None, None),
             other => bail!("{}: occupancy status {other:?} refused", uuids[i]),
@@ -885,9 +889,10 @@ pub fn prepare(input: &Value) -> Result<Prepared> {
         ensure!(role != Role::SilkOnly || holes.is_empty(), "silk-only graphic carries holes");
         // A mask aperture is a box, or a box with the mask layers it opens.
         let mask = row.get("mask_local_nm").and_then(Value::as_array).cloned().unwrap_or_default()
-            .iter().map(|r| match r.get("rect_nm") {
-                Some(rect) => Ok((Rect::parse(rect, "mask")?, mask_layers.set(r.get("layers"), "mask")?)),
-                None => Ok((Rect::parse(r, "mask")?, EVERY_LAYER)),
+            .iter().map(|r| {
+                let mut item = Copper::parse_named(r, 0, "mask")?;
+                item.layers = mask_layers.set(r.get("layers"), "mask")?;
+                Ok(item)
             }).collect::<Result<Vec<_>>>()?;
         let escape = match row.get("escape_local_nm") {
             Some(v) => v.as_array().context("escape_local_nm")?.iter().map(|r| {
@@ -1292,11 +1297,23 @@ impl Terms {
 /// once; the exact contours are transformed only when a box test cannot decide
 /// (AGENTEE-637: most trial poses are rejected on boxes alone, and transforming
 /// every pad polygon of every neighbour dominated the step time).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CopperKind {
+    Copper,
+    Hole,
+    Body,
+    Mask,
+}
+
+/// One copper item, hole, body, or mask aperture of a footprint under a pose. The box is placed at
+/// once; the exact contours are transformed only when a box test cannot decide
+/// (AGENTEE-637: most trial poses are rejected on boxes alone, and transforming
+/// every pad polygon of every neighbour dominated the step time).
 #[derive(Clone, Debug)]
 struct PlacedCopper {
     footprint: usize,
     item: usize,
-    hole: bool,
+    kind: CopperKind,
     pose: Pose,
     bounds: Rect,
     clearance: i64,
@@ -1306,8 +1323,8 @@ struct PlacedCopper {
 }
 
 impl PlacedCopper {
-    fn new(footprint: usize, item: usize, hole: bool, local: &Copper, pose: &Pose) -> Self {
-        Self { footprint, item, hole, pose: *pose, bounds: place_rect(&local.bounds, pose),
+    fn new(footprint: usize, item: usize, kind: CopperKind, local: &Copper, pose: &Pose) -> Self {
+        Self { footprint, item, kind, pose: *pose, bounds: place_rect(&local.bounds, pose),
                clearance: local.clearance, layers: local.layers, native: local.polygons.is_some(),
                exact: std::cell::OnceCell::new() }
     }
@@ -1315,7 +1332,12 @@ impl PlacedCopper {
     fn exact(&self, p: &Prepared) -> &Copper {
         self.exact.get_or_init(|| {
             let fp = &p.footprints[self.footprint];
-            (if self.hole { &fp.holes[self.item] } else { &fp.copper[self.item] }).at(&self.pose)
+            match self.kind {
+                CopperKind::Copper => fp.copper[self.item].at(&self.pose),
+                CopperKind::Hole => fp.holes[self.item].at(&self.pose),
+                CopperKind::Body => fp.occupancy.as_ref().unwrap().at(&self.pose),
+                CopperKind::Mask => fp.mask[self.item].at(&self.pose),
+            }
         })
     }
 
@@ -1335,11 +1357,11 @@ impl PlacedCopper {
 
 #[derive(Clone, Debug)]
 struct Placed {
-    body: Option<Rect>,
+    body: Option<PlacedCopper>,
     edge_seat: Option<Rect>,
     copper: Vec<PlacedCopper>,
     holes: Vec<PlacedCopper>,
-    mask: Vec<(Rect, Layers)>,
+    mask: Vec<PlacedCopper>,
     escape: Vec<(Rect, Layers)>,
     sides: Layers,
     reach: Option<Rect>,
@@ -1347,21 +1369,22 @@ struct Placed {
 
 /// Body centre times two (the group term needs nothing else of a placed part).
 fn body_centre2(p: &Prepared, f: usize, pose: &Pose) -> (i64, i64) {
-    p.footprints[f].occupancy.map(|r| place_rect(&r, pose).center2()).unwrap_or((2 * pose.x, 2 * pose.y))
+    p.footprints[f].occupancy.as_ref().map(|c| place_rect(&c.bounds, pose).center2()).unwrap_or((2 * pose.x, 2 * pose.y))
 }
 
 fn placed(p: &Prepared, f: usize, pose: &Pose) -> Placed {
     let fp = &p.footprints[f];
-    let body = fp.occupancy.map(|r| place_rect(&r, pose));
-    let edge_seat = fp.edge.as_ref().and_then(|e| e.seat).map(|r| place_rect(&r, pose)).or(body);
-    let copper: Vec<PlacedCopper> = fp.copper.iter().enumerate().map(|(i, c)| PlacedCopper::new(f, i, false, c, pose)).collect();
-    let holes: Vec<PlacedCopper> = fp.holes.iter().enumerate().map(|(i, c)| PlacedCopper::new(f, i, true, c, pose)).collect();
-    let mask: Vec<(Rect, Layers)> = fp.mask.iter().map(|(r, layers)| (place_rect(r, pose), *layers)).collect();
+    let body = fp.occupancy.as_ref().map(|c| PlacedCopper::new(f, 0, CopperKind::Body, c, pose));
+    let edge_seat = fp.edge.as_ref().and_then(|e| e.seat).map(|r| place_rect(&r, pose))
+        .or_else(|| body.as_ref().map(|b| b.bounds));
+    let copper: Vec<PlacedCopper> = fp.copper.iter().enumerate().map(|(i, c)| PlacedCopper::new(f, i, CopperKind::Copper, c, pose)).collect();
+    let holes: Vec<PlacedCopper> = fp.holes.iter().enumerate().map(|(i, c)| PlacedCopper::new(f, i, CopperKind::Hole, c, pose)).collect();
+    let mask: Vec<PlacedCopper> = fp.mask.iter().enumerate().map(|(i, c)| PlacedCopper::new(f, i, CopperKind::Mask, c, pose)).collect();
     let escape: Vec<(Rect, Layers)> = fp.escape.iter().map(|(r, layers)| (place_rect(r, pose), *layers)).collect();
-    let mut reach = body;
+    let mut reach = body.as_ref().map(|b| b.bounds);
     for g in copper.iter().map(|c| c.bounds.grown(c.clearance))
         .chain(holes.iter().map(|h| h.bounds.grown(h.clearance.max(p.hole_to_hole_nm))))
-        .chain(mask.iter().map(|(m, _)| m.grown(p.mask_web_nm)))
+        .chain(mask.iter().map(|m| m.bounds.grown(p.mask_web_nm)))
         .chain(escape.iter().map(|(e, _)| *e)) {
         reach = Some(reach.map_or(g, |r| r.union(&g)));
     }
@@ -1483,7 +1506,7 @@ fn pair_checks(p: &Prepared, a: &Placed, b: &Placed) -> PairChecks {
     }
     if a.sides & b.sides != 0 {
         if let (Some(x), Some(y)) = (&a.body, &b.body) {
-            found(&mut c.body, x.overlap(y));
+            found(&mut c.body, x.overlap_at_clearance(p, y, 0));
         }
     } else {
         // Parts on opposite sides may share board area, but no body sits over a hole of the
@@ -1491,7 +1514,7 @@ fn pair_checks(p: &Prepared, a: &Placed, b: &Placed) -> PairChecks {
         for (body, holes) in [(&a.body, &b.holes), (&b.body, &a.holes)] {
             if let Some(body) = body {
                 for hole in holes {
-                    found(&mut c.body_hole, body.overlap(&hole.bounds));
+                    found(&mut c.body_hole, body.overlap_at_clearance(p, hole, 0));
                 }
             }
         }
@@ -1519,11 +1542,10 @@ fn pair_checks(p: &Prepared, a: &Placed, b: &Placed) -> PairChecks {
         }
     }
     // Mask apertures of different footprints keep the native minimum web on a mask layer both open.
-    for (ma, la) in &a.mask {
-        let g = ma.grown(p.mask_web_nm);
-        for (mb, lb) in &b.mask {
-            if la & lb != 0 {
-                found(&mut c.mask_web, g.overlap(mb));
+    for ma in &a.mask {
+        for mb in &b.mask {
+            if ma.layers & mb.layers != 0 {
+                found(&mut c.mask_web, ma.overlap_at_clearance(p, mb, p.mask_web_nm));
             }
         }
     }
@@ -1563,15 +1585,15 @@ fn unary_terms(p: &Prepared, f: usize, at: &Placed) -> Terms {
     }
     if let Some(body) = &at.body {
         let allowed = p.footprints[f].edge.as_ref().map(|e| e.occupancy_outline(&p.outline)).unwrap_or(p.outline);
-        let o = p.body_outside(body, &allowed);
+        let o = p.body_outside(&body.bounds, &allowed);
         if o > 0 {
             t.hard += o;
             t.hard_count += 1;
         }
         if let Some(rule) = &p.footprints[f].edge {
-            let short = rule.short_overhang(body, &p.outline);
+            let short = rule.short_overhang(&body.bounds, &p.outline);
             if short > 0 { t.hard += short as i128 * 1_000_000; t.hard_count += 1; }
-            let setback = rule.edge.setback(body, &p.outline);
+            let setback = rule.edge.setback(&body.bounds, &p.outline);
             match rule.max_setback_nm {
                 Some(max) if setback > max => {
                     t.hard += (setback - max) as i128 * 1_000_000;
@@ -1964,14 +1986,14 @@ pub fn violations(p: &Prepared, poses: &[Pose]) -> Vec<Value> {
             let named = |kind: &str, detail: Value| json!({"ref": fp.native_ref, "uuid": fp.uuid, "kind": kind, "detail": detail});
             if let Some(body) = &at[a].body {
                 let allowed = fp.edge.as_ref().map(|e| e.occupancy_outline(&p.outline)).unwrap_or(p.outline);
-                if p.body_outside(body, &allowed) > 0 {
-                    out.push(named("occupancy_outside_outline", json!(body.as_value())));
+                if p.body_outside(&body.bounds, &allowed) > 0 {
+                    out.push(named("occupancy_outside_outline", json!(body.bounds.as_value())));
                 }
                 if let Some(rule) = &fp.edge {
-                    if rule.short_overhang(body, &p.outline) > 0 {
+                    if rule.short_overhang(&body.bounds, &p.outline) > 0 {
                         out.push(named("edge_overhang_min", json!(rule.overhang_nm)));
                     }
-                    let setback = rule.edge.setback(body, &p.outline);
+                    let setback = rule.edge.setback(&body.bounds, &p.outline);
                     if rule.max_setback_nm.is_some_and(|m| setback > m) {
                         out.push(named("edge_setback", json!({"setback_nm": setback, "max_setback_nm": rule.max_setback_nm})));
                     }
@@ -2584,7 +2606,7 @@ fn pose_rows(p: &Prepared, poses: &[Pose]) -> Value {
         json!({"uuid": fp.uuid, "alias": fp.alias, "native_ref": fp.native_ref,
                "x_nm": pose.x, "y_nm": pose.y, "quarter_turns": pose.q.rem_euclid(4),
                "moved": pose != fp.initial,
-               "occupancy_rect_nm": at.body.map(|b| b.as_value()),
+               "occupancy_rect_nm": at.body.as_ref().map(|b| b.bounds.as_value()),
                "pads": fp.pads.iter().enumerate().map(|(i, pad)| {
                    let (x, y) = pad_at(p, f, i, &pose);
                    json!({"uuid": pad.uuid, "x_nm": x, "y_nm": y})
@@ -2967,7 +2989,9 @@ pub fn run(input: &Value) -> Result<Value> {
     let steps_given = search.get("steps_per_seed").is_some_and(|v| !v.is_null());
     ensure!(steps_given || deadline_ms.is_some(), "search needs steps_per_seed or deadline_ms");
     let mut limits = Limits {
-        steps_per_seed: if steps_given { search["steps_per_seed"].as_u64().context("steps_per_seed")? } else { u64::MAX },
+        steps_per_seed: if steps_given { search["steps_per_seed"].as_u64().context("steps_per_seed")? } else {
+            (p.movable.len() as u64).saturating_mul(250_000).max(100_000)
+        },
         window: None,
         deadline: deadline_ms.map(|ms| started + std::time::Duration::from_millis(ms)),
         cancel_file: search.get("cancel_file").and_then(Value::as_str).map(Into::into),
@@ -3279,7 +3303,7 @@ mod tests {
                 if p.footprints[f].role != Role::Movable { continue; }
                 let pose = Pose { x: row["x_nm"].as_i64().unwrap(), y: row["y_nm"].as_i64().unwrap(),
                                   q: row["quarter_turns"].as_i64().unwrap() };
-                let body = place_rect(&p.footprints[f].occupancy.unwrap(), &pose);
+                let body = place_rect(&p.footprints[f].occupancy.as_ref().unwrap().bounds, &pose);
                 assert!(!(body.x1 > 6_000_000 && body.y1 > 5_000_000), "{} placed in the notch: {body:?}", p.footprints[f].native_ref);
             }
         }
@@ -4241,7 +4265,7 @@ mod tests {
             }
             assert_eq!(state.totals, full_evaluate(&p, &state.poses), "step {step}");
             let (a, b) = (placed(&p, 0, &state.poses[0]), placed(&p, 1, &state.poses[1]));
-            if a.body.unwrap().overlap(&b.body.unwrap()) > 0 && pair_terms(&p, &a, &b).hard_count == 0 { crossed += 1; }
+            if a.body.as_ref().unwrap().bounds.overlap(&b.body.as_ref().unwrap().bounds) > 0 && pair_terms(&p, &a, &b).hard_count == 0 { crossed += 1; }
         }
         assert!(crossed > 0, "a front and a back part lay over each other without a finding");
     }

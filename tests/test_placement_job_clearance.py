@@ -149,3 +149,65 @@ class PadClearanceTests(unittest.TestCase):
         # KiCad's custom-pad ERROR_OUTSIDE also adds the requested 1 µm
         # tolerance at straight primitive edges. Preserve that native bound.
         self.assertEqual(copper['rect_nm'], [-MM - 1000, -MM - 1000, 2 * MM + 1000, MM + 1000])
+
+    def test_non_orthogonal_rotated_footprints_exact_obb_avoids_false_conflicts(self):
+        """Two 45-degree footprints whose upright AABBs overlap report zero pair conflicts."""
+        import math, pcbnew as k
+        path = self.directory / 'rotated.kicad_pcb'
+        board = k.BOARD()
+        # Create board outline
+        outline = k.PCB_SHAPE(board)
+        outline.SetShape(k.SHAPE_T_RECT)
+        outline.SetStart(k.VECTOR2I(0, 0))
+        outline.SetEnd(k.VECTOR2I(50 * MM, 50 * MM))
+        outline.SetLayer(k.Edge_Cuts)
+        board.Add(outline)
+        settings = board.GetDesignSettings()
+        settings.m_SolderMaskMinWidth = 50000
+
+        # Part body: 0.8 mm x 1.6 mm. At 45 deg, upright AABB is ~1.7 x 1.7 mm.
+        # Placed with 1.0 mm separation along normal (-0.707, 0.707): actual physical gap is 0.2 mm.
+        # Upright AABBs overlap by ~0.7 mm.
+        for ref, x, y in [('C1', 20 * MM, 20 * MM),
+                          ('C2', 20 * MM - 707106, 20 * MM + 707106)]:
+            fp = k.FOOTPRINT(board)
+            fp.SetReference(ref)
+            fab = k.PCB_SHAPE(fp)
+            fab.SetShape(k.SHAPE_T_RECT)
+            fab.SetStart(k.VECTOR2I(-400000, -800000))
+            fab.SetEnd(k.VECTOR2I(400000, 800000))
+            fab.SetLayer(k.F_Fab)
+            fp.Add(fab)
+            pad = k.PAD(fp)
+            pad.SetNumber('1')
+            pad.SetAttribute(k.PAD_ATTRIB_SMD)
+            pad.SetShape(k.PADSTACK.ALL_LAYERS, k.PAD_SHAPE_RECT)
+            pad.SetSize(k.PADSTACK.ALL_LAYERS, k.VECTOR2I(500000, 600000))
+            pad.SetPosition(k.VECTOR2I(0, 0))
+            layers = k.LSET()
+            layers.AddLayer(k.F_Cu)
+            layers.AddLayer(k.F_Mask)
+            pad.SetLayerSet(layers)
+            fp.Add(pad)
+            fp.SetPosition(k.VECTOR2I(x, y))
+            fp.SetOrientationDegrees(45)
+            board.Add(fp)
+        k.SaveBoard(str(path), board)
+        path.with_suffix('.kicad_pro').write_text('{"board": {"design_settings": {"rule_severities": {"courtyards_overlap": "ignore"}}}}\n')
+
+        fixed = {'schema': 'agent-ee.placement-intent/1',
+                 'fixed_poses': [{'ref': 'C1', 'x': 20.0, 'y': 20.0, 'side': 'F'}]}
+        problem, _ = job.capture(path, job.normalize_intent(fixed, {'groups': []}))
+
+        # Evaluate at native poses: exact OBB and mask aperture geometry avoids false conflicts
+        evals = evaluate(problem, [{}])
+        violations = [v for v in evals[0]['violations'] if v['kind'] == 'pair']
+        self.assertEqual(violations, [])
+
+        # If geometry is stripped to upright boxes, false body conflict is detected
+        for fp_row in problem['footprints']:
+            if 'geometry' in fp_row.get('occupancy', {}):
+                del fp_row['occupancy']['geometry']
+        evals_stripped = evaluate(problem, [{}])
+        violations_stripped = [v for v in evals_stripped[0]['violations'] if v['kind'] == 'pair']
+        self.assertTrue(any('body' in v.get('rules', {}) for v in violations_stripped))
