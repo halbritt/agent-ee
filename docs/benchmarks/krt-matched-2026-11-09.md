@@ -1785,12 +1785,12 @@ how far they carry.
   - **esp_prog**: agent-ee places and routes (`agent-ee-own-route`), connecting every net (`0 open`) with 2 DRC errors, 24 vias (matching KRT's 24 vias!), and 302.16 mm of track (down from 336.14 mm). Routed by KRT held, it achieves 0 open connections and 3 DRC errors with 30 vias and 287.01 mm.
   - **esp_prog_fabrules**: agent-ee places and routes (`agent-ee-own-route`), connecting every net (`0 open`) with 2 DRC errors, 11 vias, and 281.83 mm of track. Routed by KRT (both default and held), it achieves 0 open connections and 2 DRC errors with 16 vias and 242.33 mm.
   - **tigard_fabrules**: agent-ee places and routes to completion (`agent-ee-own-route`), connecting every net (`0 open`) on this 4-layer fine-pitch board with 217 vias and 11 DRC errors (5 hole clearance, 2 courtyard overlap, 2 solder mask bridge, 1 clearance, 1 short), compared to stock KRT's 170 DRC errors. Routed by KRT held, it achieves 1 open connection with 206 vias and 34 DRC errors.
-  - **stickhub**: agent-ee's exploratory route timed out at the 900s deadline; routed by KRT held, the placement routes with 28 open connections, 18 errors (all solder mask bridges), 87 vias, and 523.36 mm of track (compared to KRT's default placement leaving 21 open with 385 errors).
-  - **tigard**: agent-ee's exploratory route timed out at the 900s deadline; routed by KRT held, the placement routes with 53 open connections, 48 errors, 189 vias, and 2253.27 mm of track.
-  - **esp32_devkit_lipo**: agent-ee's exploratory route timed out at the 900s deadline; routed by KRT held, the placement routes with 44 open connections, 31 errors, 133 vias, and 1195.19 mm of track.
+  - **stickhub**: all 4 placement seeds were time-limited with `feasible: false` (`least_hard_count: 1`, `placement_kind: best-diagnostic`), and `place run` ended internally with `job_status: deadline` at `900.003 s` (`timed_out: false`, exit `1`, `output: null`, `score: null`) during the diagnostic candidate's exploratory route. Routed by KRT held, that `best-diagnostic` candidate yields 28 open connections, 18 errors (all solder mask bridges), 87 vias, and 523.36 mm of track (27 open and 249 errors under KRT default).
+  - **tigard**: all 4 placement seeds were time-limited with `feasible: false` (`least_hard_count: 1`, `placement_kind: best-diagnostic`), and `place run` ended internally with `job_status: deadline` at `900.003 s` (`timed_out: false`, exit `1`, `output: null`, `score: null`) during the diagnostic candidate's exploratory route. Routed by KRT held, that `best-diagnostic` candidate yields 53 open connections, 0 introduced / 48 inherited errors, 189 vias, and 2253.27 mm of track (5 open and 1197 errors under KRT default).
+  - **esp32_devkit_lipo**: all 4 placement seeds were time-limited with `feasible: false` (`least_hard_count: 80` from the unlocked overhanging 19-pin headers, `placement_kind: best-diagnostic`), and `place run` ended internally with `job_status: deadline` at `900.003 s` (`timed_out: false`, exit `1`, `output: null`, `score: null`) during the diagnostic candidate's exploratory route. Routed by KRT held, that `best-diagnostic` candidate yields 44 open connections, 28 introduced / 31 total errors, 133 vias, and 1195.19 mm of track (30 open and 1065 errors under KRT default).
 
 - **Outcome relative to stock KRT:**
-  - agent-ee now accepts, places, and routes boards that were previously refused (`complex_hierarchy`, `flat_hierarchy`, `tigard`, `stickhub`).
+  - agent-ee no longer refuses poured boards at preflight (`complex_hierarchy`, `flat_hierarchy`, `tigard`, `stickhub`, `esp32_devkit_lipo`).
   - Placing and routing on its own, agent-ee delivers 2 of 6 preregistered boards clean (`complex_hierarchy`, `flat_hierarchy`), whereas stock KRT delivers 1 of 6 (`flat_hierarchy`).
   - Routing the designer's placement, both tools achieve clean passes on the same 2 boards, with agent-ee using fewer vias on `esp_prog` (13 vs 24) and `esp32_devkit_lipo` (110 vs 175) and introducing zero DRC errors on `tigard` and `stickhub`.
 
@@ -1798,8 +1798,8 @@ how far they carry.
 
 | Item | Version |
 | --- | --- |
-| agent-ee | `86f0678d` (main) |
-| Environment | Host-native execution via `mise` / Bubblewrap (Ubuntu 26.04.1, Python 3.14.4, Rust `cargo`) |
+| agent-ee | `86f0678d` (`main`) on all 8 `route` cells and `complex_hierarchy`, `flat_hierarchy`, `tigard_fabrules` `place` cells; `840131dd` (`86f0678d` + docs-only append, `src/` and `crates/` identical) on `esp_prog`, `esp_prog_fabrules`, `stickhub`, `tigard`, `esp32_devkit_lipo` `place` cells |
+| agent-ee CI image | `sha256:44654cf76e1e…` (`agent-ee:exec-cf21b01402d2508c`), invoked by `benchmarks/krt-matched/bench.py` via `ae-ci-exec`; KRT routing and native DRC scoring ran on the host (Ubuntu 26.04.1, Python 3.14.4) |
 | Placement engine | `crates/placement-engine 0.1.0` (`86f0678d`, exact OBB/SAT polygon collision, dynamic step scaling, silkscreen warning reservation) |
 | kicad-route | `6171b0a2` (main), builtin backend "0.23.9" (upstream KRT `4d74f91a`, starved thermal isolated-island repair, structural inner plane layer routing) |
 | KiCad (host & CI) | `kicad-cli` 10.0.8, pcbnew 10.0.8 |
