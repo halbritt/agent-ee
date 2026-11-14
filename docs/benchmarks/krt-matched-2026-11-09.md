@@ -1782,20 +1782,26 @@ how far they carry.
 - **Placement arm (pours kept):**
   - **complex_hierarchy**: agent-ee places and routes to completion (`agent-ee-own-route`), passing native DRC cleanly (`0 / 0`) with 0 open connections, 0 DRC errors, 5 vias, and 1054.14 mm of track (status `completed`). When routed by stock KRT, it achieves 0 open connections and 1 starved thermal finding with 18 vias and 1030.68 mm.
   - **flat_hierarchy**: agent-ee places and routes to completion (`agent-ee-own-route`), passing native DRC cleanly (`0 / 0` introduced) with 0 open connections, 2 inherited clearance errors, 6 vias, and 1561.07 mm of track (status `completed`). Routed by stock KRT (both default and held), it achieves 0 open connections and 0 introduced errors with 41 vias and 1621.45 mm. agent-ee's own route beats KRT on vias (6 vs 41) and track length (1561.07 mm vs 1621.45 mm).
-  - **tigard_fabrules**: agent-ee places and routes to completion (`agent-ee-own-route`), connecting every net (`0 open`) on this 4-layer fine-pitch board with 217 vias and 11 DRC errors (5 hole clearance, 2 courtyard overlap, 2 solder mask bridge, 1 clearance, 1 short), compared to stock KRT's 170 DRC errors.
+  - **esp_prog**: agent-ee places and routes (`agent-ee-own-route`), connecting every net (`0 open`) with 2 DRC errors, 24 vias (matching KRT's 24 vias!), and 302.16 mm of track (down from 336.14 mm). Routed by KRT held, it achieves 0 open connections and 3 DRC errors with 30 vias and 287.01 mm.
+  - **esp_prog_fabrules**: agent-ee places and routes (`agent-ee-own-route`), connecting every net (`0 open`) with 2 DRC errors, 11 vias, and 281.83 mm of track. Routed by KRT (both default and held), it achieves 0 open connections and 2 DRC errors with 16 vias and 242.33 mm.
+  - **tigard_fabrules**: agent-ee places and routes to completion (`agent-ee-own-route`), connecting every net (`0 open`) on this 4-layer fine-pitch board with 217 vias and 11 DRC errors (5 hole clearance, 2 courtyard overlap, 2 solder mask bridge, 1 clearance, 1 short), compared to stock KRT's 170 DRC errors. Routed by KRT held, it achieves 1 open connection with 206 vias and 34 DRC errors.
+  - **stickhub**: agent-ee's exploratory route timed out at the 900s deadline; routed by KRT held, the placement routes with 28 open connections, 18 errors (all solder mask bridges), 87 vias, and 523.36 mm of track (compared to KRT's default placement leaving 21 open with 385 errors).
+  - **tigard**: agent-ee's exploratory route timed out at the 900s deadline; routed by KRT held, the placement routes with 53 open connections, 48 errors, 189 vias, and 2253.27 mm of track.
+  - **esp32_devkit_lipo**: agent-ee's exploratory route timed out at the 900s deadline; routed by KRT held, the placement routes with 44 open connections, 31 errors, 133 vias, and 1195.19 mm of track.
 
 - **Outcome relative to stock KRT:**
   - agent-ee now accepts, places, and routes boards that were previously refused (`complex_hierarchy`, `flat_hierarchy`, `tigard`, `stickhub`).
-  - Where placements and routes complete, agent-ee achieves fewer vias and zero introduced DRC errors on `complex_hierarchy` and `flat_hierarchy`.
+  - Placing and routing on its own, agent-ee delivers 2 of 6 preregistered boards clean (`complex_hierarchy`, `flat_hierarchy`), whereas stock KRT delivers 1 of 6 (`flat_hierarchy`).
+  - Routing the designer's placement, both tools achieve clean passes on the same 2 boards, with agent-ee using fewer vias on `esp_prog` (13 vs 24) and `esp32_devkit_lipo` (110 vs 175) and introducing zero DRC errors on `tigard` and `stickhub`.
 
 ### Versions
 
 | Item | Version |
 | --- | --- |
 | agent-ee | `86f0678d` (main) |
-| agent-ee CI image | `agent-ee:exec-cf21b01402d2508c-current` (`sha256:44654cf76e1e9cf26530a2c0a521f49cf31df57baf474b7c5b481d16c983c619`) |
+| Environment | Host-native execution via `mise` / Bubblewrap (Ubuntu 26.04.1, Python 3.14.4, Rust `cargo`) |
 | Placement engine | `crates/placement-engine 0.1.0` (`86f0678d`, exact OBB/SAT polygon collision, dynamic step scaling, silkscreen warning reservation) |
-| kicad-route | `6171b0a2` (main), builtin backend "0.23.9" (starved thermal isolated-island repair, structural inner plane layer routing) |
+| kicad-route | `6171b0a2` (main), builtin backend "0.23.9" (upstream KRT `4d74f91a`, starved thermal isolated-island repair, structural inner plane layer routing) |
 | KiCad (host & CI) | `kicad-cli` 10.0.8, pcbnew 10.0.8 |
 
 ### Routing arm (designer's placement, pours kept)
@@ -1821,17 +1827,31 @@ how far they carry.
 | flat_hierarchy | place | agent-ee-own-route | yes | 0 | 0 | 2 | 6 | 1561.07 | 467.4 | 0 | completed | source project file |
 | flat_hierarchy | place | agent-ee → KRT route | yes | 0 | 0 | 2 | 41 | 1621.45 | 25.4 | 0 | completed | source project file |
 | flat_hierarchy | place | agent-ee → KRT held | yes | 0 | 0 | 2 | 41 | 1621.45 | 25.0 | 0 | completed | source project file |
+| esp_prog | place | agent-ee-own-route | no | 0 | 1 | 2 | 24 | 302.16 | 519.1 | 1 | verification_failed | KiCad defaults |
+| esp_prog | place | agent-ee → KRT route | no | 0 | 18 | 19 | 24 | 291.55 | 2.6 | 0 | completed | KiCad defaults |
+| esp_prog | place | agent-ee → KRT held | no | 0 | 2 | 3 | 30 | 287.01 | 3.0 | 0 | completed | KiCad defaults |
+| esp_prog_fabrules | place | agent-ee-own-route | no | 0 | 1 | 2 | 11 | 281.83 | 582.0 | 1 | verification_failed | stated fab rules |
+| esp_prog_fabrules | place | agent-ee → KRT route | no | 0 | 1 | 2 | 16 | 242.33 | 2.3 | 0 | completed | stated fab rules |
+| esp_prog_fabrules | place | agent-ee → KRT held | no | 0 | 1 | 2 | 16 | 242.33 | 2.2 | 0 | completed | stated fab rules |
 | tigard_fabrules | place | agent-ee-own-route | no | 0 | 5 | 11 | 217 | 2290.48 | 808.7 | 1 | verification_failed | stated fab rules |
 | tigard_fabrules | place | agent-ee → KRT route | no | 0 | 164 | 170 | 215 | 2207.56 | 36.6 | 0 | completed | stated fab rules |
 | tigard_fabrules | place | agent-ee → KRT held | no | 1 | 28 | 34 | 206 | 2177.15 | 37.3 | 0 | completed | stated fab rules |
+| stickhub | place | agent-ee-own-route | no | - | - | - | - | - | 900.0 | 1 | deadline | source project file |
+| stickhub | place | agent-ee → KRT route | no | 27 | 249 | 249 | 120 | 713.00 | 237.3 | 0 | completed | source project file |
+| stickhub | place | agent-ee → KRT held | no | 28 | 18 | 18 | 87 | 523.36 | 167.9 | 0 | completed | source project file |
+| tigard | place | agent-ee-own-route | no | - | - | - | - | - | 900.0 | 1 | deadline | KiCad defaults |
+| tigard | place | agent-ee → KRT route | no | 5 | 1175 | 1197 | 264 | 2785.63 | 325.7 | 0 | completed | KiCad defaults |
+| tigard | place | agent-ee → KRT held | no | 53 | 0 | 48 | 189 | 2253.27 | 326.7 | 0 | completed | KiCad defaults |
+| esp32_devkit_lipo | place | agent-ee-own-route | no | - | - | - | - | - | 900.0 | 1 | deadline | KiCad defaults |
+| esp32_devkit_lipo | place | agent-ee → KRT route | no | 30 | 1062 | 1065 | 231 | 1558.90 | 495.7 | 0 | completed | KiCad defaults |
+| esp32_devkit_lipo | place | agent-ee → KRT held | no | 44 | 28 | 31 | 133 | 1195.19 | 187.6 | 0 | completed | KiCad defaults |
 
 ### What changed in the tool
 
-- **AGENTEE-677** (`86f0678d`): Rust placement engine SAT exact rotated polygon and OBB collision detection. Replaced axis-aligned bounding box (AABB) over-approximation with exact oriented bounding box separating axis theorem tests for rotated components and multi-polygon pads. Added dynamic step scaling to adapt placement step resolution, and reserved silkscreen warning clearance.
-- **AGENTEE-679** (`6171b0a2`): Fine-pitch BGA escape geometry and dedicated-plane gated phase 3 routing in kicad-route. Prevents spurious blocker filtering and tap cascades on multi-layer designs without inner planes.
-- **AGENTEE-690** (`6171b0a2`): Isolated-island starved thermal relief repair in kicad-route (`spokes.py tie-islands` + `thermals.py`), repairing starved thermals on boards with isolated copper islands (verified on `interf_u` with 2 of 2 starved thermals repaired and zero DRC errors).
-- **AGENTEE-629** (`16b00b7`, `3e86cd4`): Inner plane layer routing throughput remediation using purely structural geometry (`_dedicated_inner_plane_layer_owners`), plane owner cost exemptions, and wall-time bounded retry, eliminating plane layer tracks and pour integrity failures without string sniffing.
-- **AGENTEE-637** (`a51a0065`, `8140244b`): Pipeline router checkout discovery and qualification, ensuring robust discovery and execution in isolated container environments.
+- **AGENTEE-637**, **AGENTEE-651** (`agent-ee` `86f0678d`): Exact rotated polygon / OBB SAT collision in `crates/placement-engine/src/job.rs` and `src/agent_ee/placement_job.py` for non-orthogonal footprints and solder-mask openings, movable-count scaled default search steps, and warning-severity fixed silkscreen occupancy reservation in `src/agent_ee/silk_labels.py`.
+- **AGENTEE-679**, **AGENTEE-690** (`kicad-route` `6171b0a`): Structural fine-pitch perimeter escape net ordering (`joint_escape.py`, `net_ordering.py`), `has_dedicated_planes` scoping in `phase3_routing.py`, and isolated-island starved thermal relief repair (`spokes.py tie-islands`, `thermals.py`).
+- **AGENTEE-656**, **AGENTEE-677** (`kicad-route` `9506e26`, `16b00b7`, `3e86cd4`): Engine throughput optimizations (shipped-board AST reuse, rescue obstacle LRU/cell memoization, 20s bounded `own_requirement_retry` retaining full-width partial merges) and structural inner copper plane detection (`_dedicated_inner_plane_layer_owners`) with `9.0x` signal penalty and `1.0x` zone-owner exemption.
+- **AGENTEE-633**, **AGENTEE-632** (`agent-ee` `a51a0065`, `8140244b`): Host-native path-based sibling `../kicad-route` checkout auto-discovery in `src/agent_ee/design_generate.py` and `README.md` status sync.
 
 ### Tool defects this round exposed and did not fix
 
