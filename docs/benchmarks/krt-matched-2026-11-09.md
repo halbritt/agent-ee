@@ -2060,8 +2060,11 @@ and other owner holds remain in effect.
 These completed arms do not establish an overall improvement or fabrication
 readiness. In the original time-limited own-routing arm, only Complex and Flat
 complete on both revisions. Flat still has two native clearance errors.
-Tigard, StickHub and both fabrication-rule cells fail on the candidate; candidate
-ESP32 is an infeasible diagnostic placement. The baseline ESP32 reaches its
+Tigard, StickHub and both fabrication-rule cells fail on both revisions.
+Neither candidate Tigard board has a feasible placement seed, whereas the
+baseline has two feasible seeds for Tigard and one with fabrication rules.
+Both candidate Tigard routes therefore use infeasible placements. Candidate
+ESP32 is also an infeasible diagnostic placement. The baseline ESP32 reaches its
 900-second deadline without a scored final board; that score remains missing.
 Routing a retained diagnostic placement with stock KRT does not validate it.
 
@@ -2070,7 +2073,11 @@ project hashes are those in the fixed-step section above. These runs use four
 time-limited seeds per board, without the 100,000-step cap, and the original
 900-second whole-job limit. Across each paired cell the placement problem bytes
 match; selected final placements differ. Timing, instrumentation and host effects
-are not isolated. No causal throughput or routing improvement is claimed.
+are not isolated. The loss of feasible Tigard seeds bears on the no-worse
+comparison, but this single time-limited run per arm with a clock-following
+schedule does not attribute it to the candidate's placement changes. Nor does
+it show that those changes cost nothing. No causal throughput or routing
+improvement is claimed.
 
 ### Original time-limited own-routing results
 
@@ -2101,13 +2108,34 @@ rules have status `verification_failed`. Their candidate statuses are respective
 ESP32 is `deadline`. Every other row is `completed`.
 
 Tigard's candidate adds a J5/U3 courtyard conflict. The ESP adapter's candidate
-has a new short involving U2's no-net copper polygon and the Net-(C1-Pad1) track;
-the baseline has a new clearance finding. StickHub retains a split GND component
+has a new short involving U2's no-net copper polygon and a 1.4142 mm
+Net-(C1-Pad1) track. The baseline reports the same finding as a clearance error:
+these are two labels for one finding. StickHub retains a split GND component
 in both arms. Candidate ESP32 has two new copper-edge-clearance errors and three
 starved thermals, plus a retained intersecting-zone error; its GND component and
 pour failures remain. Native readers found no tracks or vias below effective
 net-class sizes on the 13 available scored boards; this does not remove their
 other errors or establish electrical correctness.
+
+### Time-limited seed measurements
+
+Each arm ran four seeds. Hard counts are each seed's least hard-conflict count,
+in seed order 0–3. Rates are the minimum and maximum across those seeds, rounded
+to whole steps per second. Engine feasibility does not establish board acceptance.
+
+| Board | Feasible seeds, baseline / candidate | Baseline hard counts | Candidate hard counts | Baseline steps/s | Candidate steps/s |
+| --- | ---: | --- | --- | ---: | ---: |
+| complex_hierarchy | 4 / 4 | 0, 0, 0, 0 | 0, 0, 0, 0 | 4538-5381 | 4188-5013 |
+| flat_hierarchy | 4 / 4 | 0, 0, 0, 0 | 0, 0, 0, 0 | 3462-3925 | 2740-3949 |
+| tigard | 2 / 0 | 0, 1, 0, 1 | 12, 2, 4, 1 | 2781-3010 | 2472-3046 |
+| stickhub | 1 / 1 | 0, 1, 2, 1 | 1, 0, 11, 1 | 7065-8147 | 6615-7983 |
+| esp_prog_fabrules | 3 / 4 | 0, 0, 5, 0 | 0, 0, 0, 0 | 18208-23423 | 21052-22451 |
+| tigard_fabrules | 1 / 0 | 3, 1, 2, 0 | 1, 1, 1, 2 | 3032-3462 | 2938-3464 |
+| esp32_devkit_lipo | 0 / 0 | 116, 94, 100, 98 | 98, 94, 103, 79 | 2713-3163 | 2632-4819 |
+
+Tigard's step-rate ranges are similar across revisions despite the different
+feasibility outcomes. These measurements do not isolate the cause of that
+difference.
 
 ### Stock KRT on the retained time-limited placements
 
@@ -2236,6 +2264,10 @@ All four CLI invocations return 2 because routing remains incomplete. The outer
 batch completed at 09:40:34 PST, before its 09:57:48 deadline; its process exit
 0 and PID absence were observed. Batch completion is not board acceptance.
 
+Baseline repeat 1 reproduces the earlier fixed-step candidate's numbers
+(35 opens, 172 vias, 1930.99 mm); baseline repeat 2 and candidate repeat 2
+reproduce the earlier baseline's numbers (34 opens, 173 vias, 1936.73 mm).
+Both outcomes of that earlier pair thus occur at baseline revision `6171b0a`.
 The baseline itself varies between 35 and 34 opens. These four runs do not
 reproduce a consistent extra open for the candidate; they also do not establish
 an equal-CPU improvement or general no-worse result. Each native result sets
