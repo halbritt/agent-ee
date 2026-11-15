@@ -6,6 +6,7 @@ plus KiCad's pcbnew for board edits and measurements.
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -362,6 +363,22 @@ def reuse(args):
     later `prep --no-pours` of the same board saved it again."""
     old = Path(args.source).expanduser() / 'boards' / args.name
     root = RUNS / 'boards' / args.name
+    record = json.loads((old / 'prep.json').read_text())
+    stated = record.get('stated_fab_rules')
+    expected_revision = getattr(args, 'fab_rules_revision', None)
+    if expected_revision is not None and (stated or {}).get('revision') != expected_revision:
+        raise SystemExit(f"requested fab-rule revision {expected_revision}, source declares {(stated or {}).get('revision')}")
+    if stated:
+        project = json.loads((old / 'norm' / f'{args.name}.kicad_pro').read_text())
+        rules = project['board']['design_settings']['rules']
+        keys = {'clearance': 'min_clearance', 'track_width': 'min_track_width',
+                'via_diameter': 'min_via_diameter', 'via_drill': 'min_through_hole_diameter',
+                'hole_to_hole': 'min_hole_to_hole', 'board_edge': 'min_copper_edge_clearance',
+                'hole_clearance': 'min_hole_clearance'}
+        wrong = [key for key, value in stated['values'].items() if rules.get(keys[key]) != value]
+        if wrong:
+            raise SystemExit('project differs from its stated fab rules: ' + ', '.join(wrong))
+        print(f"reusing stated fab-rule revision {stated.get('revision')}")
     for name in ('norm', 'route-in', 'place-in', 'prep.json'):
         if (root / name).exists():
             raise SystemExit(f'{root / name} exists; a rerun never overwrites prepared inputs')
@@ -380,6 +397,7 @@ def reuse(args):
     write_json(root / 'reused-from.json', {
         'run': str(old), 'sha256': {str(k.relative_to(root)): v for k, v in checks.items()},
         'normalized_sha256': sha256(norm), 'normalized_as_prep_record': sha256(norm) == record['normalized_sha256'],
+        'stated_fab_rules': stated,
         'rule_files_sha256': {p.name: sha256(p) for p in companions(norm)}})
     print(root)
 
@@ -424,6 +442,34 @@ def router_checkout():
     return discover()['path']
 
 
+def verify_engine():
+    """Check the selected binary against this checkout before measuring it."""
+    sys.path.insert(0, str(REPO / 'src'))
+    from agent_ee.placement_job import rust_executable
+    binary = Path(rust_executable())
+    spec = importlib.util.spec_from_file_location('build_placement_engine', REPO / 'scripts/build_placement_engine.py')
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    record = {'binary': str(binary), 'sha256': sha256(binary)}
+    try:
+        builder.verify(REPO, binary)
+    except (OSError, ValueError) as exc:
+        return dict(record, verified=False, error=str(exc))
+    return dict(record, verified=True)
+
+
+def host_snapshot():
+    # A cell runs one tool at a time; other admitted host work can still overlap it.
+    record = {'load_average': list(os.getloadavg()), 'cpus': os.cpu_count(), 'cell_concurrency': 1}
+    probe = subprocess.run(['native-admit', 'status', '--json'], capture_output=True, text=True, timeout=10)
+    if probe.returncode:
+        record['admission_error'] = probe.stderr.strip()
+    else:
+        status = json.loads(probe.stdout)
+        record['admission'] = {key: status.get(key) for key in ('used', 'budget', 'nproc', 'load1')}
+    return record
+
+
 def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
     """Run the current checkout on the host, retaining absolute paths in the job directory."""
     stage = out_dir = Path(out_dir).resolve()
@@ -445,6 +491,12 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
                          for key, value in names.items()},
               'search': search, 'router': {'checkout': router_checkout()}}
     write_json(stage / 'config.json', config)
+    start = {'agent_ee': checkout_version(), 'engine': verify_engine(), 'host': host_snapshot()}
+    write_json(stage / 'start.json', start)
+    if not start['engine']['verified']:
+        (stage / 'run.log').write_text(start['engine']['error'] + '\n')
+        return dict(exit_code=1, wall_s=0, output=None, placement=None, job_status='refused',
+                    job_reason=start['engine']['error'], start=start, log=str(stage / 'run.log'))
     record = run([REPO / 'bin/agent-ee', 'place', 'run',
                   stage / 'config.json', '--out', stage / 'job'],
                  stage / 'run.log', cwd=REPO, timeout=BUDGET_S + 900, env=native_env())
@@ -452,6 +504,7 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
     record['agent_ee'] = checkout_version()
     record['execution_environment'] = 'host'
     record['ci_image'] = None
+    record['start'] = start
     report_path = out_dir / 'job/job-report.json'
     if report_path.is_file():
         report = json.loads(report_path.read_text())
@@ -838,6 +891,7 @@ def main():
                            help='for a source without a project file: state the rules of fab-rules.json')
         if name == 'reuse':
             p.add_argument('source', help='the earlier run directory whose prepared inputs to copy')
+            p.add_argument('--fab-rules-revision', type=int, help='require this stated fab-rule revision')
         if name == 'place':
             p.add_argument('--search-b', action='store_true', help="agent-ee only: the secondary search setting")
             p.add_argument('--capped', action='store_true', help='agent-ee only: the earlier default, 100,000 steps per seed')

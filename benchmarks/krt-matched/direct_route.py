@@ -7,7 +7,6 @@ refuses a board. Runs on the host (PYTHONPATH=src):
     direct_route.py BOARD.kicad_pcb OUT_DIR BUDGET_S [ROUTER_CHECKOUT]
 """
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -31,8 +30,7 @@ def main():
         if board.with_suffix(suffix).is_file():
             shutil.copyfile(board.with_suffix(suffix), staged / f'board{suffix}')
     argv = routing_adapter.board_route_argv(checkout, staged, out / 'out', design_name=board.stem, budget_s=budget)
-    env = os.environ.copy()
-    env['KICAD_ROUTE_STATE'] = checkout
+    env = routing_adapter.board_route_env(checkout, out / 'home')
     start = time.monotonic()
     proc = subprocess.run(argv, env=env, capture_output=True, text=True)
     (out / 'kicad-route.stdout').write_text(proc.stdout)

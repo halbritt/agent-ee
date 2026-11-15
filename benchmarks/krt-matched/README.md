@@ -36,6 +36,12 @@ Both arms run on the host. agent-ee uses its existing router-checkout discovery
 `AGENT_EE_KICAD_ROUTE_CHECKOUT` when set. Run `mise run doctor` first. Jobs stay
 in their output directories, so native report paths remain valid. No CI image
 is required.
+Before each agent-ee cell, the harness verifies the selected placement binary
+against this checkout's engine sources. A mismatch refuses the cell. Set
+`AGENT_EE_RUST_PLANNER` to a candidate build; do not replace the shared installed
+binary for a comparison. The direct-router secondary uses the product adapter's
+subprocess environment, including its private router HOME; the harness keeps the
+normal host environment. Each cell records host load and admission occupancy.
 
 ## Run
 
@@ -63,6 +69,10 @@ the run it is compared with: `KRT_BENCH_RUNS=NEW python3 $B reuse NAME OLD`
 copies `norm`, `route-in`, `place-in` and `prep.json` from the earlier run
 directory `OLD` and checks every board against the hashes in `prep.json`;
 then run `baseline`, `route --tools agent-ee` and `place --tools agent-ee`.
+For stated fab rules, add `--fab-rules-revision 2` to require revision 2. Reuse
+reports the revision and refuses project values that differ from the recorded
+rule set. Always select a new output directory for a rerun: a repeated cell
+replaces its own output directory.
 
 `--tools krt` or `--tools agent-ee` reruns one side. `KRT_BENCH_BUDGET_S`
 (default 900) is the wall-clock budget of each routing or placement run.
