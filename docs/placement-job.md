@@ -362,12 +362,15 @@ on the placed board, or a check of routed copper
 (`final.made_by.placement`) gets none. Second trials start after every candidate has
 had its first trial and use only the time those left, in equal shares. One
 starts only when its share lets the search run as long as the first trial took;
-otherwise `second_trials_not_started` names it. A second trial keeps time back
+otherwise `second_trials_not_started` names it. Every trial keeps time back
 so that it ends inside the job: its search is cut by the router's stop grace
 (`max(30, budget // 5) + 15` s) and a 60 s allowance for the router's grading
-and the job's final checks, and its entry in `routing_trials` carries
-`second_trial_of` and `checks_allowance_s`. A first trial keeps nothing back,
-as before. A completed second trial completes the job. When no trial
+and the job's final checks. Every entry in `routing_trials` carries
+`checks_allowance_s`; a second trial also carries `second_trial_of`.
+If the job reaches its deadline after checking an infeasible diagnostic placement,
+with no feasible engine candidate or incumbent, it retains `placement_infeasible`
+and records `interruption: deadline`. Cancellation remains `cancelled`.
+A completed second trial completes the job. When no trial
 completes, the job reports the best board among all its failed trials, also
 when it stops at its deadline during a later one: a checked board before none,
 then fewer open connections, then fewer errors the routing introduced; an

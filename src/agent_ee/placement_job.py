@@ -2309,6 +2309,12 @@ def run_job(config, job_dir, *, resume=False, executable=None):
         # A stopped job still names the best placement it checked; it never ends with nothing
         # when a candidate exists.
         report['placement'] = chosen_placement(job_dir, deadline_limited=True)
+        if (exc.status == 'deadline' and report.get('engine_feasible') is False
+                and report['incumbent'] is None and report['placement'] is not None):
+            # An exploratory route cannot erase the placement failure already checked.
+            report.update(status='placement_infeasible', interruption='deadline',
+                          reason='the search found no placement without a hard violation; '
+                                 'the job reached its deadline')
         if report.get('attempt') is not None:
             write_json(Path(job_dir) / f'job-report-a{report["attempt"]}.json', report)
         write_json(Path(job_dir) / 'job-report.json', report)
@@ -2724,9 +2730,10 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         trial = {'seed': selected['seed'], 'board_sha256': selected['board_sha256'],
                  'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
                  'budget_basis': 'agent-default/equal-remaining-share',
-                 'grid_step_mm': grid_step, 'grid_basis': grid_basis}
+                 'grid_step_mm': grid_step, 'grid_basis': grid_basis,
+                 'checks_allowance_s': ROUTE_CHECK_ALLOWANCE_S}
         if second:
-            trial.update(second_trial_of=second['first_trial'], checks_allowance_s=ROUTE_CHECK_ALLOWANCE_S)
+            trial.update(second_trial_of=second['first_trial'])
         if 'original_router_budget_s' in selected:
             trial['original_router_budget_s'] = selected['original_router_budget_s']
             trial['deferral_budget_reduced'] = budget < selected['original_router_budget_s']
@@ -2780,7 +2787,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            bus=bus, length_match=length_match, ac_match=ac_match, local_decoupling=local_contract,
                            defer_local_fallback=len(queue) > 1,
                            local_fallback_reason=selected.get('local_fallback_reason'), diff_pairs=diff_pairs,
-                           checks_s=ROUTE_CHECK_ALLOWANCE_S if second else None)
+                           checks_s=ROUTE_CHECK_ALLOWANCE_S)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             if routed.get('failure_kind') == 'environment':
                 trial.update(status=routed['status'], route=report['route'])

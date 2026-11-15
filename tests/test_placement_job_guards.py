@@ -462,7 +462,8 @@ class ControllerBoundaryTests(Fixture):
                 self.assertEqual(json.loads((out / 'incumbent.json').read_text()), entry)
                 self.assertEqual(json.loads((out / 'job-report.json').read_text())['status'], report['status'])
 
-    def _second_trial(self, name, finals, *, remaining=900.0, elapsed=100.0, router=None, candidates=1):
+    def _second_trial(self, name, finals, *, remaining=900.0, elapsed=100.0, router=None, candidates=1,
+                      exhaust_search=False):
         """A job whose router returns a board every time and whose final checks return ``finals`` in turn.
 
         The first of ``candidates`` placements is the incumbent ('fixture'); the others ('fixture-1', ...)
@@ -482,7 +483,16 @@ class ControllerBoundaryTests(Fixture):
                 (out / 'incumbent.json').write_text(json.dumps(entry))
             return {'board': str(self.board), 'board_sha256': 'fixture' + (f'-{poses[0]}' if poses[0] else ''),
                     'integrity': 'preserved', 'problems': []}
+        time_left = [remaining]
         def routed(*args, **kwargs):
+            if exhaust_search:
+                from agent_ee import routing_adapter
+                checks = kwargs['checks_s']
+                search = (int(kwargs['budget_s']) if checks is None else
+                          routing_adapter.search_budget_s(kwargs['budget_s'], checks))
+                # The engine takes its entire search budget and shutdown grace.
+                time_left[0] -= search + routing_adapter.stop_grace_s(search)
+                job._check_stop(kwargs['clock'], out)
             return {'status': 'routed', 'board': str(self.board), 'elapsed_s': elapsed,
                     'preflight': {k: None for k in job.ROUTER_IDENTITY}}
         with ExitStack() as stack:
@@ -491,7 +501,7 @@ class ControllerBoundaryTests(Fixture):
             stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
             stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
             stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))
-            stack.enter_context(patch.object(job.Clock, 'remaining', side_effect=lambda: remaining))
+            stack.enter_context(patch.object(job.Clock, 'remaining', side_effect=lambda: time_left[0]))
             stack.enter_context(patch.object(job, 'materialize', side_effect=judged))
             stack.enter_context(patch.object(job, 'promote', return_value=False))
             stack.enter_context(patch.object(job, 'retain_diagnostic', return_value=False))
@@ -501,6 +511,54 @@ class ControllerBoundaryTests(Fixture):
             report = job.run_job(config, out)
         self.assertEqual(json.loads((out / 'job-report.json').read_text())['status'], report['status'])
         return report, route
+
+    def test_first_route_exhausting_search_and_grace_still_reaches_final_checks(self):
+        report, route = self._second_trial('first-search-exhausted', [self._final(0)],
+                                          remaining=560.0, exhaust_search=True)
+        self.assertEqual(report['status'], 'completed')
+        self.assertEqual(report['final']['opens'], 0)
+        self.assertEqual(route.call_count, 1)
+
+    def test_route_interruption_preserves_checked_placement_failure(self):
+        problem, _ = self.problem()
+        values = dict(board=(self.board, self.board.read_bytes()), project=(self.project, b'{}'),
+                      intent=(self.board, json.dumps(intent()).encode()),
+                      groups=(self.board, json.dumps(groups()).encode()))
+        config = {'budget_s': 900, 'inputs': {k: {} for k in values},
+                  'search': {'shortlist': 1}, 'router': {'checkout': 'unused'}}
+        for feasible in (False, True):
+            for stop in ('deadline', 'cancelled'):
+                with self.subTest(feasible=feasible, stop=stop):
+                    out = self.dir / f'interrupted-{feasible}-{stop}'
+                    candidate = {'seed': 0, 'cost': '1', 'poses': [], 'feasible': feasible,
+                                 'violations': [] if feasible else [{'kind': 'body_hole'}]}
+                    output = {'timing': {}, 'status': 'completed', 'counters': {}, 'seeds': [], 'prng': None,
+                              'shortlist': [candidate] if feasible else [],
+                              'diagnostic_shortlist': [] if feasible else [candidate]}
+                    with ExitStack() as stack:
+                        stack.enter_context(patch.object(job, 'verified_input', side_effect=lambda _e, label: values[label]))
+                        stack.enter_context(patch.object(job, 'preflight', return_value={'engine_sha256': 'probe'}))
+                        stack.enter_context(patch.object(job, 'capture', return_value=(problem, {})))
+                        stack.enter_context(patch.object(job, 'solve', return_value=(output, {})))
+                        stack.enter_context(patch.object(job, 'materialize', return_value={
+                            'board': str(self.board), 'board_sha256': job.digest(self.board),
+                            'integrity': 'preserved', 'problems': []}))
+                        stack.enter_context(patch.object(job, 'check_edge_intent', return_value={'status': 'pass'}))
+                        stack.enter_context(patch.object(job, 'drc', return_value=(
+                            {'violations': [], 'unconnected_items': []}, {})))
+                        route = stack.enter_context(patch.object(job, 'route', side_effect=job.JobStopped(stop)))
+                        final = stack.enter_context(patch.object(job, 'final_checks'))
+                        report = job.run_job(config, out)
+                    self.assertEqual(route.call_count, 1)
+                    final.assert_not_called()
+                    self.assertEqual(report['placement']['board'], str(self.board))
+                    self.assertEqual(report['placement']['valid'], feasible)
+                    self.assertEqual(report['status'], 'placement_infeasible' if not feasible and stop == 'deadline' else stop)
+                    if not feasible and stop == 'deadline':
+                        self.assertEqual(report['interruption'], 'deadline')
+                        self.assertIn('hard violation', report['reason'])
+                    self.assertFalse(report['claims']['accepted'])
+                    self.assertEqual(json.loads((out / 'job-report.json').read_text()), report)
 
     @staticmethod
     def _final(opens):
@@ -518,8 +576,7 @@ class ControllerBoundaryTests(Fixture):
         self.assertNotIn('reason', report)
         self.assertEqual([t['status'] for t in report['routing_trials']], ['verification_failed', 'completed'])
         self.assertEqual([c.kwargs['grid_step_mm'] for c in route.call_args_list], [None, job.FINE_ROUTER_GRID_MM])
-        # Only the second trial keeps time back: the first board is already known by then.
-        self.assertEqual([c.kwargs['checks_s'] for c in route.call_args_list], [None, job.ROUTE_CHECK_ALLOWANCE_S])
+        self.assertEqual([c.kwargs['checks_s'] for c in route.call_args_list], [job.ROUTE_CHECK_ALLOWANCE_S] * 2)
         second = report['routing_trials'][1]
         self.assertEqual((second['grid_basis'], second['second_trial_of'], second['board_sha256']),
                          ('other-grid-after-failed-route', 1, 'fixture'))
