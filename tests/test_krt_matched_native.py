@@ -62,9 +62,15 @@ class NativeBenchmarkTests(unittest.TestCase):
                  patch.object(bench, 'run') as run:
                 result = bench.agent_ee_job(board, board, {}, 'tag', root / 'out')
             run.assert_not_called()
-            self.assertEqual(result['job_status'], 'refused')
+            self.assertEqual(result['job_status'], 'runtime_refused')
             self.assertIsNone(result['output'])
             self.assertIn('source differs', Path(result['log']).read_text())
+            with patch.object(bench, 'agent_ee_job', return_value=result), \
+                 patch.object(bench, 'groups_for', return_value={}), \
+                 patch.object(bench, 'result', return_value={'score': None}), \
+                 patch.object(bench, 'direct_router') as direct:
+                bench.route_arm(SimpleNamespace(name='source', no_pours=False, tools=['agent-ee']))
+            direct.assert_not_called()
 
     def test_reuse_refuses_rule_revision_or_project_mismatch_before_copying(self):
         with tempfile.TemporaryDirectory() as tmp:

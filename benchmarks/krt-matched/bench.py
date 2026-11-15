@@ -495,7 +495,7 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
     write_json(stage / 'start.json', start)
     if not start['engine']['verified']:
         (stage / 'run.log').write_text(start['engine']['error'] + '\n')
-        return dict(exit_code=1, wall_s=0, output=None, placement=None, job_status='refused',
+        return dict(exit_code=1, wall_s=0, output=None, placement=None, job_status='runtime_refused',
                     job_reason=start['engine']['error'], start=start, log=str(stage / 'run.log'))
     record = run([REPO / 'bin/agent-ee', 'place', 'run',
                   stage / 'config.json', '--out', stage / 'job'],
