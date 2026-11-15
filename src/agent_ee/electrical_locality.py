@@ -55,9 +55,13 @@ def _bounded_depth(value):
 def load_json(text):
     """Decode captured locality JSON; decoder recursion on deep nesting is a typed refusal."""
     try:
-        return json.loads(text)
+        value = json.loads(text)
     except RecursionError as exc:
         raise ValueError(DEPTH_ERROR) from exc
+    # Some Python decoders accept deeper input without recursion. The document
+    # limit belongs to this format, independent of the decoder implementation.
+    _bounded_depth(value)
+    return value
 
 
 def _plain_json(value):
