@@ -196,6 +196,92 @@ class NativeTests(unittest.TestCase):
                          (work / 'console.log').read_text())
         return work
 
+    def test_placement_uses_native_courtyard_bounds_on_both_sides(self):
+        self.native('''
+from pathlib import Path
+from agent_ee import placement_job as job
+from agent_ee.placement_probe import extract
+frame=k.PCB_SHAPE(fp,k.SHAPE_T_RECT);frame.SetLayer(k.F_CrtYd);frame.SetWidth(80000)
+frame.SetStart(k.VECTOR2I(9000000,14000000));frame.SetEnd(k.VECTOR2I(13500000,18000000));fp.Add(frame)
+for back in (False,True):
+    if fp.IsFlipped()!=back: fp.Flip(fp.GetPosition(),k.FLIP_DIRECTION_TOP_BOTTOM)
+    for angle in (0,90):
+        fp.SetOrientationDegrees(angle)
+        path=Path('/work/courtyard.kicad_pcb');assert k.SaveBoard(str(path),b)
+        fp.BuildCourtyardCaches()
+        box=fp.GetCourtyard(k.B_CrtYd if back else k.F_CrtYd).BBox()
+        expected=[box.GetLeft(),box.GetTop(),box.GetRight(),box.GetBottom()]
+        facts=extract(path,board=b,before=path.read_bytes())
+        description=job._describe_board(b,facts)
+        actual=next(f for f in description['footprints'] if f['ref']=='J1')['occupancy']['box']
+        assert actual==expected,(back,angle,actual,expected)
+''', setup=GEOMETRY)
+
+    def test_exact_label_contact_is_not_an_eligible_placement(self):
+        self.native('''
+from pathlib import Path
+import json, subprocess
+from agent_ee import placement_job as job, placement_problem, board_text
+from agent_ee.placement_probe import extract
+net=k.NETINFO_ITEM(b,'SIGNAL');b.Add(net);p.SetNet(net)
+frame=k.PCB_SHAPE(fp,k.SHAPE_T_RECT);frame.SetLayer(k.F_CrtYd);frame.SetWidth(80000)
+frame.SetStart(k.VECTOR2I(9000000,14000000));frame.SetEnd(k.VECTOR2I(13500000,18000000));fp.Add(frame)
+doc={'schema':'agent-ee.board-text/1','namespace':'contact','origin_mm':[0,0],
+     'fab_profile':'unused-in-this-native-unit','items':[
+     {'id':'label','text':'X','layer':'F.SilkS','anchor':{'at_mm':[11,13]}}]}
+emit(b,doc,default_limits())
+text=next(i for i in b.GetDrawings() if i.GetClass()=='PCB_TEXT')
+fp.BuildCourtyardCaches()
+dy=fp.GetCourtyard(k.F_CrtYd).BBox().GetTop()-text.GetBoundingBox().GetBottom()
+text.SetPosition(text.GetPosition()+k.VECTOR2I(0,dy))
+assert text.GetBoundingBox().GetBottom()==fp.GetCourtyard(k.F_CrtYd).BBox().GetTop()
+assert board_text.placement_coverage(b)['violations'][0]['covering_parts']==['J1']
+path=Path('/work/contact.kicad_pcb');assert k.SaveBoard(str(path),b)
+facts=extract(path,board=b,before=path.read_bytes())
+normal=job.normalize_intent({'fixed_poses':[],'edge_connectors':[]},{'groups':[]})
+problem,_=placement_problem.capture(job._describe_board(b,facts),normal)
+done=subprocess.run(['/engine'],input=json.dumps(dict(problem,evaluate=[{}])).encode(),
+                    capture_output=True,timeout=20)
+assert done.returncode==0,done.stderr
+evaluation=json.loads(done.stdout)['evaluations'][0]
+assert not evaluation['feasible'],evaluation
+entry=dict(integrity='preserved',placement_introduced_errors=0,status='checked',
+           engine_feasible=True,edge_intent={'status':'pass'},board_text=board_text.placement_coverage(b))
+assert not job._placement_eligible(entry)
+text.SetPosition(text.GetPosition()+k.VECTOR2I(0,-1000000))
+entry['board_text']=board_text.placement_coverage(b)
+assert job._placement_eligible(entry),entry
+''', setup=GEOMETRY, engine=True)
+
+    def test_rotated_part_keeps_attached_text_reserved(self):
+        self.native('''
+from pathlib import Path
+import json, subprocess
+from agent_ee import placement_job as job, placement_problem
+from agent_ee.placement_probe import extract
+net=k.NETINFO_ITEM(b,'SIGNAL');b.Add(net);p.SetNet(net)
+frame=k.PCB_SHAPE(fp,k.SHAPE_T_RECT);frame.SetLayer(k.F_CrtYd);frame.SetWidth(80000)
+frame.SetStart(k.VECTOR2I(9000000,14000000));frame.SetEnd(k.VECTOR2I(13500000,18000000));fp.Add(frame)
+fp.SetOrientationDegrees(45)
+doc={'schema':'agent-ee.board-text/1','namespace':'rotated','origin_mm':[0,0],
+     'fab_profile':'unused-in-this-native-unit','items':[
+     {'id':'attached','text':'X','layer':'F.SilkS','anchor':{'reference':'J1','offset_mm':[7,0]}},
+     {'id':'free','text':'X','layer':'F.SilkS','anchor':{'at_mm':[25,15]}}]}
+emit(b,doc,default_limits())
+attached=next(i for i in fp.GraphicalItems() if i.GetClass()=='PCB_TEXT')
+free=next(i for i in b.GetDrawings() if i.GetClass()=='PCB_TEXT')
+free.SetPosition(attached.GetPosition())
+path=Path('/work/rotated.kicad_pcb');assert k.SaveBoard(str(path),b)
+facts=extract(path,board=b,before=path.read_bytes())
+normal=job.normalize_intent({'fixed_poses':[],'edge_connectors':[]},{'groups':[]})
+problem,_=placement_problem.capture(job._describe_board(b,facts),normal)
+done=subprocess.run(['/engine'],input=json.dumps(dict(problem,evaluate=[{}])).encode(),
+                    capture_output=True,timeout=20)
+assert done.returncode==0,done.stderr
+evaluation=json.loads(done.stdout)['evaluations'][0]
+assert not evaluation['feasible'],evaluation
+''', setup=GEOMETRY, engine=True)
+
     def test_attached_label_with_mechanics_places_and_passes_artwork_condition(self):
         import shutil
         design = design_fixture(self.root / 'capture')

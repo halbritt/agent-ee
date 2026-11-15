@@ -550,6 +550,17 @@ def _union(boxes):
     return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
 
+def _courtyard_box(fp, record, side):
+    """Use the native label-cover bound, also when reading an older capture."""
+    bounds = record.get('native_bbox_nm')
+    if bounds is None:
+        import pcbnew
+        fp.BuildCourtyardCaches()
+        box = fp.GetCourtyard(pcbnew.F_CrtYd if side == 'F' else pcbnew.B_CrtYd).BBox()
+        bounds = [box.GetLeft(), box.GetTop(), box.GetRight(), box.GetBottom()]
+    return bounds
+
+
 def classify_footprint(fp, captured, *, courtyard_is_body=True):
     """Native facts about one footprint that the role rule and its body occupancy need.
 
@@ -599,9 +610,7 @@ def classify_footprint(fp, captured, *, courtyard_is_body=True):
             return dict(facts, refusal=f'{uuid} ({fp.GetReference()!r}): malformed courtyard on {court_side}.CrtYd: '
                                        f'{record.get("status")} {record.get("reason", "")}'.strip())
     if side in courtyards and (courtyard_is_body or not (fab or silk or pads)):
-        boxes = [[min(p[0] for p in poly), min(p[1] for p in poly), max(p[0] for p in poly), max(p[1] for p in poly)]
-                 for poly in courtyards[side]['polygons']]
-        return dict(facts, occupancy={'status': 'courtyard', 'rung': 'courtyard', 'box': _union(boxes),
+        return dict(facts, occupancy={'status': 'courtyard', 'rung': 'courtyard', 'box': _courtyard_box(fp, courtyards[side], side),
                                       'sources': ['courtyard']})
     pad_boxes = [_bbox(p) for p in pads]
     diagnostics = [f'{g.m_Uuid.AsString()}: empty drawing bounds' for g in fab + silk
@@ -787,6 +796,13 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
                     obb_poly = [[int(round(x * cos_r - y * sin_r)), int(round(x * sin_r + y * cos_r))] for x, y in corners]
                     polys = [obb_poly]
             if polys:
+                # Attached declarations remain reservations at non-quarter turns
+                # too. Native label coverage is checked before promotion, since
+                # its cached courtyard BBox is wider than these graphic polygons.
+                for boxes, _ in attached:
+                    for x0, y0, x1, y1 in boxes:
+                        polys.append([list(_unrotate(x-origin[0], y-origin[1], q))
+                                      for x, y in ((x0,y0),(x1,y0),(x1,y1),(x0,y1))])
                 all_pts = [pt for poly in polys for pt in poly]
                 occupancy_local_nm = [min(pt[0] for pt in all_pts), min(pt[1] for pt in all_pts),
                                       max(pt[0] for pt in all_pts), max(pt[1] for pt in all_pts)]
@@ -1692,6 +1708,7 @@ def place_labels(check, report, execution, project_bytes, rules_bytes, *, clock,
 def _rank(entry):
     return (
         entry.get('placement_introduced_errors', 0),
+        len(entry.get('board_text', {}).get('violations', [])),
         len(entry.get('engine_violations', [])),
         entry.get('decoupling_loop_excess_nm', 0),
         entry.get('decoupling_loop_nm', 0),
@@ -1706,6 +1723,7 @@ def _placement_eligible(entry):
             and entry.get('locality', {}).get('status', 'not_declared') in ('pass', 'info', 'not_declared')
             and entry.get('mechanics', {}).get('status', 'not_declared') in ('pass', 'not_declared')
             and entry.get('block_contract', {}).get('status', 'not_declared') in ('pass', 'info', 'not_declared')
+            and entry.get('board_text', {}).get('status', 'not_declared') in ('pass', 'not_declared')
             and not entry.get('engine_violations'))
 
 
@@ -2622,7 +2640,10 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 report_, exec_, labels = place_labels(check, report_, exec_, project_bytes, rules_bytes,
                                                       clock=clock, cancel_dir=job_dir)
                 split = classify_errors(report_, owners, base_keys, moved=check.get('moved'), rigid=rigid)
+                import pcbnew
+                from .board_text import placement_coverage
                 entry.update(status='checked', integrity=check['integrity'], integrity_problems=check['problems'],
+                             board_text=placement_coverage(pcbnew.LoadBoard(check['board'])),
                              moved_footprints=check.get('moved'), labels=labels,
                              mechanics=check_mechanics(directory / 'board.kicad_pcb', normalized, clock=clock, cancel_dir=job_dir),
                              block_contract=check_block_contract(directory / 'board.kicad_pcb', normalized,
@@ -2645,7 +2666,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         report['input_drc'] = {**base_exec, 'errors': sum(base_keys.values())}
     incumbent = read_json(job_dir / 'incumbent.json') if (job_dir / 'incumbent.json').exists() else None
     diagnostic = read_json(job_dir / 'best-diagnostic.json') if (job_dir / 'best-diagnostic.json').exists() else None
-    keys = ('index', 'seed', 'board_sha256', 'errors', 'engine_violations')
+    keys = ('index', 'seed', 'board_sha256', 'errors', 'engine_violations', 'board_text')
     report['incumbent'] = incumbent and {k: incumbent.get(k) for k in keys}
     report['best_diagnostic'] = diagnostic and {k: diagnostic.get(k) for k in keys}
     # Exploratory routing of the best diagnostic candidate is allowed (rule 7); it is never valid.

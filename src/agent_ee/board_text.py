@@ -212,15 +212,11 @@ def emit(board, doc, limits):
         field.SetUuidDirect(k.KIID(str(uuid.uuid5(uuid.UUID(holder.m_Uuid.AsString()), PLACEMENT_FIELD))))
 
 
-def placement_regions(board):
-    """Native label bounds cited by immutable footprint properties.
-
-    Free text becomes fixed-body input to the existing engine. Attached text
-    extends its owner's occupied region. Neither adds a fictitious PCB part.
-    """
+def _declared_text(board):
+    """Validated declared texts and their attachment owners, if any."""
     import pcbnew as k
     drawings = {i.m_Uuid.AsString(): i for i in board.GetDrawings()}
-    free, attached, seen = [], {}, set()
+    seen = set()
     for fp in board.GetFootprints():
         fields = [f for f in fp.GetFields() if f.GetName() == PLACEMENT_FIELD]
         if not fields:
@@ -239,18 +235,53 @@ def placement_regions(board):
                         or item.GetLayer() not in (k.F_SilkS, k.B_SilkS)):
                     raise ValueError('missing, hidden or ambiguous declared board text: ' + str(uid))
                 seen.add(uid)
-                box = item.GetBoundingBox()
-                bounds = [box.GetLeft(), box.GetTop(), box.GetRight(), box.GetBottom()]
-                if kind == 'attached':
-                    attached.setdefault(fp.m_Uuid.AsString(), []).append(bounds)
-                else:
-                    at = item.GetPosition()
-                    free.append(dict(uuid=uid, native_ref='board-text:' + uid,
-                        role='fixed_body', pose=dict(x_nm=at.x, y_nm=at.y, quarter_turns=0),
-                        occupancy=dict(status='derived', label='derived_occupancy', rung='silk+pads',
-                            local_rect_nm=[bounds[0]-at.x, bounds[1]-at.y, bounds[2]-at.x, bounds[3]-at.y]),
-                        copper_local_nm=[], mask_local_nm=[], holes_local_nm=[], pads=[], rotations=[0]))
+                yield item, fp if kind == 'attached' else None
+
+
+def placement_regions(board):
+    """Reserve declared text around its owner or as a fixed body."""
+    free, attached = [], {}
+    for item, owner in _declared_text(board):
+        box = item.GetBoundingBox()
+        # Native Intersects includes boundary contact; packing permits touching
+        # rectangles. One native integer unit gives the required positive gap.
+        bounds = [box.GetLeft()-1, box.GetTop()-1, box.GetRight()+1, box.GetBottom()+1]
+        if owner is not None:
+            attached.setdefault(owner.m_Uuid.AsString(), []).append(bounds)
+        else:
+            at = item.GetPosition()
+            uid = item.m_Uuid.AsString()
+            free.append(dict(uuid=uid, native_ref='board-text:' + uid,
+                role='fixed_body', pose=dict(x_nm=at.x, y_nm=at.y, quarter_turns=0),
+                occupancy=dict(status='derived', label='derived_occupancy', rung='silk+pads',
+                    local_rect_nm=[bounds[0]-at.x, bounds[1]-at.y, bounds[2]-at.x, bounds[3]-at.y]),
+                copper_local_nm=[], mask_local_nm=[], holes_local_nm=[], pads=[], rotations=[0]))
     return sorted(free, key=lambda r: r['uuid']), attached
+
+
+def _covering_parts(text, board, owner):
+    import pcbnew as k
+    covered = []
+    for fp in board.GetFootprints():
+        if ((owner is not None and fp.m_Uuid.AsString() == owner.m_Uuid.AsString())
+                or fp.IsFlipped() != (text.GetLayer() == k.B_SilkS)):
+            continue
+        court = fp.GetCourtyard(k.B_CrtYd if fp.IsFlipped() else k.F_CrtYd)
+        body = court.BBox() if court.OutlineCount() else fp.GetBoundingBox(False, False)
+        if text.GetBoundingBox().Intersects(body):
+            covered.append(fp.GetReference())
+    return sorted(covered)
+
+
+def placement_coverage(board):
+    """Check declared-label coverage before accepting a placement for routing."""
+    records = []
+    for text, owner in _declared_text(board):
+        covered = _covering_parts(text, board, owner)
+        if covered:
+            records.append(dict(uuid=text.m_Uuid.AsString(), text=text.GetText(),
+                                covering_parts=covered, reason='label_covered_by_part'))
+    return dict(status='fail' if records else 'pass', violations=records)
 
 
 def _conflicts(text, items, pad_clearance):
@@ -413,15 +444,7 @@ def evaluate(board, doc, limits):
             minimum_nm=mask_minimum, outcome='defect' if mask_conflict else 'pass',
             pad_conflicts=pad_mask_conflicts, non_pad_contour_conflict=contour_conflict,
             non_pad_contour_error_nm=1000, non_pad_contour_bound='outside')
-        covered = []
-        for fp in board.GetFootprints():
-            if ((owner is not None and fp.m_Uuid.AsString() == owner.m_Uuid.AsString())
-                    or fp.IsFlipped() != (layer == k.B_SilkS)):
-                continue
-            court = fp.GetCourtyard(k.B_CrtYd if fp.IsFlipped() else k.F_CrtYd)
-            body = court.BBox() if court.OutlineCount() else fp.GetBoundingBox(False, False)
-            if text.GetBoundingBox().Intersects(body):
-                covered.append(fp.GetReference())
+        covered = _covering_parts(text, board, owner)
         if covered:
             defects.append('label_covered_by_part')
         record['covering_parts'] = covered

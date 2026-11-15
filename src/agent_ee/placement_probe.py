@@ -414,10 +414,16 @@ def extract(board_path, *, board=None, before=None):
         markings.extend(marking(item, fp.GetReference()) for item in graphics)
         outline_shapes.extend(s for s in graphics if s.GetLayer() == pcbnew.Edge_Cuts)
         courtyards = {}
+        fp.BuildCourtyardCaches()
         for side, layer in (('F', pcbnew.F_CrtYd), ('B', pcbnew.B_CrtYd)):
             shapes = [primitive(s) for s in graphics if s.GetLayer() == layer]
             if shapes:
                 courtyards[side] = prove_contours(shapes, 'courtyard_missing', 'courtyard_unproven', True)
+                # The graphic contours prove closure and support rotated packing.
+                # KiCad's cached BBox includes line-width bounds beyond its
+                # native polygon vertices; the label-cover check uses that box.
+                bounds = fp.GetCourtyard(layer).BBox()
+                courtyards[side]['native_bbox_nm'] = [bounds.GetLeft(), bounds.GetTop(), bounds.GetRight(), bounds.GetBottom()]
         pads = []
         for pad in fp.Pads():
             pads.append({'uuid': pad.m_Uuid.AsString(), 'number': pad.GetNumber(), 'net': pad.GetNetname(),

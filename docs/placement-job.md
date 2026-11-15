@@ -708,6 +708,12 @@ rules, including stricter coupling limits, always remain in force.
    Copper clearance, mask and hole rules do not change. An error or a warning
    severity, and a project file that does not name the rule, keep the
    courtyard.
+   Courtyard graphics prove closure and supply polygons for parts at angles
+   other than quarter turns. For rectangular packing, occupancy uses KiCad's
+   cached courtyard bounding box, which includes bounds beyond the graphic
+   contour and native polygon vertices. This is also the box used to check
+   whether a part covers declared board text. Attached text and footprint
+   zones remain reserved at non-quarter turns too.
 4. **Prepared Rust model and incremental search** (`crates/placement-engine/src/job.rs`,
    schema `agent-ee.placement-job-input/2`; a `/1` record replays only under the
    labelled `legacy_pad_centre/1` contract, see [intent-dialect.md](intent-dialect.md#capture-contract);
@@ -870,9 +876,16 @@ rules, including stricter coupling limits, always remain in force.
    `place`, `from`, `to`), every `unplaced` label by reference and field with
    the reason, and the native findings that name a label, by type, `before`
    and `after`.
+   Declared board text has a separate coverage check on this saved board,
+   using the same native courtyard boxes and attachment exemptions as the
+   package check. Its `board_text` result lists covered labels and covering
+   parts. A covered label prevents incumbent promotion; an otherwise invalid
+   diagnostic candidate can still be routed for diagnosis. Text reservations
+   extend by one native integer unit (1 nm), because the packer permits exact
+   boundary contact while the native coverage check counts it as intersection.
 6. **Incumbent custody.** `incumbent.json` is replaced atomically (`os.replace`)
    only by a strictly better candidate with preserved integrity, engine-feasible
-   poses, passing saved-board edge checks and zero placement-introduced errors. A failed trial, crash or worse
+   poses, passing saved-board edge and declared-text coverage checks and zero placement-introduced errors. A failed trial, crash or worse
    candidate never touches it, and candidate directories are never overwritten.
    Without a valid incumbent the best diagnostic candidate is kept separately in
    `best-diagnostic.json` and may be routed **only as an exploratory run**; the
