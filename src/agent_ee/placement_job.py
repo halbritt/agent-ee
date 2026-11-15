@@ -2730,8 +2730,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         trial = {'seed': selected['seed'], 'board_sha256': selected['board_sha256'],
                  'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
                  'budget_basis': 'agent-default/equal-remaining-share',
-                 'grid_step_mm': grid_step, 'grid_basis': grid_basis,
-                 'checks_allowance_s': ROUTE_CHECK_ALLOWANCE_S}
+                 'grid_step_mm': grid_step, 'grid_basis': grid_basis}
         if second:
             trial.update(second_trial_of=second['first_trial'])
         if 'original_router_budget_s' in selected:
@@ -2779,6 +2778,14 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                     Path(route_input) / 'board.kicad_pcb', local_seed, clock=seed_clock, cancel_dir=job_dir)
                 budget = min(seed_clock.remaining(), clock.remaining())
                 _check_stop(seed_clock, job_dir)
+            # A first trial may finish much sooner than the conservative stop/check allowance.
+            # Do not prevent that search when its whole share is shorter than the allowance;
+            # retain the original share and outer deadline in that case. Second trials already
+            # have a saved first result and must always reserve time to keep it graded.
+            checks = ROUTE_CHECK_ALLOWANCE_S
+            if not second and routing_adapter.search_budget_s(budget, checks) < 1:
+                checks = None
+            trial['checks_allowance_s'] = checks
             routed = route(route_input, job_dir / f'route-{suffix}', config['router']['checkout'],
                            budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
@@ -2787,7 +2794,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            bus=bus, length_match=length_match, ac_match=ac_match, local_decoupling=local_contract,
                            defer_local_fallback=len(queue) > 1,
                            local_fallback_reason=selected.get('local_fallback_reason'), diff_pairs=diff_pairs,
-                           checks_s=ROUTE_CHECK_ALLOWANCE_S)
+                           checks_s=checks)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             if routed.get('failure_kind') == 'environment':
                 trial.update(status=routed['status'], route=report['route'])
@@ -2914,6 +2921,8 @@ def _completion_status(routed, incumbent, final, *, engine_feasible=True):
     """
     if incumbent is None and not engine_feasible:
         return 'placement_infeasible'
+    if routed.get('status') == 'no_time_for_search':
+        return 'no_time_for_search'
     if routed.get('status') != 'routed':
         return 'route_failed'
     if routed.get('router_accepted') is False:
@@ -2931,6 +2940,8 @@ def _completion_status(routed, incumbent, final, *, engine_feasible=True):
 
 def _rejection_reason(status, routed, final):
     """Why a routed trial did not complete, in words: every check that rejected it."""
+    if status == 'no_time_for_search':
+        return 'routing search was not started: the remaining trial time cannot cover search, stop grace and checks'
     if status == 'route_failed':
         return 'the router delivered no board: ' + str(routed.get('reason') or routed.get('status'))
     reasons = []

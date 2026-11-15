@@ -362,11 +362,16 @@ on the placed board, or a check of routed copper
 (`final.made_by.placement`) gets none. Second trials start after every candidate has
 had its first trial and use only the time those left, in equal shares. One
 starts only when its share lets the search run as long as the first trial took;
-otherwise `second_trials_not_started` names it. Every trial keeps time back
-so that it ends inside the job: its search is cut by the router's stop grace
+otherwise `second_trials_not_started` names it. Trials keep time back
+so that they end inside the job: search is cut by the router's stop grace
 (`max(30, budget // 5) + 15` s) and a 60 s allowance for the router's grading
-and the job's final checks. Every entry in `routing_trials` carries
-`checks_allowance_s`; a second trial also carries `second_trial_of`.
+and the job's final checks. A first trial whose share cannot fit this reservation
+and one second of search uses its original share without the reservation, so a
+short routing job can still finish; the outer job deadline remains binding.
+Every started routing trial carries `checks_allowance_s` (null for that short
+first trial); a second trial also carries `second_trial_of`. If preparation
+leaves insufficient time for a reserved search, the status is `no_time_for_search`
+and the reason says that routing never started, rather than reporting a router failure.
 If the job reaches its deadline after checking an infeasible diagnostic placement,
 with no feasible engine candidate or incumbent, it retains `placement_infeasible`
 and records `interruption: deadline`. Cancellation remains `cancelled`.

@@ -463,7 +463,7 @@ class ControllerBoundaryTests(Fixture):
                 self.assertEqual(json.loads((out / 'job-report.json').read_text())['status'], report['status'])
 
     def _second_trial(self, name, finals, *, remaining=900.0, elapsed=100.0, router=None, candidates=1,
-                      exhaust_search=False):
+                      exhaust_search=False, enforce_search_budget=False, no_search=False):
         """A job whose router returns a board every time and whose final checks return ``finals`` in turn.
 
         The first of ``candidates`` placements is the incumbent ('fixture'); the others ('fixture-1', ...)
@@ -485,14 +485,24 @@ class ControllerBoundaryTests(Fixture):
                     'integrity': 'preserved', 'problems': []}
         time_left = [remaining]
         def routed(*args, **kwargs):
-            if exhaust_search:
+            if exhaust_search or enforce_search_budget:
                 from agent_ee import routing_adapter
                 checks = kwargs['checks_s']
                 search = (int(kwargs['budget_s']) if checks is None else
                           routing_adapter.search_budget_s(kwargs['budget_s'], checks))
+                if search < 1:
+                    return {'status': 'no_time_for_search', 'preflight': {
+                        k: None for k in job.ROUTER_IDENTITY}}
+            if no_search:
+                return {'status': 'no_time_for_search', 'preflight': {
+                    k: None for k in job.ROUTER_IDENTITY}}
+            if exhaust_search:
                 # The engine takes its entire search budget and shutdown grace.
                 time_left[0] -= search + routing_adapter.stop_grace_s(search)
                 job._check_stop(kwargs['clock'], out)
+            elif enforce_search_budget:
+                self.assertGreaterEqual(search, elapsed)
+                time_left[0] -= elapsed
             return {'status': 'routed', 'board': str(self.board), 'elapsed_s': elapsed,
                     'preflight': {k: None for k in job.ROUTER_IDENTITY}}
         with ExitStack() as stack:
@@ -518,6 +528,23 @@ class ControllerBoundaryTests(Fixture):
         self.assertEqual(report['status'], 'completed')
         self.assertEqual(report['final']['opens'], 0)
         self.assertEqual(route.call_count, 1)
+
+    def test_short_first_trial_can_route_and_complete_inside_its_share(self):
+        report, route = self._second_trial('short-first', [self._final(0)], remaining=44.0,
+                                          elapsed=5.0, enforce_search_budget=True)
+        self.assertEqual(report['status'], 'completed')
+        self.assertEqual(report['final']['opens'], 0)
+        self.assertEqual(route.call_count, 1)
+        self.assertEqual(route.call_args.kwargs['budget_s'], 44.0)
+        self.assertEqual(route.call_args.kwargs['timeout_s'], 44.0)
+
+    def test_search_not_started_is_reported_as_scheduling_not_router_failure(self):
+        report, route = self._second_trial('no-search', [{'physical_checks': 'unavailable'}], no_search=True)
+        self.assertEqual(route.call_count, 1)
+        self.assertEqual(report['status'], 'no_time_for_search')
+        self.assertIn('routing search was not started', report['reason'])
+        self.assertEqual(report['routing_trials'][0]['status'], 'no_time_for_search')
+        self.assertFalse(report['claims']['accepted'])
 
     def test_route_interruption_preserves_checked_placement_failure(self):
         problem, _ = self.problem()
