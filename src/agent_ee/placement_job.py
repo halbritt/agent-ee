@@ -610,7 +610,9 @@ def classify_footprint(fp, captured, *, courtyard_is_body=True):
             return dict(facts, refusal=f'{uuid} ({fp.GetReference()!r}): malformed courtyard on {court_side}.CrtYd: '
                                        f'{record.get("status")} {record.get("reason", "")}'.strip())
     if side in courtyards and (courtyard_is_body or not (fab or silk or pads)):
-        return dict(facts, occupancy={'status': 'courtyard', 'rung': 'courtyard', 'box': _courtyard_box(fp, courtyards[side], side),
+        boxes = [[min(p[0] for p in poly), min(p[1] for p in poly), max(p[0] for p in poly), max(p[1] for p in poly)]
+                 for poly in courtyards[side]['polygons']]
+        return dict(facts, occupancy={'status': 'courtyard', 'rung': 'courtyard', 'box': _union(boxes),
                                       'sources': ['courtyard']})
     pad_boxes = [_bbox(p) for p in pads]
     diagnostics = [f'{g.m_Uuid.AsString()}: empty drawing bounds' for g in fab + silk
@@ -673,14 +675,14 @@ def keepout_obstacles(board):
     return sorted(rows, key=lambda r: r['uuid'])
 
 
-def _board_obstacles(board, fixed_poses=()):
+def _board_obstacles(board, fixed_poses=(), *, body_overhang_nm=0):
     """Fixed obstacles that are not footprints, and the text boxes attached to footprints.
 
     Where the board's own severities make a silkscreen overlap an error, the silkscreen text
     that stays where it is (board-level text, labels of fixed footprints) is an obstacle too."""
     from . import silk_labels
     from .board_text import placement_regions
-    text_obstacles, attached_text = placement_regions(board)
+    text_obstacles, attached_text = placement_regions(board, body_overhang_nm=body_overhang_nm)
     silk_text = silk_labels.board_obstacles(board, fixed_poses, known={row['uuid'] for row in text_obstacles})
     return sorted([*text_obstacles, *keepout_obstacles(board), *silk_text], key=lambda r: r['uuid']), attached_text
 
@@ -717,10 +719,31 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
     settings = board.GetDesignSettings()
     native_class = settings.m_NetSettings.GetDefaultNetclass()
     clearance = _clearance(settings)
-    text_obstacles, attached_text = _board_obstacles(board, fixed_poses)
+    courtyard_is_body = not courtyard_overlap_ignored(board)
+    native_by_uuid = {}
+    body_overhang_nm = 0
+    if geometry:
+        from .geometry_probe import box_nm, courtyard_body_box
+        for fp in board.GetFootprints():
+            uid = fp.m_Uuid.AsString()
+            captured = by_uuid[uid]
+            native = classify_footprint(fp, captured, courtyard_is_body=courtyard_is_body)
+            native_by_uuid[uid] = native
+            graphic = (native['occupancy'] or {}).get('box')
+            if graphic is not None:
+                side = captured['side']
+                court = captured.get('courtyards', {}).get(side)
+                if court is not None:
+                    cover = _courtyard_box(fp, court, side)
+                else:
+                    cover = box_nm(courtyard_body_box(fp, pcbnew.F_CrtYd if side == 'F' else pcbnew.B_CrtYd))
+                # Only declared text grows. The footprint geometry and therefore
+                # part-to-part spacing remain the captured graphic contours.
+                body_overhang_nm = max(body_overhang_nm, graphic[0]-cover[0], graphic[1]-cover[1],
+                                       cover[2]-graphic[2], cover[3]-graphic[3])
+    text_obstacles, attached_text = _board_obstacles(board, fixed_poses, body_overhang_nm=body_overhang_nm)
     # None unless a footprint can move and this board's own rules make silk overlaps errors.
     silk_grow = silk_labels.reserve(board) if geometry and not routing_only(facts['footprints'], list(fixed_poses)) else None
-    courtyard_is_body = not courtyard_overlap_ignored(board)
     footprints = []
     for fp in board.GetFootprints():
         uuid = fp.m_Uuid.AsString()
@@ -742,7 +765,7 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
                          for p in fp.Pads()],
                 'seats_local_nm': {'body:fab': None, 'body:silk': None, 'body:occupancy': None}})
             continue
-        native = classify_footprint(fp, captured, courtyard_is_body=courtyard_is_body)
+        native = native_by_uuid[uuid]
         seat_occupancy = (native['occupancy'] or {}).get('box')
         # Declared text and the footprint's own zones (keep-outs, antenna areas) move with the part.
         # So do its silk drawings and texts that are not fields, which no later step can move

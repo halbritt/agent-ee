@@ -390,16 +390,10 @@ class CourtyardRuleTests(Boards):
         return row['rung'], row['local_rect_nm'], captured['diagnostics']
 
     def test_courtyard_is_the_body_unless_the_board_ignores_courtyard_overlap(self):
-        import pcbnew
         # Benchmark board StickHub: its project ignores courtyard overlap and its designer overlaps
         # 143 pairs of courtyards; with the courtyard as body the search found no placement it accepted.
         self.edit(self.courtyard)
-        native = pcbnew.LoadBoard(str(self.board))
-        fp = next(f for f in native.GetFootprints() if f.GetReference() == 'R1')
-        fp.BuildCourtyardCaches()
-        box, origin = fp.GetCourtyard(pcbnew.F_CrtYd).BBox(), fp.GetPosition()
-        court = [box.GetLeft()-origin.x, box.GetTop()-origin.y,
-                 box.GetRight()-origin.x, box.GetBottom()-origin.y]
+        court = [-2 * MM, -2 * MM, 2 * MM, 2 * MM]
         outline_and_pads = [-1_150_000, -550_000, 1_150_000, 550_000]   # pads in x, the fab line's own width in y
         for severities in ({}, {'courtyards_overlap': 'error'}, {'courtyards_overlap': 'warning'},
                            {'silk_overlap': 'ignore'}):

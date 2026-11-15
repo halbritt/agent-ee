@@ -196,13 +196,18 @@ class NativeTests(unittest.TestCase):
                          (work / 'console.log').read_text())
         return work
 
-    def test_placement_uses_native_courtyard_bounds_on_both_sides(self):
+    def test_only_text_grows_to_cover_native_body_overhang_on_both_sides(self):
         self.native('''
 from pathlib import Path
 from agent_ee import placement_job as job
 from agent_ee.placement_probe import extract
 frame=k.PCB_SHAPE(fp,k.SHAPE_T_RECT);frame.SetLayer(k.F_CrtYd);frame.SetWidth(80000)
 frame.SetStart(k.VECTOR2I(9000000,14000000));frame.SetEnd(k.VECTOR2I(13500000,18000000));fp.Add(frame)
+doc={'schema':'agent-ee.board-text/1','namespace':'overhang','origin_mm':[0,0],
+     'fab_profile':'unused-in-this-native-unit','items':[
+     {'id':'label','text':'X','layer':'F.SilkS','anchor':{'at_mm':[25,25]}}]}
+emit(b,doc,default_limits())
+text=next(i for i in b.GetDrawings() if i.GetClass()=='PCB_TEXT')
 for back in (False,True):
     if fp.IsFlipped()!=back: fp.Flip(fp.GetPosition(),k.FLIP_DIRECTION_TOP_BOTTOM)
     for angle in (0,90):
@@ -212,12 +217,22 @@ for back in (False,True):
         box=fp.GetCourtyard(k.B_CrtYd if back else k.F_CrtYd).BBox()
         expected=[box.GetLeft(),box.GetTop(),box.GetRight(),box.GetBottom()]
         facts=extract(path,board=b,before=path.read_bytes())
+        points=[p for poly in facts['footprints'][0]['courtyards']['B' if back else 'F']['polygons'] for p in poly]
+        graphic=[min(p[0] for p in points),min(p[1] for p in points),
+                 max(p[0] for p in points),max(p[1] for p in points)]
         description=job._describe_board(b,facts)
         actual=next(f for f in description['footprints'] if f['ref']=='J1')['occupancy']['box']
-        assert actual==expected,(back,angle,actual,expected)
+        assert actual==graphic,(back,angle,actual,graphic)
+        padding=max(0,graphic[0]-expected[0],graphic[1]-expected[1],
+                    expected[2]-graphic[2],expected[3]-graphic[3])+1
+        assert padding>1,(graphic,expected)
+        row=next(r for r in description['text_obstacles'] if r['uuid']==text.m_Uuid.AsString())
+        reserve=row['occupancy']['local_rect_nm'];box=text.GetBoundingBox();at=text.GetPosition()
+        assert reserve==[box.GetLeft()-at.x-padding,box.GetTop()-at.y-padding,
+                         box.GetRight()-at.x+padding,box.GetBottom()-at.y+padding],(reserve,padding)
 ''', setup=GEOMETRY)
 
-    def test_empty_native_courtyard_uses_package_body_for_placement(self):
+    def test_empty_native_courtyard_grows_text_without_changing_part_body(self):
         self.native('''
 from pathlib import Path
 from agent_ee import placement_job as job, board_text
@@ -241,11 +256,19 @@ for back in (False,True):
     court=facts['footprints'][0]['courtyards']['B' if back else 'F']
     assert court['status']=='proven',court
     assert court['native_bbox_nm']==expected,(court,expected)
+    points=[p for poly in court['polygons'] for p in poly]
+    graphic=[min(p[0] for p in points),min(p[1] for p in points),
+             max(p[0] for p in points),max(p[1] for p in points)]
     for legacy in (False,True):
         if legacy: court.pop('native_bbox_nm')
         description=job._describe_board(b,facts)
         actual=next(f for f in description['footprints'] if f['ref']=='J1')['occupancy']['box']
-        assert actual==expected,(back,legacy,actual,expected)
+        assert actual==graphic,(back,legacy,actual,graphic)
+        row=next(r for r in description['text_obstacles'] if r['uuid']==text.m_Uuid.AsString())
+        reserve=row['occupancy']['local_rect_nm'];box=text.GetBoundingBox()
+        padding=max(0,graphic[0]-expected[0],graphic[1]-expected[1],
+                    expected[2]-graphic[2],expected[3]-graphic[3])+1
+        assert reserve[2]-reserve[0]==box.GetWidth()+2*padding,(reserve,padding)
     assert board_text._covering_parts(text,b,None)==['J1']
 ''', setup=GEOMETRY)
 

@@ -708,13 +708,13 @@ rules, including stricter coupling limits, always remain in force.
    Copper clearance, mask and hole rules do not change. An error or a warning
    severity, and a project file that does not name the rule, keep the
    courtyard.
-   Courtyard graphics prove closure and supply polygons for parts at angles
-   other than quarter turns. For rectangular packing, occupancy uses KiCad's
-   cached courtyard bounding box, which includes bounds beyond the graphic
-   contour and native polygon vertices. This is also the box used to check
-   whether a part covers declared board text. If a closed graphic produces an
-   empty native courtyard cache, both checks use KiCad's footprint bounding
-   box excluding text instead. Attached text and footprint
+   Courtyard graphics prove closure and supply the footprint's packing bounds
+   and polygons. Part-to-part spacing uses those graphic contours. Declared
+   text reservations grow by the largest outward difference between any part's
+   native label-cover box and its graphic packing box, plus 1 nm for boundary
+   contact. This extra space surrounds text only. Coverage uses KiCad's cached
+   courtyard box, or its footprint box excluding text when the cache is empty.
+   The final native coverage check remains the judge. Attached text and footprint
    zones remain reserved at non-quarter turns too.
 4. **Prepared Rust model and incremental search** (`crates/placement-engine/src/job.rs`,
    schema `agent-ee.placement-job-input/2`; a `/1` record replays only under the
@@ -883,7 +883,7 @@ rules, including stricter coupling limits, always remain in force.
    package check. Its `board_text` result lists covered labels and covering
    parts. A covered label prevents incumbent promotion; an otherwise invalid
    diagnostic candidate can still be routed for diagnosis. Text reservations
-   extend by one native integer unit (1 nm), because the packer permits exact
+   include one native integer unit (1 nm) beyond the body overhang, because the packer permits exact
    boundary contact while the native coverage check counts it as intersection.
 6. **Incumbent custody.** `incumbent.json` is replaced atomically (`os.replace`)
    only by a strictly better candidate with preserved integrity, engine-feasible

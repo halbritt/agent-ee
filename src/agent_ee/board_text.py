@@ -238,14 +238,16 @@ def _declared_text(board):
                 yield item, fp if kind == 'attached' else None
 
 
-def placement_regions(board):
+def placement_regions(board, *, body_overhang_nm=0):
     """Reserve declared text around its owner or as a fixed body."""
     free, attached = [], {}
     for item, owner in _declared_text(board):
         box = item.GetBoundingBox()
         # Native Intersects includes boundary contact; packing permits touching
         # rectangles. One native integer unit gives the required positive gap.
-        bounds = [box.GetLeft()-1, box.GetTop()-1, box.GetRight()+1, box.GetBottom()+1]
+        padding = body_overhang_nm + 1
+        bounds = [box.GetLeft()-padding, box.GetTop()-padding,
+                  box.GetRight()+padding, box.GetBottom()+padding]
         if owner is not None:
             attached.setdefault(owner.m_Uuid.AsString(), []).append(bounds)
         else:
