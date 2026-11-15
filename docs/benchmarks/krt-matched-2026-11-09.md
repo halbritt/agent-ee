@@ -1892,7 +1892,12 @@ No fabrication readiness or advantage over stock KRT is claimed by this arm.
 These are seven **fixed-step** placement-and-own-routing cells per revision,
 not the original time-limited placement arm. Every seed completed exactly
 100,000 steps, with four seeds and a 900-second job budget per board. The
-original time-limited baseline is running; its candidate and stock routes
+step cap does not remove clock sensitivity: candidate seeds 0 and 1 of Flat,
+Tigard and Tigard with fabrication rules switched to elapsed-time scheduling
+at step 256. The baseline engine cannot report that transition, so its clock
+exposure is unknown. Differences on those seeds remain unattributed.
+
+The original time-limited baseline is running; its candidate and stock routes
 (defaults and separately labelled board-floor-held settings) are still pending.
 The earlier container measurements above are not the baseline for this comparison.
 
@@ -1935,6 +1940,18 @@ A dash means no scored board, not zero. A scored board retained at a deadline
 is reported even though the job failed. Preservation failures are listed below
 and cannot be inferred from native error counts alone.
 
+The saved footprint coordinates, orientations and layers match across the
+arms for Complex (selected seed 3), Flat (seed 3), StickHub (seed 2), and ESP
+programming adapter with fabrication rules (seed 2). ESP32's saved diagnostic
+placement also matches (seed 0), although its baseline has no scored board.
+Complex's outcome difference therefore occurs after placement, in routing.
+
+Tigard selected seed 3 in the baseline and seed 0 in the candidate; the latter
+is one of the clock-exposed seeds. Tigard with fabrication rules selected
+seed 1 and seed 3 respectively. Those two pairs have different placements.
+Their open-count, via-count and track-length differences do not isolate a
+routing change or a code change on one placement.
+
 | Board | Revision | Opens | New / total errors | Vias | Track mm | Wall seconds | Status | Rules |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
 | complex_hierarchy | baseline | 1 | 0 / 0 | 2 | 1236.09 | 900.2 | deadline | `b1d44aef` |
@@ -1975,7 +1992,9 @@ All native warnings remain in the retained reports. None were removed from
 the grading. The fixed-step portfolios have the same number of feasible seeds
 across revisions. Individual seeds can differ: Tigard seed 0 changes from one
 hard conflict to feasible, while seed 1 changes from feasible to one hard
-conflict. This does not establish the outcome of a time-limited search.
+conflict. Both are clock-exposed candidate seeds; the cause of that difference
+is not established. A fixed step count does not make this a clock-independent
+comparison or establish the outcome of the original time-limited search.
 
 ### Fixed-step seed measurements
 
@@ -1999,6 +2018,8 @@ On the benchmark host, `~/.local/share/agent-ee/` contains
 `recovery1484-final-matched-cells.csv` (per-cell rule hashes, errors and warnings
 by type, paths and reasons), and `recovery1484-final-matched-seeds.csv`
 (each seed's steps, rate, feasibility and hard conflicts by kind).
+`recovery1484-capped-placement-comparison.json` records the saved placement
+paths and hashes of their footprint coordinates, orientations and layers.
 The run roots are `recovery1484-final-matched-before/` and
 `recovery1484-final-matched-after-standalone/`; each board's fixed-step
 record is `boards/<board>/results/place-capped-agent-ee-own-route.json`.
@@ -2009,10 +2030,12 @@ the comparison.
 The cleanup investigation found a separate tool defect: removing an entire
 track because one end dangles can also delete an interior connected branch.
 An original two-pad fixture independently reproduces zero opens before cleanup
-and one afterward. A repair is under review. Reconstructed Complex geometry
-supports that diagnosis but is not the original pre-sweep byte stream.
-Neither this diagnosis nor the landed thermal-scope change establishes a new
-Complex outcome. Paired full-board runs and the no-worse corpus remain due.
+and one afterward. Repair `507fc299` is reviewed and landed as a software
+change. It preserves the branch but leaves the native dangling warning, so
+the affected run still fails grading. Reconstructed Complex geometry supports
+the diagnosis but is not the original pre-sweep byte stream. Neither this
+repair nor the landed thermal-scope change establishes a new Complex outcome.
+Paired full-board runs and the no-worse corpus remain due.
 
 The full recovery also still needs its original time-limited and stock arms,
 causal router comparisons and repeats, held-out qualification, and current
