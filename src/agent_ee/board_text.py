@@ -261,13 +261,13 @@ def placement_regions(board):
 
 def _covering_parts(text, board, owner):
     import pcbnew as k
+    from .geometry_probe import courtyard_body_box
     covered = []
     for fp in board.GetFootprints():
         if ((owner is not None and fp.m_Uuid.AsString() == owner.m_Uuid.AsString())
                 or fp.IsFlipped() != (text.GetLayer() == k.B_SilkS)):
             continue
-        court = fp.GetCourtyard(k.B_CrtYd if fp.IsFlipped() else k.F_CrtYd)
-        body = court.BBox() if court.OutlineCount() else fp.GetBoundingBox(False, False)
+        body = courtyard_body_box(fp, k.B_CrtYd if fp.IsFlipped() else k.F_CrtYd)
         if text.GetBoundingBox().Intersects(body):
             covered.append(fp.GetReference())
     return sorted(covered)

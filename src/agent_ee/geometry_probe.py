@@ -68,6 +68,12 @@ def box_nm(box):
     return [int(box.GetX()), int(box.GetY()), int(box.GetRight()), int(box.GetBottom())]
 
 
+def courtyard_body_box(fp, layer):
+    """Native label-cover body, including footprints with an empty courtyard cache."""
+    court = fp.GetCourtyard(layer)
+    return court.BBox() if court.OutlineCount() else fp.GetBoundingBox(False, False)
+
+
 def extract(board_path, *, board=None):
     import pcbnew
     from .placement_probe import primitive, prove_contours

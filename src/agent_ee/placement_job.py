@@ -555,9 +555,9 @@ def _courtyard_box(fp, record, side):
     bounds = record.get('native_bbox_nm')
     if bounds is None:
         import pcbnew
+        from .geometry_probe import box_nm, courtyard_body_box
         fp.BuildCourtyardCaches()
-        box = fp.GetCourtyard(pcbnew.F_CrtYd if side == 'F' else pcbnew.B_CrtYd).BBox()
-        bounds = [box.GetLeft(), box.GetTop(), box.GetRight(), box.GetBottom()]
+        bounds = box_nm(courtyard_body_box(fp, pcbnew.F_CrtYd if side == 'F' else pcbnew.B_CrtYd))
     return bounds
 
 
@@ -2884,7 +2884,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                     engine_feasible=report['engine_feasible'])
         if status != 'completed':
             # The job says why, in words; the next trial or a completed one replaces it.
-            report['reason'] = trial['reason'] = _rejection_reason(status, routed, report['final'])
+            report['reason'] = trial['reason'] = _rejection_reason(status, routed, report['final'], selected)
         trial.update(status=status, route=report['route'], final=report['final'])
         receipt = retain_routing_trial(trial, suffix)
         if status == 'completed':
@@ -2981,13 +2981,16 @@ def _completion_status(routed, incumbent, final, *, engine_feasible=True):
     return 'completed'
 
 
-def _rejection_reason(status, routed, final):
+def _rejection_reason(status, routed, final, placement=None):
     """Why a routed trial did not complete, in words: every check that rejected it."""
     if status == 'no_time_for_search':
         return 'routing search was not started: the remaining trial time cannot cover search, stop grace and checks'
     if status == 'route_failed':
         return 'the router delivered no board: ' + str(routed.get('reason') or routed.get('status'))
     reasons = []
+    for violation in (placement or {}).get('board_text', {}).get('violations', []):
+        reasons.append(f"declared label {violation['text']!r} is covered by "
+                       + ', '.join(violation['covering_parts']))
     if status == 'placement_infeasible':
         reasons.append('the search found no placement without a hard violation; '
                        'the routed board is an exploratory route of a diagnostic candidate')

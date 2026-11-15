@@ -712,7 +712,9 @@ rules, including stricter coupling limits, always remain in force.
    other than quarter turns. For rectangular packing, occupancy uses KiCad's
    cached courtyard bounding box, which includes bounds beyond the graphic
    contour and native polygon vertices. This is also the box used to check
-   whether a part covers declared board text. Attached text and footprint
+   whether a part covers declared board text. If a closed graphic produces an
+   empty native courtyard cache, both checks use KiCad's footprint bounding
+   box excluding text instead. Attached text and footprint
    zones remain reserved at non-quarter turns too.
 4. **Prepared Rust model and incremental search** (`crates/placement-engine/src/job.rs`,
    schema `agent-ee.placement-job-input/2`; a `/1` record replays only under the

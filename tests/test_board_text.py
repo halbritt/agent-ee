@@ -217,6 +217,38 @@ for back in (False,True):
         assert actual==expected,(back,angle,actual,expected)
 ''', setup=GEOMETRY)
 
+    def test_empty_native_courtyard_uses_package_body_for_placement(self):
+        self.native('''
+from pathlib import Path
+from agent_ee import placement_job as job, board_text
+from agent_ee.placement_probe import extract
+frame=k.PCB_SHAPE(fp,k.SHAPE_T_RECT);frame.SetLayer(k.F_CrtYd);frame.SetWidth(50000)
+frame.SetStart(k.VECTOR2I(10000000,15000000));frame.SetEnd(k.VECTOR2I(10010000,15010000));fp.Add(frame)
+doc={'schema':'agent-ee.board-text/1','namespace':'empty-court','origin_mm':[0,0],
+     'fab_profile':'unused-in-this-native-unit','items':[
+     {'id':'label','text':'X','layer':'F.SilkS','anchor':{'at_mm':[12,16]}}]}
+emit(b,doc,default_limits())
+for back in (False,True):
+    if fp.IsFlipped()!=back: fp.Flip(fp.GetPosition(),k.FLIP_DIRECTION_TOP_BOTTOM)
+    text=next(i for i in b.GetDrawings() if i.GetClass()=='PCB_TEXT')
+    text.SetLayer(k.B_SilkS if back else k.F_SilkS);text.SetPosition(p.GetPosition())
+    fp.BuildCourtyardCaches()
+    assert fp.GetCourtyard(k.B_CrtYd if back else k.F_CrtYd).OutlineCount()==0
+    box=fp.GetBoundingBox(False,False)
+    expected=[box.GetLeft(),box.GetTop(),box.GetRight(),box.GetBottom()]
+    path=Path('/work/empty-courtyard.kicad_pcb');assert k.SaveBoard(str(path),b)
+    facts=extract(path,board=b,before=path.read_bytes())
+    court=facts['footprints'][0]['courtyards']['B' if back else 'F']
+    assert court['status']=='proven',court
+    assert court['native_bbox_nm']==expected,(court,expected)
+    for legacy in (False,True):
+        if legacy: court.pop('native_bbox_nm')
+        description=job._describe_board(b,facts)
+        actual=next(f for f in description['footprints'] if f['ref']=='J1')['occupancy']['box']
+        assert actual==expected,(back,legacy,actual,expected)
+    assert board_text._covering_parts(text,b,None)==['J1']
+''', setup=GEOMETRY)
+
     def test_exact_label_contact_is_not_an_eligible_placement(self):
         self.native('''
 from pathlib import Path
@@ -248,6 +280,8 @@ assert not evaluation['feasible'],evaluation
 entry=dict(integrity='preserved',placement_introduced_errors=0,status='checked',
            engine_feasible=True,edge_intent={'status':'pass'},board_text=board_text.placement_coverage(b))
 assert not job._placement_eligible(entry)
+reason=job._rejection_reason('placement_failed',{}, {},entry)
+assert "declared label 'X' is covered by J1" in reason,reason
 text.SetPosition(text.GetPosition()+k.VECTOR2I(0,-1000000))
 entry['board_text']=board_text.placement_coverage(b)
 assert job._placement_eligible(entry),entry

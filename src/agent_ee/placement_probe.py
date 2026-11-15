@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 
 from . import courtyard_curves as curves
-from .geometry_probe import box_nm, pad_attribute, pad_vec
+from .geometry_probe import box_nm, courtyard_body_box, pad_attribute, pad_vec
 from .placement import area2, cross, intersection_area, qualified_polygons
 
 
@@ -422,8 +422,7 @@ def extract(board_path, *, board=None, before=None):
                 # The graphic contours prove closure and support rotated packing.
                 # KiCad's cached BBox includes line-width bounds beyond its
                 # native polygon vertices; the label-cover check uses that box.
-                bounds = fp.GetCourtyard(layer).BBox()
-                courtyards[side]['native_bbox_nm'] = [bounds.GetLeft(), bounds.GetTop(), bounds.GetRight(), bounds.GetBottom()]
+                courtyards[side]['native_bbox_nm'] = box_nm(courtyard_body_box(fp, layer))
         pads = []
         for pad in fp.Pads():
             pads.append({'uuid': pad.m_Uuid.AsString(), 'number': pad.GetNumber(), 'net': pad.GetNetname(),
