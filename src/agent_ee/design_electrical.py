@@ -5,7 +5,7 @@ from .storage import read_json, write_json
 
 RULES = (
     ('differential_buses', 'BUS_FAILSAFE', 'diff-bus-failsafe-bias/1',
-     'Declared differential buses shall be checked for termination and failsafe bias. '
+     'Declared RS-485/RS-422 buses shall be checked for termination and failsafe bias. '
      'Missing bias or verified true-failsafe evidence is a warning, not electrical acceptance.'),
     ('offboard_controls', 'CONTROL_DEFAULT', 'offboard-control-default-state/1',
      'Declared off-board control inputs shall be checked for their agent-selected default bias. '
@@ -62,8 +62,10 @@ def emit(design, root):
     rules = selected(design)
     if not rules:
         return
-    # Standard passives plus the author's exact custom symbol classifications.
-    classes = {'Device:R': {'class': 'resistor', 'pins': ['1', '2']}}
+    # Known two-terminal resistor symbols plus explicit custom classifications.
+    from .design import device_class
+    classes = {part['lib_id']: {'class': 'resistor', 'pins': ['1', '2']}
+               for part in design['parts'].values() if device_class(part.get('lib_id')) == 'resistor'}
     for symbol, rule in read_json(root / 'topology-rules.json')['classes'].items():
         classes[symbol] = {'class': rule['class'], 'pins': list(rule['terminals'].values())}
     bindings = dict(schema=BINDINGS_SCHEMA, classes=classes,

@@ -308,6 +308,42 @@ class GenerateTests(ScriptedLoop):
         self.assertEqual(provenance['authority'], AUTHORITY)
         self.assertEqual(json.loads((self.root / 'run/generate-report.json').read_text()), report)
 
+    def test_passed_electrical_check_warning_reaches_attempt_benchmark_and_feedback(self):
+        from tests.test_design_electrical import ElectricalRolesTests
+        from agent_ee import design_electrical
+        from agent_ee.design_rules import evaluate
+        from tests.test_design_rules import DifferentialAndControlRuleTests
+        fixture = ElectricalRolesTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        design_electrical.emit(fixture.design, fixture.root)
+        report = evaluate(json.loads((fixture.root / 'electrical-role-rules.json').read_text()),
+            json.loads((fixture.root / 'electrical-role-bindings.json').read_text()),
+            ['BUS_FAILSAFE', 'CONTROL_DEFAULT'], DifferentialAndControlRuleTests().make_graph(fixture.parts), {})
+        self.assertEqual(report['outcome'], 'pass')
+        def build(attempt):
+            self.build_report(attempt)
+            review = attempt / 'build/stages/01-symbols/review'
+            review.mkdir(parents=True)
+            write_json(review / 'result.json', dict(checks=[dict(id='roles', kind='design_rules',
+                execution=report['execution'], outcome=report['outcome'], details=report)]))
+            return dict(execution='ok', exit_code=0)
+        self.responses = [self.response()]
+        with self.with_build(build):
+            generated = self.generate(max_attempts=1)
+        self.assertTrue(generated['accepted'])
+        attempt = self.saved()['attempts'][0]
+        self.assertEqual(attempt['failed_checks'], [])
+        warning, = attempt['warnings']
+        self.assertEqual((warning['check'], warning['card']), ('roles', 'BUS_FAILSAFE'))
+        self.assertEqual(warning['finding']['reason'], 'failsafe_bias_and_true_failsafe_absent')
+        row = loop.design_row(self.requirements, self.root / 'run')
+        self.assertEqual(row['warnings'], [dict(attempt=1, warnings=attempt['warnings'])])
+        feedback = loop.phase_feedback('build', 'another stage failed', attempt)
+        self.assertIn('Check warnings:', feedback)
+        self.assertIn('failsafe_bias_and_true_failsafe_absent', feedback)
+        self.assertEqual(len(self.prompts), 1)  # A warning does not change acceptance or retry budgets.
+
     def test_missing_electrical_roles_returns_to_author_within_same_attempt_limit(self):
         old = copy.deepcopy(self.statement)
         old.pop('electrical_roles')
@@ -317,6 +353,9 @@ class GenerateTests(ScriptedLoop):
         self.assertIn('electrical_roles', report['attempts'][0]['reason'])
         self.assertFalse((self.root / 'run/attempt-001/capture').exists())
         self.assertIn('Declare electrical_roles', self.prompts[0])
+        self.assertIn('never CAN, LVDS or USB', self.prompts[0])
+        self.assertIn('positive is the line intended to idle high', self.prompts[0])
+        self.assertIn('connector is descriptive context', self.prompts[0])
         self.assertIn('electrical_roles', self.prompts[1])
 
     def test_retained_requirements_and_hash_preserve_original_bytes(self):
@@ -1364,9 +1403,10 @@ class BenchmarkTests(ScriptedLoop):
         self.assertEqual([r['status'] for r in report['designs']], ['accepted', 'seat_failed', 'not_run'])
         keys = {'name', 'requirements_sha256', 'status', 'reason', 'attempts', 'attempts_to_accepted', 'duration_s',
                 'report', 'refusal_classes', 'failed_checks', 'placement_findings', 'failing_stages',
-                'untraced_requirements', 'outline_utilisation'}
+                'untraced_requirements', 'outline_utilisation', 'warnings'}
         for row in report['designs']:
             self.assertEqual(set(row), keys, row['name'])
+            self.assertEqual(row['warnings'], [])
         self.assertEqual([r['reason'] for r in report['designs']], [None, 'quota exhausted', 'stopped_seat_failed'])
         self.assertEqual([r['untraced_requirements'] for r in report['designs']], [[], None, None])
         run = report['run']

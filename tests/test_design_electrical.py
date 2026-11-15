@@ -2,6 +2,8 @@
 import copy
 from pathlib import Path
 import tempfile
+import time
+from unittest.mock import patch
 import unittest
 
 from agent_ee import design_electrical as electrical
@@ -29,7 +31,7 @@ class ElectricalRolesTests(unittest.TestCase):
                       ('R1', 'Owned:R', '120', ['A', 'B']),
                       ('R2', 'Owned:R', '10k', ['ENABLE', 'GND'])]
         self.design = dict(electrical_roles=self.roles,
-            parts={ref: dict(value=value) for ref, _, value, _ in self.parts},
+            parts={ref: dict(value=value, lib_id=symbol) for ref, symbol, value, _ in self.parts},
             connectors=[dict(reference='J1')], nets={})
         for ref, _, _, nets in self.parts:
             for pin, net in enumerate(nets, 1):
@@ -56,7 +58,62 @@ class ElectricalRolesTests(unittest.TestCase):
                 self.assertEqual(cards['BUS_FAILSAFE']['items'][0]['severity'], 'warning')
         graph = test_design_rules.DifferentialAndControlRuleTests().make_graph(self.parts[:-1])
         report = evaluate(pack, bindings, ['CONTROL_DEFAULT'], graph, {})
-        self.assertEqual(report['cards'][1]['status'], 'warning')
+        self.assertEqual(next(c for c in report['cards'] if c['id'] == 'CONTROL_DEFAULT')['status'], 'warning')
+
+    def test_resistor_family_symbols_are_classified_without_functional_witnesses(self):
+        for symbol in ('Device:R_Small', 'Device:R_US'):
+            with self.subTest(symbol=symbol):
+                design = copy.deepcopy(self.design)
+                for ref in ('R1', 'R2'):
+                    design['parts'][ref]['lib_id'] = symbol
+                write_json(self.root / 'topology-rules.json', dict(classes={}))
+                electrical.emit(design, self.root)
+                parts = [(ref, symbol if ref.startswith('R') else lib, value, nets)
+                         for ref, lib, value, nets in self.parts]
+                report = evaluate(read_json(self.root / 'electrical-role-rules.json'),
+                    read_json(self.root / 'electrical-role-bindings.json'),
+                    ['BUS_FAILSAFE', 'CONTROL_DEFAULT'],
+                    test_design_rules.DifferentialAndControlRuleTests().make_graph(parts), {})
+                cards = {c['id']: c for c in report['cards']}
+                self.assertEqual(cards['BUS_FAILSAFE']['status'], 'warning')
+                self.assertEqual(cards['BUS_FAILSAFE']['items'][0]['reason'],
+                                 'failsafe_bias_and_true_failsafe_absent')
+                self.assertEqual(cards['CONTROL_DEFAULT']['status'], 'pass')
+
+    def test_emitted_checks_run_on_native_export_and_report_bias_warning(self):
+        test_design_rules.require_toolchain(native=True)
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        for biased in (False, True):
+            root = self.root / str(biased)
+            root.mkdir()
+            write_json(root / 'topology-rules.json', read_json(self.root / 'topology-rules.json'))
+            electrical.emit(self.design, root)
+            parts = self.parts + ([('R3', 'Owned:R', '680', ['A', 'VCC']),
+                                   ('R4', 'Owned:R', '680', ['B', 'GND'])] if biased else [])
+            generator = test_design_rules.generator
+            with patch.object(generator, 'parts', return_value=parts), patch.dict(generator.SYMBOLS,
+                    {'Owned:XCVR': ['A', 'B', 'VCC', 'GND', 'ENABLE'], 'Owned:Header': ['ENABLE', 'GND']}):
+                (root / 'rules.kicad_sch').write_text(generator.schematic())
+            (root / 'requirements.md').write_text('R1: Check the declared original bus and enable roles.')
+            checks = [dict(id='netlist', kind='netlist'), dict(id='roles', kind='design_rules', params=dict(
+                pack='electrical-role-rules.json', bindings='electrical-role-bindings.json',
+                netlist_check='netlist', cards=['BUS_FAILSAFE', 'CONTROL_DEFAULT']))]
+            paths = ['rules.kicad_sch', 'requirements.md', 'electrical-role-rules.json', 'electrical-role-bindings.json']
+            scope = test_design_rules.scope_for(checks,
+                [test_design_rules.requirement('R1', ['netlist', 'roles'])], paths)
+            write_json(root / 'scope.json', scope)
+            run = root / 'run'
+            run.mkdir()
+            capture(root / 'scope.json', run)
+            results = {r['id']: r for r in run_checks(run, time.monotonic() + 60)}
+            self.assertEqual(results['netlist']['execution'], 'ok', results['netlist'])
+            result = results['roles']
+            self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+            self.assertIn('work/roles/design-rules.json', result['evidence'])
+            cards = {c['id']: c for c in result['details']['cards']}
+            self.assertEqual(cards['BUS_FAILSAFE']['status'], 'pass' if biased else 'warning')
+            self.assertEqual(cards['CONTROL_DEFAULT']['status'], 'pass')
 
     def test_roles_must_resolve_to_actual_declared_terminals_and_component(self):
         for mutation, message in (
@@ -66,6 +123,9 @@ class ElectricalRolesTests(unittest.TestCase):
             (lambda d: d['connectors'].clear(), 'declared in connectors'),
             (lambda d: d['electrical_roles']['offboard_controls'][0].pop('ground'), 'explicit ground'),
             (lambda d: d['electrical_roles'].pop('offboard_controls'), 'declare differential_buses'),
+            (lambda d: d['electrical_roles']['offboard_controls'][0].update(expected_bias='pullup'), 'explicit rail'),
+            (lambda d: d['electrical_roles']['differential_buses'].append(
+                copy.deepcopy(d['electrical_roles']['differential_buses'][0])), 'duplicate'),
         ):
             changed = copy.deepcopy(self.design)
             mutation(changed)

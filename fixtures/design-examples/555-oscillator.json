@@ -42,6 +42,10 @@
       ]
     }
   ],
+  "electrical_roles": {
+    "differential_buses": [],
+    "offboard_controls": []
+  },
   "functional": [
     {
       "text": "The NE555 shall have supply and reset on VIN, trigger and threshold on TIMING, and discharge on DISCHARGE.",

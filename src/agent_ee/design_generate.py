@@ -388,6 +388,14 @@ These quotes establish text traceability, not proof of engineering correctness.
 Functional witnesses must independently specify intended pin roles; native parity alone
 cannot establish them. Put behavioral/performance claims and physical tests in bench.
 Declare electrical_roles with both differential_buses and offboard_controls lists.
+For differential_buses declare only RS-485/RS-422 buses that use this idle-bias
+rule, never CAN, LVDS or USB pairs. positive is the line intended to idle high;
+negative idles low. Determine polarity from the actual transceiver pin roles,
+not A/B naming alone. diff_pairs instead controls physical pair routing and can
+apply to other bus types; it does not select this electrical rule.
+For offboard_controls declare static control inputs such as enable or reset,
+not serial data/clock lines. connector is descriptive context: this check does
+not prove a signal path from the connector to the IC.
 Use [] only when the design has no such roles; omission is not an assessment.
 Read the role format in design-compile.md and design_electrical.py. Declare every
 applicable bus and off-board control, including its actual component terminals and
@@ -516,6 +524,23 @@ def failed_checks(root):
     return failures
 
 
+def electrical_warnings(root):
+    """Keep enforced warning items visible even when the check outcome is pass."""
+    warnings = []
+    for path in sorted(root.glob('stages/*/review/result.json')):
+        for check in design.load(path).get('checks', []):
+            if check.get('kind') != 'design_rules' or check.get('execution') != 'ok':
+                continue
+            for card in check.get('details', {}).get('cards', []):
+                if not card.get('enforced'):
+                    continue
+                for item in card.get('items', []):
+                    if item.get('severity') == 'warning' and item.get('status') == 'violation':
+                        warnings.append(dict(kind='electrical_rule', check=check['id'], card=card['id'],
+                            report=str(path.relative_to(root)), finding=item))
+    return warnings
+
+
 def placement_findings(root):
     """Expose the job's concrete rejection rather than only its stage status."""
     result = []
@@ -614,6 +639,8 @@ def phase_feedback(stage, reason, row):
     copper_warnings = [w for job in findings for w in (job.get('final', {}).get('decoupling_loops') or {}).get('warnings', [])]
     if copper_warnings:
         feedback += 'Local copper warnings: ' + json.dumps(copper_warnings) + '\n'
+    if row.get('warnings'):
+        feedback += 'Check warnings: ' + json.dumps(row['warnings']) + '\n'
     if findings:
         feedback += ('Placement summary (engine feasibility, validity and hard violations): '
                      + json.dumps(placement_summary(findings)) + '\n')
@@ -967,7 +994,7 @@ def _generate(requirements_path, out, options, identity=None):
                 build = read_optional(run / 'build-report.json')
                 row.update(bundle=str(bundle), run=str(run), failed_checks=failed_checks(run),
                     placement_findings=placement_findings(run), outline_utilisation=outline_utilisation(run, current),
-                    warnings=(build or {}).get('warnings', []))
+                    warnings=(build or {}).get('warnings', []) + electrical_warnings(run))
                 qualification = read_optional(run / 'qualification.json')
                 file_pass = bool(build and build.get('accepted') is True and qualification
                     and qualification.get('mode') == 'typed'
@@ -1117,7 +1144,7 @@ class PhaseFailure(Exception):
 # Every benchmark row has exactly these keys; null where a value does not apply.
 ROW_KEYS = ('name', 'requirements_sha256', 'status', 'reason', 'attempts', 'attempts_to_accepted', 'duration_s',
             'report', 'refusal_classes', 'failed_checks', 'placement_findings', 'failing_stages',
-            'untraced_requirements', 'outline_utilisation')
+            'untraced_requirements', 'outline_utilisation', 'warnings')
 
 
 def design_row(path, run, status=None, reason=None):
@@ -1132,6 +1159,7 @@ def design_row(path, run, status=None, reason=None):
                 attempts=len(rows), attempts_to_accepted=len(rows) if generated['accepted'] else None,
                 duration_s=generated['duration_s'], report=str(run / 'generate-report.json'),
                 refusal_classes=sorted({c for r in rows for c in r['refusal_classes']}),
+                warnings=[dict(attempt=r['number'], warnings=r['warnings']) for r in rows if r.get('warnings')],
                 failed_checks=[dict(attempt=r['number'], checks=r['failed_checks']) for r in rows if r['failed_checks']],
                 placement_findings=[dict(attempt=r['number'], findings=r['placement_findings'])
                     for r in rows if r.get('placement_findings') and r['status'] not in ('accepted', 'accepted_partial')],
@@ -1147,7 +1175,7 @@ def design_row(path, run, status=None, reason=None):
         sha = None
     return dict(name=path.stem, requirements_sha256=sha, status=status, reason=reason, attempts=0,
         attempts_to_accepted=None, duration_s=0, report=None, refusal_classes=[], failed_checks=[],
-        placement_findings=[], failing_stages=[], untraced_requirements=None,
+        placement_findings=[], failing_stages=[], untraced_requirements=None, warnings=[],
         outline_utilisation=dict(status='unavailable', reason='No generate report for this design'))
 
 

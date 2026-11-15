@@ -69,6 +69,10 @@
       ]
     }
   ],
+  "electrical_roles": {
+    "differential_buses": [],
+    "offboard_controls": []
+  },
   "functional": [
     {
       "text": "J1 shall accept positive VIN on pin 1 and GND on pin 2, with input and output bypass capacitors.",

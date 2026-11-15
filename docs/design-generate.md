@@ -14,10 +14,14 @@ agent-ee design benchmark fixtures/design-requirements --out NEW_BENCHMARK \
   --max-attempts 3 --max-seconds 1200
 ```
 
-The author declares differential buses and off-board controls through
+The author declares RS-485/RS-422 idle-bias buses and static off-board controls through
 [`electrical_roles`](design-compile.md#electrical-roles). The compiler selects
 existing native-netlist bias checks for those roles. Missing bias remains a
-warning; empty role lists are reported as not checked. These author interpretations
+warning, retained in each attempt and benchmark report and in feedback on failed
+attempts; an accepted attempt is not retried just for a warning. Empty role lists
+are reported as not checked. `positive` is the line intended to idle high, not an
+assumption about A/B names. CAN, LVDS and USB pairs belong in `diff_pairs` when
+physical pair routing is needed, not in this idle-bias role group. These author interpretations
 do not establish datasheet facts or electrical acceptance. Omitting the declaration
 returns the attempt to the author within the same attempt and time limits.
 
@@ -314,7 +318,7 @@ Every row has the same keys, with null where a value does not apply: `name`,
 `requirements_sha256`, `status`, `reason`, `attempts`, `attempts_to_accepted`
 (null unless accepted), `duration_s`, `report`, `refusal_classes`,
 `failed_checks`, `placement_findings`, `failing_stages`, `untraced_requirements`
-and `outline_utilisation`. A row's status is the design's final state, or
+and `outline_utilisation`, plus `warnings` grouped by attempt. A row's status is the design's final state, or
 `error`, `interrupted` (the design in flight when the run stopped) or `not_run`
 (a design not started).
 

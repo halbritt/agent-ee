@@ -61,7 +61,14 @@ coverage as not checked. Existing design files without this field still compile.
 New generation requests an explicit declaration and returns an omission to the
 author within the existing attempt and time limits.
 
-Each differential bus has `id`, `positive`, `negative`, `rail`, `ground`, and
+`differential_buses` selects the RS-485/RS-422 idle-bias rule only. Do not
+include CAN, LVDS or USB pairs. `positive` means the line intended to idle high,
+which the rule checks for a pull-up; `negative` idles low and needs a pull-down.
+Determine these roles from the transceiver pin definitions, not A/B names alone.
+This differs from `diff_pairs`, which declares physical routing constraints and
+can describe other bus types without selecting an idle-bias rule.
+
+Each declared RS-485/RS-422 bus has `id`, `positive`, `negative`, `rail`, `ground`, and
 `transceiver: {reference, part_number}`. Each terminal is `{reference, pin}`,
 with a string pin number. For example, for the designer's declared pin roles:
 
@@ -82,16 +89,24 @@ with a string pin number. For example, for the designer's declared pin roles:
 }
 ```
 
-An off-board control needs `id`, `connector`, `ic`, `net`, `expected_bias`, and
+Off-board controls here are static inputs such as enable or reset, not serial
+data or clock lines. An off-board control needs `id`, `connector`, `ic`, `net`,
+`expected_bias`, and
 an explicit `ground` terminal for `pulldown` or `rail` for `pullup`. Its connector
 must appear in `connectors`; `net` names the IC terminal's declared net, without
-the native `/` prefix. A series resistor can separate it from the connector net.
+the native `/` prefix. The connector terminal is descriptive context: the rule
+does not verify its
+signal path to the IC. A series resistor can separate the two nets.
 All terminals must belong to the authored circuit. The compiler preserves these
 as design-author interpretations, not owner or verified datasheet bindings.
 
 The compiled review selects the existing `diff-bus-failsafe-bias/1` and
 `offboard-control-default-state/1` rules over the native netlist. Their severity
-is unchanged: missing bias produces warnings. This path supplies no verified
+is unchanged: missing bias produces warnings. Generation attempt and benchmark
+reports retain those warnings, including the check, card and affected role.
+Warnings also enter author feedback when a failed attempt returns to the author;
+an otherwise accepted attempt is not retried solely for a warning. This path
+supplies no verified
 internal-bias or true-failsafe facts, so such a device may need a separate
 datasheet-facts review to resolve a warning. The checks do not establish bias
 voltage margins, buffering, transient tolerance, simulation or hardware behavior.
