@@ -1879,9 +1879,9 @@ revisions do not isolate a code effect.
 The completed fixed-step arm does **not** establish an overall improvement.
 Both revisions complete Flat and Tigard with revision-2 fabrication rules with
 zero opens and no introduced native errors; their 2 and 6 inherited errors remain.
-Complex reduces opens from 1 to 0 but fails preservation: C203.2 loses its
-bottom-layer GND fill contact and both thermal spokes. Tigard increases from
-34 to 35 opens. StickHub retains 34 opens and damaged pours. ESP programming
+On different selected placements, Complex changes from 1 to 0 opens but fails
+preservation: C203.2 loses its bottom-layer GND fill contact and both thermal
+spokes. On the same selected placement, Tigard changes from 34 to 35 opens. StickHub retains 34 opens and damaged pours. ESP programming
 adapter with fabrication rules retains one introduced error.
 
 ESP32 changes from a deadline with no scored board to `placement_infeasible`
@@ -1897,8 +1897,8 @@ Tigard and Tigard with fabrication rules switched to elapsed-time scheduling
 at step 256. The baseline engine cannot report that transition, so its clock
 exposure is unknown. Differences on those seeds remain unattributed.
 
-The original time-limited baseline is running; its candidate and stock routes
-(defaults and separately labelled board-floor-held settings) are still pending.
+The original time-limited and stock-route arms have now finished; their
+results and limitations are reported in the next recovery section below.
 The earlier container measurements above are not the baseline for this comparison.
 
 ### Frozen versions and rules
@@ -2047,7 +2047,209 @@ the diagnosis but is not the original pre-sweep byte stream. Neither this
 repair nor the landed thermal-scope change establishes a new Complex outcome.
 Paired full-board runs and the no-worse corpus remain due.
 
-The full recovery also still needs its original time-limited and stock arms,
-causal router comparisons and repeats, held-out qualification, and current
-five-brief electrical and generation evidence. The spent USB attempt budget
+The full recovery still needs general router qualification and repeats,
+held-out qualification, paired repair outcomes, and current five-brief
+electrical and generation evidence. The spent USB attempt budget
 and other owner holds remain in effect.
+
+
+## Recovery: time-limited placement and retained stock routes (2026-11-15)
+
+### Result in brief
+
+These completed arms do not establish an overall improvement or fabrication
+readiness. In the original time-limited own-routing arm, only Complex and Flat
+complete on both revisions. Flat still has two native clearance errors.
+Tigard, StickHub and both fabrication-rule cells fail on the candidate; candidate
+ESP32 is an infeasible diagnostic placement. The baseline ESP32 reaches its
+900-second deadline without a scored final board; that score remains missing.
+Routing a retained diagnostic placement with stock KRT does not validate it.
+
+The source revisions, placement binaries, private router kernels and original
+project hashes are those in the fixed-step section above. These runs use four
+time-limited seeds per board, without the 100,000-step cap, and the original
+900-second whole-job limit. Across each paired cell the placement problem bytes
+match; selected final placements differ. Timing, instrumentation and host effects
+are not isolated. No causal throughput or routing improvement is claimed.
+
+### Original time-limited own-routing results
+
+New and retained counts below are native errors, separate from opens. A missing
+score is shown as a dash. Wall time includes the whole placement-and-routing job.
+
+| Board | Arm | Opens | New / retained errors | Vias | Track mm | Wall s | Rules |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| complex_hierarchy | baseline | 0 | 0 / 0 | 0 | 1076.61 | 391.4 | `b1d44aef` |
+| complex_hierarchy | candidate | 0 | 0 / 0 | 3 | 991.92 | 674.7 | `b1d44aef` |
+| flat_hierarchy | baseline | 0 | 0 / 2 | 0 | 1512.83 | 425.7 | `f32ff0ff` |
+| flat_hierarchy | candidate | 0 | 0 / 2 | 3 | 1365.3 | 526.4 | `f32ff0ff` |
+| tigard | baseline | 36 | 0 / 48 | 148 | 1846.22 | 851.0 | `6a194ba7` |
+| tigard | candidate | 31 | 1 / 48 | 160 | 1967.41 | 764.2 | `6a194ba7` |
+| stickhub | baseline | 33 | 0 / 0 | 121 | 641.68 | 899.6 | `c2ed755a` |
+| stickhub | candidate | 33 | 0 / 0 | 116 | 647.54 | 744.6 | `c2ed755a` |
+| esp_prog_fabrules | baseline | 0 | 1 / 1 | 19 | 313.93 | 498.1 | `78447db0` |
+| esp_prog_fabrules | candidate | 0 | 1 / 1 | 19 | 343.8 | 523.6 | `78447db0` |
+| tigard_fabrules | baseline | 1 | 0 / 6 | 205 | 2101.35 | 749.3 | `2636eb9b` |
+| tigard_fabrules | candidate | 1 | 0 / 6 | 180 | 2063.31 | 440.7 | `2636eb9b` |
+| esp32_devkit_lipo | baseline | - | - / - | - | - | 900.2 | `dcbdd59b` |
+| esp32_devkit_lipo | candidate | 54 | 5 / 1 | 122 | 1158.48 | 815.2 | `dcbdd59b` |
+
+Baseline Tigard, StickHub, the ESP programming adapter and Tigard with fabrication
+rules have status `verification_failed`. Their candidate statuses are respectively
+`placement_infeasible`, `verification_failed`, `verification_failed` and
+`placement_infeasible`. Candidate ESP32 is also `placement_infeasible`; baseline
+ESP32 is `deadline`. Every other row is `completed`.
+
+Tigard's candidate adds a J5/U3 courtyard conflict. The ESP adapter's candidate
+has a new short involving U2's no-net copper polygon and the Net-(C1-Pad1) track;
+the baseline has a new clearance finding. StickHub retains a split GND component
+in both arms. Candidate ESP32 has two new copper-edge-clearance errors and three
+starved thermals, plus a retained intersecting-zone error; its GND component and
+pour failures remain. Native readers found no tracks or vias below effective
+net-class sizes on the 13 available scored boards; this does not remove their
+other errors or establish electrical correctness.
+
+### Stock KRT on the retained time-limited placements
+
+Stock KRT is pinned at `e6bc31e2291a91327217cd668885e065a487ec92`, with
+kernel SHA-256 `4411ccf3f074f519d8d69be29ac58b46ca7c4c2fe4f4be889d253d40996c2c0f`
+and Python 3.14.4. Its interpreter and 13 installed-package metadata hashes were
+checked before and after each cell. These runs reuse saved placements; no
+additional placement search ran. Baseline/candidate here identify the placement
+source, not different stock-router revisions. The held variant uses the same
+bare board bytes as the default variant and adds `--escalation board
+--no-fix-drc-settings`. Each stock cell retains its original 900-second limit;
+wall time here is routing only.
+
+Scoring restores each board's original project rules. New/retained errors are
+matched as a multiset of finding type and item descriptions against the exact
+bare placement. They are not obtained by subtracting total counts. A finding
+retained from a placement is not necessarily inherited from the original design;
+Tigard's candidate placement conflict remains. Source placement status stays
+attached to every result, including baseline ESP32's diagnostic-only source.
+
+Default stock settings:
+
+| Board | Arm | Opens | New / retained errors | Vias | Track mm | Wall s | Rules |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| complex_hierarchy | baseline | 0 | 0 / 0 | 22 | 1034.44 | 12.8 | `b1d44aef` |
+| complex_hierarchy | candidate | 0 | 0 / 0 | 25 | 1119.76 | 15.4 | `b1d44aef` |
+| flat_hierarchy | baseline | 0 | 0 / 2 | 38 | 1541.85 | 16.6 | `f32ff0ff` |
+| flat_hierarchy | candidate | 0 | 1 / 2 | 29 | 1337.85 | 16.0 | `f32ff0ff` |
+| tigard | baseline | 0 | 908 / 23 | 196 | 2102.79 | 156.7 | `6a194ba7` |
+| tigard | candidate | 2 | 970 / 24 | 232 | 2411.96 | 209.8 | `6a194ba7` |
+| stickhub | baseline | 18 | 253 / 0 | 155 | 836.18 | 226.8 | `c2ed755a` |
+| stickhub | candidate | 17 | 441 / 0 | 153 | 748.16 | 243.0 | `c2ed755a` |
+| esp_prog_fabrules | baseline | 0 | 4 / 1 | 23 | 279.0 | 2.5 | `78447db0` |
+| esp_prog_fabrules | candidate | 0 | 2 / 1 | 28 | 281.27 | 2.5 | `78447db0` |
+| tigard_fabrules | baseline | 0 | 93 / 6 | 204 | 2052.11 | 24.6 | `2636eb9b` |
+| tigard_fabrules | candidate | 0 | 50 / 6 | 177 | 2078.1 | 26.6 | `2636eb9b` |
+| esp32_devkit_lipo | baseline | 26 | 967 / 11 | 227 | 1565.27 | 456.0 | `dcbdd59b` |
+| esp32_devkit_lipo | candidate | 32 | 997 / 3 | 207 | 1479.26 | 539.4 | `dcbdd59b` |
+
+Board-floor-held settings:
+
+| Board | Arm | Opens | New / retained errors | Vias | Track mm | Wall s | Rules |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| complex_hierarchy | baseline | 0 | 0 / 0 | 22 | 1034.44 | 12.2 | `b1d44aef` |
+| complex_hierarchy | candidate | 0 | 0 / 0 | 25 | 1119.76 | 15.1 | `b1d44aef` |
+| flat_hierarchy | baseline | 0 | 0 / 2 | 38 | 1541.85 | 17.7 | `f32ff0ff` |
+| flat_hierarchy | candidate | 0 | 1 / 2 | 29 | 1337.85 | 16.5 | `f32ff0ff` |
+| tigard | baseline | 30 | 0 / 48 | 153 | 1828.8 | 255.3 | `6a194ba7` |
+| tigard | candidate | 30 | 0 / 49 | 160 | 1898.24 | 202.2 | `6a194ba7` |
+| stickhub | baseline | 27 | 32 / 0 | 115 | 659.02 | 116.4 | `c2ed755a` |
+| stickhub | candidate | 28 | 56 / 0 | 107 | 660.3 | 177.5 | `c2ed755a` |
+| esp_prog_fabrules | baseline | 0 | 4 / 1 | 23 | 279.0 | 2.3 | `78447db0` |
+| esp_prog_fabrules | candidate | 0 | 2 / 1 | 28 | 281.27 | 2.5 | `78447db0` |
+| tigard_fabrules | baseline | 1 | 0 / 6 | 196 | 2077.91 | 43.3 | `2636eb9b` |
+| tigard_fabrules | candidate | 1 | 0 / 6 | 181 | 2063.54 | 34.1 | `2636eb9b` |
+| esp32_devkit_lipo | baseline | 43 | 24 / 11 | 131 | 1056.6 | 259.5 | `dcbdd59b` |
+| esp32_devkit_lipo | candidate | 55 | 8 / 3 | 124 | 1033.87 | 257.4 | `dcbdd59b` |
+
+The held flags do not establish compliance with all board or net-class sizes.
+The all-copper audit finds 16/17 undersized vias on baseline/candidate Flat and
+13/18 on baseline/candidate Tigard. Held ESP32 has 13/3 tracks at 0.2000 mm,
+below both its 0.2032 mm board minimum and effective net-class width. The other
+four held boards have no below-class tracks or vias. These counts are separate
+from native DRC, which does not necessarily flag a net-class-size violation.
+Default stock runs have further undersized copper; every item and via-layer
+diameter is retained in the audit described below.
+
+Every held-candidate StickHub new finding is a solder-mask bridge (56).
+Held candidate ESP32 adds five starved thermals and three track-width errors;
+one bare-placement thermal finding is removed. Held candidate Flat adds one
+starved thermal. None of these boards is called clean.
+
+All 28 stock cells have saved results and per-cell exit code 0. That process
+status does not mean a board passed. The held-candidate batch's outer exit code
+was not exposed by the terminal receipt and remains unavailable; no rerun was
+used to replace that missing process evidence.
+
+### Evidence and coverage
+
+The host artifacts `recovery1484-final-matched-cells.csv` and
+`recovery1484-final-matched-seeds.csv` retain per-cell source status, errors and
+warnings by type, rule hashes, paths and seed measurements. The run roots are
+`recovery1484-final-matched-before/` and
+`recovery1484-final-matched-after-standalone/`. Their result files point to the
+saved boards and complete native reports, including every reported open and
+violation. `recovery1484-stock-completed-audit.json` retains all 28 stock cells,
+new/retained/removed findings, below-class copper, source poses and file hashes.
+
+The fixed benchmark native command uses `--severity-all --refill-zones` without
+`--all-track-errors` or `--schematic-parity`; reported error counts are not an
+exhaustive per-track count or a schematic-parity check. Original ignored checks
+remain in the audit. Source poses and effective net-class sizes were read from
+the saved boards without rerouting them. Router-reported plane fragility is not
+independent pour qualification. These controls establish no new simulation,
+supplier, physical or fabrication acceptance.
+
+
+### Repeated routing of the same saved Tigard placement
+
+The saved seed-3 placement used by both scored fixed-step Tigard boards was
+routed twice at each private router revision, serially in baseline/candidate/
+baseline/candidate order. Input board SHA-256 is
+`ec2cf58bd6d41dbbb00646244dd5a8a38cf64bce8e835dfd1397b39c8db7bd89`;
+its project hash is `6a194ba7` as listed above. Both revisions keep the same
+private kernel and Python pins. No placement was regenerated.
+
+The repeated comparison uses 233 wall seconds per invocation, taken from the
+original baseline route's actual `--budget 233` argument. The earlier candidate
+invocation used 184 seconds. The review requested one fixed budget and at least
+two runs per revision, without specifying a numeric budget. Thus these four
+runs are a separate controlled repetition, not evidence that the earlier pair
+had equal budgets. They retain the original route options and project rules;
+both arms use normal host HOME. Engine and whole-CLI times are separate below.
+
+| Revision / repeat | Opens | Vias | Track mm | Engine CPU s | Engine wall s | Whole CLI CPU s | Whole CLI wall s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline 1 | 35 | 172 | 1930.99 | 178.18 | 176.400 | 219.512 | 190.182 |
+| candidate 1 | 34 | 173 | 1900.95 | 179.54 | 177.815 | 222.307 | 191.892 |
+| baseline 2 | 34 | 173 | 1936.73 | 178.35 | 176.663 | 222.550 | 191.866 |
+| candidate 2 | 34 | 173 | 1936.73 | 178.29 | 176.976 | 221.529 | 191.694 |
+
+Every result retains 48 native errors and 96 warnings, with no new findings
+relative to its input. Each saved board preserves the source footprint poses;
+the all-copper audit finds no track or via below its effective net-class size.
+All four CLI invocations return 2 because routing remains incomplete. The outer
+batch completed at 09:40:34 PST, before its 09:57:48 deadline; its process exit
+0 and PID absence were observed. Batch completion is not board acceptance.
+
+The baseline itself varies between 35 and 34 opens. These four runs do not
+reproduce a consistent extra open for the candidate; they also do not establish
+an equal-CPU improvement or general no-worse result. Each native result sets
+`measurement=false`, citing a wall-clock budget stop and no determinism record
+for the build in its state manifest. Those qualifications remain; no rebuild,
+new determinism run or budget change was used to remove them. The DRC invocation
+contains `--schematic-parity`, but `parity_performed` is null: no schematic-parity
+acceptance is claimed. Native counts are not exhaustive per-track error counts.
+
+`~/.local/share/agent-ee/recovery1484-saved-tigard-pair/` retains the original
+budget source, source/runtime hashes, process identities, actual commands,
+loads, terminal results and `audit.json`. The audit includes every reported
+unconnected item and new/retained/removed finding with its severity, native
+coverage, CPU/wall records, copper sizes and source-pose checks. The comparison
+adds evidence about this placement only. Full-corpus and held-out qualification,
+paired thermal/cleanup outcomes, current five-brief evidence and the remaining
+recovery criteria are still open; spent budgets and owner holds remain in force.
