@@ -26,6 +26,28 @@ class OwnedRouterStateTests(unittest.TestCase):
         self.assertIn('src/kicad_route/router/rust_router/Cargo.lock', files)
         self.assertIn('src/kicad_route/router/UPSTREAM.json', files)
 
+    def test_linked_checkout_reads_detached_loose_and_packed_heads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            common = root / 'primary/.git'
+            git = common / 'worktrees/candidate'
+            git.mkdir(parents=True)
+            checkout = root / 'candidate'
+            checkout.mkdir()
+            (checkout / '.git').write_text('gitdir: ../primary/.git/worktrees/candidate\n')
+            (git / 'commondir').write_text('../..\n')
+            commit = 'a' * 40
+            (git / 'HEAD').write_text(commit + '\n')
+            self.assertEqual(attempt.checkout_commit(checkout), commit)
+            (git / 'HEAD').write_text('ref: refs/heads/candidate\n')
+            loose = common / 'refs/heads/candidate'
+            loose.parent.mkdir(parents=True)
+            loose.write_text(commit + '\n')
+            self.assertEqual(attempt.checkout_commit(checkout), commit)
+            loose.unlink()
+            (common / 'packed-refs').write_text(commit + ' refs/heads/candidate\n')
+            self.assertEqual(attempt.checkout_commit(checkout), commit)
+
     def test_missing_digest_wrong_source_and_replaced_module_refuse(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)

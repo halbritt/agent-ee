@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -331,6 +332,13 @@ class DesignCompileTests(unittest.TestCase):
             json.loads((self.root / "one/inputs/parts.json").read_text()),
             self.root / "one/inputs",
         )
+
+    def test_host_router_override_reaches_the_generated_build_plan(self):
+        import os
+        with patch.dict(os.environ, {'AGENT_EE_KICAD_ROUTE_CHECKOUT': '/host/router checkout'}):
+            self.compile()
+        plan = json.loads((self.root / 'bundle/build-plan.json').read_text())
+        self.assertEqual(plan['placement']['router']['checkout'], '/host/router checkout')
 
     def test_generated_requirement_map_and_witness_rules_are_accepted_by_existing_compilers(
         self,
@@ -754,6 +762,11 @@ class DesignCompileTests(unittest.TestCase):
                            if r['id'] == 'TEST-MECH-3')
         self.assertIn('decoupling_loops', [c['kind'] for c in requirement['checks']])
         self.assertIn('9 mm', (root / 'spec.md').read_text())
+        # A complete compiled intent must pass the same admission as a real build.
+        from agent_ee.placement_intent import validate
+        intent = json.loads((root / 'placement.json').read_text())
+        validate(intent, json.loads((root / 'groups.json').read_text()))
+        self.assertEqual(intent['decoupling'][0]['max_loop_nm'], 9000000)
 
     def test_compiled_delivery_includes_the_required_sealed_fabrication_roundtrip(self):
         self.compile()
@@ -1492,7 +1505,8 @@ class DiffPairIntentTests(unittest.TestCase):
         self.design["parts"].update({r: dict(self.design["parts"]["R1"]) for r in ("R5", "R6")})
         self.design["nets"].update(RXN=["R5.1", "R6.1"], **{"V+": ["R5.2", "R6.2"]})
         router = self.plan()["placement"]["router"]
-        self.assertEqual(router, {"checkout": "/opt/kicad-route"})
+        import os
+        self.assertEqual(router, {"checkout": os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '/opt/kicad-route')})
         project = json.loads((self.root / "bundle/inputs/project/owned.kicad_pro").read_text())
         self.assertFalse([k for k in project["net_settings"]["classes"][0] if k.startswith("diff_pair")])
         options = routing_adapter.validate_router_options(router)
@@ -1509,7 +1523,8 @@ class DiffPairIntentTests(unittest.TestCase):
                                       "intra_pair_match": match, "impedance": impedance}])
         router = self.plan()["placement"]["router"]
         self.assertEqual(router, {
-            "checkout": "/opt/kicad-route", "diff_pairs": "auto", "intra_pair_match": match,
+            "checkout": os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '/opt/kicad-route'),
+            "diff_pairs": "auto", "intra_pair_match": match,
             "pair_layers": ["F.Cu"],  # the outer layer opposite the declared B.Cu plane
             "pair_impedance": dict(impedance, reference_net="GND")})
         recorded = json.loads((self.root / "bundle/inputs/design.json").read_text())
@@ -1532,7 +1547,8 @@ class DiffPairIntentTests(unittest.TestCase):
         self.assertIn("--diff-pair-intra-match", argv)
         self.nets("CLK_P", "CLK_N", [{"positive": "CLK_P", "negative": "CLK_N"}])
         self.assertEqual(self.plan("plain")["placement"]["router"],
-                         {"checkout": "/opt/kicad-route", "diff_pairs": "auto"})
+                         {"checkout": os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '/opt/kicad-route'),
+                          "diff_pairs": "auto"})
 
     def test_pair_naming_refusals_say_how_to_name(self):
         pair = {"positive": "USB_P", "negative": "USB_N"}

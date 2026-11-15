@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import shutil
 import tempfile
 import uuid
@@ -699,7 +700,7 @@ def placement(design, root):
 
         quote = decoupling_text(d)
         max_loop_nm = round(d["max_loop_mm"] * 1000000) if "max_loop_mm" in d else round(d["max_distance_mm"] * 2 * 1000000)
-        row = dict(id="decoupling-" + str(i + 1), metric="pad-centre-to-centre", max_loop_nm=max_loop_nm)
+        row = dict(id="decoupling-" + str(i + 1), metric="pad-centre-to-centre")
         for key in ("supply", "return"):
             row[key] = dict(
                 citation=quote,
@@ -1611,7 +1612,8 @@ def _compile_design(design, captures, out):
                     shortlist=seeds,
                 ),
                 # Pair handling only for declared pairs (design.pair_routing).
-                router=dict(checkout="/opt/kicad-route", **pair_routing(design)),
+                router=dict(checkout=os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '/opt/kicad-route'),
+                            **pair_routing(design)),
             ),
             verification_timeout_s=1800,
         )

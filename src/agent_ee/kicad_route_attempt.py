@@ -1236,14 +1236,22 @@ def links_of(entries):
 def checkout_commit(checkout):
     """HEAD commit from the git files themselves; running git could write the index."""
     git = Path(checkout) / '.git'
+    if git.is_file():
+        pointer = git.read_text().strip()
+        if not pointer.startswith('gitdir: '):
+            raise OSError(f'invalid git directory pointer: {git}')
+        git = (Path(checkout) / pointer[len('gitdir: '):]).resolve()
+    common = git
+    if (git / 'commondir').is_file():
+        common = (git / (git / 'commondir').read_text().strip()).resolve()
     head = (git / 'HEAD').read_text().strip()
     if not head.startswith('ref: '):
         return head
     ref = head[5:]
-    loose = git / ref
+    loose = common / ref
     if loose.is_file():
         return loose.read_text().strip()
-    packed = git / 'packed-refs'
+    packed = common / 'packed-refs'
     if packed.is_file():
         for line in packed.read_text().splitlines():
             parts = line.split()
