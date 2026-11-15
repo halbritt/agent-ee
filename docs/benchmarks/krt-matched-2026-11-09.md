@@ -1871,3 +1871,150 @@ copper-to-hole clearance 0.25 mm. Their project SHA-256 values are
 (`tigard_fabrules`). Revision 2 uses 0.20 mm; comparisons across those rule
 revisions do not isolate a code effect.
 
+
+## Recovery: matched fixed-step host comparison (2026-11-15)
+
+### Result in brief
+
+The completed fixed-step arm does **not** establish an overall improvement.
+Both revisions complete Flat and Tigard with revision-2 fabrication rules with
+zero opens and no introduced native errors; their 2 and 6 inherited errors remain.
+Complex reduces opens from 1 to 0 but fails preservation: C203.2 loses its
+bottom-layer GND fill contact and both thermal spokes. Tigard increases from
+34 to 35 opens. StickHub retains 34 opens and damaged pours. ESP programming
+adapter with fabrication rules retains one introduced error.
+
+ESP32 changes from a deadline with no scored board to `placement_infeasible`
+with a scored diagnostic board: 33 opens, 36 introduced errors and 1 inherited
+error. This is better failure reporting, not a passing placement or board.
+No fabrication readiness or advantage over stock KRT is claimed by this arm.
+
+These are seven **fixed-step** placement-and-own-routing cells per revision,
+not the original time-limited placement arm. Every seed completed exactly
+100,000 steps, with four seeds and a 900-second job budget per board. The
+original time-limited baseline is running; its candidate and stock routes
+(defaults and separately labelled board-floor-held settings) are still pending.
+The earlier container measurements above are not the baseline for this comparison.
+
+### Frozen versions and rules
+
+Both revisions ran through the host-native harness with normal host tools and
+admission. Each cell retains its source revision, binary hash, rule hashes,
+load, concurrency, inputs and native reports. Host loads differ; the recorded
+wall times and step rates do not support a causal speedup claim.
+
+- Baseline product: agent-ee `ba283049be82bcaf833c05846d8bb4948a998d70`,
+  with the host harness at `2be13ae6f10a262ef1a635555bd21555b6b7e8aa`;
+  kicad-route `6171b0a277164fc450716971d81974f3e9c8e83a`.
+- Candidate: agent-ee `05f160e607323bf5a91c9ec27bf3a45593f2d64e`;
+  kicad-route `5e91c958171cd00fdf9add85fd883f649abeffa8`.
+- Placement binaries, baseline/candidate SHA-256:
+  `a9662cbfba538f23429136130c3305232338a9e8f612c701ed98a89d32ebaaaa` /
+  `7d7991ba923849f59fe6861a26b2922759cf0be89370a019a4c64a70534d84f5`.
+- Both private router checkouts use kernel SHA-256
+  `8fe2debb68ffc24b728789dec556f24a4bfbbbd7b3c911bb9644e66ec68f1864`.
+  Later electrical-role and thermal-scope changes are not in these controls.
+
+Each paired board and project input is byte-identical. The rules column below
+uses the first eight digits of these complete project SHA-256 values. Both
+fabrication-rule variants use revision 2 (0.20 mm minimum copper-to-hole
+clearance); the earlier revision-1 results remain separate.
+
+- `complex_hierarchy`: `b1d44aefb5cada148d4aa59882149fa259b639bcb553bcc42a7652fb7447da0e`.
+- `flat_hierarchy`: `f32ff0ffb4e1e0badcce75d26a4ef273fe2d69b75ae43ab8e7a7ee69f0b593c0`.
+- `tigard`: `6a194ba77bcca59691e1056bc3a007523a96a1757ce7670b613c1f481e646e0b`.
+- `stickhub`: `c2ed755a9294a937800b5bbfbc4627782ebe4e848e71341de93dc17e7e7ccfd2`.
+- `esp_prog_fabrules`: `78447db029457afe77f006388827d00fa7b392bb94c6af399ef6d49a78109dcb`.
+- `tigard_fabrules`: `2636eb9b21e6d7e3939fa5ef8e4d2fb827c0d82d95a3ac2a58d9d14a095da5b6`.
+- `esp32_devkit_lipo`: `dcbdd59b27b75167565e3588dfba94f957965cf8dac55d5c4f0ccebd4e16d6e2`.
+
+### Saved board outcomes
+
+New/total counts are native DRC errors, separate from open connections.
+A dash means no scored board, not zero. A scored board retained at a deadline
+is reported even though the job failed. Preservation failures are listed below
+and cannot be inferred from native error counts alone.
+
+| Board | Revision | Opens | New / total errors | Vias | Track mm | Wall seconds | Status | Rules |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| complex_hierarchy | baseline | 1 | 0 / 0 | 2 | 1236.09 | 900.2 | deadline | `b1d44aef` |
+| complex_hierarchy | candidate | 0 | 0 / 0 | 5 | 1410.81 | 735.9 | verification_failed | `b1d44aef` |
+| flat_hierarchy | baseline | 0 | 0 / 2 | 2 | 1591.43 | 256.2 | completed | `f32ff0ff` |
+| flat_hierarchy | candidate | 0 | 0 / 2 | 2 | 1591.43 | 254.4 | completed | `f32ff0ff` |
+| tigard | baseline | 34 | 0 / 48 | 173 | 1936.73 | 900.3 | deadline | `6a194ba7` |
+| tigard | candidate | 35 | 0 / 48 | 172 | 1930.99 | 791.3 | verification_failed | `6a194ba7` |
+| stickhub | baseline | 34 | 0 / 0 | 113 | 691.3 | 740.3 | verification_failed | `c2ed755a` |
+| stickhub | candidate | 34 | 0 / 0 | 113 | 691.3 | 727.1 | verification_failed | `c2ed755a` |
+| esp_prog_fabrules | baseline | 0 | 1 / 2 | 15 | 321.9 | 237.9 | verification_failed | `78447db0` |
+| esp_prog_fabrules | candidate | 0 | 1 / 2 | 15 | 321.9 | 261.0 | verification_failed | `78447db0` |
+| tigard_fabrules | baseline | 0 | 0 / 6 | 212 | 2313.16 | 282.2 | completed | `2636eb9b` |
+| tigard_fabrules | candidate | 0 | 0 / 6 | 205 | 2174.67 | 332.6 | completed | `2636eb9b` |
+| esp32_devkit_lipo | baseline | - | - / - | - | - | 900.2 | deadline | `dcbdd59b` |
+| esp32_devkit_lipo | candidate | 33 | 36 / 37 | 120 | 1157.6 | 801.0 | placement_infeasible | `dcbdd59b` |
+
+Complex's candidate has `lost_fill_contact` at C203.2 on bottom copper even
+though it has zero native errors and opens. StickHub fails preservation in
+both revisions: two original GND terminal components split, pour area drops
+29.991% on the back and 35.745% on the front, and six isolated islands remain.
+
+The native errors on the scored boards are:
+
+- Flat: 2 inherited clearance errors in each revision.
+- Tigard: 48 inherited errors in each revision: 25 clearance, 16 drill range,
+  2 solder-mask bridge, 2 copper-edge clearance, 2 courtyard overlap and 1 short.
+- Tigard with fabrication rules: 6 inherited errors in each revision:
+  2 solder-mask bridge, 2 courtyard overlap, 1 clearance and 1 short.
+- ESP programming adapter with fabrication rules: 1 introduced short and
+  1 inherited clearance error in each revision.
+- Candidate ESP32: 37 total errors: 21 track width, 5 starved thermal,
+  3 solder-mask bridge, 3 shorts, 2 copper-edge clearance, 2 clearance and
+  1 intersecting zones. One error is inherited and 36 are introduced.
+  The baseline has no scored board; no error count is imputed to it.
+
+All native warnings remain in the retained reports. None were removed from
+the grading. The fixed-step portfolios have the same number of feasible seeds
+across revisions. Individual seeds can differ: Tigard seed 0 changes from one
+hard conflict to feasible, while seed 1 changes from feasible to one hard
+conflict. This does not establish the outcome of a time-limited search.
+
+### Fixed-step seed measurements
+
+Rates are the minimum and maximum across four seeds, rounded to whole steps
+per second. Feasibility is the number of feasible seeds, not board acceptance.
+
+| Board | Feasible seeds, baseline / candidate | Baseline steps/s | Candidate steps/s | Rules |
+| --- | ---: | ---: | ---: | --- |
+| complex_hierarchy | 4 / 4 | 4273-4869 | 4242-4832 | `b1d44aef` |
+| flat_hierarchy | 4 / 4 | 2680-3930 | 2533-3617 | `f32ff0ff` |
+| tigard | 3 / 3 | 2017-2273 | 2108-2331 | `6a194ba7` |
+| stickhub | 1 / 1 | 6352-7098 | 6701-7292 | `c2ed755a` |
+| esp_prog_fabrules | 4 / 4 | 20511-21816 | 17921-20063 | `78447db0` |
+| tigard_fabrules | 4 / 4 | 2415-2633 | 2436-2714 | `2636eb9b` |
+| esp32_devkit_lipo | 0 / 0 | 2113-2827 | 2163-2792 | `dcbdd59b` |
+
+### Retained evidence and limits
+
+On the benchmark host, `~/.local/share/agent-ee/` contains
+`recovery1484-final-matched-control.json` (full pins),
+`recovery1484-final-matched-cells.csv` (per-cell rule hashes, errors and warnings
+by type, paths and reasons), and `recovery1484-final-matched-seeds.csv`
+(each seed's steps, rate, feasibility and hard conflicts by kind).
+The run roots are `recovery1484-final-matched-before/` and
+`recovery1484-final-matched-after-standalone/`; each board's fixed-step
+record is `boards/<board>/results/place-capped-agent-ee-own-route.json`.
+Those records point to the saved boards and native reports listing each open
+connection and finding. The source and control files were not changed during
+the comparison.
+
+The cleanup investigation found a separate tool defect: removing an entire
+track because one end dangles can also delete an interior connected branch.
+An original two-pad fixture independently reproduces zero opens before cleanup
+and one afterward. A repair is under review. Reconstructed Complex geometry
+supports that diagnosis but is not the original pre-sweep byte stream.
+Neither this diagnosis nor the landed thermal-scope change establishes a new
+Complex outcome. Paired full-board runs and the no-worse corpus remain due.
+
+The full recovery also still needs its original time-limited and stock arms,
+causal router comparisons and repeats, held-out qualification, and current
+five-brief electrical and generation evidence. The spent USB attempt budget
+and other owner holds remain in effect.
