@@ -311,6 +311,11 @@ as one footprint's silk segment over another's. With a true top-level
 `reject_silk_graphic_conflicts`, such a board is ineligible and the job tries its next
 routing candidate. A build sets it, because its artwork stage moves only fields and could
 never fix that board.
+When the flag is true, input DRC runs before placement search. A finding whose
+items are all fixed footprint pads/graphics or board drawings refuses the job
+immediately, with the native findings in `fixed_silk_conflicts` and the named
+items in `reason`. Neither placement nor routing can repair that geometry.
+Findings involving movable parts, fields, vias or zones retain the later checks.
 
 The top-level `reject_track_dangling` flag likewise makes native `track_dangling`
 warnings ineligible. Builds set both rejection flags and try the next candidate;

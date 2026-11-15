@@ -2518,6 +2518,21 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         with clock.phase('rule_validation'):
             report['native_rules'] = verify_rule_loading(board_path, job_dir / f'native-rules-a{attempt}',
                                                         clock=clock, cancel_dir=job_dir)
+    base_report = base_exec = None
+    if config.get('reject_silk_graphic_conflicts') is True:
+        with clock.phase('judge'):
+            import pcbnew
+            directory = job_dir / f'input-drc-a{attempt}'
+            directory.mkdir()
+            base_report, base_exec = drc(board_path, directory, refill=True, label='native-drc',
+                                         clock=clock, cancel_dir=job_dir)
+            report['input_drc'] = {**base_exec, 'errors': sum(error_keys(base_report).values())}
+            conflicts = _fixed_silk_conflicts(base_report, pcbnew.LoadBoard(str(board_path)), problem)
+            if conflicts:
+                report['fixed_silk_conflicts'] = conflicts
+                items = sorted({item['description'] for finding in conflicts for item in finding['items']})
+                raise JobRefusal(f'{len(conflicts)} fixed silkscreen conflict(s) cannot be repaired by '
+                                 'placement or routing: ' + '; '.join(items))
     search = dict(config['search'], completed_seeds=state['completed_seeds'])
     share = search.pop('time_share', SEARCH_TIME_SHARE)
     if isinstance(share, bool) or not isinstance(share, (int, float)) or not 0 < share < 1:
@@ -2580,10 +2595,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     owners, rigid = _owners(native_input), _rigid(native_input)
     with clock.phase('judge'):
         _check_stop(clock, job_dir)
-        (job_dir / f'input-drc-a{attempt}').mkdir()
         # Every DRC of this job refills zones, so a board with pours is judged on a current fill.
-        base_report, base_exec = drc(board_path, job_dir / f'input-drc-a{attempt}', refill=True, label='native-drc',
-                                     clock=clock, cancel_dir=job_dir)
+        if base_report is None:
+            (job_dir / f'input-drc-a{attempt}').mkdir()
+            base_report, base_exec = drc(board_path, job_dir / f'input-drc-a{attempt}', refill=True, label='native-drc',
+                                         clock=clock, cancel_dir=job_dir)
         base_keys = error_keys(base_report)
         def judge_candidate(cand, index):
             _check_stop(clock, job_dir)
@@ -2891,6 +2907,17 @@ def _unrepairable_track_warnings(report, *, reject_track_dangling=False):
     if not reject_track_dangling:
         return []
     return [v for v in report.get('violations', []) if v.get('type') == 'track_dangling']
+
+
+def _fixed_silk_conflicts(report, board, problem):
+    """Native silk conflicts whose cited geometry cannot change during this job."""
+    fixed_parts = {fp['uuid'] for fp in problem['footprints']
+                   if fp['role'] in ('fixed_body', 'fixed_copper_mark')}
+    owners = _owners(board)
+    fixed_items = {uuid for uuid in _rigid(board) if owners[uuid] in fixed_parts}
+    fixed_items.update(item.m_Uuid.AsString() for item in board.GetDrawings())
+    return [finding for finding in _silk_graphic_conflicts(report)
+            if finding['items'] and all(item.get('uuid') in fixed_items for item in finding['items'])]
 
 
 def _silk_graphic_conflicts(report):

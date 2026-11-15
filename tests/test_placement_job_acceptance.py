@@ -263,6 +263,72 @@ class CleanBoardTests(RoutedBoard):
                 job._group_views(self.board, groups(), self.dir / 'late-views', clock=job.Clock(60))
 
 
+class FixedSilkTests(RoutedBoard):
+    def config(self, *, reject=True, declared=False):
+        require_kicad_route()
+        declaration = intent()
+        if declared:
+            declaration['fixed_poses'].append(dict(ref='R1', x=7., y=9., rot=0., side='F', basis='mechanical'))
+        files = {'board': self.board, 'project': self.project, 'intent': self.dir / 'intent.json',
+                 'groups': self.dir / 'groups.json'}
+        files['intent'].write_text(json.dumps(declaration))
+        files['groups'].write_text(json.dumps(groups()))
+        return {'schema': job.CONFIG_SCHEMA, 'budget_s': 60,
+                'inputs': {key: {'path': str(path), 'sha256': digest(path)} for key, path in files.items()},
+                'search': self.search(1, 1000), 'reject_silk_graphic_conflicts': reject,
+                'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT']}}
+
+    def edge_mark(self, *, locked=True, field=False):
+        def change(k, board):
+            fp = next(f for f in board.GetFootprints() if f.GetReference() == 'R1')
+            fp.SetLocked(locked)
+            if field:
+                fp.Reference().SetVisible(True)
+                fp.Reference().SetLayer(k.F_SilkS)
+                fp.Reference().SetPosition(k.VECTOR2I(5 * MM, 0))
+            else:
+                fp.Add(fixtures._segment(k, fp, k.F_SilkS, (5 * MM, -200_000), (6 * MM, 200_000)))
+        self.change(self.board, change)
+
+    def test_fixed_silk_refuses_before_search_or_routing_with_native_evidence(self):
+        self.edge_mark()
+        for declared in (False, True):
+            with self.subTest(declared=declared):
+                def lock(k, board):
+                    next(f for f in board.GetFootprints() if f.GetReference() == 'R1').SetLocked(not declared)
+                self.change(self.board, lock)
+                out = self.dir / ('fixed-declared' if declared else 'fixed-locked')
+                with patch.object(job, 'solve', side_effect=AssertionError('search must not start')), \
+                     patch.object(job, 'route', side_effect=AssertionError('routing must not start')):
+                    report = job.run_job(self.config(declared=declared), out)
+                self.assertEqual(report['status'], 'refused', report)
+                self.assertIn('fixed silkscreen conflict', report['reason'])
+                self.assertIn('R1', report['reason'])
+                self.assertTrue(any(v['type'] == 'silk_edge_clearance' for v in report['fixed_silk_conflicts']))
+                self.assertTrue((out / 'input-drc-a1/native-drc.json').is_file())
+                self.assertNotIn('search', report['phases'])
+                self.assertFalse(list(out.glob('route-*')))
+
+    def test_movable_silk_and_disabled_policy_still_reach_search(self):
+        class SearchReached(Exception):
+            pass
+        self.edge_mark()
+        for reject, locked in ((False, True), (True, False)):
+            with self.subTest(reject=reject, locked=locked):
+                def unlock(k, board):
+                    next(f for f in board.GetFootprints() if f.GetReference() == 'R1').SetLocked(locked)
+                self.change(self.board, unlock)
+                with patch.object(job, 'solve', side_effect=SearchReached), self.assertRaises(SearchReached):
+                    job.run_job(self.config(reject=reject), self.dir / f'search-{reject}')
+
+    def test_field_collision_is_left_for_label_placement(self):
+        class SearchReached(Exception):
+            pass
+        self.edge_mark(field=True)
+        with patch.object(job, 'solve', side_effect=SearchReached), self.assertRaises(SearchReached):
+            job.run_job(self.config(), self.dir / 'field-search')
+
+
 class WholeJobTests(RoutedBoard):
     def test_job_completes_on_a_board_with_teardrops_and_errors_of_its_own(self):
         """The whole job with the real router: teardrop pads, and a part that breaks clearance by itself."""
@@ -273,6 +339,7 @@ class WholeJobTests(RoutedBoard):
         files['intent'].write_text(json.dumps(intent()))
         files['groups'].write_text(json.dumps(groups()))
         config = {'schema': job.CONFIG_SCHEMA, 'budget_s': 300,
+                  'reject_silk_graphic_conflicts': True,
                   'inputs': {key: {'path': str(path), 'sha256': hashlib.sha256(Path(path).read_bytes()).hexdigest()}
                              for key, path in files.items()},
                   'search': self.search(2, 1000),
