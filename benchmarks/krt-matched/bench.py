@@ -21,8 +21,6 @@ REPO = HERE.parents[1]
 RUNS = Path(os.environ.get('KRT_BENCH_RUNS', Path.home() / '.local/share/agent-ee/krt-matched-20261109'))
 KRT = Path(os.environ.get('KRT_BENCH_KRT', Path.home() / '.cache/agent-ee-krt-bench/KiCadRoutingTools'))
 KRT_PY = str(KRT / '.venv-bench/bin/python')
-STAGE = REPO / 'build/krt-matched'            # gitignored; the CI image mounts REPO at /opt/agent-ee
-IN_IMAGE = Path('/opt/agent-ee/build/krt-matched')
 BUDGET_S = int(os.environ.get('KRT_BENCH_BUDGET_S', 900))
 LOCK_PREFIXES = ('J', 'P', 'CN', 'CON', 'USB', 'H', 'MH', 'SW')
 # design_compile.py defaults. Since AGENTEE-637 they hold no step count: the engine sizes the
@@ -413,9 +411,22 @@ def krt_route(board_in, out_dir, rules_board, options=()):
     return record
 
 
+def native_env():
+    env = os.environ.copy()
+    env['PYTHONPATH'] = str(REPO / 'src') + (os.pathsep + env['PYTHONPATH'] if env.get('PYTHONPATH') else '')
+    return env
+
+
+def router_checkout():
+    # Use the generator's installed/sibling/worktree discovery, including its explicit override.
+    sys.path.insert(0, str(REPO / 'src'))
+    from agent_ee.design_generate import router_checkout as discover
+    return discover()['path']
+
+
 def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
-    """agent-ee place run in the CI image (ae-ci-exec), where its router checkout lives."""
-    stage = STAGE / tag
+    """Run the current checkout on the host, retaining absolute paths in the job directory."""
+    stage = out_dir = Path(out_dir).resolve()
     if stage.exists():
         shutil.rmtree(stage)
     inputs = stage / 'inputs'
@@ -430,22 +441,17 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
     if board.with_suffix('.kicad_dru').is_file():
         names['rules'] = board.with_suffix('.kicad_dru').name
     config = {'schema': 'agent-ee.placement-job-config/1', 'budget_s': BUDGET_S,
-              'inputs': {key: {'path': str(IN_IMAGE / tag / 'inputs' / value), 'sha256': sha256(inputs / value)}
+              'inputs': {key: {'path': str(inputs / value), 'sha256': sha256(inputs / value)}
                          for key, value in names.items()},
-              'search': search, 'router': {'checkout': '/opt/kicad-route'}}
+              'search': search, 'router': {'checkout': router_checkout()}}
     write_json(stage / 'config.json', config)
-    record = run(['ae-ci-exec', REPO, '--', 'python3', '-m', 'agent_ee.cli', 'place', 'run',
-                  IN_IMAGE / tag / 'config.json', '--out', IN_IMAGE / tag / 'job'],
-                 stage / 'run.log', cwd=REPO, timeout=BUDGET_S + 900)   # margin: image and admission
-    out_dir = Path(out_dir)
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    shutil.copytree(stage, out_dir, symlinks=True)
-    shutil.rmtree(stage)
+    record = run([REPO / 'bin/agent-ee', 'place', 'run',
+                  stage / 'config.json', '--out', stage / 'job'],
+                 stage / 'run.log', cwd=REPO, timeout=BUDGET_S + 900, env=native_env())
     record['log'] = str(out_dir / 'run.log')
     record['agent_ee'] = checkout_version()
-    image = re.search(r'ae-ci-exec: image (sha256:[0-9a-f]+)', Path(record['log']).read_text(errors='replace'))
-    record['ci_image'] = image.group(1) if image else None
+    record['execution_environment'] = 'host'
+    record['ci_image'] = None
     report_path = out_dir / 'job/job-report.json'
     if report_path.is_file():
         report = json.loads(report_path.read_text())
@@ -465,7 +471,7 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
                                                              'least_hard_count')}
                                     for row in engine.get('seeds') or []])
         if final.get('board'):
-            local = out_dir / Path(final['board']).relative_to(IN_IMAGE / tag)
+            local = Path(final['board'])
             record['output'] = str(local) if local.is_file() else None
         record.update(job_opens=final.get('opens'), job_errors=final.get('errors'),
                       job_capture={k: v for k, v in (json.loads((out_dir / 'job/capture.json').read_text())
@@ -476,7 +482,7 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
         for kind in ('incumbent', 'best-diagnostic'):
             pointer = out_dir / 'job' / f'{kind}.json'
             if pointer.is_file() and not record.get('placement'):
-                placed = out_dir / Path(json.loads(pointer.read_text())['board']).relative_to(IN_IMAGE / tag)
+                placed = Path(json.loads(pointer.read_text())['board'])
                 if placed.is_file():
                     record.update(placement=str(placed), placement_kind=kind)
     record.setdefault('output', None)
@@ -488,22 +494,18 @@ def agent_ee_job(board_in, rules_board, groups, tag, out_dir, search=SEARCH):
 
 
 def direct_router(board_in, rules_board, tag, out_dir):
-    """Secondary only: kicad-route run with the adapter's base flags, in the CI image."""
-    stage = STAGE / tag
+    """Secondary only: host kicad-route run with the adapter's base flags."""
+    stage = out_dir = Path(out_dir).resolve()
     if stage.exists():
         shutil.rmtree(stage)
     (stage / 'inputs').mkdir(parents=True)
     board = stage / 'inputs' / Path(board_in).name
     shutil.copyfile(board_in, board)
     copy_rules(rules_board, board)
-    record = run(['ae-ci-exec', REPO, '--', 'python3', 'benchmarks/krt-matched/direct_route.py',
-                  IN_IMAGE / tag / 'inputs' / board.name, IN_IMAGE / tag / 'job', BUDGET_S],
-                 stage / 'run.log', cwd=REPO, timeout=BUDGET_S + 900)
-    out_dir = Path(out_dir)
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    shutil.copytree(stage, out_dir, symlinks=True)
-    shutil.rmtree(stage)
+    record = run(['/usr/bin/python3', HERE / 'direct_route.py',
+                  board, stage / 'job', BUDGET_S, router_checkout()],
+                 stage / 'run.log', cwd=REPO, timeout=BUDGET_S + 900, env=native_env())
+    record.update(agent_ee=checkout_version(), execution_environment='host', ci_image=None)
     record.update(log=str(out_dir / 'run.log'), output=None)
     report = out_dir / 'job/direct-route.json'
     if report.is_file():
@@ -511,7 +513,7 @@ def direct_router(board_in, rules_board, tag, out_dir):
         record.update(job_elapsed_s=direct['elapsed_s'], router_exit=direct['exit_code'], routing=direct.get('routing'),
                       job_status=f"router exit {direct['exit_code']}; validation {direct.get('validation')}")
         if direct.get('board'):
-            record['output'] = str(out_dir / Path(direct['board']).relative_to(IN_IMAGE / tag))
+            record['output'] = direct['board']
     logs = sorted(out_dir.glob('job/out/runs/*/*/*/work/krt.log'))
     if logs and not record['output']:
         record['router_log_tail'] = tail(logs[-1], 12)

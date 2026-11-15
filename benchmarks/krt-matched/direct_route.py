@@ -2,11 +2,12 @@
 """Run `kicad-route run` on a placed board with the base flags agent-ee's adapter passes.
 
 Used only as the labelled secondary measurement when `agent-ee place run`
-refuses a board. Runs inside the CI image (PYTHONPATH=src):
+refuses a board. Runs on the host (PYTHONPATH=src):
 
-    direct_route.py BOARD.kicad_pcb OUT_DIR BUDGET_S
+    direct_route.py BOARD.kicad_pcb OUT_DIR BUDGET_S [ROUTER_CHECKOUT]
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -15,18 +16,23 @@ from pathlib import Path
 
 from agent_ee import routing_adapter
 
-CHECKOUT = '/opt/kicad-route'
+
+def routing_checkout():
+    from agent_ee.design_generate import router_checkout
+    return router_checkout()['path']
 
 
 def main():
     board, out, budget = Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3])
+    checkout = sys.argv[4] if len(sys.argv) > 4 else routing_checkout()
     staged = out / 'candidate' / board.stem
     staged.mkdir(parents=True)
     for suffix in ('.kicad_pcb', '.kicad_pro', '.kicad_dru'):
         if board.with_suffix(suffix).is_file():
             shutil.copyfile(board.with_suffix(suffix), staged / f'board{suffix}')
-    argv = routing_adapter.board_route_argv(CHECKOUT, staged, out / 'out', design_name=board.stem, budget_s=budget)
-    env = routing_adapter.board_route_env(CHECKOUT, out / 'home')
+    argv = routing_adapter.board_route_argv(checkout, staged, out / 'out', design_name=board.stem, budget_s=budget)
+    env = os.environ.copy()
+    env['KICAD_ROUTE_STATE'] = checkout
     start = time.monotonic()
     proc = subprocess.run(argv, env=env, capture_output=True, text=True)
     (out / 'kicad-route.stdout').write_text(proc.stdout)

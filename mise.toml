@@ -140,3 +140,11 @@ if [ -n "${AGENT_EE_KICAD_ROUTE_CHECKOUT:-}" ]; then
 fi
 exec bin/agent-ee doctor "$@"
 ' sh'''
+
+[tasks."bench:matched"]
+description = "Matched board benchmark on the host; pass bench.py arguments (README in benchmarks/krt-matched)"
+run = "mise run host:exec --timeout 60m --weight 1 -- /usr/bin/python3 benchmarks/krt-matched/bench.py"
+
+[tasks."bench:requirements"]
+description = "Run requirements generation benchmark using the configured subscription author; pass directory and options"
+run = "mise run host:exec --timeout 4h --weight 1 -- ./bin/agent-ee design benchmark"

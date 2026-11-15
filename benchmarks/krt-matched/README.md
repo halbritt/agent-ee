@@ -9,7 +9,7 @@ Files:
 
 - `bench.py`: preparation, both arms, scoring and the summary table.
 - `direct_route.py`: the labelled secondary router run used when
-  `agent-ee place run` refuses a board (runs in the CI image).
+  `agent-ee place run` refuses a board (runs on the host).
 - `inventory.py`: counts footprints, layers and zones for board selection.
 - `boards.json`: the board set and the repositories it comes from.
 
@@ -31,12 +31,11 @@ git -C kicad-demos sparse-checkout set demos
 git clone --depth 1 https://github.com/OLIMEX/ESP32-DevKit-LiPo.git
 ```
 
-Stock KRT runs on the host from that clone. agent-ee runs through
-`ae-ci-exec`, in the CI image built from this checkout, because that is where
-its qualified router checkout (`/opt/kicad-route`) exists; on the host,
-`agent-ee doctor --router-checkout` reports problems for every checkout
-available. The job is staged under the gitignored `build/krt-matched/` (the
-image mounts the checkout) and copied to the output directory afterwards.
+Both arms run on the host. agent-ee uses its existing router-checkout discovery
+(installed `/opt/kicad-route`, then the sibling of the primary checkout), or
+`AGENT_EE_KICAD_ROUTE_CHECKOUT` when set. Run `mise run doctor` first. Jobs stay
+in their output directories, so native report paths remain valid. No CI image
+is required.
 
 ## Run
 
@@ -45,11 +44,11 @@ B=benchmarks/krt-matched/bench.py
 S=~/.cache/agent-ee-krt-bench
 python3 $B prep  NAME $S/<source from boards.json>   # normalize, strip, lock, unplace
 python3 $B baseline NAME                             # score the unrouted input
-python3 $B route NAME                                # routing arm, both tools
-python3 $B place NAME                                # placement arm, both tools
+mise run bench:matched -- route NAME                                # routing arm, both tools
+mise run bench:matched -- place NAME                                # placement arm, both tools
 python3 $B summary                                   # table + summary.json
 # zone fallback, only for a board agent-ee refused because of its pours:
-python3 $B prep NAME SOURCE --no-pours && python3 $B route NAME --no-pours && python3 $B place NAME --no-pours
+python3 $B prep NAME SOURCE --no-pours && mise run bench:matched -- route NAME --no-pours && mise run bench:matched -- place NAME --no-pours
 ```
 
 Optional extras: `krt-spread NAME` routes every seed KRT's placer wrote;
@@ -113,7 +112,7 @@ Nothing is keyed on a board. Every rule below applies to every board.
   its steps and measured step rate) and the placement the job offers
   (`job_placement`), which a job ending `deadline` also names.
 - **Versions**: every agent-ee cell records the agent-ee commit (and whether
-  the tree was dirty), the CI image ID, and the job's own preflight record
+  the tree was dirty), host execution (`ci_image: null`), and the job's own preflight record
   (engine binary hash, router commit, pcbnew and kicad-cli versions).
 - **Zone fallback**: `--no-pours` removes every pour zone and reruns both
   tools; reported separately.
