@@ -240,6 +240,17 @@ class SearchBudgetTests(unittest.TestCase):
             with self.subTest(share=share):
                 self.assertLess(routing_adapter.search_budget_s(share, 60), 1)
 
+    def test_first_search_never_shrinks_when_its_share_grows(self):
+        shares = (44, 105, 106, 110, 120, 210, 211, 560)
+        budgets = [routing_adapter.first_search_budget_s(s, 60) for s in shares]
+        self.assertEqual(budgets, [44, 105, 105, 105, 105, 105, 106, 404])
+        previous = 0
+        for share in range(1, 901):
+            budget = routing_adapter.first_search_budget_s(share, 60)
+            self.assertGreaterEqual(budget, previous)
+            self.assertLessEqual(budget, share)
+            previous = budget
+
 
 if __name__ == '__main__':
     unittest.main()

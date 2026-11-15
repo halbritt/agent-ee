@@ -488,8 +488,10 @@ class ControllerBoundaryTests(Fixture):
             if exhaust_search or enforce_search_budget:
                 from agent_ee import routing_adapter
                 checks = kwargs['checks_s']
+                budget_for = (routing_adapter.first_search_budget_s if kwargs['first_trial'] else
+                              routing_adapter.search_budget_s)
                 search = (int(kwargs['budget_s']) if checks is None else
-                          routing_adapter.search_budget_s(kwargs['budget_s'], checks))
+                          budget_for(kwargs['budget_s'], checks))
                 if search < 1:
                     return {'status': 'no_time_for_search', 'preflight': {
                         k: None for k in job.ROUTER_IDENTITY}}
@@ -530,13 +532,15 @@ class ControllerBoundaryTests(Fixture):
         self.assertEqual(route.call_count, 1)
 
     def test_short_first_trial_can_route_and_complete_inside_its_share(self):
-        report, route = self._second_trial('short-first', [self._final(0)], remaining=44.0,
-                                          elapsed=5.0, enforce_search_budget=True)
-        self.assertEqual(report['status'], 'completed')
-        self.assertEqual(report['final']['opens'], 0)
-        self.assertEqual(route.call_count, 1)
-        self.assertEqual(route.call_args.kwargs['budget_s'], 44.0)
-        self.assertEqual(route.call_args.kwargs['timeout_s'], 44.0)
+        for share, elapsed in ((44.0, 5.0), (110.0, 30.0)):
+            with self.subTest(share=share):
+                report, route = self._second_trial(f'short-first-{share}', [self._final(0)], remaining=share,
+                                                  elapsed=elapsed, enforce_search_budget=True)
+                self.assertEqual(report['status'], 'completed')
+                self.assertEqual(report['final']['opens'], 0)
+                self.assertEqual(route.call_count, 1)
+                self.assertEqual(route.call_args.kwargs['budget_s'], share)
+                self.assertEqual(route.call_args.kwargs['timeout_s'], share)
 
     def test_search_not_started_is_reported_as_scheduling_not_router_failure(self):
         report, route = self._second_trial('no-search', [{'physical_checks': 'unavailable'}], no_search=True)

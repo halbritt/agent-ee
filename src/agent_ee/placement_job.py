@@ -1967,7 +1967,7 @@ ROUTER_IDENTITY = ('commit', 'clean', 'code_sha256', 'code_files', 'executable_s
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
           design_name='board', grid_step_mm=None, intra_pair_match=None, planes=None, pair_layers=None, pair_impedance=None,
           bus=None, length_match=None, ac_match=None, local_decoupling=None,
-          defer_local_fallback=False, local_fallback_reason=None, diff_pairs=None, checks_s=None):
+          defer_local_fallback=False, local_fallback_reason=None, diff_pairs=None, checks_s=None, first_trial=False):
     """kicad-route process on a fresh copy of one materialized candidate.
 
     The board has no schematic, which the sandboxed routing_adapter step refuses;
@@ -1978,7 +1978,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     may search for all of it, and a search that does so is cut off with the job. With
     ``checks_s`` the search gets only what leaves room for the router's stop grace and
     that many seconds of checks afterwards (``routing_adapter.search_budget_s``), so the
-    trial ends inside its share."""
+    trial ends inside its share. A first trial keeps a monotonic search floor when the
+    full reservation would starve a short search; its outer deadline still applies."""
     from . import routing_adapter
     clock = clock or Clock(timeout_s)
     _check_stop(clock, cancel_dir)
@@ -2118,7 +2119,8 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     # inventing a minimum extension; the outer clock also bounds all descendants.
     remaining = min(budget_s - (time.monotonic() - started), clock.remaining())
     if checks_s is not None:
-        remaining = routing_adapter.search_budget_s(remaining, checks_s)
+        search_budget = routing_adapter.first_search_budget_s if first_trial else routing_adapter.search_budget_s
+        remaining = search_budget(remaining, checks_s)
         if remaining < 1:
             # A trial that keeps time for its checks ends in order when none is left for a search.
             return {'status': 'no_time_for_search', 'preflight': check, 'elapsed_s': time.monotonic() - started}
@@ -2778,14 +2780,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                     Path(route_input) / 'board.kicad_pcb', local_seed, clock=seed_clock, cancel_dir=job_dir)
                 budget = min(seed_clock.remaining(), clock.remaining())
                 _check_stop(seed_clock, job_dir)
-            # A first trial may finish much sooner than the conservative stop/check allowance.
-            # Do not prevent that search when its whole share is shorter than the allowance;
-            # retain the original share and outer deadline in that case. Second trials already
-            # have a saved first result and must always reserve time to keep it graded.
-            checks = ROUTE_CHECK_ALLOWANCE_S
-            if not second and routing_adapter.search_budget_s(budget, checks) < 1:
-                checks = None
-            trial['checks_allowance_s'] = checks
+            trial['checks_allowance_s'] = ROUTE_CHECK_ALLOWANCE_S
             routed = route(route_input, job_dir / f'route-{suffix}', config['router']['checkout'],
                            budget_s=budget, timeout_s=clock.remaining(), home=job_dir / f'route-home-{suffix}',
                            clock=clock, cancel_dir=job_dir, design_name=report['design_name'],
@@ -2794,7 +2789,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                            bus=bus, length_match=length_match, ac_match=ac_match, local_decoupling=local_contract,
                            defer_local_fallback=len(queue) > 1,
                            local_fallback_reason=selected.get('local_fallback_reason'), diff_pairs=diff_pairs,
-                           checks_s=checks)
+                           checks_s=ROUTE_CHECK_ALLOWANCE_S, first_trial=not second)
             report['route'] = {k: v for k, v in routed.items() if k != 'preflight'}
             if routed.get('failure_kind') == 'environment':
                 trial.update(status=routed['status'], route=report['route'])

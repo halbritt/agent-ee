@@ -938,6 +938,17 @@ def search_budget_s(share_s, checks_s):
     return budget
 
 
+def first_search_budget_s(share_s, checks_s):
+    """Reserve checks when possible without giving a larger first share less search.
+
+    A short first trial can finish before the conservative stop/check allowance.
+    Keep its original search up to that allowance, then hold that search floor until
+    the fully reserved budget catches up. The outer job deadline still applies.
+    """
+    floor = checks_s + stop_grace_s(1)
+    return max(search_budget_s(share_s, checks_s), min(int(share_s), floor))
+
+
 def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owned_copper=False, budget_s,
                      grid_step_mm=None, pair_layers=None, pair_impedance=None, intra_pair_match=None,
                      bus=None, length_match=None, ac_match=None, diff_pairs=None):

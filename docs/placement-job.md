@@ -365,11 +365,12 @@ starts only when its share lets the search run as long as the first trial took;
 otherwise `second_trials_not_started` names it. Trials keep time back
 so that they end inside the job: search is cut by the router's stop grace
 (`max(30, budget // 5) + 15` s) and a 60 s allowance for the router's grading
-and the job's final checks. A first trial whose share cannot fit this reservation
-and one second of search uses its original share without the reservation, so a
-short routing job can still finish; the outer job deadline remains binding.
-Every started routing trial carries `checks_allowance_s` (null for that short
-first trial); a second trial also carries `second_trial_of`. If preparation
+and the job's final checks. First trials preserve their original search up to
+the minimum stop/check allowance (105 s). Above that, search stays at least
+105 s until the fully reserved budget exceeds it. More available time therefore
+never buys less search. The outer job deadline remains binding; short first
+trials cannot guarantee the full reservation. Every started routing trial carries
+the target `checks_allowance_s`; a second trial also carries `second_trial_of`. If preparation
 leaves insufficient time for a reserved search, the status is `no_time_for_search`
 and the reason says that routing never started, rather than reporting a router failure.
 If the job reaches its deadline after checking an infeasible diagnostic placement,
