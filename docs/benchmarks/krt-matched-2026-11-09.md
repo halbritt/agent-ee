@@ -1940,17 +1940,25 @@ A dash means no scored board, not zero. A scored board retained at a deadline
 is reported even though the job failed. Preservation failures are listed below
 and cannot be inferred from native error counts alone.
 
-The saved footprint coordinates, orientations and layers match across the
-arms for Complex (selected seed 3), Flat (seed 3), StickHub (seed 2), and ESP
-programming adapter with fabrication rules (seed 2). ESP32's saved diagnostic
-placement also matches (seed 0), although its baseline has no scored board.
-Complex's outcome difference therefore occurs after placement, in routing.
+The placement used by each scored board is the job's `route_selection`,
+which can differ from its initial `placement` incumbent after routing tries
+other shortlisted candidates. The final boards' footprint coordinates,
+orientations and layers were checked against those selected route inputs.
+Across revisions they match for Flat (selected seed 3), Tigard (seed 3),
+StickHub (seed 2), and ESP programming adapter with fabrication rules (seed 3).
+Tigard's 34-to-35-open difference therefore occurs after the same placement,
+but this single pair does not isolate a code change from routing-time effects.
 
-Tigard selected seed 3 in the baseline and seed 0 in the candidate; the latter
-is one of the clock-exposed seeds. Tigard with fabrication rules selected
-seed 1 and seed 3 respectively. Those two pairs have different placements.
-Their open-count, via-count and track-length differences do not isolate a
-routing change or a code change on one placement.
+Complex selected seed 3 in the baseline and seed 1 in the candidate, changing
+61 footprint poses. Tigard with fabrication rules selected seed 1 and seed 2,
+changing 76 poses. Their open-count, via-count and track-length differences
+do not isolate a routing change on one placement. ESP32's initial diagnostic
+placement matches (seed 0), but its baseline has no scored final board and
+there is no pair of final placements to compare.
+
+This corrects the earlier comparison of initial incumbents, which incorrectly
+attributed Complex's difference to routing and described Tigard's scored
+placements as different. The board metrics below are unchanged.
 
 | Board | Revision | Opens | New / total errors | Vias | Track mm | Wall seconds | Status | Rules |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
@@ -2018,8 +2026,10 @@ On the benchmark host, `~/.local/share/agent-ee/` contains
 `recovery1484-final-matched-cells.csv` (per-cell rule hashes, errors and warnings
 by type, paths and reasons), and `recovery1484-final-matched-seeds.csv`
 (each seed's steps, rate, feasibility and hard conflicts by kind).
-`recovery1484-capped-placement-comparison.json` records the saved placement
-paths and hashes of their footprint coordinates, orientations and layers.
+`recovery1484-capped-routed-placement-comparison.json` records the selected
+route-input paths, their footprint-pose hashes and the checks against the
+final boards. It supersedes `recovery1484-capped-placement-comparison.json`,
+which compared initial incumbents rather than each scored board's selection.
 The run roots are `recovery1484-final-matched-before/` and
 `recovery1484-final-matched-after-standalone/`; each board's fixed-step
 record is `boards/<board>/results/place-capped-agent-ee-own-route.json`.
