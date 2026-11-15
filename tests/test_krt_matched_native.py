@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -12,6 +13,36 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('matched_bench', ROOT / 'benchmarks/krt-matched/bench.py')
 bench = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bench)
+
+
+class EngineSourceTests(unittest.TestCase):
+    def test_receipt_from_another_source_tree_cannot_qualify_a_binary(self):
+        spec = importlib.util.spec_from_file_location('engine_build', ROOT / 'scripts/build_placement_engine.py')
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for relative in builder.sources(ROOT):
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / relative, target)
+            binary = root / 'planner'
+            binary.write_text('#!/bin/sh\nexit 0\n')
+            binary.chmod(0o755)
+            sources = builder.sources(root)
+            receipt = dict(schema=builder.SCHEMA, source_sha256=sources,
+                cargo_lock_sha256=sources['crates/placement-engine/Cargo.lock'],
+                binary_sha256=builder.sha(binary), rust_unit_tests='passed',
+                build=dict(profile='release', frozen=True),
+                toolchain=dict(rustc=builder.RUSTC + '\nhost: ' + builder.TARGET,
+                    cargo=builder.CARGO, target=builder.TARGET, cpu='x86-64', source_path_remap='/opt/agent-ee'))
+            builder.receipt_path(binary).write_text(json.dumps(receipt))
+            with patch.object(bench, 'REPO', root), \
+                 patch('agent_ee.placement_job.rust_executable', return_value=binary):
+                self.assertTrue(bench.verify_engine()['verified'])
+                source = next((root / 'crates/placement-engine/src').glob('*.rs'))
+                source.write_text(source.read_text() + '\n// changed source\n')
+                self.assertFalse(bench.verify_engine()['verified'])
 
 
 class NativeBenchmarkTests(unittest.TestCase):
