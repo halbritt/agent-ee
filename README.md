@@ -44,15 +44,19 @@ generation (`agent-ee design generate`), benchmark round r5b (2026-11-04) accept
 three of five boards (`led-flasher`, `load-switch`, `rs485`) from natural-language
 requirements briefs; the two unaccepted boards (`current-monitor` and `usb-regulator`)
 exposed tool defects (unpaired differential net handling, and pre-existing footprint
-NPTH hole clearances) that were subsequently resolved in tooling. Subsequent
+NPTH hole clearances) that later tooling changes targeted; this historical run
+does not verify those fixes. Subsequent
 engineering reviews of the accepted boards identified design omissions (such as
 unterminated bus failsafe bias and unbuffered off-board control inputs), which were
-mapped to general check rules rather than board-specific fixes.
+mapped to general check rules. The bus-failsafe and off-board default-bias rules
+report warnings; they do not establish complete electrical correctness.
 
 How placement and routing compare with stock KiCadRoutingTools on real boards is
 measured in the [matched benchmark](docs/benchmarks/krt-matched-2026-11-09.md):
-placing and routing on its own, agent-ee delivers 2 of 6 boards clean (and stock
-KRT delivers 1 of 6); routing the designer's placement, the two are level.
+in the retained November 14 comparison, agent-ee meets the benchmark criterion
+(no opens or introduced DRC errors) on 2 of 6 placement-and-routing cells,
+and stock KRT on 1 of 6. One of agent-ee's two, `flat_hierarchy`, retains two
+clearance errors. These are benchmark results, not fabrication-ready boards.
 
 Current pipeline capabilities and limitations:
 

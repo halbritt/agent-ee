@@ -1773,15 +1773,15 @@ how far they carry.
 ### Result in brief
 
 - **Routing arm (designer's placement, pours kept):**
-  - **complex_hierarchy** and **flat_hierarchy** pass native DRC cleanly with zero open connections and zero introduced errors (`0 / 0`). `complex_hierarchy` routes with 0 vias and 1100.82 mm of track in 74.2 s; `flat_hierarchy` routes with 4 vias and 1704.91 mm in 104.2 s, preserving its 2 inherited clearance errors without introducing any new defects.
+  - **complex_hierarchy** and **flat_hierarchy** meet the benchmark criterion with zero open connections and zero introduced errors (`0 / 0`). `complex_hierarchy` routes with 0 vias and 1100.82 mm of track in 74.2 s; `flat_hierarchy` routes with 4 vias and 1704.91 mm in 104.2 s and retains 2 inherited clearance errors.
   - **esp_prog** connects every net (`unconnected: 0`) with 13 vias and 369.44 mm of track, beating stock KRT's 24 vias. It has 1 new clearance finding against default rules. On the stated fab-rules variant (`esp_prog_fabrules`), it also connects every net (`unconnected: 0`) with 19 vias and 319.54 mm.
-  - **tigard** connects 279 of 290 nets (11 open) with zero introduced DRC errors (all 48 reported errors are inherited from the unrouted input). On the stated fab-rules variant (`tigard_fabrules`), it connects all 290 nets (`unconnected: 0`) with 148 vias and 1775.09 mm, introducing 2 hole-clearance findings.
+  - **tigard** leaves 11 unconnected items with zero introduced DRC errors (all 48 reported errors are inherited from the unrouted input). On the revision-1 stated fab-rules variant (`tigard_fabrules`), it leaves no unconnected items with 148 vias and 1775.09 mm, introducing 2 hole-clearance findings. Unconnected-item counts are not net counts.
   - **stickhub** routes with zero DRC errors (`drc_errors: 0`), leaving only 2 open connections with 87 vias and 638.69 mm of track.
   - **esp32_devkit_lipo** routes with 17 open connections, 110 vias, and 1066.43 mm of track, beating stock KRT on vias (110 vs 175) and track length (1066.43 mm vs 1250.70 mm) while introducing only 3 errors (2 starved thermals, 1 track width) compared to stock KRT's 703 introduced errors.
 
 - **Placement arm (pours kept):**
   - **complex_hierarchy**: agent-ee places and routes to completion (`agent-ee-own-route`), passing native DRC cleanly (`0 / 0`) with 0 open connections, 0 DRC errors, 5 vias, and 1054.14 mm of track (status `completed`). When routed by stock KRT, it achieves 0 open connections and 1 starved thermal finding with 18 vias and 1030.68 mm.
-  - **flat_hierarchy**: agent-ee places and routes to completion (`agent-ee-own-route`), passing native DRC cleanly (`0 / 0` introduced) with 0 open connections, 2 inherited clearance errors, 6 vias, and 1561.07 mm of track (status `completed`). Routed by stock KRT (both default and held), it achieves 0 open connections and 0 introduced errors with 41 vias and 1621.45 mm. agent-ee's own route beats KRT on vias (6 vs 41) and track length (1561.07 mm vs 1621.45 mm).
+  - **flat_hierarchy**: agent-ee places and routes to completion (`agent-ee-own-route`), meeting the benchmark criterion (`0 / 0` introduced) with 0 open connections, 2 inherited clearance errors, 6 vias, and 1561.07 mm of track (status `completed`). Routed by stock KRT (both default and held), it achieves 0 open connections and 0 introduced errors with 41 vias and 1621.45 mm. agent-ee's own route uses fewer vias (6 vs 41) and less track (1561.07 mm vs 1621.45 mm). The inherited errors remain in both results.
   - **esp_prog**: agent-ee places and routes (`agent-ee-own-route`, status `verification_failed`), connecting every net (`0 open`) with 1 introduced / 2 total DRC errors, 24 vias (matching KRT's 24 vias), and 302.16 mm of track (down from 336.14 mm). Routed by KRT held, it achieves 0 open connections and 2 introduced / 3 total DRC errors with 30 vias and 287.01 mm.
   - **esp_prog_fabrules**: agent-ee places and routes (`agent-ee-own-route`, status `verification_failed`), connecting every net (`0 open`) with 1 introduced / 2 total DRC errors, 11 vias, and 281.83 mm of track. Routed by KRT (both default and held), it achieves 0 open connections and 1 introduced / 2 total DRC errors with 16 vias and 242.33 mm.
   - **tigard_fabrules**: agent-ee places and routes (`agent-ee-own-route`, status `verification_failed`), connecting every net (`0 open`) on this 4-layer fine-pitch board with 217 vias and 5 introduced / 11 total DRC errors (5 hole clearance introduced; 2 courtyard overlap, 2 solder mask bridge, 1 clearance, 1 short inherited), compared to stock KRT's 164 introduced / 170 total DRC errors. Routed by KRT held, it achieves 1 open connection with 206 vias and 28 introduced / 34 total DRC errors.
@@ -1791,8 +1791,8 @@ how far they carry.
 
 - **Outcome relative to stock KRT:**
   - agent-ee no longer refuses poured boards at preflight (`complex_hierarchy`, `flat_hierarchy`, `tigard`, `stickhub`, `esp32_devkit_lipo`).
-  - Placing and routing on its own, agent-ee delivers 2 of 6 preregistered boards clean (`complex_hierarchy`, `flat_hierarchy`), whereas stock KRT delivers 1 of 6 (`flat_hierarchy`).
-  - Routing the designer's placement, both tools achieve clean passes on the same 2 boards, with agent-ee using fewer vias on `esp_prog` (13 vs 24) and `esp32_devkit_lipo` (110 vs 175) and introducing zero DRC errors on `tigard` and `stickhub`.
+  - Placing and routing on its own, agent-ee meets the benchmark criterion on 2 of 6 preregistered boards (`complex_hierarchy`, `flat_hierarchy`), whereas stock KRT does so on 1 of 6 (`flat_hierarchy`). `flat_hierarchy` retains two clearance errors; it is not clean.
+  - Routing the designer's placement, both tools meet the benchmark criterion on the same 2 boards, with agent-ee using fewer vias on `esp_prog` (13 vs 24) and `esp32_devkit_lipo` (110 vs 175) and introducing zero DRC errors on `tigard` and `stickhub`.
 
 ### Versions
 
@@ -1811,10 +1811,10 @@ how far they carry.
 | complex_hierarchy | route | agent-ee | yes | 0 | 0 | 0 | 0 | 1100.82 | 74.2 | 0 | completed | source project file |
 | flat_hierarchy | route | agent-ee | yes | 0 | 0 | 2 | 4 | 1704.91 | 104.2 | 0 | completed | source project file |
 | esp_prog | route | agent-ee | no | 0 | 1 | 2 | 13 | 369.44 | 151.7 | 1 | verification_failed | KiCad defaults |
-| esp_prog_fabrules | route | agent-ee | no | 0 | 1 | 2 | 19 | 319.54 | 85.2 | 1 | verification_failed | stated fab rules |
+| esp_prog_fabrules | route | agent-ee | no | 0 | 1 | 2 | 19 | 319.54 | 85.2 | 1 | verification_failed | stated fab rules, revision 1 |
 | stickhub | route | agent-ee | no | 2 | 0 | 0 | 87 | 638.69 | 633.9 | 1 | verification_failed | source project file |
 | tigard | route | agent-ee | no | 11 | 0 | 48 | 135 | 1697.91 | 380.3 | 1 | verification_failed | KiCad defaults |
-| tigard_fabrules | route | agent-ee | no | 0 | 2 | 8 | 148 | 1775.09 | 279.2 | 1 | verification_failed | stated fab rules |
+| tigard_fabrules | route | agent-ee | no | 0 | 2 | 8 | 148 | 1775.09 | 279.2 | 1 | verification_failed | stated fab rules, revision 1 |
 | esp32_devkit_lipo | route | agent-ee | no | 17 | 3 | 43 | 110 | 1066.43 | 680.2 | 1 | verification_failed | KiCad defaults |
 
 ### Placement and routing (pours kept)
@@ -1830,12 +1830,12 @@ how far they carry.
 | esp_prog | place | agent-ee-own-route | no | 0 | 1 | 2 | 24 | 302.16 | 519.1 | 1 | verification_failed | KiCad defaults |
 | esp_prog | place | agent-ee → KRT route | no | 0 | 18 | 19 | 24 | 291.55 | 2.6 | 0 | completed | KiCad defaults |
 | esp_prog | place | agent-ee → KRT held | no | 0 | 2 | 3 | 30 | 287.01 | 3.0 | 0 | completed | KiCad defaults |
-| esp_prog_fabrules | place | agent-ee-own-route | no | 0 | 1 | 2 | 11 | 281.83 | 582.0 | 1 | verification_failed | stated fab rules |
-| esp_prog_fabrules | place | agent-ee → KRT route | no | 0 | 1 | 2 | 16 | 242.33 | 2.3 | 0 | completed | stated fab rules |
-| esp_prog_fabrules | place | agent-ee → KRT held | no | 0 | 1 | 2 | 16 | 242.33 | 2.2 | 0 | completed | stated fab rules |
-| tigard_fabrules | place | agent-ee-own-route | no | 0 | 5 | 11 | 217 | 2290.48 | 808.7 | 1 | verification_failed | stated fab rules |
-| tigard_fabrules | place | agent-ee → KRT route | no | 0 | 164 | 170 | 215 | 2207.56 | 36.6 | 0 | completed | stated fab rules |
-| tigard_fabrules | place | agent-ee → KRT held | no | 1 | 28 | 34 | 206 | 2177.15 | 37.3 | 0 | completed | stated fab rules |
+| esp_prog_fabrules | place | agent-ee-own-route | no | 0 | 1 | 2 | 11 | 281.83 | 582.0 | 1 | verification_failed | stated fab rules, revision 1 |
+| esp_prog_fabrules | place | agent-ee → KRT route | no | 0 | 1 | 2 | 16 | 242.33 | 2.3 | 0 | completed | stated fab rules, revision 1 |
+| esp_prog_fabrules | place | agent-ee → KRT held | no | 0 | 1 | 2 | 16 | 242.33 | 2.2 | 0 | completed | stated fab rules, revision 1 |
+| tigard_fabrules | place | agent-ee-own-route | no | 0 | 5 | 11 | 217 | 2290.48 | 808.7 | 1 | verification_failed | stated fab rules, revision 1 |
+| tigard_fabrules | place | agent-ee → KRT route | no | 0 | 164 | 170 | 215 | 2207.56 | 36.6 | 0 | completed | stated fab rules, revision 1 |
+| tigard_fabrules | place | agent-ee → KRT held | no | 1 | 28 | 34 | 206 | 2177.15 | 37.3 | 0 | completed | stated fab rules, revision 1 |
 | stickhub | place | agent-ee-own-route | no | - | - | - | - | - | 900.0 | 1 | deadline | source project file |
 | stickhub | place | agent-ee → KRT route | no | 27 | 249 | 249 | 120 | 713.00 | 237.3 | 0 | completed | source project file |
 | stickhub | place | agent-ee → KRT held | no | 28 | 18 | 18 | 87 | 523.36 | 167.9 | 0 | completed | source project file |
@@ -1856,10 +1856,18 @@ how far they carry.
 ### Tool defects this round exposed and did not fix
 
 - On `esp_prog` and `esp_prog_fabrules`, a clearance error (0.0000 mm actual vs 0.2000 mm required under KiCad default rules; 0.1270 mm under stated fab rules) occurs where `Track [Net-(C1-Pad1)]` on `F.Cu` enters `U2` Pad 2 across `U2`'s overlapping `<no net>` `F.Cu` footprint polygon (alongside the inherited 0.0000 mm vs 0.0508 mm / 0.1270 mm clearance finding between `U2` Pad 2 and that same `<no net>` polygon).
-- On `tigard_fabrules` placement, 5 hole clearance errors occur around dense header pins when parts are clustered closely.
-- On `stickhub`, 2 connections remain unrouted due to dense routing corridors on 2-layer board despite achieving zero native DRC errors.
+- On `tigard_fabrules` placement, 5 hole-clearance errors were introduced under revision-1 rules. These results do not isolate a code regression from later runs using revision 2.
+- On `stickhub`, 2 connections remain unrouted with zero native DRC errors. This result alone does not establish the cause.
 
 ### Limits
 
-All benchmark runs were executed with host load strictly monitored (load <= 8.0). Benchmark cells were executed with `budget_s: 900` per job.
+Benchmark cells used `budget_s: 900` per job. The retained records do not establish a host-load ceiling or a same-runtime throughput comparison with earlier images.
+
+The fab-rules cells in this section reused revision-1 projects, with minimum
+copper-to-hole clearance 0.25 mm. Their project SHA-256 values are
+`5581e2154b06b14dbf83f8ee59e36dada841e6aca415ea3904ba5a51c11b27c2`
+(`esp_prog_fabrules`) and
+`83657ef0a94e147cae7cecf12c40298c8224f3499373a840ed97665861a5e54e`
+(`tigard_fabrules`). Revision 2 uses 0.20 mm; comparisons across those rule
+revisions do not isolate a code effect.
 
