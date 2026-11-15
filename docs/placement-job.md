@@ -294,8 +294,14 @@ seed row in `engine-output.json` says what ended it (`limited_by`: `steps` or
 `time`) and its measured `steps_per_s`; `budget` holds the plan. A search limited
 this way ends `completed`, and its candidates go on as usual. The job report
 records it as `search.limited_by_budget` and in `placement.deadline_limited`.
-A seed that ran its full step count is reproducible step for step; a seed limited
-by time is not, because its schedule followed the clock.
+Each completed seed row also records `clock_schedule_start_step`: the first
+step where the schedule began following the clock, or `null` when it never
+did. Seed heartbeat events carry the same field. A seed can finish its full
+step count after the clock has affected its temperature and move reach, so
+`limited_by: steps` alone does not establish reproducibility. With the same
+problem and search settings, annealing is reproducible step for step only
+when the clock stayed out of the schedule; time-bounded refinement can also
+affect the final candidate.
 
 `placement` in the job report names the placement the job offers, in every
 ending that checked a candidate, including `deadline`: `kind` is `incumbent`

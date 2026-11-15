@@ -2470,6 +2470,12 @@ impl Limits {
 /// exploration; only a state whose hard measure is exactly zero is retained,
 /// and a better feasible state replaces the seed's best only on commit.
 pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Result<(Option<Candidate>, Counters, Stop, u64, ((i64, i128), Vec<Value>, Option<Candidate>))> {
+    anneal_recording_schedule(p, seed, clustered, limits, &mut None)
+}
+
+fn anneal_recording_schedule(p: &Prepared, seed: u64, clustered: bool, limits: &Limits,
+                            clock_schedule_start_step: &mut Option<u64>) -> Result<(Option<Candidate>, Counters, Stop, u64, ((i64, i128), Vec<Value>, Option<Candidate>))> {
+    *clock_schedule_start_step = None;
     let begun = Instant::now();
     let mut rng = Rng::new(seed);
     let mut state = SearchState::new(p, start_poses(p, seed, clustered, &mut rng))?;
@@ -2517,7 +2523,10 @@ pub fn anneal(p: &Prepared, seed: u64, clustered: bool, limits: &Limits) -> Resu
                 // The clock takes over only once the seed is behind its step schedule, tested
                 // every 256 steps; a seed that keeps pace never reads it into the schedule
                 // and stays reproducible step for step.
-                if !timed && step > 0 && step % 256 == 0 && used > frac { timed = true; }
+                if !timed && step > 0 && step % 256 == 0 && used > frac {
+                    timed = true;
+                    *clock_schedule_start_step = Some(step);
+                }
                 if timed { frac = frac.max(used); }
             }
         }
@@ -3068,7 +3077,9 @@ pub fn run(input: &Value) -> Result<Value> {
                 "anneal_window_s": share.as_secs_f64() * ANNEAL_SHARE, "steps_per_s_expected": rate,
                 "steps_expected": rate.map(|r| (r * share.as_secs_f64() * ANNEAL_SHARE).min(limits.steps_per_seed as f64))}));
         }
-        let (best, c, stop, steps, least) = anneal(&p, seed, clustered, &limits)?;
+        let mut clock_schedule_start_step = None;
+        let (best, c, stop, steps, least) = anneal_recording_schedule(
+            &p, seed, clustered, &limits, &mut clock_schedule_start_step)?;
         let anneal_s = t.elapsed().as_secs_f64();
         pending -= 1;
         if sized && steps > 0 && anneal_s > 0.0 { rate = Some(steps as f64 / anneal_s); }
@@ -3101,6 +3112,7 @@ pub fn run(input: &Value) -> Result<Value> {
         seed_rows.push(json!({"seed": seed, "start": if clustered {"clustered"} else {"scattered"},
             "status": seed_status, "steps": steps, "elapsed_s": t.elapsed().as_secs_f64(), "anneal_s": anneal_s,
             "limited_by": limited_by, "steps_per_s": if anneal_s > 0.0 { json!(steps as f64 / anneal_s) } else { Value::Null },
+            "clock_schedule_start_step": clock_schedule_start_step,
             "refinement_stopped_by_time": refinement_stopped,
             "feasible": best.is_some(), "best_cost": best.as_ref().map(|b| b.cost.to_string()),
             "least_hard_count": if least.0.0 == i64::MAX { Value::Null } else { json!(least.0.0) },
@@ -3109,6 +3121,7 @@ pub fn run(input: &Value) -> Result<Value> {
             "refinement": refinement,
             "links": best.as_ref().map(|b| link_rows(&p, &b.poses))}));
         let _ = crate::progress::emit(json!({"event": "seed", "seed": seed, "status": seed_status, "feasible": best.is_some(),
+            "clock_schedule_start_step": clock_schedule_start_step,
             "poses": best.as_ref().map(|b| pose_rows(&p, &b.poses)), "cost": best.as_ref().map(|b| b.cost.to_string()),
             "diagnostic": if best.is_none() { least.2.as_ref().map(|d| json!({
                 "seed": d.seed, "step": d.step, "cost": d.cost.to_string(), "terms": d.terms.value(),
@@ -3886,6 +3899,9 @@ mod tests {
         assert_eq!(result["budget"]["limited"], true);
         let seeds = result["seeds"].as_array().unwrap();
         assert!(seeds.iter().any(|s| s["limited_by"] == "time" && s["status"] == "completed"));
+        assert!(seeds.iter().filter(|s| s["limited_by"] == "time").all(|s| {
+            s["clock_schedule_start_step"].as_u64().is_some_and(|step| step > 0 && step % 256 == 0)
+        }), "time-following schedules must report where the clock entered");
         assert!(seeds.iter().all(|s| s["status"] == "completed" || s["status"] == "not_run_budget"));
         assert!(!result["shortlist"].as_array().unwrap().is_empty()
             || !result["diagnostic_shortlist"].as_array().unwrap().is_empty(), "a sized search returns a candidate");
@@ -3910,6 +3926,7 @@ mod tests {
         assert_eq!(a["budget"]["sized_to_deadline"], false);
         assert_eq!(a["shortlist"], b["shortlist"]);
         assert!(a["seeds"].as_array().unwrap().iter().all(|s| s["limited_by"] == "steps"));
+        assert!(a["seeds"].as_array().unwrap().iter().all(|s| s.get("clock_schedule_start_step") == Some(&Value::Null)));
     }
 
     #[test]
