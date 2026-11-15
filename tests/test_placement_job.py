@@ -505,6 +505,10 @@ class EntryPointTests(Fixture):
         self.assertEqual(report['status'], 'completed', report.get('route'))
         self.assertEqual(report['routed_candidate'], 'incumbent')
         self.assertEqual(report['design_name'], self.board.stem)
+        captured = json.loads((self.dir / 'job/capture.json').read_text())
+        self.assertEqual(report['text_reservation'], captured['text_reservation'])
+        self.assertGreaterEqual(report['text_reservation']['body_overhang_nm'], 0)
+        self.assertEqual(report['text_reservation']['boundary_gap_nm'], 1)
         # The report says which groups pull (AGENTEE-637): a row that states no origin is declared.
         self.assertEqual(report['groups'], [{'name': 'g', 'origin': 'declared', 'anchor_pull': True,
                                              'anchor': 'R1', 'members': 2}])

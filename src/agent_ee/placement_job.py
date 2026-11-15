@@ -722,6 +722,7 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
     courtyard_is_body = not courtyard_overlap_ignored(board)
     native_by_uuid = {}
     body_overhang_nm = 0
+    overhang_parts = []
     if geometry:
         from .geometry_probe import box_nm, courtyard_body_box
         for fp in board.GetFootprints():
@@ -739,8 +740,13 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
                     cover = box_nm(courtyard_body_box(fp, pcbnew.F_CrtYd if side == 'F' else pcbnew.B_CrtYd))
                 # Only declared text grows. The footprint geometry and therefore
                 # part-to-part spacing remain the captured graphic contours.
-                body_overhang_nm = max(body_overhang_nm, graphic[0]-cover[0], graphic[1]-cover[1],
-                                       cover[2]-graphic[2], cover[3]-graphic[3])
+                overhang = max(0, graphic[0]-cover[0], graphic[1]-cover[1],
+                               cover[2]-graphic[2], cover[3]-graphic[3])
+                if overhang > body_overhang_nm:
+                    body_overhang_nm = overhang
+                    overhang_parts = []
+                if overhang and overhang == body_overhang_nm:
+                    overhang_parts.append({'uuid': uid, 'ref': captured['ref']})
     text_obstacles, attached_text = _board_obstacles(board, fixed_poses, body_overhang_nm=body_overhang_nm)
     # None unless a footprint can move and this board's own rules make silk overlaps errors.
     silk_grow = silk_labels.reserve(board) if geometry and not routing_only(facts['footprints'], list(fixed_poses)) else None
@@ -871,7 +877,11 @@ def _describe_board(board, facts, *, geometry=True, fixed_poses=()):
             'pair': {'width_nm': int(native_class.GetDiffPairWidth()) if native_class.HasDiffPairWidth() else None,
                      'gap_nm': int(native_class.GetDiffPairGap()) if native_class.HasDiffPairGap() else None,
                      'clearance_nm': clearance},
-            'footprints': footprints, 'text_obstacles': text_obstacles}
+            'footprints': footprints, 'text_obstacles': text_obstacles,
+            **({'text_reservation': {'body_overhang_nm': body_overhang_nm,
+                                     'boundary_gap_nm': 1,
+                                     'setting_parts': sorted(overhang_parts, key=lambda p: (p['ref'], p['uuid']))}}
+               if geometry else {})}
 
 
 def _rectangle(points):
@@ -1148,6 +1158,7 @@ def _capture_native(board_path, normalized):
         from .placement_contract import bind
         strict['block_contract'] = bind(facts, normalized['block_contract'], normalized, records)
     return problem, {'schema': 'agent-ee.placement-job-capture/1', 'board_sha256': sha256_bytes(before), **strict, **mechanics,
+                     **({'text_reservation': description['text_reservation']} if geometry else {}),
                      'routing_only': fixed, 'placement_model': 'built' if geometry else 'not built (routing-only job)',
                      'outline': {k: v for k, v in problem['outline'].items() if k not in ('polygon_nm', 'holes_nm')},
                      'pour_zones': len(pour_zones(board)),
@@ -2547,6 +2558,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     ownership['established'] = True
     job_dir.mkdir(parents=True, exist_ok=True)
     write_json(job_dir / 'capture.json', record)
+    if 'text_reservation' in record:
+        report['text_reservation'] = record['text_reservation']
     write_json(job_dir / 'problem.json', problem)
     if plane_bytes is not None:
         (job_dir / 'plane-plan.json').write_bytes(plane_bytes)

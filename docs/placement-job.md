@@ -714,6 +714,12 @@ rules, including stricter coupling limits, always remain in force.
    native label-cover box and its graphic packing box, plus 1 nm for boundary
    contact. This extra space surrounds text only. Coverage uses KiCad's cached
    courtyard box, or its footprint box excluding text when the cache is empty.
+   When the placement model is built, `capture.json` and `job-report.json`
+   include `text_reservation`: `body_overhang_nm`, `boundary_gap_nm` and
+   `setting_parts` (references and UUIDs of all parts tied for the largest
+   positive overhang). With no positive overhang, that list is empty. These
+   diagnostics also appear on boards without declared text, where the margin
+   does not change placement.
    The final native coverage check remains the judge. Attached text and footprint
    zones remain reserved at non-quarter turns too.
 4. **Prepared Rust model and incremental search** (`crates/placement-engine/src/job.rs`,

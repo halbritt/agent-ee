@@ -226,6 +226,9 @@ for back in (False,True):
         padding=max(0,graphic[0]-expected[0],graphic[1]-expected[1],
                     expected[2]-graphic[2],expected[3]-graphic[3])+1
         assert padding>1,(graphic,expected)
+        assert description['text_reservation']=={
+            'body_overhang_nm': padding-1, 'boundary_gap_nm': 1,
+            'setting_parts': [{'uuid': fp.m_Uuid.AsString(), 'ref': 'J1'}]},description['text_reservation']
         row=next(r for r in description['text_obstacles'] if r['uuid']==text.m_Uuid.AsString())
         reserve=row['occupancy']['local_rect_nm'];box=text.GetBoundingBox();at=text.GetPosition()
         assert reserve==[box.GetLeft()-at.x-padding,box.GetTop()-at.y-padding,
