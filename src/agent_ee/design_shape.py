@@ -48,7 +48,7 @@ def problems(design):
         bench=list,
     )
     if not obj(design, required, dict(placement=dict, mechanics=dict, markings=list, diff_pairs=list,
-                                      currents=dict, kelvin_senses=list), "design"):
+                                      currents=dict, kelvin_senses=list, electrical_roles=dict), "design"):
         return errors
     if errors:
         return errors

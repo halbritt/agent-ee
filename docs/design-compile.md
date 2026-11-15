@@ -45,12 +45,58 @@ Unknown fields are refused.
 | `groups` | List of `{name, anchor, title}`. Members come from the parts' `group` fields. |
 | `plane` | `{net, layer}`; choose a declared net and `F.Cu` or `B.Cu`. |
 | `functional` | Nonempty list of `{text, witnesses}`. Each requirement needs independent topology witnesses. |
+| `electrical_roles` | Authored differential-bus and off-board-control bindings for the existing bias checks; see below. Optional for existing design files; required from the `design generate` author. |
 | `bench` | Nonempty list of physical follow-ups. These remain physical obligations, separate from executable file checks. |
 | `diff_pairs` | Optional list of declared differential pairs `{positive, negative}` with optional `intra_pair_match` and `impedance`; see [Differential pairs](#differential-pairs). Omitted means no pair handling. |
 | `placement` | Optional `{budget_s, seeds, steps_per_seed}`; defaults are 600 seconds and 4 seeds. Without `steps_per_seed` each seed runs for its share of the budget; with it, for at most that many steps. |
 | `mechanics` | Optional `{access_owners, packages}`; see below. Omitted means no declared body/access model. |
 | `markings` | Optional list of visible silkscreen labels; see Board text below. |
 | `currents` | Optional object mapping a declared net to `{current_ma}`, its continuous current in mA; see Declared currents below. Omitted means every net keeps the Default width. |
+
+## Electrical roles
+
+Declare both `differential_buses` and `offboard_controls`. Each is a list; use
+`[]` only when no such roles apply. The compiler reports empty or omitted role
+coverage as not checked. Existing design files without this field still compile.
+New generation requests an explicit declaration and returns an omission to the
+author within the existing attempt and time limits.
+
+Each differential bus has `id`, `positive`, `negative`, `rail`, `ground`, and
+`transceiver: {reference, part_number}`. Each terminal is `{reference, pin}`,
+with a string pin number. For example, for the designer's declared pin roles:
+
+```json
+{
+  "differential_buses": [{
+    "id": "bus", "positive": {"reference": "U1", "pin": "6"},
+    "negative": {"reference": "U1", "pin": "7"},
+    "rail": {"reference": "U1", "pin": "8"},
+    "ground": {"reference": "U1", "pin": "5"},
+    "transceiver": {"reference": "U1", "part_number": "SP3485EN-L/TR"}
+  }],
+  "offboard_controls": [{
+    "id": "enable", "connector": {"reference": "J1", "pin": "5"},
+    "ic": {"reference": "U1", "pin": "3"}, "net": "DE",
+    "expected_bias": "pulldown", "ground": {"reference": "U1", "pin": "5"}
+  }]
+}
+```
+
+An off-board control needs `id`, `connector`, `ic`, `net`, `expected_bias`, and
+an explicit `ground` terminal for `pulldown` or `rail` for `pullup`. Its connector
+must appear in `connectors`; `net` names the IC terminal's declared net, without
+the native `/` prefix. A series resistor can separate it from the connector net.
+All terminals must belong to the authored circuit. The compiler preserves these
+as design-author interpretations, not owner or verified datasheet bindings.
+
+The compiled review selects the existing `diff-bus-failsafe-bias/1` and
+`offboard-control-default-state/1` rules over the native netlist. Their severity
+is unchanged: missing bias produces warnings. This path supplies no verified
+internal-bias or true-failsafe facts, so such a device may need a separate
+datasheet-facts review to resolve a warning. The checks do not establish bias
+voltage margins, buffering, transient tolerance, simulation or hardware behavior.
+An empty declaration cannot establish that the author identified every applicable
+role. Inspect the retained bindings and coverage limitations with the results.
 
 ## Declared currents
 

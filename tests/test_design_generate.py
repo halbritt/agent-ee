@@ -308,6 +308,17 @@ class GenerateTests(ScriptedLoop):
         self.assertEqual(provenance['authority'], AUTHORITY)
         self.assertEqual(json.loads((self.root / 'run/generate-report.json').read_text()), report)
 
+    def test_missing_electrical_roles_returns_to_author_within_same_attempt_limit(self):
+        old = copy.deepcopy(self.statement)
+        old.pop('electrical_roles')
+        self.responses = [self.response(old), self.response()]
+        report = self.generate(max_attempts=2)
+        self.assertEqual([r['status'] for r in report['attempts']], ['refused', 'accepted'])
+        self.assertIn('electrical_roles', report['attempts'][0]['reason'])
+        self.assertFalse((self.root / 'run/attempt-001/capture').exists())
+        self.assertIn('Declare electrical_roles', self.prompts[0])
+        self.assertIn('electrical_roles', self.prompts[1])
+
     def test_retained_requirements_and_hash_preserve_original_bytes(self):
         raw = b'Build a compact divider.\r\nMeasure it on hardware.\r\n'
         self.requirements.write_bytes(raw)

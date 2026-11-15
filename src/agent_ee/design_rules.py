@@ -1,12 +1,12 @@
 """Design-rule cards: versioned writer guidance bound to qualified check adapters.
 
-A rule pack is captured owner data. Each card carries guidance text for the
+A rule pack is captured authored data. Each card carries guidance text for the
 implementation writer and at most one enforcement: a closed connectivity
 adapter below, or a delegation to one earlier check whose single predicate
 grades it. A card without qualified enforcement is advisory: its text may reach
 the writer prompt, but it has no predicate, so it can never satisfy an
 acceptance mapping. Grading reads only the strict native inventory of an
-earlier ``netlist`` check, owner role bindings to exported ``{reference, pin}``
+earlier ``netlist`` check, declared role bindings to exported ``{reference, pin}``
 terminals and verified datasheet facts. Card text is never matched against the
 design.
 """
@@ -343,7 +343,7 @@ def capability(params, scope, files, inputs, check_id):
 
 
 class Design:
-    """Read-only view over the strict native inventory with owner passive classes."""
+    """Read-only view over the strict native inventory with declared passive classes."""
 
     def __init__(self, graph, classes):
         self.components, self.memberships, self.nets = (graph[k] for k in ('components', 'memberships', 'nets'))

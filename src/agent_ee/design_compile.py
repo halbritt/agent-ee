@@ -25,6 +25,7 @@ from .design import (
     virtual_parts,
 )
 from .storage import digest, identity, write_json
+from . import design_electrical
 from .symbol_library import children, parse_sexpr
 
 DATA = Path(__file__).parent / "data"
@@ -108,6 +109,7 @@ def spec(design):
         "Physical follow-up": design["bench"],
     }
     # Empty optional connector/locality clauses are omitted rather than given empty evidence.
+    sections['Electrical function'] += [rule[3] for rule in design_electrical.selected(design)]
     if not design["decoupling"]:
         sections["Placement and mechanics"][2] = (
             "The declared plane shall be present in the final board and refill without unconnected items."
@@ -1206,6 +1208,11 @@ def requirements(design, root, record, suppliers):
     rows += [
         req(f"FUNC-{i}", [rule_check]) for i in range(1, len(design["functional"]) + 1)
     ]
+    for i, (_, card, _, _) in enumerate(design_electrical.selected(design), len(design['functional']) + 1):
+        rows.append(req(f'FUNC-{i}', [check(
+            'electrical-' + card.lower().replace('_', '-'), 'design_rules',
+            pack='electrical-role-rules.json', bindings='electrical-role-bindings.json',
+            netlist_check='netlist', cards=[card])]))
     geometry = check(
         "geometry",
         "geometry",
@@ -1360,7 +1367,8 @@ def requirements(design, root, record, suppliers):
         generation=dict(schema="agent-ee.generation/1", done_check="fab"),
         requirements=["spec.md"],
         limitations=[
-            "Software file claim only. No physical validation, independent engineering review or supplier preview."
+            "Software file claim only. No physical validation, independent engineering review or supplier preview.",
+            design_electrical.limitations(design),
         ],
         inputs=[dict(path=p.name, at=p.name) for p in sorted(root.iterdir())],
         stages=dict(
@@ -1579,6 +1587,7 @@ def _compile_design(design, captures, out):
         mechanics(design, root)
         suppliers = cpl_policy(design, root)
         topology_rules(design, root)
+        design_electrical.emit(design, root)
         requirements(design, root, record, suppliers)
         p = design.get("placement", {})
         seeds = p.get("seeds", 4)

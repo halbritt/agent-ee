@@ -340,7 +340,7 @@ def prepare_context(root, out):
     out.mkdir()
     shutil.copyfile(root / 'docs/design-compile.md', out / 'design-compile.md')
     shutil.copytree(root / 'fixtures/design-examples', out / 'examples')
-    for name in ('design.py', 'design_shape.py', 'board_text.py'):
+    for name in ('design.py', 'design_shape.py', 'design_electrical.py', 'board_text.py'):
         shutil.copyfile(Path(__file__).with_name(name), out / name)
     write_json(out / 'author-schema.json', AUTHOR_SCHEMA)
 
@@ -387,6 +387,13 @@ item to that item's number. {ITEM_RULE}
 These quotes establish text traceability, not proof of engineering correctness.
 Functional witnesses must independently specify intended pin roles; native parity alone
 cannot establish them. Put behavioral/performance claims and physical tests in bench.
+Declare electrical_roles with both differential_buses and offboard_controls lists.
+Use [] only when the design has no such roles; omission is not an assessment.
+Read the role format in design-compile.md and design_electrical.py. Declare every
+applicable bus and off-board control, including its actual component terminals and
+intended default bias. These bindings are agent-selected and do not establish
+datasheet facts. Existing bias rules report warnings; they do not prove electrical
+correctness, buffering, transient tolerance or behavior on hardware.
 
 Tools available in this seat (downloads only; no project uploads, orders or purchases):
   python3 -m agent_ee.design_tools search 'KEYWORDS' --out /work/experiments/search-N
@@ -934,6 +941,9 @@ def _generate(requirements_path, out, options, identity=None):
                 except ValueError as exc:
                     raise design.DesignError(['statement_json: supply strict JSON; ' + str(exc)]) from exc
                 design.validate(current)
+                if 'electrical_roles' not in current:
+                    raise design.DesignError(['electrical_roles: declare differential_buses and '
+                        'offboard_controls; use [] only when no such roles apply'])
                 problems = trace_problems(response, current, requirements)
                 if problems:
                     raise design.DesignError(problems)

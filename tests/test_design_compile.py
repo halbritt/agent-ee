@@ -87,6 +87,7 @@ def design_fixture(root):
             )
         ],
         bench=["Measure resistance on assembled hardware."],
+        electrical_roles=dict(differential_buses=[], offboard_controls=[]),
     )
 
     def put(rel, raw):

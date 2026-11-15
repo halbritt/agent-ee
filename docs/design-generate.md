@@ -14,6 +14,13 @@ agent-ee design benchmark fixtures/design-requirements --out NEW_BENCHMARK \
   --max-attempts 3 --max-seconds 1200
 ```
 
+The author declares differential buses and off-board controls through
+[`electrical_roles`](design-compile.md#electrical-roles). The compiler selects
+existing native-netlist bias checks for those roles. Missing bias remains a
+warning; empty role lists are reported as not checked. These author interpretations
+do not establish datasheet facts or electrical acceptance. Omitting the declaration
+returns the attempt to the author within the same attempt and time limits.
+
 ## Options
 
 Both commands take the same options. Bounds apply to each design.

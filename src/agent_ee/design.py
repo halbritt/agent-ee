@@ -443,7 +443,7 @@ def validate(design, captures=None, *, cad_only=False):
             "functional",
             "bench",
         ),
-        ("placement", "mechanics", "markings", "diff_pairs", "currents", "kelvin_senses"),
+        ("placement", "mechanics", "markings", "diff_pairs", "currents", "kelvin_senses", "electrical_roles"),
         "design",
     ):
         raise DesignError(errors)
@@ -1100,6 +1100,12 @@ def validate(design, captures=None, *, cad_only=False):
                             "supply finite dimensions in the footprint local frame",
                         )
     current_problems(design, nets, footprints, decoupling, fields, fail)
+    if not errors:
+        from . import design_electrical
+        try:
+            design_electrical.validate(design)
+        except (ValueError, TypeError) as exc:
+            fail('electrical_roles', str(exc))
     if captures is not None and not cad_only:
         from .part_record import prepare_record
 
