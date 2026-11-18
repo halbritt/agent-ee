@@ -1554,6 +1554,8 @@ def qualify_bundle(root, work):
 
 def _compile_design(design, captures, out):
     """Refuse before output publication; identical decisions/captures yield identical bytes."""
+    from .kicad_route_attempt import resolve_kicad_route_checkout
+
     assemblies = validate(design, captures)
     if out.exists() or out.is_symlink():
         raise FileExistsError(f"{out}: choose a new bundle directory")
@@ -1621,7 +1623,7 @@ def _compile_design(design, captures, out):
                     shortlist=seeds,
                 ),
                 # Pair handling only for declared pairs (design.pair_routing).
-                router=dict(checkout=os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '/opt/kicad-route'),
+                router=dict(checkout=str(resolve_kicad_route_checkout()),
                             **pair_routing(design)),
             ),
             verification_timeout_s=1800,

@@ -14,6 +14,8 @@
       "result": ["kicad-route/route/1", "kicad-route/route/2"],
       "attempt": ["kicad-route/attempt/1", "kicad-route/attempt/2"],
       "refusal": ["kicad-route/refusal/1"],
+      "native_operation": "kicad-route/native-operation/1",
+      "native_exits": {"0": ["complete"], "2": ["invalid", "unsupported", "native_validation_failed"], "3": ["unroutable"], "4": ["budget_exhausted"], "5": ["work_exhausted"], "6": ["admission_exceeded", "journal_exhausted", "nesting_exhausted", "operation_timeout", "cancelled", "child_output_exceeded"], "7": ["internal_error", "child_process_error"], "8": ["usage_refused", "publication_refused", "destination_exists", "ambiguous_termination"]},
       "version_2_only_with": "diff_pairs auto",
       "copper_ownership": "builtin process-PASS results only: the kicad-route/copper-ownership/1 pointer, bound to the retained validate/copper-ownership.json bytes; replay_authority false, never graded"
     },

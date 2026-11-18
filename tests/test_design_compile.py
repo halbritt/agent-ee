@@ -1522,9 +1522,12 @@ class DiffPairIntentTests(unittest.TestCase):
         impedance = {"target_ohm": 90, "tolerance_percent": 10, "max_uncoupled_mm": 3}
         self.nets("USB_P", "USB_N", [{"positive": "USB_P", "negative": "USB_N",
                                       "intra_pair_match": match, "impedance": impedance}])
+        from agent_ee.kicad_route_attempt import resolve_kicad_route_checkout
+        from tests.kicad_route_fixture import make_checkout
+        expected_checkout = str(resolve_kicad_route_checkout())
         router = self.plan()["placement"]["router"]
         self.assertEqual(router, {
-            "checkout": os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '/opt/kicad-route'),
+            "checkout": expected_checkout,
             "diff_pairs": "auto", "intra_pair_match": match,
             "pair_layers": ["F.Cu"],  # the outer layer opposite the declared B.Cu plane
             "pair_impedance": dict(impedance, reference_net="GND")})
@@ -1538,8 +1541,15 @@ class DiffPairIntentTests(unittest.TestCase):
         derivation = json.loads((self.root / "bundle/inputs/project-rule-derivation.json").read_text())
         self.assertEqual(derivation["routing"]["diff_pair_gap"]["selected"], 0.25)
         options = routing_adapter.validate_router_options(router)
+        if routing_adapter.is_rust_capable_checkout(router["checkout"]):
+            with self.assertRaisesRegex(ValueError, "unsupported legacy/M4 options"):
+                routing_adapter.board_route_argv(
+                    router["checkout"], "/staged", "/out", budget_s=60, diff_pairs=options["diff_pairs"],
+                    pair_layers=options["pair_layers"], pair_impedance=options["pair_impedance"],
+                    intra_pair_match=options["intra_pair_match"])
+        legacy_checkout, _ = make_checkout(self.root / "legacy-router", "complete")
         argv = routing_adapter.board_route_argv(
-            router["checkout"], "/staged", "/out", budget_s=60, diff_pairs=options["diff_pairs"],
+            legacy_checkout, "/staged", "/out", budget_s=60, diff_pairs=options["diff_pairs"],
             pair_layers=options["pair_layers"], pair_impedance=options["pair_impedance"],
             intra_pair_match=options["intra_pair_match"])
         self.assertEqual(argv[argv.index("--diff-pairs") + 1], "auto")
@@ -1548,7 +1558,7 @@ class DiffPairIntentTests(unittest.TestCase):
         self.assertIn("--diff-pair-intra-match", argv)
         self.nets("CLK_P", "CLK_N", [{"positive": "CLK_P", "negative": "CLK_N"}])
         self.assertEqual(self.plan("plain")["placement"]["router"],
-                         {"checkout": os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '/opt/kicad-route'),
+                         {"checkout": expected_checkout,
                           "diff_pairs": "auto"})
 
     def test_pair_naming_refusals_say_how_to_name(self):

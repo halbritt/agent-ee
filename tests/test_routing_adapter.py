@@ -10,12 +10,21 @@ from tests.toolchain import require_kicad_route
 
 class PairCoverageTests(unittest.TestCase):
     def test_diff_pair_request_forwarded(self):
-        spec = routing_adapter.step(project='project', board='can.kicad_pcb',
-            schematic='can.kicad_sch', name='can', label='pair',
-            checkout=require_kicad_route(), diff_pairs='auto')
-        request = attempt.parse_request(spec['argv'][4:])
-        argv = attempt.tool_argv(request, attempt.default_layout(request))
-        self.assertEqual(argv[argv.index('--diff-pairs') + 1], 'auto')
+        from tests.kicad_route_fixture import make_checkout
+        with tempfile.TemporaryDirectory() as tmp:
+            legacy_checkout, _ = make_checkout(Path(tmp) / 'legacy', 'complete')
+            spec = routing_adapter.step(project='project', board='can.kicad_pcb',
+                schematic='can.kicad_sch', name='can', label='pair',
+                checkout=legacy_checkout, diff_pairs='auto')
+            request = attempt.parse_request(spec['argv'][4:])
+            argv = attempt.tool_argv(request, {**attempt.default_layout(request), 'checkout': legacy_checkout})
+            self.assertEqual(argv[argv.index('--diff-pairs') + 1], 'auto')
+        rust_checkout = require_kicad_route()
+        if routing_adapter.is_rust_capable_checkout(rust_checkout):
+            with self.assertRaisesRegex(ValueError, 'diff_pairs'):
+                routing_adapter.step(project='project', board='can.kicad_pcb',
+                    schematic='can.kicad_sch', name='can', label='pair',
+                    checkout=rust_checkout, diff_pairs='auto')
 
     def test_single_ended_can_is_never_pair_coverage(self):
         record = {'scope': {'nets': ['CAN+', 'CAN-']}}

@@ -23,6 +23,7 @@ import uuid
 
 from . import native_run
 from . import generate as g
+from .kicad_route_attempt import resolve_kicad_route_checkout
 from .storage import canonical, digest, identity, read_json, write_json
 from .run_record import validate_scope
 
@@ -34,7 +35,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT.parent
 STEPS_DIR = REPO_ROOT / 'fixtures' / 'rung1' / 'staged' / 'steps'
 FIXTURE_PROJECT = g.FIXTURE_PROJECT
-DEFAULT_KICAD_ROUTE = Path.home() / 'git' / 'kicad-route'
+DEFAULT_KICAD_ROUTE = resolve_kicad_route_checkout()
 STAGE_ORDER = ['schematic', 'placement', 'routing', 'verification']
 CHECK_STAGES = {'erc': 'schematic', 'netlist': 'schematic', 'drc': 'placement',
                 'geometry': 'routing', 'rc-step': 'verification'}

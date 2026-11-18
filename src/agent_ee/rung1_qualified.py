@@ -49,10 +49,12 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT.parent
 STEPS_DIR = REPO_ROOT / 'fixtures' / 'rung1' / 'qualified' / 'steps'
 ENVELOPE = 'generation/envelope/envelope.json'
+from .kicad_route_attempt import resolve_kicad_route_checkout
+
 IMAGE_KICAD_ROUTE = Path('/opt/kicad-route')
-# The kicad-route checkout: AGENT_EE_KICAD_ROUTE_CHECKOUT when set, else the standard
-# image path. routing_adapter.preflight records and qualifies whatever is named.
-DEFAULT_KICAD_ROUTE = Path(os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT') or IMAGE_KICAD_ROUTE)
+# The kicad-route checkout via unified resolver (AGENT_EE_KICAD_ROUTE_CHECKOUT ->
+# /opt/kicad-route -> sibling ../kicad-route).
+DEFAULT_KICAD_ROUTE = resolve_kicad_route_checkout()
 LAYOUT_NAMESPACE = str(uuid.uuid5(uuid.NAMESPACE_URL, 'https://github.com/halbritt/agent-ee/rung1-qualified/1'))
 STAGE_ORDER = ['schematic', 'placement', 'routing', 'verification', 'fab']
 MOUNT_STEPS, MOUNT_SOURCE = '/tool/steps', '/tool/agent-ee'

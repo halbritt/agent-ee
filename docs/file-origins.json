@@ -585,7 +585,7 @@
     },
     "KRT-515": {
       "name": "KiCadRoutingTools placer mechanisms reimplemented in the Rust placement job",
-      "description": "Transaction (touched/commit/rollback), bucketed spatial-query and seeded-restart semantics of the KRT placer (py_placer/placement/simple.py, simple_anneal.py, place_simple.py at tag v0.23.7), selected by AGENTEE-514 and reimplemented after source inspection in crates/placement-engine/src/job.rs (AGENTEE-515). Not a clean-room implementation. No upstream file is copied. Edge-seat selection and rectangular corner-aware edge identity from py_placer/placement/floorplan.py at 222bb144744c3ddd979674e528bf8647e9ced8d6 are adapted in placement_edges.py, placement_job.py and job.rs; no mating-face inference is claimed.",
+      "description": "Transaction (touched/commit/rollback), bucketed spatial-query and seeded-restart semantics of the KRT placer (py_placer/placement/simple.py, simple_anneal.py, place_simple.py at tag v0.23.7), selected by AGENTEE-514 and reimplemented after source inspection in crates/placement-engine/src/job.rs (AGENTEE-515). Not a clean-room implementation. No upstream file is copied. Edge-seat selection and rectangular corner-aware edge identity from py_placer/placement/floorplan.py at 222bb144744c3ddd979674e528bf8647e9ced8d6 were adapted in placement_edges.py (retired in ed3dc851; consolidated into placement_job.py) and job.rs; no mating-face inference is claimed.",
       "upstream": {
         "repository": "https://github.com/drandyhaas/KiCadRoutingTools",
         "local_path": "/home/halbritt/git/KiCadRoutingTools",
@@ -595,7 +595,7 @@
         },
         "license_file": "LICENSE"
       },
-      "upstream_license": "MIT (tagged LICENSE:1-21). The complete upstream copyright and MIT permission/warranty notice is retained in the crates/placement-engine/src/job.rs module documentation. placement_edges.py also retains the full upstream notice; placement_job.py uses these adapted seat semantics under the same notice.",
+      "upstream_license": "MIT (tagged LICENSE:1-21). The complete upstream copyright and MIT permission/warranty notice is retained in the crates/placement-engine/src/job.rs module documentation; placement_job.py retains an upstream KRT MIT attribution notice (the former placement_edges.py was retired in ed3dc851).",
       "permission_status": "unresolved-owner-decision-required",
       "owner_decision": "No separate owner publication decision recorded. Chief agent-531 decision b4a5857a (C4, relayed by agent-542; not owner text) directs that ported KRT mechanisms keep the upstream notice and this inventory entry, and states that the existing publication authority applies. Excluded from the proposed agent-ee MIT grant; the retained upstream MIT notice governs the derived logic.",
       "evidence": [

@@ -145,13 +145,14 @@ def doctor(checks_only=False, router_checkout=None):
         except (OSError, ValueError, KeyError, TypeError) as exc:
             checks["kicad-happy"] = {"path": analyzer, "error": str(exc)}
     if router_checkout is not None:
-        from .routing_adapter import preflight
+        from .routing_adapter import preflight, resolve_kicad_route_checkout
+        target_checkout = resolve_kicad_route_checkout(router_checkout or None)
         try:
-            router = preflight(router_checkout)
+            router = preflight(target_checkout)
             checks['kicad-route'] = {**router, 'exit_code': 1 if router['problems'] else 0,
                                     'sha256': router['executable_sha256']}
         except (OSError, ValueError) as exc:
-            checks['kicad-route'] = {'path': str(router_checkout), 'error': str(exc)}
+            checks['kicad-route'] = {'path': str(target_checkout), 'error': str(exc)}
         else:
             check_router_install(checks['kicad-route'])
     report = {"prerequisites": checks,

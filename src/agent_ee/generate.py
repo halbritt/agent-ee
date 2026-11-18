@@ -1168,12 +1168,53 @@ def stage_placement(stage, state, options):
 # ------------------------------------------------------------------ stage 5: routing
 
 def stage_routing(stage, state, options):
+    from . import routing_adapter
+
     name = state['name']
     project = copy_tree(state['placed'], stage.dir / 'input' / name)
     stage.input(project, 'placed project')
-    stage.tool('kicad-route')
     stage.tool('kicad-cli')
     out = stage.dir / 'out'
+    checkout = routing_adapter.resolve_kicad_route_checkout()
+    if routing_adapter.is_rust_capable_checkout(checkout):
+        engine = routing_adapter.resolve_kicad_route_engine(checkout)
+        if engine is None or not engine.is_file():
+            raise StageFailure('kicad-route-engine missing for Rust-capable checkout')
+        stage.receipt['tools']['kicad-route-engine'] = {
+            **tool_identity(str(engine)),
+            'resolved': str(engine.resolve()),
+        }
+        (out / 'native').mkdir(parents=True, exist_ok=True)
+        out_board = out / 'native' / f'{name}.kicad_pcb'
+        op_result_path = out / 'operation-result.json'
+        op_request_path = out / 'operation-request.json'
+        argv = routing_adapter._native_board_route_argv(
+            checkout, project, out, budget_s=300, board_name=f'{name}.kicad_pcb',
+            output_board=out_board, operation_result=op_result_path, save_request=op_request_path)
+        with routing_adapter.re01_enforced():
+            command = stage.run(argv, cwd=project, timeout=1500, label='kicad-route-engine')
+        stage.receipt['details']['kicad_route_exit'] = command['exit_code']
+        bound = routing_adapter.bind_board_attempt(out, argv, command['exit_code'])
+        if op_result_path.is_file():
+            stage.output(op_result_path, 'kicad-route operation-result.json')
+            op_result = json.loads(op_result_path.read_text())
+            stage.receipt['details'].update(
+                operation_result=stage.rel(op_result_path),
+                backend='route-native',
+                routing=(op_result.get('routing') or {}).get('status'),
+                routing_stats=op_result.get('routing'),
+                tool_versions=op_result.get('binary'))
+        if bound.get('status') != 'routed':
+            raise StageFailure(
+                f"kicad-route-engine route-native exited {command['exit_code']}: {bound.get('reason') or bound.get('status')}")
+        design = stage.rundir / 'design'
+        copy_tree(project, design)
+        shutil.copyfile(out_board, design / f'{name}.kicad_pcb')
+        stage.output(design, 'routed candidate project')
+        stage.receipt['details']['candidate_sha256'] = digest(design / f'{name}.kicad_pcb')
+        state['design'] = design
+        return
+    stage.tool('kicad-route')
     # 'builtin' is the canonical name since KICADROUTE-82; the deprecated 'krt' is never emitted (AGENTEE-450).
     command = stage.run(['kicad-route', '--out', str(out), 'run', '--backend', 'builtin', '--budget', '300'],
                         cwd=project, timeout=1500, label='kicad-route')

@@ -32,7 +32,11 @@ and its file digests (AGENTEE-539, last at `995891ae`) is retired; reports
 written with it verify against the commit they recorded.
 Optional targeted thermal reservation, pair matching and permitted pair layers
 are used by the placement job; the stage adapter's default request and result
-shapes are unchanged. The source
+shapes are unchanged. When the checkout carries `tools/rust_engine_kicad.py`,
+the adapter dispatches `kicad-route-engine route-native` (`kicad-route/native-operation/1`,
+exits `0,2..8`) under `RE-01` ownership enforcement (`sys.addaudithook` forbidding
+`bin/kicad-route` and `src/kicad_route/*.py`) with zero fallback to Python KRT,
+refusing M4-only pair/layer/experiment options until native parity lands. The source
 table below records the historical contract investigation. Current qualification
 and exclusions are recorded in the [routing adapter](routing-adapter.md).
 

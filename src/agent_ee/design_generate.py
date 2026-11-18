@@ -797,28 +797,10 @@ def code_identity():
 def router_checkout():
     """The kicad-route checkout builds route with as the run starts: its commit, clean-tree state
     and code digest (kicad_route_attempt.checkout_record), and why it would be refused. The build
-    uses AGENT_EE_KICAD_ROUTE_CHECKOUT, else the image's /opt/kicad-route; every routing attempt
-    also records the checkout it ran in its own report."""
-    from .kicad_route_attempt import checkout_record
-    raw = os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT')
-    path = Path(raw) if raw else Path('/opt/kicad-route')
-    if not path.is_dir() and not raw:
-        repo_root = Path(__file__).resolve().parents[2]
-        candidates = [repo_root.parent / 'kicad-route']
-        dot_git = repo_root / '.git'
-        if dot_git.is_file():
-            try:
-                line = dot_git.read_text(encoding='utf-8').strip()
-                if line.startswith('gitdir:'):
-                    gitdir = Path(line.split(':', 1)[1].strip()).resolve()
-                    candidates.append(gitdir.parents[2].parent / 'kicad-route')
-            except OSError:
-                pass
-        for candidate in candidates:
-            if (candidate / '.git').exists() or candidate.is_dir():
-                path = candidate
-                os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'] = str(path)
-                break
+    uses the unified checkout resolver (AGENT_EE_KICAD_ROUTE_CHECKOUT -> /opt/kicad-route ->
+    sibling ../kicad-route); every routing attempt also records the checkout it ran."""
+    from .kicad_route_attempt import checkout_record, resolve_kicad_route_checkout
+    path = resolve_kicad_route_checkout()
     if not path.is_dir():
         return dict(path=str(path), error='no kicad-route checkout')
     try:

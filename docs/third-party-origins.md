@@ -90,6 +90,8 @@ files are retained evidence, which is classified by directory.
 | T15 | FOME-MC seeded-benchmark records (`halbritt/fome-mc`, `5954c3a`) | No license found | None tracked: the AGENTEE-108 expectations manifest and run reports stay in a private store; the repository keeps only their SHA-256 hashes ([seeded benchmark](seeded-benchmark.md)). Publication is AGENTEE-118 |
 | T16 | fome-mc reference block captures (`halbritt/fome-mc`, `df304f3`) | No licence file in fome-mc; owner holds the rights and admitted derived sheets with upstream licences recorded (2026-10-18): `T3` and `T8` (FOME-Tech Polygonus-Universal-112 `ddcf0f7` and Polygonus `b3176cb`, no licence file found), `T4` (FOME-Tech `kicad-libraries` `ab9c5f8`, no licence file found; SamacSys terms not reviewed), `T6` (KiCad 10.0.7 stock libraries, CC-BY-SA-4.0 with the KiCad library exception), `T9` (`mck1117/wideband` Rev C `ca2adce`, MIT notice in `fixtures/fome-mc/LICENSE-NOTICE.md`); files report `derived` | `fixtures/fome-mc/`: copied sheets and project libraries (inventory, PSU block and wideband channels), and the block entries, contracts and inventories generated from them (each carrying `upstream_origin` and `upstream_license`); planning documents are cited by pinned identity, not copied |
 | KICAD-HAPPY-219 | kicad-happy MIT correction patch (`aklofas/kicad-happy`, base `0684046` v2.3.1; also applies to v2.3.2 `2fd9aa0`) | MIT, Copyright (c) 2025 Andrew Klofas, per its notice `correction-LICENSE.txt`. Publication with that notice is owner-confirmed 2026-10-22 under the upstream MIT license, not agent-ee's grant (`license_basis` `upstream`): AGENTEE-219 Plane comment `91bc4b33-e29a-480c-9f8f-2a4599f6d3a7`, posted by agent-519, owner-relayed and agent-transcribed. Caveat: the decision question framed the patch as not yet landed, but `51f7bcf4` had already published it to the public agent-ee repository on 2026-10-19, so publication from 2026-10-19 to 2026-10-22 was not owner-authorized at the time; the authorization applies from 2026-10-22. Still open, not done: the upstream submission. Since 2026-11-03 the image build applies the patch to the newest 2.x release (`docker/kicad-happy/install.py`) instead of holding a fixed version; a release the patch no longer applies to, such as one that already includes the fix, fails the build until the correction is re-derived or removed. Files report `owner-confirmed-upstream-license` | `fixtures/kicad-happy/ac4-false-positives/correction.patch` and `correction-LICENSE.txt` |
+| T17 | `kicad-route` `routability-experiment/1` receipts (`halbritt/kicad-route`, `4f06368f` and `a0ed434`) | MIT (`kicad-route` `LICENSE`, Copyright (c) 2026 halbritt); `permission_status`: `unresolved-owner-decision-required` pending owner confirmation to publish producer-host paths | `tests/fixtures/k91-real/` (`PROVENANCE.md`, `SHA256SUMS`, sidecar and configuration JSONs) |
+| KRT-515 | KiCadRoutingTools placer mechanisms reimplemented in Rust placement (`drandyhaas/KiCadRoutingTools`, `v0.23.7` `83646c8b` and `222bb144`) | MIT (upstream notice retained in `crates/placement-engine/src/job.rs`; `placement_job.py` carries attribution after `placement_edges.py` retirement in `ed3dc851`); `permission_status`: `unresolved-owner-decision-required` | `crates/placement-engine/src/job.rs`, `src/agent_ee/placement_job.py` |
 
 The inventory gives each origin's repository, revisions, local source path,
 license evidence and owner decision. The exact files are listed by rule, and
@@ -239,3 +241,26 @@ The retained task specifications were extracted into the Tier-1 subset and
 wrapped with agent-ee interface and placement requirements; they are derivatives,
 not unmodified copies of original project CAD. The upstream notices and this
 attribution do not establish that the source-project licences have been satisfied.
+
+## F-M6-G2 Rust router integration provenance and audit limits
+
+- **External Rust router (`kicad-route`)**: invoked out-of-process as
+  `kicad-route-engine route-native` with `--native-bridge tools/rust_engine_kicad.py`.
+  No `kicad-route` source or compiled binary is vendored into `agent-ee`.
+  Upstream `kicad-route` carries an MIT `LICENSE`; legacy Python KRT code under
+  `kicad-route/src/kicad_route/router/LICENSE` (MIT) is isolated and forbidden
+  from execution on `route-native` paths by the `RE-01` `sys.addaudithook` guard.
+- **Rust dependency locks**:
+  - `kicad-route/rust-engine/Cargo.lock` (checked at SHA-256
+    `4b5a525c5100fa630537508b9f1bd679872d3fc4b55f72d70436ab1970b4861f` during
+    F-M6-G2): locks `serde 1.0.229`, `serde_json 1.0.154`, and `sha2 0.11.0`
+    (MIT / Apache-2.0 dual-licensed crates) alongside workspace sources.
+  - `crates/placement-engine/Cargo.lock`: workspace lockfile for `agent-ee-placement`.
+- **Runtime-only benchmark inputs**: `benchmarks/krt-matched/boards.json`
+  and third-party benchmark boards stay external and runtime-only (never
+  committed into `agent-ee`).
+- **Audit limits**: `agent-ee` records the `kicad-route` commit, tree
+  cleanliness, `rust-engine/Cargo.lock` / `LICENSE` / `tools/rust_engine_kicad.py`
+  digests, and `kicad-route-engine` SHA-256 per preflight/attempt without
+  pinning commits or shipping third-party binaries. Distribution-level crate
+  license text aggregation is outside this source inventory.

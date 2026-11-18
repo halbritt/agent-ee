@@ -66,6 +66,19 @@ def derive_state(checkout, state, layout, *, copy_venv=False):
     source, venv, record = engine_of(checkout)
     manifest = json.loads((checkout / 'manifest.json').read_text())
     k = manifest['krt']
+    src_sha_out = subprocess.run(
+        ['/usr/bin/python3', '-I', '-B', '-c',
+         'import json, sys; sys.path.insert(0, sys.argv[1] + "/src"); '
+         'from kicad_route import engine; '
+         'print(json.dumps(engine.source_sha256(engine.SOURCE_ROOT)))',
+         str(checkout)],
+        capture_output=True, text=True, check=True, timeout=60,
+        env={'PATH': '/usr/bin:/bin', 'PYTHONDONTWRITEBYTECODE': '1'},
+    ).stdout
+    k['source_sha256'] = json.loads(src_sha_out)
+    req_file = checkout / 'src/kicad_route/router/requirements.txt'
+    if req_file.is_file():
+        k['requirements'] = {**k['requirements'], 'sha256': attempt.digest(req_file)}
     module = Path(k['extension_module']['path'])
     inside = module.relative_to(Path(k['venv']['path']))
     state.mkdir(parents=True, exist_ok=True)
@@ -438,18 +451,19 @@ class GenerationStateTest(unittest.TestCase):
 
     def test_preflight_requires_the_generation_files(self):
         root = copy_tool(self.checkout, Path(self.tmp.name) / 'tool')
-        manifest = derive_state(self.checkout, root, 'generation')
-        manifest['state_dir'] = attempt.SANDBOX['checkout']
-        (root / 'manifest.json').write_text(json.dumps(manifest))
-        self.assertEqual(routing_adapter.preflight(root)['problems'], [])
-        (root / GENERATION / 'router/UPSTREAM.json').rename(root / 'UPSTREAM.json.aside')
-        problems = routing_adapter.preflight(root)['problems']
+        state = Path(self.tmp.name) / 'state'
+        manifest = derive_state(self.checkout, state, 'generation')
+        manifest['state_dir'] = attempt.SANDBOX['state']
+        (state / 'manifest.json').write_text(json.dumps(manifest))
+        self.assertEqual(routing_adapter.preflight(root, state)['problems'], [])
+        (state / GENERATION / 'router/UPSTREAM.json').rename(state / 'UPSTREAM.json.aside')
+        problems = routing_adapter.preflight(root, state)['problems']
         self.assertIn(f'missing installed backend dependency: KICAD_ROUTE_STATE/{GENERATION}/router/UPSTREAM.json',
                       problems)
 
 
 class GenerationNativeTest(unittest.TestCase):
-    """The real pin routes from a generation layout; its result carries exactly the nested keys."""
+    """The real checkout routes via route-native or a legacy generation layout."""
 
     @classmethod
     def setUpClass(cls):
@@ -478,6 +492,12 @@ class GenerationNativeTest(unittest.TestCase):
         placed = self.root / 'placed'
         shutil.copytree(ROOT / 'fixtures/rc/control', placed / 'project')
         shutil.copytree(ROOT / 'fixtures/rc/requirements', placed / 'requirements')
+        if routing_adapter.is_rust_capable_checkout(tool):
+            from tests.test_kicad_route_native import VIA_BOARD
+            made = execute(placed, self.root / 'make-vias',
+                           ['/usr/bin/python3', '-I', '-B', '-c', VIA_BOARD, '/work/vias.kicad_pcb'], timeout=300)
+            self.assertEqual(made['exit_code'], 0)
+            shutil.copyfile(self.root / 'make-vias/vias.kicad_pcb', placed / 'project/rc_filter.kicad_pcb')
         spec = routing_adapter.step(project='project', board='rc_filter.kicad_pcb', schematic='rc_filter.kicad_sch',
                                     name='rc_filter', label='generation-native', checkout=tool, budget=120)
         work = self.root / 'work'
@@ -486,6 +506,12 @@ class GenerationNativeTest(unittest.TestCase):
         report = json.loads((work / 'routing/adapter-report.json').read_text())
         self.assertIn(record['exit_code'], (0, 2), report['semantics'])
         summary = routing_adapter.verify(work, attempt.files_of(attempt.tree(placed)))
+        if routing_adapter.is_rust_capable_checkout(tool):
+            self.assertEqual(summary['proposal'], 'eligible', summary)
+            op = json.loads((work / 'routing/attempt/operation-result.json').read_text())
+            self.assertEqual(op['schema'], attempt.NATIVE_OPERATION_SCHEMA)
+            self.assertEqual(op['status'], 'complete')
+            return
         self.assertIn(summary['proposal'], ('eligible', 'eligible_partial'), summary)
         result = json.loads((work / 'routing/attempt/result.json').read_text())
         mounted = Path(attempt.SANDBOX['checkout'])

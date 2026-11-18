@@ -220,35 +220,43 @@ def toolchain_test(test):
 
 
 def require_kicad_route():
-    """The configured kicad-route checkout, qualified against the adapter's pin.
+    """The configured kicad-route checkout, qualified for route-native or legacy.
 
     An unset AGENT_EE_KICAD_ROUTE_CHECKOUT is an absent optional tool: a skip,
-    or a failure under AGENT_EE_REQUIRE_TOOLCHAIN=1. A configured checkout whose
-    pin, code, state or KRT runtime does not qualify always fails."""
+    or a failure under AGENT_EE_REQUIRE_TOOLCHAIN=1."""
+    from agent_ee import routing_adapter
     configured = os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT')
     if not configured:
         reason = 'toolchain prerequisite: AGENT_EE_KICAD_ROUTE_CHECKOUT is unset (no pinned kicad-route checkout)'
         if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
             raise AssertionError('AGENT_EE_REQUIRE_TOOLCHAIN=1: ' + reason)
         raise unittest.SkipTest(reason)
-    from agent_ee import routing_adapter
-    check = routing_adapter.preflight(configured)
+    checkout = routing_adapter.resolve_kicad_route_checkout(configured)
+    check = routing_adapter.preflight(checkout)
     if check['problems']:
-        raise AssertionError(f'AGENT_EE_KICAD_ROUTE_CHECKOUT={configured} does not qualify: '
+        raise AssertionError(f'kicad-route checkout {checkout} does not qualify: '
                              + '; '.join(check['problems']))
+    if routing_adapter.is_rust_capable_checkout(check['checkout']):
+        engine = routing_adapter.resolve_kicad_route_engine(check['checkout'])
+        bridge = routing_adapter.resolve_native_bridge(check['checkout'])
+        if engine is None or not engine.is_file() or bridge is None:
+            raise AssertionError(f'kicad-route checkout {checkout} lacks kicad-route-engine or tools/rust_engine_kicad.py')
+        probe = subprocess.run([str(engine), 'route-native', '--help'], capture_output=True, text=True, timeout=30)
+        if probe.returncode != 0:
+            raise AssertionError(f'kicad-route-engine route-native --help failed: {probe.stderr.strip()[-2000:]}')
+        return Path(check['checkout'])
     from agent_ee import kicad_route_attempt
     state = Path(check['state'])
-    # The engine the pin selects: a router generation's copy and venv, or the legacy layout.
+    # Legacy fallback (non-Rust checkout): qualify .venv-krt and KRT runtime imports.
     generation, _ = kicad_route_attempt.state_generation(state)
     venv, router = ((state / generation / 'venv', state / generation / 'router') if generation else
                     (state / '.venv-krt', Path(check['checkout']) / 'src/kicad_route/router'))
-    # KRT's runtime imports, as its startup checks spell them; -B writes no bytecode.
     result = subprocess.run([str(venv / 'bin/python'), '-I', '-B', '-c',
                              'import sys; sys.path.insert(0, "rust_router"); import grid_router, numpy; '
                              'from scipy.optimize import linear_sum_assignment; '
                              'from shapely.geometry import Polygon'],
                             cwd=router, capture_output=True, text=True, timeout=60)
     if result.returncode:
-        raise AssertionError(f'AGENT_EE_KICAD_ROUTE_CHECKOUT={configured}: KRT runtime import failed: '
+        raise AssertionError(f'kicad-route checkout {checkout}: KRT runtime import failed: '
                              + result.stderr.strip()[-2000:])
     return Path(check['checkout'])

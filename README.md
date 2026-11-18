@@ -33,7 +33,7 @@ What works through the build entrypoint, `agent-ee build run`, and the synthesis
 | Parts | Binds authored/selected parts, captured datasheets, symbols and footprints to circuit intent; checks footprint DFM rules | acquisition board; generated r5b designs |
 | Scaffold | Creates native project, board outline, stackup, rules and fixed connectors | acquisition board; generated r5b designs |
 | Schematic | Emits native schematic from circuit intent, runs ERC and forward-annotates footprints | acquisition board; 130-part emitter benchmark; generated r5b designs |
-| Placement and routing | Rust placement search over declared groups, fixed poses, locality and planes; routing by [kicad-route](docs/routing-adapter.md) at the commit each attempt records; native DRC and locality checks on the saved board | acquisition board; generated r5b designs; esp_prog (placement and routing only) |
+| Placement and routing | Rust placement search over declared groups, fixed poses, locality and planes; routing by [kicad-route](docs/routing-adapter.md) (`kicad-route-engine route-native` on Rust-capable checkouts under `RE-01` enforcement, recording checkout commit and engine SHA-256 per attempt); native DRC and locality checks on the saved board | acquisition board; generated r5b designs; esp_prog (placement and routing only) |
 | Artwork | Moves silk reference fields off conflicts under a receipt; places silkscreen labels | acquisition board; generated r5b designs |
 | Package | Checks-only review (ERC, DRC, parity, interval, SPICE, DFM, assembly readiness, copper width), then Gerber/drill/BOM/CPL export bound to final board hash | acquisition board; generated r5b designs |
 

@@ -24,6 +24,8 @@ from agent-ee's own fresh checks on the captured proposal.
 """
 
 import collections
+import contextlib
+import contextvars
 import errno
 import hashlib
 import json
@@ -40,6 +42,9 @@ import time
 from pathlib import Path, PurePosixPath
 
 RESULT_SCHEMA = 'kicad-route/route/1'
+NATIVE_OPERATION_SCHEMA = 'kicad-route/native-operation/1'
+NATIVE_REQUEST_FILE = 'operation-request.json'
+NATIVE_OPERATION_FILE = 'operation-result.json'
 COMMIT = re.compile(r'[0-9a-f]{40}\Z')
 # Clean-tree state comes from git with optional locks off, so a read-only checkout is
 # never written; repository configuration cannot start a monitor or a hook.
@@ -77,7 +82,8 @@ LEGACY_TOOL_VERSION = {'status': 'unknown', 'value': None,
 LEGACY_TABLE_AT = '/opt/agent-ee-routing/data/kicad-route-pin.json'
 NO_BACKEND = {'status': 'unknown', 'value': None, 'reason': 'no result.json'}
 SANDBOX = {'work': '/work', 'candidate': '/candidate', 'checkout': '/opt/kicad-route',
-           'state': '/opt/kicad-route-state'}
+           'state': '/opt/kicad-route-state',
+           'engine': '/opt/kicad-route-engine/kicad-route-engine'}
 # AGENTEE-442 (agent-507 origin adjudication; agent-449 seam decision): kicad-route
 # experiment._origin reads a --dir whose parent is named 'candidate', or whose
 # grandparent holds attempt.json or result.json, as a run's candidate with a missing
@@ -214,6 +220,17 @@ CLASSES = {
     'cancelled': ('none', 'unknown', EXIT_CANCELLED),
     'not_run': ('none', 'unknown', EXIT_REQUEST),
 }
+NATIVE_EXIT_STATUSES = {
+    0: ('complete',),
+    2: ('invalid', 'unsupported', 'native_validation_failed'),
+    3: ('unroutable',),
+    4: ('budget_exhausted',),
+    5: ('work_exhausted',),
+    6: ('admission_exceeded', 'journal_exhausted', 'nesting_exhausted',
+        'operation_timeout', 'cancelled', 'child_output_exceeded'),
+    7: ('internal_error', 'child_process_error'),
+    8: ('usage_refused', 'publication_refused', 'destination_exists', 'ambiguous_termination'),
+}
 REPRODUCIBILITY = {'krt': 'deterministic backend, repeatability not qualified by this attempt',
                    'builtin': 'deterministic backend, repeatability not qualified by this attempt',
                    'freerouting': 'attempt only; never a reproducible measurement'}
@@ -221,6 +238,179 @@ REPRODUCIBILITY = {'krt': 'deterministic backend, repeatability not qualified by
 
 class RequestError(ValueError):
     pass
+
+
+class RE01OwnershipError(ValueError):
+    """Raised when RE-01 forbids executing legacy Python router entry points."""
+    pass
+
+
+def _git_main_repo_root(repo_root):
+    repo_root = Path(repo_root)
+    git_entry = repo_root / '.git'
+    if git_entry.is_file():
+        try:
+            text = git_entry.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return repo_root
+        for line in text.splitlines():
+            if line.startswith('gitdir:'):
+                raw = line[len('gitdir:'):].strip()
+                gitdir = Path(raw) if Path(raw).is_absolute() else (repo_root / raw).resolve()
+                for candidate in (gitdir, *gitdir.parents):
+                    if candidate.name == '.git':
+                        return candidate.parent
+    return repo_root
+
+
+def _agent_ee_repo_root():
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / 'src' / 'agent_ee').is_dir() and (parent / 'pyproject.toml').is_file():
+            return parent
+    return here.parents[2] if len(here.parents) > 2 else here.parent
+
+
+def resolve_kicad_route_checkout(explicit=None):
+    """Resolve the kicad-route checkout: explicit -> env -> /opt/kicad-route -> sibling ../kicad-route."""
+    if explicit is not None and str(explicit).strip():
+        return Path(str(explicit).strip()).expanduser()
+    env = os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '').strip()
+    if env:
+        return Path(env).expanduser()
+    sandbox_checkout = Path(SANDBOX['checkout'])
+    if sandbox_checkout.is_dir():
+        return sandbox_checkout
+    repo_root = _agent_ee_repo_root()
+    main_root = _git_main_repo_root(repo_root)
+    for base in (repo_root, main_root):
+        sibling = base.parent / 'kicad-route'
+        if sibling.is_dir():
+            return sibling
+    return sandbox_checkout
+
+
+def is_rust_capable_checkout(checkout):
+    """True when the checkout carries the Rust native bridge (tools/rust_engine_kicad.py)."""
+    if not checkout:
+        return False
+    bridge = Path(checkout) / 'tools' / 'rust_engine_kicad.py'
+    return bridge.is_file() and not bridge.is_symlink()
+
+
+def resolve_native_bridge(checkout=None):
+    """Resolve tools/rust_engine_kicad.py for the given or resolved checkout, or None."""
+    co = resolve_kicad_route_checkout(checkout)
+    bridge = Path(co) / 'tools' / 'rust_engine_kicad.py'
+    return bridge if bridge.is_file() and not bridge.is_symlink() else None
+
+
+def resolve_kicad_route_engine(checkout=None):
+    """Resolve kicad-route-engine: env -> checkout target -> sandbox mount -> sibling -> PATH."""
+    for var in ('AGENT_EE_KICAD_ROUTE_ENGINE', 'KICAD_ROUTE_ENGINE_BIN'):
+        val = os.environ.get(var, '').strip()
+        if val:
+            return Path(val).expanduser()
+    co = resolve_kicad_route_checkout(checkout)
+    for profile in ('release', 'debug'):
+        cand = Path(co) / 'rust-engine' / 'target' / profile / 'kicad-route-engine'
+        if cand.is_file():
+            return cand
+    sandbox_engine = Path(SANDBOX['engine'])
+    if sandbox_engine.is_file():
+        return sandbox_engine
+    repo_root = _agent_ee_repo_root()
+    main_root = _git_main_repo_root(repo_root)
+    seen = set()
+    for base in (Path(co).parent, repo_root.parent, main_root.parent):
+        sib = base / 'kicad-route'
+        if sib in seen or not sib.is_dir():
+            continue
+        seen.add(sib)
+        for profile in ('release', 'debug'):
+            cand = sib / 'rust-engine' / 'target' / profile / 'kicad-route-engine'
+            if cand.is_file():
+                return cand
+    which = shutil.which('kicad-route-engine')
+    return Path(which) if which else None
+
+
+_RE01_DEPTH = contextvars.ContextVar('agent_ee_re01_depth', default=0)
+_RE01_HOOK_INSTALLED = False
+
+
+def is_re01_enforced():
+    return _RE01_DEPTH.get() > 0
+
+
+def _re01_forbidden_reason(tokens):
+    prev = ''
+    for raw in tokens:
+        token = str(raw)
+        norm = token.replace('\\', '/')
+        if (norm == 'kicad-route-engine' or norm.endswith('/kicad-route-engine')
+                or norm.endswith('/tools/rust_engine_kicad.py') or norm == 'tools/rust_engine_kicad.py'):
+            prev = token
+            continue
+        if norm == 'kicad-route' or norm.startswith('bin/kicad-route') or '/bin/kicad-route' in norm:
+            return f'RE-01 forbids executing legacy Python router entrypoint: {token}'
+        if ('/src/kicad_route/' in norm or norm.startswith('src/kicad_route/')
+                or norm.endswith('/src/kicad_route')):
+            return f'RE-01 forbids executing legacy Python router module: {token}'
+        if ('/.venv-krt/' in norm or norm.startswith('.venv-krt/')
+                or norm.endswith('/.venv-krt')):
+            return f'RE-01 forbids executing legacy Python router venv: {token}'
+        if prev == '-c' and re.search(r'\b(kicad_route|native_delay|grid_router)\b', token):
+            return 'RE-01 forbids inline execution of legacy Python router modules'
+        prev = token
+    return None
+
+
+def check_re01_command(argv):
+    reason = _re01_forbidden_reason(argv)
+    if reason is not None:
+        raise RE01OwnershipError(reason)
+
+
+def _re01_audit_hook(event, args):
+    if _RE01_DEPTH.get() <= 0:
+        return
+    if event == 'subprocess.Popen':
+        executable, cmd_args = args[0], args[1]
+        tokens = []
+        if executable is not None:
+            tokens.append(str(executable))
+        if isinstance(cmd_args, (list, tuple)):
+            tokens.extend(str(a) for a in cmd_args)
+        elif cmd_args is not None:
+            tokens.append(str(cmd_args))
+        check_re01_command(tokens)
+    elif event in ('os.exec', 'os.posix_spawn'):
+        tokens = [str(args[0])]
+        if len(args) > 1 and isinstance(args[1], (list, tuple)):
+            tokens.extend(str(a) for a in args[1])
+        check_re01_command(tokens)
+    elif event == 'os.system':
+        if args and any(bad in str(args[0]) for bad in ('bin/kicad-route', 'src/kicad_route/', '.venv-krt')):
+            raise RE01OwnershipError(f'RE-01 forbids os.system legacy Python router execution: {args[0]}')
+
+
+def install_re01_audit_hook():
+    global _RE01_HOOK_INSTALLED
+    if not _RE01_HOOK_INSTALLED:
+        sys.addaudithook(_re01_audit_hook)
+        _RE01_HOOK_INSTALLED = True
+
+
+@contextlib.contextmanager
+def re01_enforced():
+    """Enforce RE-01 ownership via sys.addaudithook while active."""
+    install_re01_audit_hook()
+    token = _RE01_DEPTH.set(_RE01_DEPTH.get() + 1)
+    try:
+        yield
+    finally:
+        _RE01_DEPTH.reset(token)
 
 
 # Declared layer policy (AGENTEE-231): allowed KRT signal layers, optional KRT
@@ -1235,37 +1425,57 @@ def links_of(entries):
 
 def checkout_commit(checkout):
     """HEAD commit from the git files themselves; running git could write the index."""
-    git = Path(checkout) / '.git'
+    checkout = Path(checkout)
+    git = checkout / '.git'
+    common = git
+    if git.is_file():
+        for line in git.read_text().splitlines():
+            if line.startswith('gitdir:'):
+                raw = line[len('gitdir:'):].strip()
+                git = Path(raw) if Path(raw).is_absolute() else (checkout / raw).resolve()
+                break
+        if (git / 'commondir').is_file():
+            rel_common = (git / 'commondir').read_text().strip()
+            common = (git / rel_common).resolve()
     head = (git / 'HEAD').read_text().strip()
     if not head.startswith('ref: '):
         return head
     ref = head[5:]
-    loose = git / ref
-    if loose.is_file():
-        return loose.read_text().strip()
-    packed = git / 'packed-refs'
-    if packed.is_file():
-        for line in packed.read_text().splitlines():
-            parts = line.split()
-            if len(parts) == 2 and parts[1] == ref:
-                return parts[0]
+    for base in (git, common):
+        loose = base / ref
+        if loose.is_file():
+            return loose.read_text().strip()
+    for base in (git, common):
+        packed = base / 'packed-refs'
+        if packed.is_file():
+            for line in packed.read_text().splitlines():
+                parts = line.split()
+                if len(parts) == 2 and parts[1] == ref:
+                    return parts[0]
     return None
 
 
 def code_files(checkout):
-    """(file map, problems): the SHA-256 of every file under the checkout's bin/ and src/.
+    """(file map, problems): the SHA-256 of every file under the checkout's bin/, src/,
+    and (on Rust-capable checkouts) tools/, rust-engine/src/, Cargo manifests, and LICENSE.
 
-    Python bytecode caches are not code here (the router runs with -B and its own cache
-    prefix), but a link or special file anywhere in these trees is a problem."""
+    Python bytecode caches and Cargo target/ are not code here, but a link or special
+    file anywhere in these trees is a problem."""
     checkout = Path(checkout)
     problems, files = [], {}
-    for top in ('bin', 'src'):
+    tops = ['bin', 'src']
+    rust_capable = is_rust_capable_checkout(checkout)
+    if rust_capable:
+        tops.append('tools')
+        if (checkout / 'rust-engine' / 'src').is_dir() or (checkout / 'rust-engine' / 'src').is_symlink():
+            tops.append('rust-engine/src')
+    for top in tops:
         if not (checkout / top).is_dir() or (checkout / top).is_symlink():
             problems.append(f'missing tool directory {top}/')
             continue
         for rel, entry in tree(checkout / top).items():
             parts = PurePosixPath(rel).parts
-            if '__pycache__' in parts or any(p.endswith('.egg-info') for p in parts):
+            if '__pycache__' in parts or 'target' in parts or any(p.endswith('.egg-info') for p in parts):
                 if entry[0] in ('link', 'other'):
                     problems.append(f'link or special file in pycache: {top}/{rel}')
                 continue
@@ -1273,6 +1483,13 @@ def code_files(checkout):
                 files[f'{top}/{rel}'] = entry[1]
             elif entry[0] != 'dir':
                 problems.append(f'link or special file in tool code: {top}/{rel}')
+    if rust_capable:
+        for rel in ('rust-engine/Cargo.toml', 'rust-engine/Cargo.lock', 'LICENSE'):
+            path = checkout / rel
+            if path.is_symlink():
+                problems.append(f'link or special file in tool code: {rel}')
+            elif path.is_file():
+                files[rel] = digest(path)
     return files, problems
 
 
@@ -1330,12 +1547,39 @@ def adapter_claim(commit):
 def preflight(checkout, state, backend, *, mounted_at):
     """The one precondition sequence of a router run, host-side and in the sandbox.
 
-    The checkout is recorded (checkout_record) and must be a clean commit; the state
-    is verified only then; then the router generation is selected and its required
-    entries must exist. mounted_at is where the sandbox sees the state. Returns
-    (record, generation, problems); nothing runs, installs or writes."""
+    The checkout is recorded (checkout_record) and must be a clean commit; Rust-capable
+    checkouts qualify kicad-route-engine and tools/rust_engine_kicad.py without legacy
+    .venv-krt / manifest.json unless an explicit separate state manifest is supplied."""
     checkout, state = Path(checkout), Path(state)
     record, problems = checkout_record(checkout)
+    if is_rust_capable_checkout(checkout) and canonical_backend(backend) == 'builtin':
+        bridge = checkout / 'tools' / 'rust_engine_kicad.py'
+        if not bridge.is_file() or bridge.is_symlink():
+            problems.append('missing tools/rust_engine_kicad.py')
+        cargo_lock = checkout / 'rust-engine' / 'Cargo.lock'
+        if not cargo_lock.is_file() or cargo_lock.is_symlink():
+            problems.append('missing rust-engine/Cargo.lock')
+        license_file = checkout / 'LICENSE'
+        if not license_file.is_file() or license_file.is_symlink():
+            problems.append('missing kicad-route LICENSE')
+        engine_bin = resolve_kicad_route_engine(checkout)
+        if engine_bin is None or not engine_bin.is_file() or not os.access(engine_bin, os.X_OK):
+            problems.append('missing executable kicad-route-engine binary')
+        try:
+            separate_manifest = (state.resolve() != checkout.resolve() and (state / 'manifest.json').is_file())
+        except OSError:
+            separate_manifest = state != checkout and (state / 'manifest.json').is_file()
+        if separate_manifest:
+            if not problems:
+                problems += verify_state(checkout, state, backend, mounted_at=mounted_at)
+            generation, selection = state_generation(state)
+            problems += selection
+            for rel in state_required(backend, generation):
+                if not os.path.lexists(state / rel):
+                    problems.append(f'missing installed backend dependency: KICAD_ROUTE_STATE/{rel}')
+        else:
+            generation = None
+        return record, generation, problems
     if not problems:
         problems += verify_state(checkout, state, backend, mounted_at=mounted_at)
     generation, selection = state_generation(state)
@@ -1564,11 +1808,54 @@ def staged_observation(layout):
 def default_layout(request):
     checkout = Path(SANDBOX['checkout'])
     state = checkout if request['state'] == 'checkout' else Path(SANDBOX['state'])
+    engine = Path(SANDBOX['engine'])
+    if not engine.is_file():
+        engine = resolve_kicad_route_engine(checkout)
     return {'work': Path(SANDBOX['work']), 'candidate': Path(SANDBOX['candidate']), 'checkout': checkout,
-            'state': state, 'probe': None}
+            'state': state, 'engine': engine, 'probe': None}
+
+
+def is_native_request(request, checkout):
+    return is_rust_capable_checkout(checkout) and canonical_backend(request['backend']) == 'builtin'
+
+
+def native_unsupported_problems(request):
+    """Fail-closed refusals for options unsupported by route-native (zero Python KRT fallback)."""
+    problems = []
+    if 'diff_pairs' in request:
+        problems.append('route-native does not support diff_pairs')
+    if 'layer_policy' in request:
+        problems.append('route-native does not support layer_policy')
+    if 'experiment_policy' in request:
+        problems.append('route-native does not support experiment_policy')
+    return problems
+
+
+def native_tool_argv(request, layout):
+    routing = Path(layout['work']) / 'routing'
+    staged = staged_dir(request, layout)
+    source_board = staged / request['board']
+    output_board = routing / 'out' / 'native' / request['board']
+    op_result = routing / 'attempt' / NATIVE_OPERATION_FILE
+    op_request = routing / 'attempt' / NATIVE_REQUEST_FILE
+    bridge = Path(layout['checkout']) / 'tools' / 'rust_engine_kicad.py'
+    engine = layout.get('engine')
+    if engine is None:
+        engine = resolve_kicad_route_engine(layout['checkout'])
+    engine_str = str(engine) if engine is not None else 'kicad-route-engine'
+    return [
+        engine_str, 'route-native', str(source_board), str(output_board),
+        '--operation-result', str(op_result),
+        '--save-request', str(op_request),
+        '--native-bridge', str(bridge),
+        '--python', PYTHON,
+        '--timeout-ms', str(int(request['budget_s']) * 1000),
+    ]
 
 
 def tool_argv(request, layout):
+    if is_native_request(request, layout['checkout']):
+        return native_tool_argv(request, layout)
     routing = Path(layout['work']) / 'routing'
     return [PYTHON, '-B', '-X', f'pycache_prefix={routing / "pycache"}',
             str(Path(layout['checkout']) / 'bin' / 'kicad-route'), 'run',
@@ -1786,6 +2073,88 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
         return 'contradiction', ['attempt.json contradicts result.json or the request']
     _, label, reasons = verdict(result)
     return label, reasons
+
+
+def native_backend_of(op_result):
+    if not isinstance(op_result, dict) or op_result.get('schema') != NATIVE_OPERATION_SCHEMA:
+        return {'status': 'unknown', 'value': None, 'reason': f'no {NATIVE_OPERATION_FILE}'}
+    binary = op_result.get('binary')
+    if not isinstance(binary, dict):
+        return {'status': 'unknown', 'value': None, 'reason': f'missing binary identity in {NATIVE_OPERATION_FILE}'}
+    return {'status': 'reported', 'value': dict(binary), 'reason': None}
+
+
+def native_semantics(exit_code, op_result, saved_request_path, source_board, output_board=None):
+    """Classify a route-native invocation using kicad-route/native-operation/1 and exact exits."""
+    if not _is_int(exit_code):
+        return 'contradiction', ['route-native did not exit normally']
+    if op_result is None:
+        if exit_code == 7:
+            return 'backend_failure', [f'route-native failed (exit 7) before writing {NATIVE_OPERATION_FILE}']
+        return 'contradiction', [f'exit {exit_code} without {NATIVE_OPERATION_FILE}']
+    if (not isinstance(op_result, dict) or op_result.get('schema') != NATIVE_OPERATION_SCHEMA
+            or op_result.get('version') != 1):
+        return 'contradiction', ['unknown native operation schema or version']
+    if exit_code not in NATIVE_EXIT_STATUSES or op_result.get('exit_code') != exit_code:
+        return 'contradiction', [f'native operation exit_code {op_result.get("exit_code")!r} disagrees with process exit {exit_code}']
+    status = op_result.get('status')
+    if status not in NATIVE_EXIT_STATUSES[exit_code]:
+        return 'contradiction', [f'native operation status {status!r} invalid for exit {exit_code}']
+    req_block = op_result.get('request')
+    req_sha = req_block.get('request_sha256') if isinstance(req_block, dict) else None
+    routing_block = op_result.get('routing')
+    source_block = op_result.get('source')
+    pub = op_result.get('publication')
+    if not isinstance(req_block, dict) or not isinstance(source_block, dict) or not isinstance(pub, dict):
+        return 'contradiction', ['native operation missing request, source or publication block']
+    if saved_request_path is not None and Path(saved_request_path).is_file() and not Path(saved_request_path).is_symlink():
+        if not isinstance(req_sha, str) or not SHA256.match(req_sha) or digest(saved_request_path) != req_sha:
+            return 'contradiction', ['saved native request digest differs from operation-result request_sha256']
+    elif exit_code == 0:
+        return 'contradiction', ['missing saved native request file']
+    elif isinstance(req_block.get('request_json'), str):
+        inline_sha = hashlib.sha256(req_block['request_json'].encode('utf-8')).hexdigest()
+        if not isinstance(req_sha, str) or not SHA256.match(req_sha) or inline_sha != req_sha:
+            return 'contradiction', ['inline native request_json digest differs from operation-result request_sha256']
+    if routing_block is not None:
+        if not isinstance(routing_block, dict) or routing_block.get('request_sha256') != req_sha:
+            return 'contradiction', ['native routing.request_sha256 differs from request.request_sha256']
+    if source_board is not None and Path(source_board).is_file() and not Path(source_board).is_symlink():
+        if source_block.get('source_sha256') != digest(source_board):
+            return 'contradiction', ['native source_sha256 differs from staged source board']
+    sidecar = source_block.get('sidecar_check')
+    if not isinstance(sidecar, dict) or not isinstance(sidecar.get('passed'), bool):
+        return 'contradiction', ['native source.sidecar_check missing or malformed']
+    reason = op_result.get('reason')
+    msg = [reason if isinstance(reason, str) and reason else f'route-native {status}']
+    if exit_code == 0:
+        if not sidecar.get('passed'):
+            return 'contradiction', ['route-native exited 0 with failed sidecar_check']
+        if not isinstance(routing_block, dict):
+            return 'contradiction', ['route-native exited 0 without routing summary']
+        out_sha = pub.get('output_sha256')
+        if (pub.get('published') is not True or pub.get('ambiguous_termination') is not False
+                or not isinstance(out_sha, str) or not SHA256.match(out_sha)):
+            return 'contradiction', ['route-native exited 0 without confirmed publication']
+        if output_board is not None:
+            out_path = Path(output_board)
+            if out_path.is_symlink() or not out_path.is_file() or digest(out_path) != out_sha:
+                return 'contradiction', ['route-native output board missing, linked or digest differs from publication']
+        return 'complete', msg
+    if exit_code == 2:
+        return ('validation_failed' if status == 'native_validation_failed' else 'refused'), msg
+    if exit_code in (3, 4, 5):
+        return 'backend_failure', msg
+    if exit_code == 6:
+        if status == 'operation_timeout':
+            return 'timeout', msg
+        if status == 'cancelled':
+            return 'cancelled', msg
+        return 'backend_failure', msg
+    if exit_code == 7:
+        return 'backend_failure', msg
+    # exit_code == 8
+    return ('contradiction' if status == 'ambiguous_termination' else 'refused'), msg
 
 
 def result_problems(result, exit_code, *, backend, paired):
@@ -2622,7 +2991,10 @@ def _identities(request, layout, generation=None):
         return tree_identity(root) if root.is_dir() and not root.is_symlink() else None
 
     checkout, state = Path(layout['checkout']), Path(layout['state'])
-    identities = {'code': {top: identity_of(checkout / top) for top in ('bin', 'src')},
+    code_tops = ['bin', 'src']
+    if is_rust_capable_checkout(checkout):
+        code_tops += ['tools', 'rust-engine/src']
+    identities = {'code': {top: identity_of(checkout / top) for top in code_tops},
                   'state': {comp: identity_of(state / comp)
                             for comp in state_components(request['backend'], generation)}}
     manifest = state / 'manifest.json'
@@ -2708,6 +3080,87 @@ def constraint_binding_problems(candidate_root, request):
     return []
 
 
+def _run_native_attempt(report, request, layout, routing, candidate_root, inputs_tree, inputs, generation, cancel):
+    project = request['project']
+    argv, env = tool_argv(request, layout), tool_env(layout)
+    native_dir = routing / 'out' / 'native'
+    native_dir.mkdir(parents=True, exist_ok=True)
+    output_board = native_dir / request['board']
+    op_result_path = routing / 'attempt' / NATIVE_OPERATION_FILE
+    op_request_path = routing / 'attempt' / NATIVE_REQUEST_FILE
+    source_board = staged_dir(request, layout) / request['board']
+    with re01_enforced():
+        report['process'] = run_tool(argv, env, routing, routing / 'kicad-route.stdout',
+                                     routing / 'kicad-route.stderr', request['timeout_s'], cancel)
+    report['identity_after'] = _identities(request, layout, generation)
+    after_inputs = tree(candidate_root)
+    report['discovery'] = {'attempt_dir': None, 'problems': []}
+    retained, omitted, links = {}, {}, []
+    for fname in (NATIVE_OPERATION_FILE, NATIVE_REQUEST_FILE):
+        fpath = routing / 'attempt' / fname
+        if fpath.is_symlink():
+            links.append(fname)
+        elif fpath.is_file():
+            retained[fname] = digest(fpath)
+    if output_board.is_symlink():
+        links.append(f'native/{request["board"]}')
+    elif output_board.is_file():
+        omitted[f'native/{request["board"]}'] = digest(output_board)
+    report['retained'] = {f'attempt/{k}': v for k, v in retained.items()}
+    report['omitted_design_files'] = omitted
+    load = []
+    op_result = load_json(op_result_path, load, NATIVE_OPERATION_FILE) if NATIVE_OPERATION_FILE in retained else None
+    missing = []
+    if NATIVE_OPERATION_FILE not in retained:
+        missing.append(NATIVE_OPERATION_FILE)
+    if ((report['process']['exit_code'] == 0 or (isinstance(op_result, dict) and op_result.get('routing') is not None))
+            and NATIVE_REQUEST_FILE not in retained):
+        missing.append(NATIVE_REQUEST_FILE)
+    report['missing_artifacts'] = missing
+    report['backend'] = native_backend_of(op_result)
+    process = report['process']
+    if process['cancelled']:
+        classification, reasons = 'cancelled', ['attempt cancelled; the router process group was killed']
+    elif process['timed_out']:
+        classification, reasons = 'timeout', [f'router exceeded the {request["timeout_s"]} s adapter timeout']
+    else:
+        classification, reasons = native_semantics(
+            process['exit_code'], op_result, op_request_path, source_board, output_board)
+    violations = load + [f'link or special file in attempt diagnostics: {n}' for n in links]
+    if report['identity_after'] != report['identity_before']:
+        violations.append('tool code or state changed during the attempt')
+    if after_inputs != inputs_tree:
+        violations.append('candidate inputs changed during the attempt')
+    report['inputs']['staged_after'] = staged_observation(layout)
+    if report['inputs']['staged_after'] != {'status': 'observed', 'files': inputs,
+                                            'sha256': canonical_identity(inputs_tree)}:
+        violations.append('the staged original changed during the attempt')
+    if classification == 'complete' and missing:
+        violations.extend(f'eligible attempt lacks {n}' for n in missing)
+    if violations and classification not in ('timeout', 'cancelled'):
+        classification, reasons = 'contradiction', reasons + violations
+        report['rejected_candidate_sha256'] = None
+    elif violations:
+        reasons = reasons + violations
+    if classification == 'complete':
+        sha = digest(output_board)
+        report['candidate_files'] = {request['board']: sha}
+        dest = routing / 'candidate' / project / request['board']
+        dest.parent.mkdir(parents=True)
+        shutil.copyfile(output_board, dest)
+        if digest(dest) != sha:
+            classification, reasons = 'contradiction', reasons + ['candidate changed while being copied']
+            shutil.rmtree(routing / 'candidate')
+            report['candidate_files'] = {}
+        else:
+            report['candidate'] = {'path': f'candidate/{project}/{request["board"]}', 'sha256': sha}
+    elif classification == 'validation_failed' and output_board.is_file() and not output_board.is_symlink():
+        report['rejected_candidate_sha256'] = digest(output_board)
+    report['semantics'] = {'classification': classification, 'reasons': reasons,
+                           'exit_code': process['exit_code']}
+    return _finish(report, routing)
+
+
 def attempt(request, layout, cancel=None):
     """Run one attempt and write routing/adapter-report.json. Returns the report."""
     cancel = cancel if cancel is not None else {'requested': False}
@@ -2741,11 +3194,19 @@ def attempt(request, layout, cancel=None):
         if f'{project}/{name}' not in inputs:
             problems.append(f'candidate lacks {project}/{name}')
     problems += constraint_binding_problems(candidate_root, request)
+    rust_native = is_native_request(request, checkout)
+    if rust_native:
+        problems += native_unsupported_problems(request)
     record, generation, qualification = preflight(checkout, state, request['backend'], mounted_at=state)
     # The version this attempt runs is fixed here and recorded; nothing compares it with a list.
     report['adapter'] = adapter_claim(record['commit'])
+    engine_bin = layout.get('engine') if 'engine' in layout else None
+    if engine_bin is None and rust_native:
+        engine_bin = resolve_kicad_route_engine(checkout)
     report['tool'] = {**record,
                       'kicad_route': _executable(checkout / 'bin' / 'kicad-route'),
+                      **({'kicad_route_engine': _executable(engine_bin) if engine_bin else
+                          {'path': None, 'resolved': None, 'sha256': None}} if rust_native else {}),
                       'python': _executable(PYTHON), 'kicad_cli': _executable('/usr/bin/kicad-cli'),
                       'kicad_share_templates': {t: _executable(f'/usr/share/kicad/template/{t}')['sha256']
                                                 for t in ('sym-lib-table', 'fp-lib-table')}}
@@ -2773,6 +3234,10 @@ def attempt(request, layout, cancel=None):
         if experiment is not None:
             report['semantics']['experiment'] = experiment
         return _finish(report, routing)
+
+    if rust_native:
+        return _run_native_attempt(report, request, layout, routing, candidate_root, inputs_tree,
+                                   inputs, generation, cancel)
 
     argv, env = tool_argv(request, layout), tool_env(layout)
     if 'experiment_policy' in request:

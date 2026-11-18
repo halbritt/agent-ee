@@ -26,6 +26,14 @@ from pathlib import Path, PurePosixPath
 from . import kicad_route_attempt as attempt
 from .storage import digest
 
+resolve_kicad_route_checkout = attempt.resolve_kicad_route_checkout
+resolve_kicad_route_engine = attempt.resolve_kicad_route_engine
+resolve_native_bridge = attempt.resolve_native_bridge
+is_rust_capable_checkout = attempt.is_rust_capable_checkout
+RE01OwnershipError = attempt.RE01OwnershipError
+check_re01_command = attempt.check_re01_command
+re01_enforced = attempt.re01_enforced
+
 ADAPTER_AT = '/opt/agent-ee-routing/kicad_route_attempt.py'
 ADAPTER_SOURCE = Path(attempt.__file__).resolve()
 BINDING_MOUNTS = [{'source': str(ADAPTER_SOURCE.with_name(name)),
@@ -51,7 +59,8 @@ class StaleRoutingEvidence(ValueError):
 ARTIFACTS = ('routing/adapter-report.json', 'routing/kicad-route.stdout', 'routing/kicad-route.stderr',
              'routing/attempt/result.json', 'routing/attempt/attempt.json', 'routing/attempt/RESULT.md',
              'routing/attempt/snapshot.json', 'routing/attempt/validate', 'routing/attempt/facts',
-             'routing/attempt/work', 'routing/' + attempt.ORIGINAL_STAGE)
+             'routing/attempt/work', 'routing/attempt/' + attempt.NATIVE_OPERATION_FILE,
+             'routing/attempt/' + attempt.NATIVE_REQUEST_FILE, 'routing/' + attempt.ORIGINAL_STAGE)
 
 
 # The image's kicad-route install record (docker/kicad-route/install.sh); a test names another file.
@@ -92,22 +101,39 @@ def legacy_claim(report):
     return tool.get('pin') if isinstance(tool, dict) and 'pin' in tool else None
 
 
-def preflight(checkout, state=None, backend='builtin'):
+def preflight(checkout=None, state=None, backend='builtin'):
     """Host-side identity without running routing or installation.
 
     The checkout is recorded and qualified by the same attempt.preflight the sandbox
     runs: HEAD from the git files, the clean-tree state from git with optional locks
     off, and the code digest. Any clean commit qualifies; the result names it."""
-    checkout = Path(checkout).resolve()
+    checkout = attempt.resolve_kicad_route_checkout(checkout).resolve()
     state = Path(state).resolve() if state is not None else checkout
     record, _, problems = attempt.preflight(checkout, state, backend, mounted_at=attempt.SANDBOX[
         'checkout' if state == checkout else 'state'])
-    return {'checkout': str(checkout), 'state': str(state), **record,
-            'executable_sha256': digest(checkout / 'bin/kicad-route') if (checkout / 'bin/kicad-route').is_file() else None,
-            'adapter_sha256': digest(ADAPTER_SOURCE), 'problems': problems}
+    rust_capable = attempt.is_rust_capable_checkout(checkout)
+    engine_bin = attempt.resolve_kicad_route_engine(checkout) if rust_capable else None
+    exec_sha = (digest(engine_bin) if engine_bin is not None and engine_bin.is_file()
+                else (digest(checkout / 'bin/kicad-route') if (checkout / 'bin/kicad-route').is_file() else None))
+    result = {'checkout': str(checkout), 'state': str(state), **record,
+              'executable_sha256': exec_sha,
+              'adapter_sha256': digest(ADAPTER_SOURCE), 'problems': problems}
+    if rust_capable:
+        bridge = checkout / 'tools' / 'rust_engine_kicad.py'
+        cargo_lock = checkout / 'rust-engine' / 'Cargo.lock'
+        license_file = checkout / 'LICENSE'
+        result.update(
+            rust_capable=True,
+            engine=str(engine_bin) if engine_bin is not None else None,
+            engine_sha256=digest(engine_bin) if engine_bin is not None and engine_bin.is_file() else None,
+            native_bridge_sha256=digest(bridge) if bridge.is_file() else None,
+            cargo_lock_sha256=digest(cargo_lock) if cargo_lock.is_file() else None,
+            license_sha256=digest(license_file) if license_file.is_file() else None,
+        )
+    return result
 
 
-def step(*, project, board, schematic, name, label, checkout, state=None, budget=300, timeout=None,
+def step(*, project, board, schematic, name, label, checkout=None, state=None, budget=300, timeout=None,
          backend='builtin', diff_pairs=None, layer_policy=None, experiment_policy=None):
     """The AGENTEE-95 step declaration for one attempt. Raises ValueError if the tool does not qualify.
 
@@ -130,6 +156,10 @@ def step(*, project, board, schematic, name, label, checkout, state=None, budget
     if experiment_policy is not None:
         args += ['--experiment-policy', attempt.canonical_json(experiment_policy)]
     request = attempt.parse_request(args)  # the same validation the sandbox applies
+    if attempt.is_native_request(request, check['checkout']):
+        unsupported = attempt.native_unsupported_problems(request)
+        if unsupported:
+            raise ValueError('route-native refuses unsupported request options: ' + '; '.join(unsupported))
     return _step(request, check['checkout'], check['state'] if separate else None)
 
 
@@ -143,11 +173,20 @@ def _step(request, checkout, state, legacy_table=None):
               *([{'source': legacy_table, 'at': attempt.LEGACY_TABLE_AT}] if legacy_table is not None else [])]
     if state is not None:
         mounts.append({'source': state, 'at': attempt.SANDBOX['state']})
+    native = attempt.is_native_request(request, checkout)
+    if native:
+        engine_bin = attempt.resolve_kicad_route_engine(checkout)
+        if engine_bin is not None and engine_bin.is_file():
+            real_engine = Path(engine_bin).resolve()
+            if not real_engine.is_relative_to(Path(checkout).resolve()):
+                mounts.append({'source': str(real_engine), 'at': attempt.SANDBOX['engine']})
     target = f'{request["project"]}/{request["board"]}'
+    backend_report = ({'artifact': f'routing/attempt/{attempt.NATIVE_OPERATION_FILE}', 'key': 'binary'}
+                      if native else {'artifact': 'routing/attempt/result.json', 'key': 'backend'})
     return {'schema': 'agent-ee.stage-step/1', 'stage': 'routing', 'step': f'kicad-route-{request["backend"]}',
             'argv': [attempt.PYTHON, '-I', '-B', ADAPTER_AT, *_request_argv(request)],
             'mounts': mounts, 'source': attempt.SANDBOX['checkout'] + '/src',
-            'backend_report': {'artifact': 'routing/attempt/result.json', 'key': 'backend'},
+            'backend_report': backend_report,
             'writes': {target: f'routing/candidate/{target}'}, 'artifacts': list(ARTIFACTS),
             'adoptable_exits': [0, 2], 'timeout_s': request['timeout_s'] + STEP_MARGIN_S}
 
@@ -279,6 +318,8 @@ def validate_campaign_step(spec, *, host=True):
     expected_mounts = {ADAPTER_AT, attempt.SANDBOX['checkout'], *(m['at'] for m in BINDING_MOUNTS)}
     if separate:
         expected_mounts.add(attempt.SANDBOX['state'])
+    if attempt.SANDBOX['engine'] in mounts and checkout and attempt.is_native_request(request, checkout):
+        expected_mounts.add(attempt.SANDBOX['engine'])
     if not host and attempt.LEGACY_TABLE_AT in mounts:
         # Retained steps of 2026-10-26 to 2026-11-03 also mounted the retired commit table.
         expected_mounts.add(attempt.LEGACY_TABLE_AT)
@@ -452,11 +493,48 @@ def _verify(run, report, inputs, receipt, layout):
     if (classification not in ('validation_failed', 'policy_failed') and
             report['rejected_candidate_sha256'] is not None):
         raise ValueError(f'a {classification} attempt records a rejected candidate')
-    result = record = None
+    result = record = op_result = None
+    backend = attempt.native_backend_of(None) if (f'attempt/{attempt.NATIVE_OPERATION_FILE}' in retained or 'kicad_route_engine' in (report.get('tool') or {})) else attempt.backend_of(None)
+    native_run = (f'attempt/{attempt.NATIVE_OPERATION_FILE}' in retained
+                  or 'kicad_route_engine' in (report.get('tool') or {}))
     if classification == 'not_run':
         if (process is not None or retained or report['discovery'] is not None or
                 report['identity_after'] is not None or report['missing_artifacts'] != []):
             raise ValueError('a not-run attempt has router output')
+        if native_run and report['backend'] != backend:
+            raise ValueError('routing backend identity differs from the retained operation-result.json')
+    elif native_run:
+        op_found, op_result = _retained_json(routing, attempt.NATIVE_OPERATION_FILE, retained)
+        req_found, op_req = _retained_json(routing, attempt.NATIVE_REQUEST_FILE, retained)
+        malformed = (op_found and op_result is None) or (req_found and op_req is None)
+        expected_missing = []
+        if not op_found:
+            expected_missing.append(attempt.NATIVE_OPERATION_FILE)
+        if ((process['exit_code'] == 0 or (isinstance(op_result, dict) and op_result.get('routing') is not None))
+                and not req_found):
+            expected_missing.append(attempt.NATIVE_REQUEST_FILE)
+        if report['missing_artifacts'] != expected_missing:
+            raise ValueError('missing routing artifacts differ from the retained artifacts')
+        if classification in ('timeout', 'cancelled'):
+            native_status = op_result.get('status') if isinstance(op_result, dict) else None
+            expected_status = 'operation_timeout' if classification == 'timeout' else 'cancelled'
+            if not process['timed_out' if classification == 'timeout' else 'cancelled'] and native_status != expected_status:
+                raise ValueError(f'{classification} classification without that observation')
+        else:
+            if process['timed_out'] or process['cancelled']:
+                raise ValueError(f'a {classification} attempt was timed out or cancelled')
+            op_req_path = routing / 'attempt' / attempt.NATIVE_REQUEST_FILE
+            derived, _ = attempt.native_semantics(
+                process['exit_code'], op_result, op_req_path, None,
+                candidate if proposal != 'none' else None)
+            if classification != 'contradiction':
+                if derived != classification:
+                    raise ValueError(f'retained reports classify as {derived}, not {classification}')
+                if malformed or report['identity_after'] != report['identity_before']:
+                    raise ValueError(f'a {classification} attempt with report or tool-state violations is a contradiction')
+        backend = attempt.native_backend_of(op_result)
+        if report['backend'] != backend:
+            raise ValueError('routing backend identity differs from the retained operation-result.json')
     else:
         if report['missing_artifacts'] != attempt.missing_reports(
                 {k[len('attempt/'):] for k in retained if k.startswith('attempt/')}):
@@ -496,9 +574,10 @@ def _verify(run, report, inputs, receipt, layout):
                     raise ValueError(f'a {classification} attempt ran an engine other than the verified one')
         if proposal != 'none':
             _bind(routing, retained, report, request, expected, result, record)
-    backend = attempt.backend_of(result)
-    if report['backend'] != backend:
-        raise ValueError('routing backend identity differs from the retained result.json')
+    if not native_run:
+        backend = attempt.backend_of(result)
+        if report['backend'] != backend:
+            raise ValueError('routing backend identity differs from the retained result.json')
     if receipt is not None:
         _receipt_agrees(receipt, report, request, routing, backend)
     pairs = attempt.pair_coverage(request, result, record, classification)
@@ -597,14 +676,25 @@ def _tool_claims(report, request, layout, *, ran):
         state, checkout = Path(layout['state']), Path(layout['checkout'])
         components = attempt.state_components(
             request['backend'], attempt.generation_of_components(request['backend'], report['identity_before']['state']))
-        targets = [str(state)] + [str(state / c) for c in components] + (
+        targets = [str(state)] + [str(state / c) for c in components
+                                  if report['identity_before']['state'].get(c) is not None] + (
             [str(checkout)] if checkout != state else [])
     if (not isinstance(probes, list) or [p.get('directory') for p in probes] != targets or
             any(p.get('refused') is not True or not p.get('errno') for p in probes)):
         raise ValueError('routing attempt ran without an OS-refused write probe of each state directory')
     process = report['process']
     routing = Path(layout['work']) / 'routing'
-    if (process['argv'] != attempt.tool_argv(request, layout) or process['env'] != attempt.tool_env(layout) or
+    if 'kicad_route_engine' in tool:
+        eng = tool['kicad_route_engine']
+        eng_path = eng.get('path') if isinstance(eng, dict) else None
+        checkout_prefix = str(Path(layout['checkout'])) + '/'
+        if not isinstance(eng_path, str) or not (
+                eng_path == attempt.SANDBOX['engine'] or eng_path.startswith(checkout_prefix)):
+            raise ValueError('routing attempt claims an engine outside the verified checkout or engine mount')
+        expected_argv = attempt.native_tool_argv(request, {**layout, 'engine': eng_path})
+    else:
+        expected_argv = attempt.tool_argv(request, layout)
+    if (process['argv'] != expected_argv or process['env'] != attempt.tool_env(layout) or
             process['cwd'] != str(routing) or process['timeout_s'] != request['timeout_s']):
         raise ValueError('router argv, environment or timeout differ from the fixed adapter values')
     if report['identity_after'] is None or report['discovery'] is None:
@@ -729,9 +819,13 @@ def _receipt_step(receipt, request):
     spec = receipt['spec']
     target = f'{request["project"]}/{request["board"]}'
     mounts = {m['at'] for m in spec['mounts']}
+    expected_backend_reports = (
+        {'artifact': 'routing/attempt/result.json', 'key': 'backend'},
+        {'artifact': f'routing/attempt/{attempt.NATIVE_OPERATION_FILE}', 'key': 'binary'},
+    )
     if (spec['stage'] != 'routing' or spec['step'] != f'kicad-route-{request["backend"]}' or
             spec['writes'] != {target: f'routing/candidate/{target}'} or spec['adoptable_exits'] != [0, 2] or
-            spec['backend_report'] != {'artifact': 'routing/attempt/result.json', 'key': 'backend'} or
+            spec['backend_report'] not in expected_backend_reports or
             spec['artifacts'] != list(ARTIFACTS) or spec['source'] != attempt.SANDBOX['checkout'] + '/src' or
             spec['version_argv'] is not None or
             ADAPTER_AT not in mounts or attempt.SANDBOX['checkout'] not in mounts or
@@ -949,12 +1043,59 @@ def first_search_budget_s(share_s, checks_s):
     return max(search_budget_s(share_s, checks_s), min(int(share_s), floor))
 
 
+def _native_board_route_argv(checkout, staged_dir, out_dir, *, budget_s, owned_copper=False,
+                             grid_step_mm=None, pair_layers=None, pair_impedance=None,
+                             intra_pair_match=None, bus=None, length_match=None,
+                             ac_match=None, diff_pairs=None, board_name='board.kicad_pcb',
+                             output_board=None, operation_result=None, save_request=None,
+                             project_file=None):
+    unsupported = []
+    for name, val in (('diff_pairs', diff_pairs), ('pair_layers', pair_layers),
+                      ('pair_impedance', pair_impedance), ('intra_pair_match', intra_pair_match),
+                      ('bus', bus), ('length_match', length_match), ('ac_match', ac_match),
+                      ('grid_step_mm', grid_step_mm)):
+        if val is not None:
+            unsupported.append(name)
+    if unsupported:
+        raise ValueError('route-native refuses unsupported legacy/M4 options: ' + ', '.join(unsupported))
+    engine_bin = attempt.resolve_kicad_route_engine(checkout)
+    if engine_bin is None or not engine_bin.is_file() or not os.access(engine_bin, os.X_OK):
+        raise ValueError('kicad-route-engine binary missing for Rust-capable checkout')
+    bridge = attempt.resolve_native_bridge(checkout)
+    if bridge is None:
+        raise ValueError('tools/rust_engine_kicad.py missing for Rust-capable checkout')
+    staged_path = Path(staged_dir)
+    out_base = Path(out_dir)
+    source_board = staged_path / board_name
+    out_board = Path(output_board) if output_board is not None else (out_base / 'native' / board_name)
+    op_result = Path(operation_result) if operation_result is not None else (out_base / attempt.NATIVE_OPERATION_FILE)
+    op_req = Path(save_request) if save_request is not None else (out_base / attempt.NATIVE_REQUEST_FILE)
+    argv = [
+        str(engine_bin), 'route-native', str(source_board), str(out_board),
+        '--operation-result', str(op_result),
+        '--save-request', str(op_req),
+        '--native-bridge', str(bridge),
+        '--python', attempt.PYTHON,
+        '--timeout-ms', str(int(budget_s) * 1000),
+    ]
+    proj = Path(project_file) if project_file is not None else (staged_path / (Path(board_name).stem + '.kicad_pro'))
+    if proj.is_file() and not proj.is_symlink():
+        argv += ['--project', str(proj)]
+    return argv
+
+
 def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owned_copper=False, budget_s,
                      grid_step_mm=None, pair_layers=None, pair_impedance=None, intra_pair_match=None,
                      bus=None, length_match=None, ac_match=None, diff_pairs=None):
     """Build the kicad-route CLI command for board-only / schematic-optional invocations.
 
     diff_pairs is 'auto' only for declared pairs; otherwise the router has no pair handling."""
+    if attempt.is_rust_capable_checkout(checkout):
+        return _native_board_route_argv(
+            checkout, staged_dir, out_dir, budget_s=budget_s, owned_copper=owned_copper,
+            grid_step_mm=grid_step_mm, pair_layers=pair_layers, pair_impedance=pair_impedance,
+            intra_pair_match=intra_pair_match, bus=bus, length_match=length_match,
+            ac_match=ac_match, diff_pairs=diff_pairs)
     argv = router_python(str(Path(checkout) / 'bin' / 'kicad-route'), 'run', '--out', str(out_dir),
                          '--json', '--backend', attempt.CLI_BACKEND_NAMES['builtin'], '--dir', str(staged_dir),
                          '--board', 'board.kicad_pcb', '--schematic', 'board.kicad_sch', '--name', design_name,
@@ -1002,10 +1143,9 @@ ROUTER_RECIPE = 'auto'
 def router_recipe(checkout):
     """The search-cost recipe a job may try on its router, or None when that router has none.
 
-    kicad-route `run --recipe auto` (kicad-route 8a9488f, 2026-11-11) gives a two-layer board
-    equal layer costs and a via cost of 600 and leaves a board of more layers at the engine's own
-    costs. An older router does not know the option and refuses the whole command, so it is
-    offered only when the checkout's command line declares it."""
+    route-native does not invoke legacy bin/kicad-route CLI recipes (RE-01)."""
+    if attempt.is_rust_capable_checkout(checkout):
+        return None
     try:
         declared = '"--recipe"' in (Path(checkout) / 'src/kicad_route/cli.py').read_text(errors='replace')
     except OSError:
@@ -1082,8 +1222,11 @@ def board_retry_argv(argv, retry_dir, budget_s, feedback, pads, board_path):
     return retry, pads
 
 
-def spokes_argv(checkout, run_dir):
+def spokes_argv(checkout, run_dir, *, route_native=None):
     """Build the kicad-route spokes diagnostic command."""
+    if route_native is True or attempt.is_re01_enforced() or (
+            route_native is None and attempt.is_rust_capable_checkout(checkout)):
+        raise attempt.RE01OwnershipError('RE-01 forbids executing legacy bin/kicad-route spokes on route-native')
     return router_python(str(Path(checkout) / 'bin/kicad-route'), 'spokes', str(run_dir))
 
 
@@ -1135,8 +1278,54 @@ def parse_via_in_pad_record(text_or_dict):
             'unprotected': [], 'note': ''}
 
 
+def _bind_native_board_attempt(route_dir, argv, exit_code):
+    argv_list = [str(a) for a in argv]
+    record = {'argv': argv_list, 'exit_code': exit_code}
+    idx = argv_list.index('route-native')
+    source_board = Path(argv_list[idx + 1])
+    output_board = Path(argv_list[idx + 2])
+    op_result_path = Path(argv_list[argv_list.index('--operation-result') + 1])
+    op_request_path = (Path(argv_list[argv_list.index('--save-request') + 1])
+                       if '--save-request' in argv_list else None)
+    if op_result_path.is_symlink() or not op_result_path.is_file():
+        return {**record, 'status': 'missing_output', 'failure_kind': 'environment',
+                'failing_stage': 'routing',
+                'reason': f'route-native exit {exit_code}: missing {op_result_path.name}'}
+    try:
+        op_result = json.loads(op_result_path.read_bytes())
+    except (OSError, ValueError, RecursionError) as exc:
+        return {**record, 'status': 'refused_result', 'failure_kind': 'environment',
+                'failing_stage': 'routing',
+                'reason': f'unreadable {op_result_path.name}: {exc}'}
+    outcome_class, reasons = attempt.native_semantics(
+        exit_code, op_result, op_request_path, source_board, output_board)
+    record.update(
+        result_path=str(op_result_path),
+        result_sha256=digest(op_result_path),
+        native_operation_schema=attempt.NATIVE_OPERATION_SCHEMA,
+        router_exit=op_result.get('exit_code') if isinstance(op_result, dict) else None,
+        router_status=op_result.get('status') if isinstance(op_result, dict) else None,
+        classification={'outcome': outcome_class, 'reasons': reasons},
+    )
+    if outcome_class == 'complete':
+        sha = digest(output_board)
+        return {**record, 'status': 'routed', 'board': str(output_board), 'board_sha256': sha,
+                'router_accepted': True, 'via_in_pad': parse_via_in_pad_record({})}
+    if outcome_class == 'refused':
+        return {**record, 'status': 'router_refused',
+                'refusal': {'reason_class': op_result.get('status'), 'message': '; '.join(reasons)},
+                'failure_kind': 'environment', 'failing_stage': 'routing',
+                'reason': '; '.join(reasons)}
+    if outcome_class == 'backend_failure' and exit_code in (3, 4, 5):
+        return {**record, 'status': 'no_candidate', 'reason': '; '.join(reasons)}
+    return {**record, 'status': 'backend_failure', 'failure_kind': 'environment',
+            'failing_stage': 'routing', 'reason': '; '.join(reasons)}
+
+
 def bind_board_attempt(route_dir, argv, exit_code):
     """Bind one board-level kicad-route attempt output directory and verify its candidate digest."""
+    if 'route-native' in [str(a) for a in argv]:
+        return _bind_native_board_attempt(route_dir, argv, exit_code)
     route_dir = Path(route_dir)
     record = {'argv': argv, 'exit_code': exit_code}
     results = sorted((route_dir / 'out').rglob('result.json'))
@@ -1215,18 +1404,27 @@ def bind_board_attempt(route_dir, argv, exit_code):
                if 'pair_impedance' in result.get('settings', {}) else {})}
 
 
-def preflight_stackup_argv(checkout, board_path, layer, *, python=None):
+def _require_legacy_helper_allowed(checkout, what, route_native):
+    if route_native is True or attempt.is_re01_enforced() or (
+            route_native is None and attempt.is_rust_capable_checkout(checkout)
+            and not (Path(checkout) / '.venv-krt').is_dir()):
+        raise attempt.RE01OwnershipError(f'RE-01 forbids executing legacy Python {what} in route-native flows')
+
+
+def preflight_stackup_argv(checkout, board_path, layer, *, python=None, route_native=None):
     """Build the kicad-route pair-impedance stackup preflight command."""
     import sys
+    _require_legacy_helper_allowed(checkout, 'src/kicad_route/pair_impedance.py', route_native)
     return router_python('-c',
                          'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); '
                          'from kicad_route.pair_impedance import model; model(Path(sys.argv[2]), sys.argv[3])',
                          str(Path(checkout) / 'src'), str(board_path), layer, python=python or sys.executable)
 
 
-def preflight_delay_argv(checkout, board_path, nets, *, python=None):
+def preflight_delay_argv(checkout, board_path, nets, *, python=None, route_native=None):
     """Build the kicad-route native delay model preflight command."""
     import sys
+    _require_legacy_helper_allowed(checkout, 'src/kicad_route/router/py_router/native_delay.py', route_native)
     return router_python('-c',
                          'import json,sys; sys.path.insert(0, sys.argv[1]); '
                          'from native_delay import profiles; '
@@ -1235,11 +1433,12 @@ def preflight_delay_argv(checkout, board_path, nets, *, python=None):
                          str(board_path), json.dumps(sorted(nets)), python=python or sys.executable)
 
 
-def post_route_checker_argv(checkout, kind, board_path, request_path, result_path, *, python=None):
+def post_route_checker_argv(checkout, kind, board_path, request_path, result_path, *, python=None, route_native=None):
     """Build the kicad-route post-route checker command (pair_impedance, length_groups, ac_matching)."""
     import sys
     scripts = {'pair_impedance': 'pair_impedance.py', 'length_groups': 'length_groups.py',
                'ac_matching': 'ac_matching.py'}
+    _require_legacy_helper_allowed(checkout, f'src/kicad_route/{scripts[kind]}', route_native)
     checker = Path(checkout) / 'src/kicad_route' / scripts[kind]
     argv = router_python(str(checker), str(board_path), str(request_path), str(result_path),
                          python=python or sys.executable)

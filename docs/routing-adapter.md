@@ -24,6 +24,21 @@ adoption, and repeats those checks in `verify-campaign`.
 
 ## Result compatibility
 
+When the resolved `kicad-route` checkout carries `tools/rust_engine_kicad.py`
+(`AGENT_EE_KICAD_ROUTE_CHECKOUT` -> `/opt/kicad-route` -> sibling `../kicad-route`),
+`agent-ee` invokes `kicad-route-engine route-native` directly with
+`--native-bridge <checkout>/tools/rust_engine_kicad.py --python /usr/bin/python3`,
+a fresh non-existent output path, `--operation-result`, and `--save-request`.
+It verifies `kicad-route/native-operation/1` (`request.request_sha256 == routing.request_sha256 == sha256(saved_request)`,
+`source.sidecar_check.passed`, `publication.published`, `not publication.ambiguous_termination`,
+and `publication.output_sha256 == sha256(output_board)`), maps exits
+`0, 2, 3, 4, 5, 6, 7, 8` strictly by `(exit_code, status)` without colliding
+with legacy `0..5`, enforces `RE-01` via `sys.addaudithook` (forbidding
+`bin/kicad-route` and `src/kicad_route/*.py` execution), and fails closed with
+zero fallback to Python KRT if `kicad-route-engine` is missing or an unsupported
+legacy/M4 option is requested. Non-Rust synthetic checkouts keep the legacy
+`kicad-route/route/1` contract below.
+
 The adapter runs kicad-route at the clean commit its checkout holds and records
 that commit in every report (see
 [Router version recorded per attempt](#router-version-recorded-per-attempt)).

@@ -100,7 +100,10 @@ class OwnedRouterStateTests(unittest.TestCase):
     def test_state_manifest_qualifies_across_mount_locations_and_refuses_invalid_state_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = copy_tool(self.checkout, Path(tmp) / 'tool')
-            self.assertEqual(routing_adapter.preflight(root, self.checkout)['problems'], [])
+            state = Path(tmp) / 'state'
+            derive_state(self.checkout, state, 'legacy')
+            self.assertEqual(routing_adapter.preflight(root, state)['problems'], [])
+            self.assertEqual(routing_adapter.preflight(root)['problems'], [])
         for described in (None, '', '   ', 42):
             with self.subTest(described=described), tempfile.TemporaryDirectory() as tmp:
                 state = Path(tmp)

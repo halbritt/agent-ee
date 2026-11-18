@@ -174,11 +174,18 @@ class ResultSemanticsNativeTest(unittest.TestCase):
         record, problems = attempt.checkout_record(self.checkout)
         self.assertEqual((problems, record['clean']), ([], True))
         self.assertEqual(check['commit'], record['commit'])
+        if routing_adapter.is_rust_capable_checkout(self.checkout):
+            engine = routing_adapter.resolve_kicad_route_engine(self.checkout)
+            self.assertTrue(check['rust_capable'])
+            self.assertEqual(check['engine_sha256'], attempt.digest(engine))
+            self.assertEqual(check['executable_sha256'], check['engine_sha256'])
+            self.assertEqual(check['cargo_lock_sha256'], attempt.digest(self.checkout / 'rust-engine/Cargo.lock'))
+            self.assertEqual(check['native_bridge_sha256'], attempt.digest(self.checkout / 'tools/rust_engine_kicad.py'))
+            self.assertEqual(check['license_sha256'], attempt.digest(self.checkout / 'LICENSE'))
+            return
         manifest = json.loads((self.checkout / 'manifest.json').read_text())
         self.assertEqual(Path(manifest['state_dir']).resolve(), self.checkout.resolve())
         self.assertEqual(manifest['kicad_route']['commit'], record['commit'])
-        # Either layout kicad-route installs, built from the checkout's source (the image's
-        # install.sh builds the legacy one; `kicad-route update` a router generation).
         generation = manifest['krt']['generation']
         self.assertEqual(attempt.state_generation(self.checkout), (generation, []))
         if generation is not None:
@@ -209,12 +216,33 @@ class ResultSemanticsNativeTest(unittest.TestCase):
                          extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
         report = json.loads((work / 'routing/adapter-report.json').read_text())
         summary = routing_adapter.verify(work, attempt.files_of(attempt.tree(placed)))
-        result = json.loads((work / 'routing/attempt/result.json').read_text())
+        result_file = ('operation-result.json' if routing_adapter.is_rust_capable_checkout(self.checkout)
+                       else 'result.json')
+        result = json.loads((work / 'routing/attempt' / result_file).read_text())
         return record, report, summary, result, work
 
     def test_partial_net_keeps_its_joined_pads(self):
         placed = self.candidate(PARTIAL_BOARD, 'partial')
         record, report, summary, result, work = self.route(placed, 'partial-native', 120)
+        if routing_adapter.is_rust_capable_checkout(self.checkout):
+            self.assertEqual(record['exit_code'], 0, report['semantics'])
+            self.assertEqual(summary['proposal'], 'eligible')
+            self.assertEqual(result['schema'], attempt.NATIVE_OPERATION_SCHEMA)
+            self.assertEqual(result['status'], 'complete')
+            self.assertEqual(result['routing']['removed_track_count'], 0)
+            self.assertGreater(result['routing']['added_track_count'], 0)
+            self.assertTrue(result['publication']['published'])
+            self.assertEqual(result['publication']['output_sha256'], summary['candidate_sha256'])
+            # Tampering retained operation-result.json fails verification.
+            path = work / 'routing/attempt/operation-result.json'
+            result['publication']['output_sha256'] = '0' * 64
+            path.write_text(json.dumps(result))
+            retained = json.loads((work / 'routing/adapter-report.json').read_text())
+            retained['retained']['attempt/operation-result.json'] = attempt.digest(path)
+            attempt.write_report(work / 'routing/adapter-report.json', retained)
+            with self.assertRaisesRegex(ValueError, 'classify as contradiction'):
+                routing_adapter.verify(work, attempt.files_of(attempt.tree(placed)))
+            return
         self.assertIn(record['exit_code'], (0, 2), report['semantics'])
         self.assertIn(summary['proposal'], ('eligible', 'eligible_partial'))
         self.assertEqual(result['backend']['name'], 'builtin')
@@ -224,7 +252,6 @@ class ResultSemanticsNativeTest(unittest.TestCase):
         self.assertEqual((completion['status'], completion['split_components'], completion['nets_lost']),
                          ('PASS', [], []))
         native = result['validation']['native_terminal_evidence']
-        # N joins J1.1-J2.1 with J3.1 open, M is open: two terminal nets, deficit 2, both incomplete.
         self.assertEqual(native['metrics']['reference'],
                          {'terminal_nets': 2, 'incomplete_nets': 2, 'component_deficit': 2})
         for name in ('reference-terminal-components.json', 'candidate-terminal-components.json'):
@@ -233,7 +260,6 @@ class ResultSemanticsNativeTest(unittest.TestCase):
         self.assertEqual(result['copper_ownership']['status'], 'bound')
         self.assertEqual(report['retained']['attempt/validate/copper-ownership.json'],
                          result['copper_ownership']['sha256'])
-        # The real retained bytes, edited to report a split joined group, no longer verify.
         path = work / 'routing/attempt/result.json'
         result['validation']['net_completion']['split_components'] = [{'net': 'N', 'pads': ['x']}]
         path.write_text(json.dumps(result))
@@ -247,6 +273,12 @@ class ResultSemanticsNativeTest(unittest.TestCase):
         """More open connections than the raw DRC report lists: routing is unknown, never eligible."""
         placed = self.candidate(CAPPED_BOARD, 'capped')
         record, report, summary, result, work = self.route(placed, 'capped-native', 30)
+        if routing_adapter.is_rust_capable_checkout(self.checkout):
+            self.assertEqual(result['schema'], attempt.NATIVE_OPERATION_SCHEMA)
+            self.assertEqual(summary['proposal'], 'none', summary)
+            self.assertIsNone(summary['candidate_sha256'])
+            self.assertFalse((work / 'routing/candidate').exists())
+            return
         native = result['validation'].get('native_terminal_evidence') or {}
         metrics = native.get('metrics') or {}
         self.assertEqual(metrics.get('reference', {}).get('terminal_nets'), CAPPED_NETS, result['validation'])

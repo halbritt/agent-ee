@@ -21,6 +21,10 @@ connection and no error beyond those of the input board, its protected
 content is unchanged and every declared check passes (AGENTEE-640). An error
 the unchanged input already reports is counted as pre-existing and rejects
 nothing; the report never calls a board "clean".
+
+Attribution (F-M6-G2): routing invokes the MIT-licensed ``kicad-route``
+Rust engine (``kicad-route-engine route-native``, whose isolated KRT Python
+dependencies under ``src/kicad_route/router/`` carry their upstream MIT LICENSE).
 """
 import argparse
 from collections import Counter
@@ -1947,8 +1951,18 @@ def _route_attempt(route_dir, *, argv, env, clock, cancel_dir):
     """Retain one public router invocation and bind its saved candidate."""
     from . import routing_adapter
     route_dir.mkdir(parents=True, exist_ok=True)
+    argv_list = [str(a) for a in argv]
+    native = 'route-native' in argv_list
+    if native:
+        idx = argv_list.index('route-native')
+        Path(argv_list[idx + 2]).parent.mkdir(parents=True, exist_ok=True)
+        Path(argv_list[argv_list.index('--operation-result') + 1]).parent.mkdir(parents=True, exist_ok=True)
     with open(route_dir / 'kicad-route.stdout', 'wb') as out, open(route_dir / 'kicad-route.stderr', 'wb') as err:
-        done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
+        if native:
+            with routing_adapter.re01_enforced():
+                done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
+        else:
+            done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
     return routing_adapter.bind_board_attempt(route_dir, argv, done.returncode)
 
 
@@ -1961,6 +1975,8 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir, owned_copper=Tr
     a job whose input had no tracks of its own may do (``owned_copper``)."""
     if record.get('status') != 'routed' or record.get('router_accepted') is not False:
         return None     # only a board the router delivered and its own grading rejected
+    if 'native_operation_schema' in record:
+        return None     # RE-01: route-native flows do not invoke legacy spokes/force-reroute Python retries
     result_path = Path(record['result_path'])
     result = read_json(result_path)
     validation = result['validation']
@@ -2484,6 +2500,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 raise JobRefusal('local decoupling planes differ from captured plane plan')
         report['preflight'] = {}
         report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
+        if routing_adapter.is_rust_capable_checkout(config['router']['checkout']) and (
+                diff_pairs is not None or pair_layers is not None or impedance is not None
+                or intra_pair_match is not None or bus is not None or length_match is not None
+                or ac_match is not None):
+            raise JobRefusal('route-native refuses unsupported M4 pair/impedance/length/ac constraints (RE-01)')
         if impedance is not None:
             # Native load/save inserts dielectric defaults. Check the authored
             # bytes before placement can make an omitted value look declared.
