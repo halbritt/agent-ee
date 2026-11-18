@@ -354,7 +354,7 @@ _RE01_RAW_BARE_KRT = re.compile(r'(?:^|[\s\'";|&=(`<>{])kicad-route(?=$|[\s\'";|
 _RE01_RAW_SRC_KRT = re.compile(r'(?:^|[\s/\'";|&`<>{])src/kicad_route(?=$|[\s/\'";|&)`<>{])')
 _RE01_SHELL_SEPARATORS = frozenset((';', '&', '&&', '|', '||', '(', ')', '\n'))
 _RE01_SHELL_ARG_OPTS = frozenset(('-o', '+o', '-O', '+O', '--rcfile', '--init-file'))
-_RE01_ENV_ARG_OPTS = frozenset(('-u', '-C', '--unset', '--chdir', '--block-signal', '--ignore-signal', '--default-signal'))
+_RE01_ENV_ARG_OPTS = frozenset(('-u', '-C', '-a', '-f', '--unset', '--chdir', '--argv0', '--file'))
 _RE01_MAX_WRAPPER_DEPTH = 8
 
 
@@ -466,18 +466,120 @@ def _re01_dollar_subcommands(cmd_str):
     return subs
 
 
+_RE01_ENV_S_ESCAPES = {
+    '_': ' ',
+    'f': '\f',
+    'n': '\n',
+    'r': '\r',
+    't': '\t',
+    'v': '\v',
+    '\\': '\\',
+    '"': '"',
+    "'": "'",
+    '#': '#',
+    '$': '$',
+}
+
+
 def _re01_split_env_string(s_val):
-    normalized = s_val.replace('\\_', ' ')
-    try:
-        return shlex.split(normalized), True
-    except ValueError:
-        return normalized.split(), False
+    tokens = []
+    buf = []
+    has_tok = False
+    in_sq = False
+    in_dq = False
+    i = 0
+    n = len(s_val)
+    while i < n:
+        ch = s_val[i]
+        if in_sq:
+            if ch == "'":
+                in_sq = False
+            else:
+                buf.append(ch)
+            i += 1
+            continue
+        if in_dq:
+            if ch == '"':
+                in_dq = False
+                i += 1
+                continue
+            if ch == '\\':
+                if i + 1 >= n:
+                    return s_val.replace('\\_', ' ').split(), False
+                nxt = s_val[i + 1]
+                if nxt == '\r' and i + 2 < n and s_val[i + 2] == '\n':
+                    i += 3
+                    continue
+                if nxt == '\n':
+                    i += 2
+                    continue
+                if nxt == 'c':
+                    i = n
+                    continue
+                buf.append(_RE01_ENV_S_ESCAPES.get(nxt, '\\' + nxt))
+                i += 2
+                continue
+            buf.append(ch)
+            i += 1
+            continue
+        if ch.isspace():
+            if has_tok:
+                tokens.append(''.join(buf))
+                buf.clear()
+                has_tok = False
+            i += 1
+            continue
+        if ch == '#' and not has_tok:
+            while i < n and s_val[i] != '\n':
+                i += 1
+            continue
+        if ch == "'":
+            in_sq = True
+            has_tok = True
+            i += 1
+            continue
+        if ch == '"':
+            in_dq = True
+            has_tok = True
+            i += 1
+            continue
+        if ch == '\\':
+            if i + 1 >= n:
+                return s_val.replace('\\_', ' ').split(), False
+            nxt = s_val[i + 1]
+            if nxt == '\r' and i + 2 < n and s_val[i + 2] == '\n':
+                i += 3
+                continue
+            if nxt == '\n':
+                i += 2
+                continue
+            if nxt == '_':
+                if has_tok:
+                    tokens.append(''.join(buf))
+                    buf.clear()
+                    has_tok = False
+                i += 2
+                continue
+            if nxt == 'c':
+                break
+            buf.append(_RE01_ENV_S_ESCAPES.get(nxt, nxt))
+            has_tok = True
+            i += 2
+            continue
+        buf.append(ch)
+        has_tok = True
+        i += 1
+    if in_sq or in_dq:
+        return s_val.replace('\\_', ' ').split(), False
+    if has_tok:
+        tokens.append(''.join(buf))
+    return tokens, True
 
 
 def _re01_shell_command_reason(cmd_str, _depth=0):
     if _depth >= _RE01_MAX_WRAPPER_DEPTH:
         return 'RE-01 forbids deeply nested shell or wrapper execution'
-    cmd_str = cmd_str.replace('\\\n', '')
+    cmd_str = cmd_str.replace('\\\r\n', '').replace('\\\n', '')
     norm_cmd = cmd_str.replace('\\', '/')
     if ('bin/kicad-route' in norm_cmd or _RE01_RAW_SRC_KRT.search(norm_cmd)
             or '.venv-krt' in norm_cmd or _RE01_INLINE_MODULES.search(cmd_str)
@@ -548,7 +650,7 @@ def _re01_forbidden_reason(tokens, _depth=0):
             if token.startswith('-') and not token.startswith('--') and len(token) > 1:
                 consumed_attached_arg = False
                 for opt_idx, opt_ch in enumerate(token[1:]):
-                    if opt_ch in ('u', 'C'):
+                    if opt_ch in ('u', 'C', 'a', 'f'):
                         if opt_idx + 2 < len(token):
                             consumed_attached_arg = True
                         else:
@@ -628,13 +730,21 @@ def _re01_forbidden_reason(tokens, _depth=0):
             prev = token
             continue
         if re.fullmatch(r'-[A-Za-z]*[cm]', prev):
-            if _RE01_INLINE_MODULES.search(token):
+            norm_token = token.replace('\\\r\n', '').replace('\\\n', '')
+            if _RE01_INLINE_MODULES.search(norm_token):
                 return 'RE-01 forbids inline or module execution of legacy Python router modules'
+            reason = _re01_path_reason(norm_token.replace('\\', '/'), token)
+            if reason is not None:
+                return reason
         attached = re.match(r'^-[A-Za-z]*?([cm])(.+)$', token, re.S)
         if attached:
             body = attached.group(2)
-            if _RE01_INLINE_MODULES.search(body):
+            norm_body = body.replace('\\\r\n', '').replace('\\\n', '')
+            if _RE01_INLINE_MODULES.search(norm_body):
                 return 'RE-01 forbids inline or module execution of legacy Python router modules'
+            reason = _re01_path_reason(norm_body.replace('\\', '/'), token)
+            if reason is not None:
+                return reason
         prev = token
     return None
 
