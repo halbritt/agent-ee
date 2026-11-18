@@ -2652,6 +2652,149 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     done_pos = subprocess.run(pos_argv, capture_output=True, text=True, timeout=5)
                     self.assertEqual(done_pos.returncode, 0, done_pos.stderr)
 
+    def test_re01_r16_c1_symlink_py_and_depth1_symlink_pycache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / 'marker.txt'
+            ver = f'{sys.version_info.major}.{sys.version_info.minor}'
+            tag = sys.implementation.cache_tag
+            other = root / 'other'
+            other.mkdir()
+            clean_helper = other / 'clean_helper.py'
+            clean_helper.write_text('VAL = 1\n')
+            evil_big = root / 'evil_big.py'
+            evil_big.write_text('VAL = 99  # padded\n')
+            evil_src = root / 'evil_src.py'
+            evil_src.write_text(f'open({str(marker)!r}, "a").write("BYPASS_PYC\\n")\nVAL = 99\n')
+            evil_pc = root / 'evil_pc_dir'
+            evil_pc.mkdir()
+            py_compile.compile(str(evil_src), cfile=str(evil_pc / f'helper_mod.{tag}.pyc'), doraise=True)
+            os.utime(evil_big, (os.stat(evil_big).st_atime, os.stat(evil_src).st_mtime))
+            real_evil_pc = root / 'real_evil_pc'
+            real_evil_pc.mkdir()
+            clean_caller = root / 'clean_caller.py'
+            clean_caller.write_text('import helper_mod\n')
+
+            # M51-R16-C1-1: symlinked .py -> bwrap-mounted .py + forged cur_dir/__pycache__
+            sp0 = root / 'sp0'
+            (sp0 / '__pycache__').mkdir(parents=True)
+            (sp0 / 'caller.py').write_text('import helper_mod\n')
+            (sp0 / 'helper_mod.py').symlink_to(clean_helper)
+            py_compile.compile(str(evil_src), cfile=str(sp0 / f'__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+            sp1 = root / 'sp1'
+            (sp1 / 'p1/__pycache__').mkdir(parents=True)
+            (sp1 / 'caller.py').write_text('import p1.helper_mod\n')
+            (sp1 / 'p1/__init__.py').write_text('')
+            (sp1 / 'p1/helper_mod.py').symlink_to(clean_helper)
+            py_compile.compile(str(evil_src), cfile=str(sp1 / f'p1/__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+            sp1_opt = root / 'sp1_opt'
+            (sp1_opt / 'p1/__pycache__').mkdir(parents=True)
+            (sp1_opt / 'caller.py').write_text('import p1.helper_mod\n')
+            (sp1_opt / 'p1/__init__.py').write_text('')
+            (sp1_opt / 'p1/helper_mod.py').symlink_to('/opt/clean_helper.py')
+            py_compile.compile(str(evil_src), cfile=str(sp1_opt / f'p1/__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+            sp_pp = root / 'sp_pp'
+            (sp_pp / '__pycache__').mkdir(parents=True)
+            (sp_pp / 'helper_mod.py').symlink_to(clean_helper)
+            py_compile.compile(str(evil_src), cfile=str(sp_pp / f'__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+            sp_bsym = root / 'sp_bsym'
+            (sp_bsym / 'p1/__pycache__').mkdir(parents=True)
+            (sp_bsym / 'caller.py').write_text('import p1.helper_mod\n')
+            (sp_bsym / 'p1/__init__.py').write_text('')
+            py_compile.compile(str(evil_src), cfile=str(sp_bsym / f'p1/__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+
+            # M51-R16-C1-2: depth >= 1 symlinked __pycache__ (sys.path[0], user_site, bwrap --symlink)
+            c2_opt = root / 'c2_opt'
+            (c2_opt / 'p1').mkdir(parents=True)
+            (c2_opt / 'caller.py').write_text('import p1.helper_mod\n')
+            (c2_opt / 'p1/__init__.py').write_text('')
+            (c2_opt / 'p1/helper_mod.py').write_text(evil_big.read_text())
+            (c2_opt / 'p1/__pycache__').symlink_to('/opt/evil_pc')
+            c2_host = root / 'c2_host'
+            (c2_host / 'p1').mkdir(parents=True)
+            (c2_host / 'caller.py').write_text('import p1.helper_mod\n')
+            (c2_host / 'p1/__init__.py').write_text('')
+            (c2_host / 'p1/helper_mod.py').write_text(evil_big.read_text())
+            (c2_host / 'p1/__pycache__').symlink_to(real_evil_pc)
+            us_home = root / 'us_home'
+            us_site = us_home / f'.local/lib/python{ver}/site-packages'
+            (us_site / 'p1').mkdir(parents=True)
+            (us_site / 'p1/__init__.py').write_text('')
+            (us_site / 'p1/helper_mod.py').write_text(evil_big.read_text())
+            (us_site / 'p1/__pycache__').symlink_to('/opt/evil_pc')
+            us_caller = root / 'us_caller.py'
+            us_caller.write_text('import p1.helper_mod\n')
+            c2_bsym = root / 'c2_bsym'
+            (c2_bsym / 'p1').mkdir(parents=True)
+            (c2_bsym / 'caller.py').write_text('import p1.helper_mod\n')
+            (c2_bsym / 'p1/__init__.py').write_text('')
+            (c2_bsym / 'p1/helper_mod.py').write_text(evil_big.read_text())
+            pos_sym = root / 'pos_sym'
+            pos_sym.mkdir()
+            (pos_sym / 'caller.py').write_text('import helper_mod, sys; assert helper_mod.VAL == 99; sys.exit(0)\n')
+            (pos_sym / 'helper_mod.py').symlink_to('/opt/clean_helper.py')
+
+            with routing_adapter.re01_enforced():
+                blocked_cases = [
+                    ('c1_1_d0_sym_py_to_bound_file', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--ro-bind', str(evil_big), str(clean_helper),
+                         '--', sys.executable, str(sp0 / 'caller.py')], timeout=5)),
+                    ('c1_1_d1_sym_py_to_bound_file', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--ro-bind', str(evil_big), str(clean_helper),
+                         '--', sys.executable, str(sp1 / 'caller.py')], timeout=5)),
+                    ('c1_1_d1_sym_py_to_opt_bound_file', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--ro-bind', str(evil_big), '/opt/clean_helper.py',
+                         '--', sys.executable, str(sp1_opt / 'caller.py')], timeout=5)),
+                    ('c1_1_pp_d0_sym_py_to_bound_file', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--ro-bind', str(evil_big), str(clean_helper),
+                         '--setenv', 'PYTHONPATH', str(sp_pp),
+                         '--', sys.executable, str(clean_caller)], timeout=5)),
+                    ('c1_1_bwrap_symlink_d1_py', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--ro-bind', str(evil_big), '/opt/clean_helper.py',
+                         '--symlink', '/opt/clean_helper.py', str(sp_bsym / 'p1/helper_mod.py'),
+                         '--', sys.executable, str(sp_bsym / 'caller.py')], timeout=5)),
+                    ('c1_2_d1_sym_pycache_opt', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--ro-bind', str(evil_pc), '/opt/evil_pc',
+                         '--', sys.executable, str(c2_opt / 'caller.py')], timeout=5)),
+                    ('c1_2_d1_sym_pycache_host', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--ro-bind', str(evil_pc), str(real_evil_pc),
+                         '--', sys.executable, str(c2_host / 'caller.py')], timeout=5)),
+                    ('c1_2_usersite_d1_sym_pycache_opt', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--ro-bind', str(evil_pc), '/opt/evil_pc',
+                         '--setenv', 'HOME', str(us_home),
+                         '--', sys.executable, str(us_caller)], timeout=5)),
+                    ('c1_2_bwrap_symlink_d1_pycache', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--ro-bind', str(evil_pc), '/opt/evil_pc',
+                         '--symlink', '/opt/evil_pc', str(c2_bsym / 'p1/__pycache__'),
+                         '--', sys.executable, str(c2_bsym / 'caller.py')], timeout=5)),
+                    ('c1_2_bwrap_symlink_opaque_d1_pycache', lambda: routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt', '--tmpfs', '/opt/d',
+                         '--ro-bind', str(evil_pc), '/opt/evil_pc',
+                         '--ro-bind', str(c2_bsym / 'caller.py'), '/opt/d/caller.py',
+                         '--symlink', '/opt/evil_pc', '/opt/d/p1/__pycache__',
+                         '--', sys.executable, '/opt/d/caller.py'])),
+                ]
+                for label, fn in blocked_cases:
+                    with self.subTest(case=label):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            fn()
+                self.assertFalse(marker.exists())
+                done_pos = subprocess.run(
+                    ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                     '--ro-bind', str(evil_big), '/opt/clean_helper.py',
+                     '--', sys.executable, str(pos_sym / 'caller.py')],
+                    capture_output=True, text=True, timeout=5)
+                self.assertEqual(done_pos.returncode, 0, done_pos.stderr)
+
 
 class NativeAdapterHardeningTests(unittest.TestCase):
     def test_not_run_attempt_sets_native_backend_and_verifies(self):

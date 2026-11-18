@@ -928,24 +928,68 @@ def _re01_check_rel_parts_pycache(dir_path, sb_targets, mounts, entry, label, *,
     return None
 
 
-def _re01_enqueue_bfs_child(de, cur_sb, cur_strict, depth, queue, *, mounts, py_roots,
+def _re01_check_cur_pycache_strict(cur_dir, cur_sb, mounts, entry, label, py_roots, *, checked=None):
+    ckey = (cur_dir, cur_sb)
+    if checked is not None:
+        if ckey in checked:
+            return None
+        checked.add(ckey)
+    host_cache = os.path.join(cur_dir, '__pycache__')
+    if os.path.islink(host_cache):
+        return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
+    if os.path.isdir(host_cache):
+        err = _re01_scan_pycache_dir(host_cache, entry, label, strict_pycache=True)
+        if err is not None:
+            return err
+    if mounts and cur_sb:
+        cache_sb = posixpath.join(cur_sb, '__pycache__')
+        if any(dest == cache_sb or dest.startswith(cache_sb + '/') for dest in mounts):
+            return f'RE-01 forbids {label} mounted/symlinked __pycache__: {entry}'
+        lk, _, lm = _re01_mount_lookup(cache_sb, mounts)
+        if lk == 'symlink':
+            return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
+        if lk == 'bind' and lm and lm != host_cache:
+            if os.path.islink(lm):
+                return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
+            if os.path.isdir(lm):
+                err = _re01_scan_pycache_dir(lm, entry, label, strict_pycache=True)
+                if err is not None:
+                    return err
+    return None
+
+
+def _re01_enqueue_bfs_child(de, cur_dir, cur_sb, cur_strict, depth, queue, *, mounts, py_roots,
                             entry, label, cwd, forbid_pth, seen_mounted_sb, seen_states,
-                            only_strict_symlinks=False):
-    if mounts and (de.is_symlink() or (cur_sb and _re01_mount_lookup(posixpath.join(cur_sb, de.name), mounts)[0] == 'symlink')):
-        child_sb = posixpath.join(cur_sb, de.name) if cur_sb else None
+                            strict_checked_caches=None, only_strict_symlinks=False):
+    child_sb = posixpath.join(cur_sb, de.name) if cur_sb else None
+    is_mounted_sym = bool(
+        mounts and child_sb and _re01_mount_lookup(child_sb, mounts)[0] == 'symlink'
+    )
+    if mounts and (de.is_symlink() or is_mounted_sym):
         if not child_sb:
             return None
-        t_chain, _, t_any, t_sb, t_err = _re01_resolve_exec_chain(
+        t_chain, t_file, t_any, t_sb, t_err = _re01_resolve_exec_chain(
             child_sb, cwd=cwd, is_cmd=False, mounts=mounts)
         if t_err is not None:
             return t_err
         if any('__pycache__' in c.split('/') for c in (t_sb, *t_chain) if c):
             return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
-        next_strict = cur_strict or (
-            bool(t_sb) and _re01_sb_touches_nonroot_mount(t_sb, mounts, py_roots=py_roots)
+        next_strict = cur_strict or any(
+            _re01_sb_touches_nonroot_mount(c, mounts, py_roots=py_roots)
+            for c in (t_sb, *t_chain) if c
         )
         if only_strict_symlinks and not next_strict:
             return None
+        if (not cur_strict) and next_strict and (
+            de.name.endswith('.py')
+            or (t_sb and t_sb.endswith('.py'))
+            or (t_file and t_file.endswith('.py'))
+            or not (t_any and os.path.isdir(t_any))
+        ):
+            c_err = _re01_check_cur_pycache_strict(
+                cur_dir, cur_sb, mounts, entry, label, py_roots, checked=strict_checked_caches)
+            if c_err is not None:
+                return c_err
         if t_any and os.path.isdir(t_any):
             queue.append((t_any, t_sb, next_strict, depth + 1))
         if next_strict and t_sb and t_sb not in seen_mounted_sb:
@@ -997,6 +1041,7 @@ def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbi
     )
     seen_states = _visited_states if _visited_states is not None else set()
     seen_mounted_sb = _visited_mounted_sb if _visited_mounted_sb is not None else set()
+    strict_checked_caches = set()
     try:
         real_root = _re01_norm_posix(os.path.realpath(dir_path))
     except OSError:
@@ -1047,25 +1092,44 @@ def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbi
                             return f'RE-01 forbids {label} containing {name}: {entry}'
                     if name == '__pycache__':
                         cache_sb = posixpath.join(cur_sb, '__pycache__') if cur_sb else None
+                        is_mounted_sym = bool(
+                            mounts and cache_sb and _re01_mount_lookup(cache_sb, mounts)[0] == 'symlink'
+                        )
                         scan_strict = cur_strict or (
                             depth > 0 and mounts and cache_sb
                             and _re01_sb_touches_nonroot_mount(cache_sb, mounts, py_roots=py_roots)
                         )
-                        if depth == 0 or scan_strict:
-                            if de.is_symlink():
+                        if de.is_symlink() or is_mounted_sym:
+                            if depth == 0 or cur_strict or scan_strict:
                                 return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
-                            if de.is_dir(follow_symlinks=False):
+                            c_target = cache_sb or de.path
+                            c_chain, _, c_any, c_sb, c_err = _re01_resolve_exec_chain(
+                                c_target, cwd=cwd, is_cmd=False, mounts=mounts)
+                            if c_err is not None:
+                                return c_err
+                            if mounts and any(
+                                _re01_sb_touches_nonroot_mount(c, mounts, py_roots=py_roots)
+                                for c in (c_sb, *c_chain) if c
+                            ):
+                                return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
+                            if c_any and os.path.isdir(c_any) and (walk_cur or not mounts):
                                 err = _re01_scan_pycache_dir(
-                                    de.path, entry, label, strict_pycache=bool(scan_strict))
+                                    c_any, entry, label, strict_pycache=True)
                                 if err is not None:
                                     return err
+                        elif (depth == 0 or scan_strict) and de.is_dir(follow_symlinks=False):
+                            err = _re01_scan_pycache_dir(
+                                de.path, entry, label, strict_pycache=bool(scan_strict))
+                            if err is not None:
+                                return err
                         continue
                     if name == '.git' or (not walk_cur and not only_strict_symlinks):
                         continue
                     c_err = _re01_enqueue_bfs_child(
-                        de, cur_sb, cur_strict, depth, queue, mounts=mounts, py_roots=py_roots,
+                        de, cur_dir, cur_sb, cur_strict, depth, queue, mounts=mounts, py_roots=py_roots,
                         entry=entry, label=label, cwd=cwd, forbid_pth=forbid_pth,
                         seen_mounted_sb=seen_mounted_sb, seen_states=seen_states,
+                        strict_checked_caches=strict_checked_caches,
                         only_strict_symlinks=only_strict_symlinks)
                     if c_err is not None:
                         return c_err
@@ -1184,7 +1248,7 @@ def _re01_check_mounted_import_children(sb_targets, mounts, entry_label, *, labe
                     dest, cwd=cwd, is_cmd=False, mounts=mounts)
                 if t_err is not None:
                     return t_err
-                if any('__pycache__' in c.split('/') for c in (t_sb, *t_chain) if c):
+                if any('__pycache__' in c.split('/') for c in (dest, t_sb, *t_chain) if c):
                     return f'RE-01 forbids {label} mounted/symlinked __pycache__: {entry_label}'
                 if t_any and os.path.isdir(t_any):
                     t_targets = (dest, t_sb) if t_sb and t_sb != dest else (dest,)
@@ -1224,11 +1288,11 @@ def _re01_check_bwrap_py_mounts(mounts, *, cwd=None):
                     except OSError:
                         pass
         elif kind == 'symlink':
-            _, t_file, _, t_sb, t_err = _re01_resolve_exec_chain(
+            t_chain, t_file, _, t_sb, t_err = _re01_resolve_exec_chain(
                 dest, cwd=cwd, is_cmd=False, mounts=mounts)
             if t_err is not None:
                 return t_err
-            if t_sb and '__pycache__' in t_sb.split('/'):
+            if any('__pycache__' in c.split('/') for c in (dest, t_sb, *t_chain) if c):
                 return f'RE-01 forbids bwrap symlink into __pycache__: {dest}'
             if dest.endswith('.py') or (t_sb and t_sb.endswith('.py')) or (t_file and t_file.endswith('.py')):
                 is_py_mount = True
