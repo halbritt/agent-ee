@@ -928,6 +928,48 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     ['/bin/bash', '-c', f'echo <(echo hi)#; PATH={co / "bin"}:$PATH ki""cad-route'],
                     ['/bin/sh', '-c', f'echo $(echo ${{x#(}})#; PATH={co / "bin"}:$PATH ki""cad-route'],
                     ['/bin/sh', '-c', f'echo $(case x in x) echo hi;; esac)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo `echo hi # c`; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo `echo hi # c`; PYTHONPATH={co / "src"} {sys.executable} -m ki""cad_route'],
+                    ['/bin/sh', '-c', f'echo "`echo hi # "`"; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo `echo hi`#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f"cat <<'EOF'\n'\nEOF\necho ' #; ' ; PATH={co / 'bin'}:$PATH ki\"\"cad-route"],
+                    ['/bin/sh', '-c', f'cat <<EOF\n"\nEOF\nPYTHONPATH={co / "src"} {sys.executable} -m ki""cad_route'],
+                    ['/bin/sh', '-c', f"cat <<-'EOF'\n\t'\n\tEOF\necho ' #; ' ; PATH={co / 'bin'}:$PATH ki\"\"cad-route"],
+                    ['/bin/sh', '-c', f'cat <<A <<B\n"\nA\n\'\nB\nPATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'cat <<EOF\n$(echo ok)\n$(PATH={co / "bin"}:$PATH ki""cad-route)\nEOF'],
+                    ['/bin/sh', '-c', f"echo $(cat <<'EOF'\n)\nEOF\n)#; PATH={co / 'bin'}:$PATH ki\"\"cad-route"],
+                    ['/bin/bash', '-c', f'echo $(cat <<EOF)\n"\nEOF\nPATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f"echo $'a\\'' ' ; #'; PATH={co / 'bin'}:$PATH ki\"\"cad-route"],
+                    ['/bin/bash', '-c', f"echo $'\\'';PATH={co / 'bin'}:$PATH ki\"\"cad-route"],
+                    ['/bin/bash', '-c', f"PATH={co / 'bin'}:$PATH ki$'\\x63'ad-route"],
+                    ['/bin/sh', '-c', f"echo $'a\\';PATH={co / 'bin'}:$PATH ki\"\"cad-route;#'"],
+                    ['/bin/bash', '-c', f'PATH={co / "bin"}:$PATH ki$""cad-route'],
+                    ['/bin/sh', '-c', f'echo "$(echo hi # "\n) #"; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo "$(echo \'"\') #"; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo "$(case x in \'"\') echo hi;; esac) #"; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo "$( # )\nPATH={co / "bin"}:$PATH ki""cad-route\n)"'],
+                    ['/bin/sh', '-c', f'echo "${{x:-\"\'\"}}" ;PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo "${{x:-\'}}";PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo "${{x:-\" # \"}}" ; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo $(( 1 << 2 ))\nPATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo $((cat <<EOF); PATH={co / "bin"}:$PATH ki""cad-route\na\nEOF\n)'],
+                    ['/bin/bash', '-c', f'((echo hi # c\n); PATH={co / "bin"}:$PATH ki""cad-route)'],
+                    ['/bin/bash', '-c', f'(( 1 + # )); PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'for (( i=0; # ; i++ )); do :; done; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-O', 'extglob', '-c', f'echo @(a|#b); PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'shopt -s extglob\necho @(#); PYTHONPATH={co / "src"} {sys.executable} -m ki""cad_route'],
+                    ['/bin/bash', '-O', 'extglob', '-c', f'echo @(a(b|#c)); PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-O', 'extglob', '-c', f'echo @($(echo hi # c\n)|#d); PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'[[ a == @(#) ]]; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-O', 'extglob', '-c', f'!(#); PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'!(echo hi # c\nPATH={co / "bin"}:$PATH ki""cad-route)'],
+                    ['/bin/bash', '-O', 'extglob', '-c', f'x=@(#); a=(@(#)); PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo $(case case in case) echo ok;; esac)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo $(case in in esac)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo $(case x in x) if true; then :; fi esac)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo $(time -p -- case x in x) :;; esac)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo $(coproc MYP case x in x) :;; esac)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo $(function f case x in x) :;; esac; f)#; PATH={co / "bin"}:$PATH ki""cad-route'],
                 ):
                     with self.subTest(argv=argv):
                         with self.assertRaises(routing_adapter.RE01OwnershipError):
@@ -964,10 +1006,16 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     f'echo ok\r#; {fake_engine}',
                     f'echo ok\x0b#; {fake_engine}',
                     f'echo ok\x0c#; {fake_engine}',
+                    f'echo `echo hi # c`; {fake_engine}',
+                    f'/bin/bash -O extglob -c \'echo @(a|#b); {fake_engine}\'',
                 ):
                     with self.subTest(cmd=cmd):
                         with self.assertRaises(routing_adapter.RE01OwnershipError):
                             os.system(cmd)
+                with self.assertRaises(routing_adapter.RE01OwnershipError):
+                    subprocess.run(f'echo `echo hi # c`; {fake_engine}', shell=True, timeout=5)
+                with self.assertRaises(routing_adapter.RE01OwnershipError):
+                    subprocess.run(['/bin/sh', '-c', '$( ' * 70 + 'echo hi' + ' )' * 70], timeout=5)
                 with self.assertRaises(routing_adapter.RE01OwnershipError):
                     os.popen(f'/bin/bash -cu "PATH={co / "bin"}:$PATH kicad-route"')
                 with self.assertRaises(routing_adapter.RE01OwnershipError):
@@ -1002,6 +1050,25 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     ['/bin/sh', '-c', f'(echo ok)#comment\n{sys.executable} {bridge}'],
                     ['/bin/sh', '-c', f'(echo ok)# -c\n{sys.executable} {bridge}'],
                     ['/bin/sh', '-c', f'echo $(echo hi)#lit {sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'echo `echo hi # c`; {sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'echo `echo hi # ki""cad-route`; {sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'cat <<EOF >/dev/null\nunbalanced "\nEOF\n{sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f"cat <<'EOF' >/dev/null\n$(echo ki\"\"cad-route)\nEOF\n{sys.executable} {bridge}"],
+                    ['/bin/bash', '-c', f"echo $'a\\'' # ki\"\"cad-route\n{sys.executable} {bridge}"],
+                    ['/bin/bash', '-c', f"echo $'hello\nworld'\n{sys.executable} {bridge}"],
+                    ['/bin/bash', '-c', f'x=a@; echo ${{x#@(}}; {sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'x=a; echo ${{x#(}}; {sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'! (echo ok # ki""cad-route\n); {sys.executable} {bridge}'],
+                    ['/bin/bash', '-c', f'((1+1))# ki""cad-route\n{sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'echo $(case x in x)# ki""cad-route\necho hi;; esac)\n{sys.executable} {bridge}'],
+                    ['/bin/bash', '-O', 'extglob', '-c', f'echo @($(echo hi # ki""cad-route\n))\n{sys.executable} {bridge}'],
+                    ['/bin/bash', '-O', 'extglob', '-c', f'echo !(#); {sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'echo $(( 1 << 2 )) >/dev/null; {sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'echo "$(echo hi # ki""cad-route\n)" >/dev/null; {sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'echo "${{x:-\"\'\"}}" >/dev/null; {sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'echo a 2>&1 # ki""cad-route\n{sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'case x in esac; {sys.executable} {bridge}'],
+                    ['/bin/bash', '-c', f'for ((i=0;i<1;i++)); do :; done; {sys.executable} {bridge}'],
                 ):
                     with self.subTest(ok_argv=ok_argv):
                         done = subprocess.run(ok_argv, capture_output=True, timeout=5)

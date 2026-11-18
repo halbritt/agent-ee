@@ -34,7 +34,6 @@ import os
 import posixpath
 import re
 import secrets
-import shlex
 import shutil
 import signal
 import subprocess
@@ -433,39 +432,57 @@ def _re01_path_reason(norm, token, *, resolved=False):
     return None
 
 
-def _re01_dollar_subcommands(cmd_str):
-    subs = []
-    i = 0
-    n = len(cmd_str)
-    while i < n - 1:
-        if cmd_str[i] == '$' and cmd_str[i + 1] == '(':
-            depth = 1
-            j = i + 2
-            in_sq = False
-            in_dq = False
-            while j < n and depth > 0:
-                ch = cmd_str[j]
-                if ch == '\\' and not in_sq and j + 1 < n:
-                    j += 2
-                    continue
-                if ch == "'" and not in_dq:
-                    in_sq = not in_sq
-                elif ch == '"' and not in_sq:
-                    in_dq = not in_dq
-                elif not in_sq and not in_dq:
-                    if ch == '(':
-                        depth += 1
-                    elif ch == ')':
-                        depth -= 1
-                j += 1
-            if depth == 0:
-                inner = cmd_str[i + 2:j - 1]
-                if inner.strip():
-                    subs.append(inner)
-                i = j
-                continue
+_RE01_SH_WS = frozenset(' \t\n')
+_RE01_EXTGLOB_PREFIX = frozenset('@?*+!')
+_RE01_CMD_START_KEYWORDS = frozenset(('then', 'do', 'else', 'elif', 'if', 'while', 'until', '!', '{'))
+_RE01_CONTINUING_KEYWORDS = frozenset(('then', 'do', 'else', 'elif'))
+_RE01_COMPOUND_END_KEYWORDS = frozenset(('fi', 'done', '}'))
+_RE01_COPROC_COMPOUND = frozenset(('case', 'if', 'while', 'until', 'for', 'select', '{', '[['))
+_RE01_BASH_DIALECT_SHELLS = frozenset(('bash', 'rbash', 'zsh', 'ksh', 'mksh', 'pdksh', 'rksh', 'rzsh'))
+_RE01_DASH_DIALECT_SHELLS = frozenset(('dash', 'ash'))
+_RE01_MAX_LEX_DEPTH = 64
+_RE01_ANSIC_SIMPLE = {
+    'a': '\a', 'b': '\b', 'e': '\x1b', 'E': '\x1b',
+    'f': '\f', 'n': '\n', 'r': '\r', 't': '\t', 'v': '\v',
+    '\\': '\\', "'": "'", '"': '"', '?': '?',
+}
+
+
+class _RE01LexTooDeep(Exception):
+    pass
+
+
+@contextlib.contextmanager
+def _re01_lex_frame(state):
+    state['lex_depth'] += 1
+    if state['lex_depth'] > _RE01_MAX_LEX_DEPTH:
+        state['lex_depth'] -= 1
+        raise _RE01LexTooDeep()
+    try:
+        yield
+    finally:
+        state['lex_depth'] -= 1
+
+
+def _re01_consume_line_cont(s, i, n):
+    if s[i] == '\\' and i + 1 < n:
+        nxt = s[i + 1]
+        if nxt == '\n':
+            return i + 2, True
+        if nxt == '\r' and i + 2 < n and s[i + 2] == '\n':
+            return i + 3, True
+    return i, False
+
+
+def _re01_scan_sq(s, i, n):
+    i += 1
+    start = i
+    while i < n and s[i] != "'":
         i += 1
-    return subs
+    text = s[start:i]
+    if i < n and s[i] == "'":
+        i += 1
+    return text, i
 
 
 _RE01_ENV_S_ESCAPES = {
@@ -482,30 +499,85 @@ _RE01_ENV_S_ESCAPES = {
     '$': '$',
 }
 _RE01_ENV_S_WHITESPACE = frozenset(' \t\n\r\x0b\x0c')
-_RE01_SH_COMMENT_WHITESPACE = frozenset(' \t\n')
-_RE01_WORD_PAREN_PREFIX = frozenset('$=<>@?*+!')
-_RE01_CMD_START_KEYWORDS = frozenset(('then', 'do', 'else', 'elif', 'if', 'while', 'until', '!', '{'))
 
 
-def _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack):
-    if not word_buf:
-        return cmd_pos
-    word = ''.join(word_buf)
-    word_buf.clear()
-    if word_dirty:
-        return False
-    if word == 'case' and cmd_pos:
-        context_stack.append('case_hdr')
-        return False
-    if word == 'in' and context_stack and context_stack[-1] == 'case_hdr':
-        context_stack[-1] = 'case_pat'
-        return True
-    if word == 'esac' and cmd_pos and context_stack and context_stack[-1] in ('case_pat', 'case_body'):
-        context_stack.pop()
-        return False
-    if word in _RE01_CMD_START_KEYWORDS and cmd_pos:
-        return True
-    return False
+def _re01_scan_ansic_sq(s, i, n):
+    i += 2
+    buf = []
+    while i < n:
+        ch = s[i]
+        if ch == "'":
+            i += 1
+            break
+        if ch == '\\' and i + 1 < n:
+            nxt = s[i + 1]
+            if nxt in _RE01_ANSIC_SIMPLE:
+                buf.append(_RE01_ANSIC_SIMPLE[nxt])
+                i += 2
+                continue
+            if nxt == 'x':
+                m = re.match(r'[0-9a-fA-F]{1,2}', s[i + 2:i + 4])
+                if m:
+                    buf.append(chr(int(m.group(0), 16)))
+                    i += 2 + len(m.group(0))
+                    continue
+            if nxt == 'u':
+                m = re.match(r'[0-9a-fA-F]{1,4}', s[i + 2:i + 6])
+                if m:
+                    buf.append(chr(int(m.group(0), 16)))
+                    i += 2 + len(m.group(0))
+                    continue
+            if nxt == 'U':
+                m = re.match(r'[0-9a-fA-F]{1,8}', s[i + 2:i + 10])
+                if m:
+                    cp = int(m.group(0), 16)
+                    buf.append(chr(cp) if cp <= 0x10FFFF else '')
+                    i += 2 + len(m.group(0))
+                    continue
+            if '0' <= nxt <= '7':
+                m = re.match(r'[0-7]{1,3}', s[i + 1:i + 4])
+                buf.append(chr(int(m.group(0), 8) & 0xFF))
+                i += 1 + len(m.group(0))
+                continue
+            if nxt == 'c' and i + 2 < n:
+                cch = s[i + 2]
+                buf.append('\x7f' if cch == '?' else chr(ord(cch.upper()) & 0x1F))
+                i += 3
+                continue
+            buf.append('\\' + nxt)
+            i += 2
+            continue
+        buf.append(ch)
+        i += 1
+    return ''.join(buf), i
+
+
+def _re01_scan_backtick(s, i, n, in_dq):
+    i += 1
+    buf = []
+    while i < n:
+        ch = s[i]
+        if ch == '`':
+            i += 1
+            break
+        if ch == '\\' and i + 1 < n:
+            nxt = s[i + 1]
+            if nxt == '\n':
+                i += 2
+                continue
+            if nxt == '\r' and i + 2 < n and s[i + 2] == '\n':
+                i += 3
+                continue
+            if nxt in ('$', '`', '\\') or (in_dq and nxt == '"'):
+                buf.append(nxt)
+                i += 2
+                continue
+            buf.append('\\' + nxt)
+            i += 2
+            continue
+        buf.append(ch)
+        i += 1
+    return ''.join(buf), i
 
 
 def _re01_split_env_string(s_val):
@@ -618,160 +690,801 @@ def _re01_split_env_string(s_val):
     return tokens, True
 
 
-def _re01_strip_sh_comments(cmd_str):
-    out, context_stack, word_buf = [], [], []
-    in_sq = in_dq = word_dirty = prev_closed_word_paren = False
-    cmd_pos = True
-    i, n = 0, len(cmd_str)
-    while i < n:
-        ch = cmd_str[i]
-        if in_sq:
-            word_dirty = True
-            if ch == "'":
-                in_sq = False
-            out.append(ch)
-            prev_closed_word_paren = False
-            i += 1
-            continue
-        if in_dq:
-            word_dirty = True
+def _re01_scan_dq(s, i, n, state):
+    with _re01_lex_frame(state):
+        i += 1
+        buf = []
+        while i < n:
+            nj, cont = _re01_consume_line_cont(s, i, n)
+            if cont:
+                i = nj
+                continue
+            ch = s[i]
+            if ch == '"':
+                i += 1
+                break
             if ch == '\\' and i + 1 < n:
-                nxt = cmd_str[i + 1]
-                if nxt == '\n':
-                    i += 2
+                nxt = s[i + 1]
+                buf.append(nxt if nxt in '$`"\\' else '\\' + nxt)
+                i += 2
+                continue
+            if ch == '`':
+                bt_inner, i = _re01_scan_backtick(s, i, n, in_dq=True)
+                state['backticks'].append((bt_inner, state['cmd_depth']))
+                continue
+            if ch == '$' and i + 1 < n:
+                if s[i + 1] == '(':
+                    i = _re01_scan_dollar_paren(s, i, n, state)
                     continue
-                if nxt == '\r' and i + 2 < n and cmd_str[i + 2] == '\n':
-                    i += 3
+                if s[i + 1] == '{':
+                    i = _re01_scan_param(s, i, n, in_dq=True, state=state)
                     continue
-                out.append(cmd_str[i:i + 2])
-                prev_closed_word_paren = False
+            buf.append(ch)
+            i += 1
+        return ''.join(buf), i
+
+
+def _re01_scan_param(s, i, n, in_dq, state):
+    with _re01_lex_frame(state):
+        i += 2
+        while i < n:
+            nj, cont = _re01_consume_line_cont(s, i, n)
+            if cont:
+                i = nj
+                continue
+            ch = s[i]
+            if ch == '}':
+                return i + 1
+            if ch == '\\' and i + 1 < n:
                 i += 2
                 continue
             if ch == '"':
-                in_dq = False
-            out.append(ch)
-            prev_closed_word_paren = False
+                _, i = _re01_scan_dq(s, i, n, state)
+                continue
+            if ch == "'":
+                if in_dq:
+                    state['saw_param_sq_in_dq'] = True
+                    if state['param_sq']:
+                        _, i = _re01_scan_sq(s, i, n)
+                    else:
+                        i += 1
+                else:
+                    _, i = _re01_scan_sq(s, i, n)
+                continue
+            if ch == '`':
+                bt_inner, i = _re01_scan_backtick(s, i, n, in_dq=in_dq)
+                state['backticks'].append((bt_inner, state['cmd_depth']))
+                continue
+            if ch == '$' and i + 1 < n:
+                nxt = s[i + 1]
+                if nxt == '(':
+                    i = _re01_scan_dollar_paren(s, i, n, state)
+                    continue
+                if nxt == '{':
+                    i = _re01_scan_param(s, i, n, in_dq=in_dq, state=state)
+                    continue
+                if nxt == "'" and not in_dq:
+                    state['saw_ansic_sq'] = True
+                    if state['ansic_sq']:
+                        _, i = _re01_scan_ansic_sq(s, i, n)
+                    else:
+                        i += 1
+                    continue
+                if nxt == '"' and not in_dq:
+                    state['saw_ansic_sq'] = True
+                    i += 1
+                    continue
             i += 1
-            continue
-        if ch == '\\' and i + 1 < n:
-            nxt = cmd_str[i + 1]
-            if nxt == '\n':
+        return i
+
+
+def _re01_scan_arith_inner(s, j, n, state, *, is_for_arith=False):
+    with _re01_lex_frame(state):
+        paren_depth = 0
+        while j < n:
+            nj, cont = _re01_consume_line_cont(s, j, n)
+            if cont:
+                j = nj
+                continue
+            ch = s[j]
+            if ch == '\\' and j + 1 < n:
+                j += 2
+                continue
+            if ch == '(':
+                paren_depth += 1
+                j += 1
+                continue
+            if ch == ')':
+                if paren_depth > 0:
+                    paren_depth -= 1
+                    j += 1
+                    continue
+                if j + 1 < n and s[j + 1] == ')':
+                    return True, j + 2
+                return False, None
+            if ch == ';' and paren_depth == 0 and not is_for_arith:
+                return False, None
+            if ch == '`':
+                bt_inner, j = _re01_scan_backtick(s, j, n, in_dq=False)
+                state['backticks'].append((bt_inner, state['cmd_depth']))
+                continue
+            if ch == '$' and j + 1 < n:
+                if s[j + 1] == '(':
+                    j = _re01_scan_dollar_paren(s, j, n, state)
+                    continue
+                if s[j + 1] == '{':
+                    j = _re01_scan_param(s, j, n, in_dq=False, state=state)
+                    continue
+            if ch == '"':
+                _, j = _re01_scan_dq(s, j, n, state)
+                continue
+            if ch == "'":
+                _, j = _re01_scan_sq(s, j, n)
+                continue
+            j += 1
+        return False, None
+
+
+def _re01_ckpt_state(state):
+    return (
+        len(state['backticks']),
+        len(state['token_lists']),
+        len(state['bang_parens']),
+        state['saw_ansic_sq'],
+        state['saw_param_sq_in_dq'],
+        state['saw_cmdsub_heredoc'],
+        state['saw_heredoc_bt'],
+    )
+
+
+def _re01_restore_state(state, ckpt):
+    del state['backticks'][ckpt[0]:]
+    del state['token_lists'][ckpt[1]:]
+    del state['bang_parens'][ckpt[2]:]
+    state['saw_ansic_sq'] = ckpt[3]
+    state['saw_param_sq_in_dq'] = ckpt[4]
+    state['saw_cmdsub_heredoc'] = ckpt[5]
+    state['saw_heredoc_bt'] = ckpt[6]
+
+
+def _re01_scan_dollar_paren(s, i, n, state):
+    with _re01_lex_frame(state):
+        if i + 2 < n and s[i + 2] == '(' and i not in state['no_arith_positions']:
+            ckpt = _re01_ckpt_state(state)
+            ok, end_j = _re01_scan_arith_inner(s, i + 3, n, state, is_for_arith=False)
+            if ok:
+                return end_j
+            _re01_restore_state(state, ckpt)
+            state['no_arith_positions'].add(i)
+        cmdsub_heredocs = []
+        state['cmd_depth'] += 1
+        state['heredoc_stack'].append(cmdsub_heredocs)
+        try:
+            sub_tokens, j = _re01_scan_commands(s, i + 2, n, state, stop_on_paren=True)
+        finally:
+            state['heredoc_stack'].pop()
+            state['cmd_depth'] -= 1
+        state['token_lists'].append((sub_tokens, state['cmd_depth'] + 1))
+        if cmdsub_heredocs:
+            state['saw_cmdsub_heredoc'] = True
+            if state['heredoc_cmdsub_inherit'] and state['heredoc_stack']:
+                state['heredoc_stack'][-1].extend(cmdsub_heredocs)
+        return j
+
+
+def _re01_scan_extglob(s, i, n, state):
+    with _re01_lex_frame(state):
+        i += 1
+        paren_depth = 1
+        while i < n and paren_depth > 0:
+            ni, cont = _re01_consume_line_cont(s, i, n)
+            if cont:
+                i = ni
+                continue
+            ch = s[i]
+            if ch == '\\' and i + 1 < n:
                 i += 2
                 continue
-            if nxt == '\r' and i + 2 < n and cmd_str[i + 2] == '\n':
-                i += 3
-                continue
-            word_dirty = True
-            out.append(cmd_str[i:i + 2])
-            prev_closed_word_paren = False
-            i += 2
-            continue
-        if ch == "'" or ch == '"':
-            word_dirty = True
             if ch == "'":
-                in_sq = True
-            else:
-                in_dq = True
-            out.append(ch)
-            prev_closed_word_paren = False
+                _, i = _re01_scan_sq(s, i, n)
+                continue
+            if ch == '"':
+                _, i = _re01_scan_dq(s, i, n, state)
+                continue
+            if ch == '`':
+                bt_inner, i = _re01_scan_backtick(s, i, n, in_dq=False)
+                state['backticks'].append((bt_inner, state['cmd_depth']))
+                continue
+            if ch == '$' and i + 1 < n:
+                nxt = s[i + 1]
+                if nxt == '(':
+                    i = _re01_scan_dollar_paren(s, i, n, state)
+                    continue
+                if nxt == '{':
+                    i = _re01_scan_param(s, i, n, in_dq=False, state=state)
+                    continue
+                if nxt == "'":
+                    state['saw_ansic_sq'] = True
+                    if state['ansic_sq']:
+                        _, i = _re01_scan_ansic_sq(s, i, n)
+                    else:
+                        i += 1
+                    continue
+                if nxt == '"':
+                    state['saw_ansic_sq'] = True
+                    i += 1
+                    continue
+            if ch == '(':
+                paren_depth += 1
+                i += 1
+                continue
+            if ch == ')':
+                paren_depth -= 1
+                i += 1
+                continue
             i += 1
-            continue
-        if ch in _RE01_SH_COMMENT_WHITESPACE:
-            cmd_pos = _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack)
-            word_dirty = False
-            if ch == '\n':
-                cmd_pos = True
-            out.append(ch)
-            prev_closed_word_paren = False
-            i += 1
-            continue
-        if ch == '#' and not (context_stack and context_stack[-1] in ('arith', 'param')):
-            if not out or out[-1] in _RE01_SH_COMMENT_WHITESPACE or (
-                out[-1] in ';|&()<>' and not prev_closed_word_paren
-            ):
-                cmd_pos = _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack)
-                word_dirty = False
-                while i < n and cmd_str[i] != '\n':
+        return i
+
+
+def _re01_scan_array_assign(s, i, n, state):
+    with _re01_lex_frame(state):
+        i += 1
+        has_word = False
+        prev_closed_word_paren = False
+        last_unquoted_ch = None
+        while i < n:
+            ni, cont = _re01_consume_line_cont(s, i, n)
+            if cont:
+                i = ni
+                continue
+            ch = s[i]
+            if ch == ')':
+                return i + 1
+            if ch in _RE01_SH_WS:
+                has_word = False
+                prev_closed_word_paren = False
+                last_unquoted_ch = None
+                i += 1
+                continue
+            if ch == '#' and not has_word and not prev_closed_word_paren:
+                while i < n and s[i] != '\n':
                     i += 1
                 continue
-        if ch in ';|&()<>':
-            cmd_pos = _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack)
-            word_dirty = False
-            if ch in (';', '&') and context_stack and context_stack[-1] == 'case_body' and out and out[-1] == ';':
-                context_stack[-1] = 'case_pat'
-                cmd_pos = True
+            if ch == '\\' and i + 1 < n:
+                has_word = True
                 prev_closed_word_paren = False
-            elif ch == '(':
-                if context_stack and context_stack[-1] == 'param':
-                    if out and out[-1] == '$':
-                        context_stack.append('word')
-                elif len(out) >= 2 and out[-2:] == ['$', '('] and context_stack and context_stack[-1] == 'word':
-                    context_stack[-1] = 'arith'
-                    context_stack.append('arith')
-                elif out and out[-1] in _RE01_WORD_PAREN_PREFIX:
-                    context_stack.append('word')
-                elif context_stack and context_stack[-1] == 'arith':
-                    context_stack.append('arith')
-                elif context_stack and context_stack[-1] == 'case_pat':
-                    context_stack.append('case_pat_paren')
-                else:
-                    context_stack.append('sep')
-                cmd_pos = True
+                last_unquoted_ch = None
+                i += 2
+                continue
+            if ch == "'":
+                _, i = _re01_scan_sq(s, i, n)
+                has_word = True
                 prev_closed_word_paren = False
-            elif ch == ')':
-                if context_stack and context_stack[-1] == 'param':
+                last_unquoted_ch = None
+                continue
+            if ch == '"':
+                _, i = _re01_scan_dq(s, i, n, state)
+                has_word = True
+                prev_closed_word_paren = False
+                last_unquoted_ch = None
+                continue
+            if ch == '`':
+                bt_inner, i = _re01_scan_backtick(s, i, n, in_dq=False)
+                state['backticks'].append((bt_inner, state['cmd_depth']))
+                has_word = True
+                prev_closed_word_paren = True
+                last_unquoted_ch = None
+                continue
+            if ch == '$' and i + 1 < n:
+                nxt = s[i + 1]
+                if nxt == '(':
+                    i = _re01_scan_dollar_paren(s, i, n, state)
+                    has_word = True
+                    prev_closed_word_paren = True
+                    last_unquoted_ch = None
+                    continue
+                if nxt == '{':
+                    i = _re01_scan_param(s, i, n, in_dq=False, state=state)
+                    has_word = True
                     prev_closed_word_paren = False
-                elif context_stack and context_stack[-1] == 'case_pat':
-                    context_stack[-1] = 'case_body'
+                    last_unquoted_ch = None
+                    continue
+                if nxt == "'":
+                    state['saw_ansic_sq'] = True
+                    if state['ansic_sq']:
+                        _, i = _re01_scan_ansic_sq(s, i, n)
+                    else:
+                        i += 1
+                    has_word = True
                     prev_closed_word_paren = False
-                    cmd_pos = True
-                elif context_stack and context_stack[-1] == 'case_pat_paren':
-                    context_stack.pop()
-                    if context_stack and context_stack[-1] == 'case_pat':
-                        context_stack[-1] = 'case_body'
+                    last_unquoted_ch = None
+                    continue
+                if nxt == '"':
+                    state['saw_ansic_sq'] = True
+                    i += 1
+                    has_word = True
                     prev_closed_word_paren = False
-                    cmd_pos = True
-                elif context_stack:
-                    popped = context_stack.pop()
-                    prev_closed_word_paren = popped in ('word', 'arith')
-                    cmd_pos = (popped == 'sep')
-                else:
-                    prev_closed_word_paren = False
-                    cmd_pos = True
+                    last_unquoted_ch = None
+                    continue
+            if ch == '(' and last_unquoted_ch in _RE01_EXTGLOB_PREFIX and state['extglob_enabled']:
+                i = _re01_scan_extglob(s, i, n, state)
+                has_word = True
+                prev_closed_word_paren = True
+                last_unquoted_ch = None
+                continue
+            has_word = True
+            prev_closed_word_paren = False
+            last_unquoted_ch = ch
+            i += 1
+        return i
+
+
+def _re01_scan_heredoc_delim(s, j, n, state):
+    while j < n:
+        if s[j] in ' \t':
+            j += 1
+            continue
+        nj, cont = _re01_consume_line_cont(s, j, n)
+        if cont:
+            j = nj
+            continue
+        break
+    buf = []
+    quoted = False
+    saw_delim = False
+    while j < n:
+        nj, cont = _re01_consume_line_cont(s, j, n)
+        if cont:
+            j = nj
+            continue
+        ch = s[j]
+        if ch in ' \t\n;|&<>()' or (ch == '#' and not saw_delim):
+            break
+        saw_delim = True
+        if ch == '\\' and j + 1 < n:
+            quoted = True
+            buf.append(s[j + 1])
+            j += 2
+            continue
+        if ch == "'":
+            quoted = True
+            sq_txt, j = _re01_scan_sq(s, j, n)
+            buf.append(sq_txt)
+            continue
+        if ch == '"':
+            quoted = True
+            j += 1
+            while j < n and s[j] != '"':
+                nj, cont = _re01_consume_line_cont(s, j, n)
+                if cont:
+                    j = nj
+                    continue
+                if s[j] == '\\' and j + 1 < n and s[j + 1] in '$`"\\':
+                    buf.append(s[j + 1])
+                    j += 2
+                    continue
+                buf.append(s[j])
+                j += 1
+            if j < n and s[j] == '"':
+                j += 1
+            continue
+        if ch == '$' and j + 1 < n and s[j + 1] in ("'", '"'):
+            state['saw_ansic_sq'] = True
+            if s[j + 1] == "'":
+                if state['ansic_sq']:
+                    quoted = True
+                    ac_txt, j = _re01_scan_ansic_sq(s, j, n)
+                    buf.append(ac_txt)
+                    continue
+                buf.append('$')
+                j += 1
+                continue
+            if state['ansic_sq']:
+                j += 1
+                continue
+            buf.append('$')
+            j += 1
+            continue
+        buf.append(ch)
+        j += 1
+    return ''.join(buf), quoted, saw_delim, j
+
+
+def _re01_scan_heredoc_body(body, state):
+    with _re01_lex_frame(state):
+        j = 0
+        m = len(body)
+        while j < m:
+            nj, cont = _re01_consume_line_cont(body, j, m)
+            if cont:
+                j = nj
+                continue
+            ch = body[j]
+            if ch == '\\' and j + 1 < m:
+                if body[j + 1] in ('$', '`', '\\'):
+                    j += 2
+                    continue
+                j += 1
+                continue
+            if ch == '`':
+                state['saw_heredoc_bt'] = True
+                bt_inner, j = _re01_scan_backtick(body, j, m, in_dq=state['heredoc_bt_dq'])
+                state['backticks'].append((bt_inner, state['cmd_depth']))
+                continue
+            if ch == '$' and j + 1 < m:
+                if body[j + 1] == '(':
+                    j = _re01_scan_dollar_paren(body, j, m, state)
+                    continue
+                if body[j + 1] == '{':
+                    j = _re01_scan_param(body, j, m, in_dq=True, state=state)
+                    continue
+            j += 1
+
+
+def _re01_consume_heredoc_bodies(s, i, n, pending_heredocs, state):
+    specs = list(pending_heredocs)
+    pending_heredocs.clear()
+    for delim, strip_tabs, quoted in specs:
+        body_chunks = []
+        while i < n:
+            line_end = s.find('\n', i)
+            if line_end == -1:
+                line_raw = s[i:]
+                next_i = n
+                sep = ''
             else:
+                line_raw = s[i:line_end]
+                next_i = line_end + 1
+                sep = '\n'
+            check_line = line_raw.lstrip('\t') if strip_tabs else line_raw
+            i = next_i
+            if check_line == delim:
+                break
+            body_chunks.append(line_raw + sep)
+        if not quoted and body_chunks:
+            _re01_scan_heredoc_body(''.join(body_chunks), state)
+    return i
+
+
+def _re01_flush_sh_word(word_buf, word_dirty, has_word, cmd_pos, end_kw_pos, cmd_prefix, case_stack, in_dbl_bracket):
+    if not has_word:
+        return cmd_pos, end_kw_pos, cmd_prefix, in_dbl_bracket
+    word = ''.join(word_buf)
+    word_buf.clear()
+    if case_stack and case_stack[-1] == 'hdr_word':
+        case_stack[-1] = 'hdr_in'
+        return False, False, None, in_dbl_bracket
+    if case_stack and case_stack[-1] == 'hdr_in':
+        if not word_dirty and word == 'in':
+            case_stack[-1] = 'pat_start'
+            return True, False, None, in_dbl_bracket
+        return False, False, None, in_dbl_bracket
+    if case_stack and case_stack[-1] in ('pat_start', 'pat', 'pat_paren'):
+        if case_stack[-1] == 'pat_start' and not word_dirty and word == 'esac':
+            case_stack.pop()
+            return False, True, None, in_dbl_bracket
+        if case_stack[-1] == 'pat_start':
+            case_stack[-1] = 'pat'
+        return False, False, None, in_dbl_bracket
+    if word_dirty:
+        if cmd_prefix in ('coproc_start', 'func_start'):
+            return True, False, None, in_dbl_bracket
+        return False, False, None, in_dbl_bracket
+    if word == ']]' and in_dbl_bracket:
+        return False, True, None, False
+    if word == '[[' and cmd_pos:
+        return False, False, None, True
+    if cmd_prefix == 'time':
+        if word == '-p':
+            return True, False, 'time_p', in_dbl_bracket
+        if word == '--':
+            return True, False, 'time_dd', in_dbl_bracket
+        cmd_pos, end_kw_pos, cmd_prefix = True, False, None
+    elif cmd_prefix == 'time_p':
+        if word == '--':
+            return True, False, 'time_dd', in_dbl_bracket
+        cmd_pos, end_kw_pos, cmd_prefix = True, False, None
+    elif cmd_prefix == 'time_dd':
+        cmd_pos, end_kw_pos, cmd_prefix = True, False, None
+    elif cmd_prefix == 'coproc_start':
+        if word not in _RE01_COPROC_COMPOUND:
+            return True, False, None, in_dbl_bracket
+        cmd_pos, end_kw_pos, cmd_prefix = True, False, None
+    elif cmd_prefix == 'func_start':
+        return True, False, None, in_dbl_bracket
+    elif cmd_prefix == 'for_start':
+        return False, False, None, in_dbl_bracket
+    if word == 'case' and cmd_pos:
+        case_stack.append('hdr_word')
+        return False, False, None, in_dbl_bracket
+    if word == 'esac' and (cmd_pos or end_kw_pos) and case_stack and case_stack[-1] == 'body':
+        case_stack.pop()
+        return False, True, None, in_dbl_bracket
+    if word in _RE01_COMPOUND_END_KEYWORDS and (cmd_pos or end_kw_pos):
+        return False, True, None, in_dbl_bracket
+    if word in _RE01_CONTINUING_KEYWORDS and (cmd_pos or end_kw_pos):
+        return True, False, None, in_dbl_bracket
+    if word in _RE01_CMD_START_KEYWORDS and cmd_pos:
+        return True, False, None, in_dbl_bracket
+    if word == 'time' and cmd_pos:
+        return True, False, 'time', in_dbl_bracket
+    if word == 'coproc' and cmd_pos:
+        return True, False, 'coproc_start', in_dbl_bracket
+    if word == 'function' and cmd_pos:
+        return False, False, 'func_start', in_dbl_bracket
+    if word in ('for', 'select') and cmd_pos:
+        return False, False, 'for_start', in_dbl_bracket
+    return False, False, None, in_dbl_bracket
+
+
+def _re01_scan_procsub(s, i, n, state):
+    cmdsub_heredocs = []
+    state['cmd_depth'] += 1
+    state['heredoc_stack'].append(cmdsub_heredocs)
+    try:
+        sub_tokens, j = _re01_scan_commands(s, i + 2, n, state, stop_on_paren=True)
+    finally:
+        state['heredoc_stack'].pop()
+        state['cmd_depth'] -= 1
+    state['token_lists'].append((sub_tokens, state['cmd_depth'] + 1))
+    if cmdsub_heredocs:
+        state['saw_cmdsub_heredoc'] = True
+        if state['heredoc_cmdsub_inherit'] and state['heredoc_stack']:
+            state['heredoc_stack'][-1].extend(cmdsub_heredocs)
+    return j
+
+
+def _re01_scan_commands(s, i, n, state, *, stop_on_paren=False):
+    with _re01_lex_frame(state):
+        tokens, word_buf, case_stack = [], [], []
+        has_word = word_dirty = prev_closed_word_paren = end_kw_pos = in_dbl_bracket = False
+        cmd_pos, cmd_prefix, last_unquoted_ch = True, None, None
+
+        def flush():
+            nonlocal has_word, word_dirty, cmd_pos, end_kw_pos, cmd_prefix, in_dbl_bracket
+            nonlocal last_unquoted_ch, prev_closed_word_paren
+            if has_word:
+                tokens.append(''.join(word_buf))
+                cmd_pos, end_kw_pos, cmd_prefix, in_dbl_bracket = _re01_flush_sh_word(
+                    word_buf, word_dirty, has_word, cmd_pos, end_kw_pos,
+                    cmd_prefix, case_stack, in_dbl_bracket)
+                has_word = word_dirty = False
+            last_unquoted_ch = None
+            prev_closed_word_paren = False
+
+        while i < n:
+            ni, cont = _re01_consume_line_cont(s, i, n)
+            if cont:
+                i = ni
+                continue
+            ch = s[i]
+            if ch in _RE01_SH_WS:
+                flush()
+                if ch == '\n':
+                    tokens.append('\n')
+                    if state['heredoc_stack'] and state['heredoc_stack'][-1]:
+                        i = _re01_consume_heredoc_bodies(s, i + 1, n, state['heredoc_stack'][-1], state)
+                    else:
+                        i += 1
+                    if not (case_stack and case_stack[-1] in ('pat_start', 'pat', 'pat_paren')):
+                        cmd_pos, end_kw_pos, cmd_prefix = True, False, None
+                else:
+                    i += 1
+                continue
+            if ch == '#' and not has_word and not prev_closed_word_paren:
+                while i < n and s[i] != '\n':
+                    i += 1
+                continue
+            if ch == '\\' and i + 1 < n:
+                word_buf.append(s[i + 1])
+                has_word = word_dirty = True
+                last_unquoted_ch = None
                 prev_closed_word_paren = False
-                if ch in ';|&' and not (context_stack and context_stack[-1] == 'case_pat'):
-                    cmd_pos = True
-            out.append(ch)
-            i += 1
-            continue
-        if ch == '{' and out and out[-1] == '$':
-            cmd_pos = _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack)
-            word_dirty = False
-            context_stack.append('param')
-            out.append(ch)
-            prev_closed_word_paren = False
-            i += 1
-            continue
-        if ch == '}' and context_stack and context_stack[-1] == 'param':
-            cmd_pos = _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack)
-            word_dirty = False
-            context_stack.pop()
-            out.append(ch)
-            prev_closed_word_paren = False
-            i += 1
-            continue
-        if (ch.isalpha() or (ch in ('{', '!') and not word_buf)) and not word_dirty:
+                i += 2
+                continue
+            if ch == "'":
+                sq_txt, i = _re01_scan_sq(s, i, n)
+                word_buf.append(sq_txt)
+                has_word = word_dirty = True
+                last_unquoted_ch = None
+                prev_closed_word_paren = False
+                continue
+            if ch == '"':
+                dq_txt, i = _re01_scan_dq(s, i, n, state)
+                word_buf.append(dq_txt)
+                has_word = word_dirty = True
+                last_unquoted_ch = None
+                prev_closed_word_paren = False
+                continue
+            if ch == '`':
+                bt_inner, i = _re01_scan_backtick(s, i, n, in_dq=False)
+                state['backticks'].append((bt_inner, state['cmd_depth']))
+                has_word = word_dirty = prev_closed_word_paren = True
+                last_unquoted_ch = None
+                continue
+            if ch == '$' and i + 1 < n:
+                nxt = s[i + 1]
+                if nxt == '(':
+                    i = _re01_scan_dollar_paren(s, i, n, state)
+                    has_word = word_dirty = prev_closed_word_paren = True
+                    last_unquoted_ch = None
+                    continue
+                if nxt == '{':
+                    i = _re01_scan_param(s, i, n, in_dq=False, state=state)
+                    has_word = word_dirty = True
+                    last_unquoted_ch = None
+                    prev_closed_word_paren = False
+                    continue
+                if nxt == "'":
+                    state['saw_ansic_sq'] = True
+                    if state['ansic_sq']:
+                        ac_txt, i = _re01_scan_ansic_sq(s, i, n)
+                        word_buf.append(ac_txt)
+                    else:
+                        word_buf.append('$')
+                        i += 1
+                    has_word = word_dirty = True
+                    last_unquoted_ch = None
+                    prev_closed_word_paren = False
+                    continue
+                if nxt == '"':
+                    state['saw_ansic_sq'] = True
+                    if not state['ansic_sq']:
+                        word_buf.append('$')
+                    i += 1
+                    has_word = word_dirty = True
+                    last_unquoted_ch = None
+                    prev_closed_word_paren = False
+                    continue
+            if ch == '(':
+                if last_unquoted_ch == '=':
+                    flush()
+                    i = _re01_scan_array_assign(s, i, n, state)
+                    has_word = word_dirty = prev_closed_word_paren = True
+                    last_unquoted_ch = None
+                    continue
+                if last_unquoted_ch in _RE01_EXTGLOB_PREFIX and (state['extglob_enabled'] or in_dbl_bracket):
+                    is_bang_cmd = (word_buf == ['!'] and cmd_pos and not in_dbl_bracket)
+                    end_j = _re01_scan_extglob(s, i, n, state)
+                    if is_bang_cmd:
+                        inner_end = end_j - 1 if end_j > i + 1 and s[end_j - 1] == ')' else end_j
+                        state['bang_parens'].append((s[i + 1:inner_end], state['cmd_depth']))
+                    word_buf.append(s[i:end_j])
+                    i = end_j
+                    has_word = word_dirty = prev_closed_word_paren = True
+                    last_unquoted_ch = None
+                    continue
+                if ((cmd_pos or cmd_prefix == 'for_start') and state['arith_cmd_enabled']
+                        and i + 1 < n and s[i + 1] == '(' and i not in state['no_arith_positions']):
+                    ckpt = _re01_ckpt_state(state)
+                    ok, end_j = _re01_scan_arith_inner(s, i + 2, n, state, is_for_arith=(cmd_prefix == 'for_start'))
+                    if ok:
+                        state['saw_arith_cmd'] = True
+                        flush()
+                        cmd_pos, end_kw_pos, cmd_prefix = False, True, None
+                        last_unquoted_ch = None
+                        prev_closed_word_paren = False
+                        i = end_j
+                        continue
+                    _re01_restore_state(state, ckpt)
+                    state['no_arith_positions'].add(i)
+                if case_stack and case_stack[-1] in ('pat_start', 'pat') and not has_word:
+                    case_stack[-1] = 'pat_paren'
+                    tokens.append('(')
+                    cmd_pos, end_kw_pos, cmd_prefix = False, False, None
+                    prev_closed_word_paren = False
+                    last_unquoted_ch = None
+                    i += 1
+                    continue
+                flush()
+                tokens.append('(')
+                sub_tokens, j = _re01_scan_commands(s, i + 1, n, state, stop_on_paren=True)
+                tokens.extend(sub_tokens)
+                if j > i + 1 and s[j - 1] == ')':
+                    tokens.append(')')
+                cmd_pos, end_kw_pos = (True, False) if not sub_tokens else (False, True)
+                cmd_prefix = None
+                i = j
+                continue
+            if ch == ')':
+                flush()
+                if case_stack and case_stack[-1] in ('pat_start', 'pat', 'pat_paren'):
+                    case_stack[-1] = 'body'
+                    tokens.append(')')
+                    cmd_pos, end_kw_pos, cmd_prefix = True, False, None
+                    i += 1
+                    continue
+                if stop_on_paren:
+                    return tokens, i + 1
+                tokens.append(')')
+                cmd_pos, end_kw_pos, cmd_prefix = True, False, None
+                i += 1
+                continue
+            if ch in ';|&<>':
+                if s[i:i + 2] in ('<(', '>('):
+                    flush()
+                    i = _re01_scan_procsub(s, i, n, state)
+                    has_word = word_dirty = prev_closed_word_paren = True
+                    cmd_pos, end_kw_pos, cmd_prefix = False, False, None
+                    continue
+                if s[i:i + 2] == '<<' and s[i:i + 3] != '<<<':
+                    flush()
+                    strip_tabs = (i + 2 < n and s[i + 2] == '-')
+                    op_end = i + (3 if strip_tabs else 2)
+                    tokens.append(s[i:op_end])
+                    delim, quoted, saw_delim, i = _re01_scan_heredoc_delim(s, op_end, n, state)
+                    if saw_delim:
+                        state['heredoc_stack'][-1].append((delim, strip_tabs, quoted))
+                        tokens.append(delim)
+                    cmd_pos, end_kw_pos, cmd_prefix = False, False, None
+                    continue
+                if s[i:i + 3] in ('<<<', '&>>') or s[i:i + 2] in ('>>', '<>', '>&', '<&', '>|', '&>'):
+                    op_len = 3 if s[i:i + 3] in ('<<<', '&>>') else 2
+                    flush()
+                    tokens.append(s[i:i + op_len])
+                    cmd_pos, end_kw_pos, cmd_prefix = False, False, None
+                    i += op_len
+                    continue
+                if s[i:i + 3] == ';;&' or s[i:i + 2] in (';;', ';&'):
+                    op_len = 3 if s[i:i + 3] == ';;&' else 2
+                    flush()
+                    tokens.append(';')
+                    if case_stack and case_stack[-1] == 'body':
+                        case_stack[-1] = 'pat_start'
+                    cmd_pos, end_kw_pos, cmd_prefix = True, False, None
+                    i += op_len
+                    continue
+                if s[i:i + 2] in ('&&', '||', '|&'):
+                    op_tok = '|' if s[i:i + 2] == '|&' else s[i:i + 2]
+                    flush()
+                    tokens.append(op_tok)
+                    cmd_pos, end_kw_pos, cmd_prefix = True, False, None
+                    i += 2
+                    continue
+                flush()
+                tokens.append(ch)
+                if ch in '<>':
+                    cmd_pos, end_kw_pos, cmd_prefix = False, False, None
+                elif not (case_stack and case_stack[-1] in ('pat_start', 'pat', 'pat_paren')):
+                    cmd_pos, end_kw_pos, cmd_prefix = True, False, None
+                i += 1
+                continue
             word_buf.append(ch)
-        else:
-            word_dirty = True
-        out.append(ch)
-        prev_closed_word_paren = False
-        i += 1
-    return ''.join(out)
+            has_word = True
+            last_unquoted_ch = ch
+            prev_closed_word_paren = False
+            i += 1
+        flush()
+        return tokens, i
 
 
-def _re01_shell_command_reason(cmd_str, _depth=0):
+def _re01_lex_shell(cmd_str, *, ansic_sq=True, param_sq=True, heredoc_cmdsub_inherit=True,
+                   heredoc_bt_dq=False, arith_cmd_enabled=True, extglob_enabled=True, base_depth=0):
+    state = {
+        'ansic_sq': ansic_sq,
+        'param_sq': param_sq,
+        'heredoc_cmdsub_inherit': heredoc_cmdsub_inherit,
+        'heredoc_bt_dq': heredoc_bt_dq,
+        'arith_cmd_enabled': arith_cmd_enabled,
+        'extglob_enabled': extglob_enabled,
+        'saw_ansic_sq': False,
+        'saw_param_sq_in_dq': False,
+        'saw_cmdsub_heredoc': False,
+        'saw_heredoc_bt': False,
+        'saw_arith_cmd': False,
+        'lex_depth': 0,
+        'cmd_depth': base_depth,
+        'backticks': [],
+        'token_lists': [],
+        'bang_parens': [],
+        'heredoc_stack': [[]],
+        'no_arith_positions': set(),
+    }
+    tokens, _ = _re01_scan_commands(cmd_str, 0, len(cmd_str), state, stop_on_paren=False)
+    return tokens, state
+
+
+def _re01_shell_command_reason(cmd_str, _depth=0, dialect=None):
     if _depth >= _RE01_MAX_WRAPPER_DEPTH:
         return 'RE-01 forbids deeply nested shell or wrapper execution'
     norm_raw = cmd_str.replace('\\\r\n', '').replace('\\\n', '')
@@ -780,19 +1493,49 @@ def _re01_shell_command_reason(cmd_str, _depth=0):
             or '.venv-krt' in norm_cmd or _RE01_INLINE_MODULES.search(norm_raw)
             or _RE01_RAW_BARE_KRT.search(norm_cmd)):
         return f'RE-01 forbids shell legacy Python router execution: {cmd_str}'
-    for sub in re.findall(r'`([^`]+)`', norm_raw) + _re01_dollar_subcommands(norm_raw):
-        reason = _re01_shell_command_reason(sub, _depth + 1)
+    try:
+        if dialect == 'dash':
+            runs = [_re01_lex_shell(
+                cmd_str, ansic_sq=False, param_sq=False, heredoc_cmdsub_inherit=False,
+                heredoc_bt_dq=True, arith_cmd_enabled=False, extglob_enabled=False, base_depth=_depth)]
+        else:
+            first_tokens, first_state = _re01_lex_shell(
+                cmd_str, ansic_sq=True, param_sq=True, heredoc_cmdsub_inherit=True,
+                heredoc_bt_dq=False, arith_cmd_enabled=True, extglob_enabled=True, base_depth=_depth)
+            runs = [(first_tokens, first_state)]
+            if dialect is None and (
+                first_state['saw_ansic_sq'] or first_state['saw_param_sq_in_dq']
+                or first_state['saw_cmdsub_heredoc'] or first_state['saw_heredoc_bt']
+                or first_state['saw_arith_cmd']
+            ):
+                runs.append(_re01_lex_shell(
+                    cmd_str, ansic_sq=False, param_sq=False, heredoc_cmdsub_inherit=False,
+                    heredoc_bt_dq=True, arith_cmd_enabled=False, extglob_enabled=False, base_depth=_depth))
+    except _RE01LexTooDeep:
+        return 'RE-01 forbids deeply nested shell or wrapper execution'
+    for run_tokens, run_state in runs:
+        for bt_inner, bt_depth in run_state['backticks']:
+            if bt_depth + 1 >= _RE01_MAX_WRAPPER_DEPTH:
+                return 'RE-01 forbids deeply nested shell or wrapper execution'
+            reason = _re01_shell_command_reason(bt_inner, bt_depth + 1, dialect=dialect)
+            if reason is not None:
+                return reason
+        for bp_inner, bp_depth in run_state['bang_parens']:
+            if bp_depth + 1 >= _RE01_MAX_WRAPPER_DEPTH:
+                return 'RE-01 forbids deeply nested shell or wrapper execution'
+            reason = _re01_shell_command_reason(bp_inner, bp_depth + 1, dialect=dialect)
+            if reason is not None:
+                return reason
+        for sub_tokens, sub_depth in run_state['token_lists']:
+            if sub_depth >= _RE01_MAX_WRAPPER_DEPTH:
+                return 'RE-01 forbids deeply nested shell or wrapper execution'
+            reason = _re01_forbidden_reason(sub_tokens, _depth=sub_depth + 1)
+            if reason is not None:
+                return reason
+        reason = _re01_forbidden_reason(run_tokens, _depth=_depth + 1)
         if reason is not None:
             return reason
-    cleaned = _re01_strip_sh_comments(cmd_str)
-    try:
-        lex = shlex.shlex(cleaned, posix=True, punctuation_chars=True)
-        lex.whitespace_split = True
-        lex.commenters = ''
-        parsed = list(lex)
-    except ValueError:
-        parsed = cleaned.split()
-    return _re01_forbidden_reason(parsed, _depth=_depth + 1)
+    return None
 
 
 def _re01_env_split_long_arg(token):
@@ -899,12 +1642,25 @@ def _re01_expand_env_outer_splits(tail_tokens, depth):
     return None, out, depth, did_split
 
 
+def _re01_resolve_shell_dialect(chain):
+    for cand in reversed(chain):
+        if not cand or cand.startswith('-'):
+            continue
+        name = Path(cand).name
+        if name in _RE01_BASH_DIALECT_SHELLS:
+            return 'bash'
+        if name in _RE01_DASH_DIALECT_SHELLS:
+            return 'dash'
+    return None
+
+
 def _re01_forbidden_reason(tokens, _depth=0, _env_parsing_opts=False):
     if _depth >= _RE01_MAX_WRAPPER_DEPTH:
         return 'RE-01 forbids deeply nested shell or wrapper execution'
     token_list = [_decode_audit_arg(raw) for raw in tokens]
     prev = ''
     shell_seen = False
+    shell_dialect = None
     shell_c_pending = False
     shell_end_opts = False
     shell_opt_takes_arg = False
@@ -914,6 +1670,7 @@ def _re01_forbidden_reason(tokens, _depth=0, _env_parsing_opts=False):
         if token in _RE01_SHELL_SEPARATORS:
             prev = token
             shell_seen = False
+            shell_dialect = None
             shell_c_pending = False
             shell_end_opts = False
             shell_opt_takes_arg = False
@@ -984,11 +1741,12 @@ def _re01_forbidden_reason(tokens, _depth=0, _env_parsing_opts=False):
                     prev = token
                     continue
             if shell_c_pending:
-                reason = _re01_shell_command_reason(token, _depth + 1)
+                reason = _re01_shell_command_reason(token, _depth + 1, dialect=shell_dialect)
                 if reason is not None:
                     return reason
                 shell_c_pending = False
             shell_seen = False
+            shell_dialect = None
             shell_end_opts = False
             shell_opt_takes_arg = False
             prev = token
@@ -1005,6 +1763,7 @@ def _re01_forbidden_reason(tokens, _depth=0, _env_parsing_opts=False):
         if (not token.startswith('-') and '=' not in token
                 and any(Path(c).name in _RE01_SHELL_NAMES for c in chain if c and not c.startswith('-'))):
             shell_seen = True
+            shell_dialect = _re01_resolve_shell_dialect(chain)
         if (norm == 'kicad-route-engine' or norm.endswith('/kicad-route-engine')
                 or norm.endswith('/tools/rust_engine_kicad.py') or norm == 'tools/rust_engine_kicad.py'):
             prev = token
