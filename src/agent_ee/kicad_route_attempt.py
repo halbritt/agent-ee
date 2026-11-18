@@ -482,6 +482,30 @@ _RE01_ENV_S_ESCAPES = {
     '$': '$',
 }
 _RE01_ENV_S_WHITESPACE = frozenset(' \t\n\r\x0b\x0c')
+_RE01_SH_COMMENT_WHITESPACE = frozenset(' \t\n')
+_RE01_WORD_PAREN_PREFIX = frozenset('$=<>@?*+!')
+_RE01_CMD_START_KEYWORDS = frozenset(('then', 'do', 'else', 'elif', 'if', 'while', 'until', '!', '{'))
+
+
+def _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack):
+    if not word_buf:
+        return cmd_pos
+    word = ''.join(word_buf)
+    word_buf.clear()
+    if word_dirty:
+        return False
+    if word == 'case' and cmd_pos:
+        context_stack.append('case_hdr')
+        return False
+    if word == 'in' and context_stack and context_stack[-1] == 'case_hdr':
+        context_stack[-1] = 'case_pat'
+        return True
+    if word == 'esac' and cmd_pos and context_stack and context_stack[-1] in ('case_pat', 'case_body'):
+        context_stack.pop()
+        return False
+    if word in _RE01_CMD_START_KEYWORDS and cmd_pos:
+        return True
+    return False
 
 
 def _re01_split_env_string(s_val):
@@ -595,20 +619,22 @@ def _re01_split_env_string(s_val):
 
 
 def _re01_strip_sh_comments(cmd_str):
-    out = []
-    in_sq = False
-    in_dq = False
-    i = 0
-    n = len(cmd_str)
+    out, context_stack, word_buf = [], [], []
+    in_sq = in_dq = word_dirty = prev_closed_word_paren = False
+    cmd_pos = True
+    i, n = 0, len(cmd_str)
     while i < n:
         ch = cmd_str[i]
         if in_sq:
+            word_dirty = True
             if ch == "'":
                 in_sq = False
             out.append(ch)
+            prev_closed_word_paren = False
             i += 1
             continue
         if in_dq:
+            word_dirty = True
             if ch == '\\' and i + 1 < n:
                 nxt = cmd_str[i + 1]
                 if nxt == '\n':
@@ -618,11 +644,13 @@ def _re01_strip_sh_comments(cmd_str):
                     i += 3
                     continue
                 out.append(cmd_str[i:i + 2])
+                prev_closed_word_paren = False
                 i += 2
                 continue
             if ch == '"':
                 in_dq = False
             out.append(ch)
+            prev_closed_word_paren = False
             i += 1
             continue
         if ch == '\\' and i + 1 < n:
@@ -633,24 +661,112 @@ def _re01_strip_sh_comments(cmd_str):
             if nxt == '\r' and i + 2 < n and cmd_str[i + 2] == '\n':
                 i += 3
                 continue
+            word_dirty = True
             out.append(cmd_str[i:i + 2])
+            prev_closed_word_paren = False
             i += 2
             continue
-        if ch == "'":
-            in_sq = True
+        if ch == "'" or ch == '"':
+            word_dirty = True
+            if ch == "'":
+                in_sq = True
+            else:
+                in_dq = True
+            out.append(ch)
+            prev_closed_word_paren = False
+            i += 1
+            continue
+        if ch in _RE01_SH_COMMENT_WHITESPACE:
+            cmd_pos = _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack)
+            word_dirty = False
+            if ch == '\n':
+                cmd_pos = True
+            out.append(ch)
+            prev_closed_word_paren = False
+            i += 1
+            continue
+        if ch == '#' and not (context_stack and context_stack[-1] in ('arith', 'param')):
+            if not out or out[-1] in _RE01_SH_COMMENT_WHITESPACE or (
+                out[-1] in ';|&()<>' and not prev_closed_word_paren
+            ):
+                cmd_pos = _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack)
+                word_dirty = False
+                while i < n and cmd_str[i] != '\n':
+                    i += 1
+                continue
+        if ch in ';|&()<>':
+            cmd_pos = _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack)
+            word_dirty = False
+            if ch in (';', '&') and context_stack and context_stack[-1] == 'case_body' and out and out[-1] == ';':
+                context_stack[-1] = 'case_pat'
+                cmd_pos = True
+                prev_closed_word_paren = False
+            elif ch == '(':
+                if context_stack and context_stack[-1] == 'param':
+                    if out and out[-1] == '$':
+                        context_stack.append('word')
+                elif len(out) >= 2 and out[-2:] == ['$', '('] and context_stack and context_stack[-1] == 'word':
+                    context_stack[-1] = 'arith'
+                    context_stack.append('arith')
+                elif out and out[-1] in _RE01_WORD_PAREN_PREFIX:
+                    context_stack.append('word')
+                elif context_stack and context_stack[-1] == 'arith':
+                    context_stack.append('arith')
+                elif context_stack and context_stack[-1] == 'case_pat':
+                    context_stack.append('case_pat_paren')
+                else:
+                    context_stack.append('sep')
+                cmd_pos = True
+                prev_closed_word_paren = False
+            elif ch == ')':
+                if context_stack and context_stack[-1] == 'param':
+                    prev_closed_word_paren = False
+                elif context_stack and context_stack[-1] == 'case_pat':
+                    context_stack[-1] = 'case_body'
+                    prev_closed_word_paren = False
+                    cmd_pos = True
+                elif context_stack and context_stack[-1] == 'case_pat_paren':
+                    context_stack.pop()
+                    if context_stack and context_stack[-1] == 'case_pat':
+                        context_stack[-1] = 'case_body'
+                    prev_closed_word_paren = False
+                    cmd_pos = True
+                elif context_stack:
+                    popped = context_stack.pop()
+                    prev_closed_word_paren = popped in ('word', 'arith')
+                    cmd_pos = (popped == 'sep')
+                else:
+                    prev_closed_word_paren = False
+                    cmd_pos = True
+            else:
+                prev_closed_word_paren = False
+                if ch in ';|&' and not (context_stack and context_stack[-1] == 'case_pat'):
+                    cmd_pos = True
             out.append(ch)
             i += 1
             continue
-        if ch == '"':
-            in_dq = True
+        if ch == '{' and out and out[-1] == '$':
+            cmd_pos = _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack)
+            word_dirty = False
+            context_stack.append('param')
             out.append(ch)
+            prev_closed_word_paren = False
             i += 1
             continue
-        if ch == '#' and (not out or out[-1] in _RE01_ENV_S_WHITESPACE or out[-1] in ';|&()<>'):
-            while i < n and cmd_str[i] != '\n':
-                i += 1
+        if ch == '}' and context_stack and context_stack[-1] == 'param':
+            cmd_pos = _re01_flush_sh_word(word_buf, word_dirty, cmd_pos, context_stack)
+            word_dirty = False
+            context_stack.pop()
+            out.append(ch)
+            prev_closed_word_paren = False
+            i += 1
             continue
+        if (ch.isalpha() or (ch in ('{', '!') and not word_buf)) and not word_dirty:
+            word_buf.append(ch)
+        else:
+            word_dirty = True
         out.append(ch)
+        prev_closed_word_paren = False
         i += 1
     return ''.join(out)
 

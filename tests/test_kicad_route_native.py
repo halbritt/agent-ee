@@ -910,6 +910,24 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     ['/bin/sh', '-c', f'FOO=a\\\n#b PATH={co / "bin"}:$PATH ki""cad-route'],
                     [sys.executable, '-c', 'import runpy; runpy.run_path("bin/kicad-route")'],
                     [sys.executable, '-c', 'import pathlib; pathlib.Path(".venv-krt/bin/python")'],
+                    ['/bin/sh', '-c', f'echo ok\r#; PYTHONPATH={co / "src"} {sys.executable} -m ki""cad_route'],
+                    ['/bin/sh', '-c', f'echo ok\x0b#; PYTHONPATH={co / "src"} {sys.executable} -m ki""cad_route'],
+                    ['/bin/sh', '-c', f'echo ok\x0c#; PYTHONPATH={co / "src"} {sys.executable} -m ki""cad_route'],
+                    ['/bin/bash', '-c', f'echo ok\r#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo ok\x0b#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo ok\x0c#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo $(echo hi)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo $(echo hi)#; PYTHONPATH={co / "src"} {sys.executable} -m ki""cad_route'],
+                    ['/bin/bash', '-c', f'echo $(echo hi)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo $((1+1))#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo $((1+1))#; PYTHONPATH={co / "src"} {sys.executable} -m ki""cad_route'],
+                    ['/bin/sh', '-c', f'echo $(( (1+2) ))#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo $(( (1+2) ))#; PYTHONPATH={co / "src"} {sys.executable} -m ki""cad_route'],
+                    ['/bin/bash', '-c', f'a=(1)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo @(a)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/bash', '-c', f'echo <(echo hi)#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo $(echo ${{x#(}})#; PATH={co / "bin"}:$PATH ki""cad-route'],
+                    ['/bin/sh', '-c', f'echo $(case x in x) echo hi;; esac)#; PATH={co / "bin"}:$PATH ki""cad-route'],
                 ):
                     with self.subTest(argv=argv):
                         with self.assertRaises(routing_adapter.RE01OwnershipError):
@@ -932,6 +950,10 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                                    executable='/usr/bin/env', timeout=5)
                 with self.assertRaises(routing_adapter.RE01OwnershipError):
                     subprocess.run(f'PATH={co / "bin"}:$PATH kicad-route', shell=True, timeout=5)
+                for ws in ('\r', '\x0b', '\x0c'):
+                    with self.subTest(shell_true_ws=repr(ws)):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            subprocess.run(f'echo ok{ws}#; {fake_engine}', shell=True, timeout=5)
                 for cmd in (
                     'bin/kicad-route',
                     b'kicad-route',
@@ -939,6 +961,9 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     f'echo `{fake_engine}`',
                     f'echo "$({fake_engine})"',
                     f'true && /bin/sh -ce "{fake_engine}"',
+                    f'echo ok\r#; {fake_engine}',
+                    f'echo ok\x0b#; {fake_engine}',
+                    f'echo ok\x0c#; {fake_engine}',
                 ):
                     with self.subTest(cmd=cmd):
                         with self.assertRaises(routing_adapter.RE01OwnershipError):
@@ -973,6 +998,10 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     ['/bin/sh', '-c', f'FOO=a#b {sys.executable} {bridge}'],
                     ['/bin/sh', '-c', f'echo ok # -c\n{sys.executable} {bridge}'],
                     ['/bin/sh', '-c', f'echo ok # comment\\\n{sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'echo ok\r#comment\n{sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'(echo ok)#comment\n{sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'(echo ok)# -c\n{sys.executable} {bridge}'],
+                    ['/bin/sh', '-c', f'echo $(echo hi)#lit {sys.executable} {bridge}'],
                 ):
                     with self.subTest(ok_argv=ok_argv):
                         done = subprocess.run(ok_argv, capture_output=True, timeout=5)
