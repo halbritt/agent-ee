@@ -375,12 +375,19 @@ def __getattr__(name):
 FINE_ROUTER_GRID_MM = 0.025
 
 
-def router_grid(config, *, after_failed_route):
+def router_grid(config, *, after_failed_route, rust_native=None):
     """The declared search grid; otherwise the router's own, and the finer one after a failed trial."""
     declared = config['router'].get('grid_step_mm')
     if declared is not None:
         return declared, 'declared'
-    if after_failed_route:
+    if rust_native is None:
+        checkout = config['router'].get('checkout')
+        if checkout:
+            from . import routing_adapter
+            rust_native = routing_adapter.is_rust_capable_checkout(checkout)
+        else:
+            rust_native = False
+    if after_failed_route and not rust_native:
         return FINE_ROUTER_GRID_MM, 'after-failed-route'
     return None, 'router-default'
 
@@ -409,13 +416,13 @@ def second_trial_useful(status, routed, final):
     return not made_by.get('placement') and (routed.get('router_accepted') is False or bool(made_by.get('routing')))
 
 
-def other_grid(grid_step, grid_basis):
+def other_grid(grid_step, grid_basis, *, rust_native=False):
     """The grid of a placement's second routing trial, or None when the plan declares the grid.
 
     No one grid is better for every board: on the matched benchmark's fine-pitch boards the
     0.025 mm grid left fewer connections open on three and added a pair of vias too close
     together on a fourth, which the router's default grid routed clean in a fifth of the time."""
-    if grid_basis == 'declared':
+    if grid_basis == 'declared' or rust_native:
         return None
     return (FINE_ROUTER_GRID_MM if grid_step is None else None), 'other-grid-after-failed-route'
 
@@ -2502,9 +2509,9 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
         if routing_adapter.is_rust_capable_checkout(config['router']['checkout']) and (
                 diff_pairs is not None or pair_layers is not None or impedance is not None
-                or intra_pair_match is not None or bus is not None or length_match is not None
-                or ac_match is not None):
-            raise JobRefusal('route-native refuses unsupported M4 pair/impedance/length/ac constraints (RE-01)')
+                or matching is not None or bus is not None or length_match is not None
+                or ac_match is not None or config['router'].get('grid_step_mm') is not None):
+            raise JobRefusal('route-native refuses unsupported M4 pair/impedance/length/ac or grid_step_mm constraints (RE-01)')
         if impedance is not None:
             # Native load/save inserts dielectric defaults. Check the authored
             # bytes before placement can make an omitted value look declared.
@@ -2749,6 +2756,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 seen.add(entry['board_sha256'])
     report['routing_trials'] = []
     from . import routing_adapter
+    rust_native = routing_adapter.is_rust_capable_checkout(config['router']['checkout'])
     second_trials, asked, best_failed = [], set(), None
     # A resumed job has already seen its first trials fail on the router's default grid.
     resumed_after_failure = bool(state.get('routing_trials'))
@@ -2822,7 +2830,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         # trial leaves none).
         second = selected.get('second_trial')
         grid_step, grid_basis = ((second['grid_step_mm'], second['grid_basis']) if second else router_grid(
-            config, after_failed_route=resumed_after_failure))
+            config, after_failed_route=resumed_after_failure, rust_native=rust_native))
         trial = {'seed': selected['seed'], 'board_sha256': selected['board_sha256'],
                  'directory': selected['directory'], 'status': 'running', 'router_budget_s': budget,
                  'budget_basis': 'agent-default/equal-remaining-share',
@@ -2951,7 +2959,8 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             os.replace(tmp, job_dir / 'routed-incumbent.json')
             break
         if (not second and second_trial_useful(status, routed, report['final'])
-                and selected['board_sha256'] not in asked and (other := other_grid(grid_step, grid_basis)) is not None):
+                and selected['board_sha256'] not in asked
+                and (other := other_grid(grid_step, grid_basis, rust_native=rust_native)) is not None):
             asked.add(selected['board_sha256'])
             second_trials.append({**selected, 'second_trial': {
                 'first_trial': number + 1, 'first_elapsed_s': float(routed.get('elapsed_s') or 0.),
@@ -3246,11 +3255,21 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
     board = final_dir / 'board.kicad_pcb'
     problems = []
     rule_files = {}
+    native_routed = (
+        'native_operation_schema' in routed
+        and isinstance(routed.get('argv'), list)
+        and 'route-native' in routed['argv']
+    )
+    staged_board = (
+        Path(routed['argv'][routed['argv'].index('route-native') + 1])
+        if native_routed else None
+    )
     for suffix in ('.kicad_pro', '.kicad_dru'):
         authored = Path(incumbent['directory']) / ('board' + suffix)
         emitted = Path(routed['board']).with_suffix(suffix)
+        check_path = emitted if (emitted.exists() or staged_board is None) else staged_board.with_suffix(suffix)
         expected = authored.read_bytes() if authored.exists() else None
-        actual = emitted.read_bytes() if emitted.exists() else None
+        actual = check_path.read_bytes() if check_path.exists() else None
         if actual != expected:
             problems.append(f'router changed or lost native {suffix} file')
         # Always grade against the authored rules, including on a failed route.

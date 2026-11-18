@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import sys
 
-from agent_ee import add_planes, placement_job as job
+from agent_ee import add_planes, placement_job as job, routing_adapter
 from agent_ee.storage import digest, read_json, write_json
 from tests.test_placement_job import Fixture, intent, groups
 from tests.toolchain import require_kicad_route
@@ -34,12 +34,15 @@ class PlaneJobTests(Fixture):
         write_json(files['intent'], intent())
         write_json(files['groups'], groups())
         write_json(files['planes'], self.plan)
+        checkout = os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT']
+        router_cfg = {'checkout': checkout}
+        if not routing_adapter.is_rust_capable_checkout(checkout):
+            router_cfg['grid_step_mm'] = 0.025
         return {'schema': job.CONFIG_SCHEMA, 'budget_s': 300,
                 'inputs': {name: {'path': str(path), 'sha256': digest(path)}
                            for name, path in files.items()},
                 'search': self.search(2, 30000),
-                'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'],
-                           'grid_step_mm': 0.025}}
+                'router': router_cfg}
 
     def test_public_job_routes_with_declared_plane_and_checks_saved_fill(self):
         self.run_plane_job()
@@ -90,8 +93,12 @@ class PlaneJobTests(Fixture):
         self.assertEqual(report['final']['opens'], 0)
         self.assertEqual(report['final']['identity_problems'], [])
         # The router must receive the plane, not have it added only for the report.
-        staged = Path(report['route']['argv'][report['route']['argv'].index('--dir') + 1])
-        routed_input = k.LoadBoard(str(staged / 'board.kicad_pcb'))
+        argv = report['route']['argv']
+        if 'route-native' in argv:
+            routed_input = k.LoadBoard(argv[argv.index('route-native') + 1])
+        else:
+            staged = Path(argv[argv.index('--dir') + 1])
+            routed_input = k.LoadBoard(str(staged / 'board.kicad_pcb'))
         self.assertEqual({zone.m_Uuid.AsString() for zone in routed_input.Zones()},
                          set(add_planes.zone_ids(self.plan)))
         self.assertEqual(before, {name: digest(entry['path']) for name, entry in config['inputs'].items()})

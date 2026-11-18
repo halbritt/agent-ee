@@ -1919,10 +1919,12 @@ class RouterRefusalFeedbackTests(ScriptedLoop):
         self.assertLess(feedback.index(line), feedback.index('Placement summary'))
 
     def test_router_checkout_auto_discovery_and_environment(self):
+        from agent_ee.kicad_route_attempt import resolve_kicad_route_checkout
         with unittest.mock.patch.dict(os.environ, {}, clear=True):
             rec = loop.router_checkout()
             self.assertIn('path', rec)
+            self.assertEqual(rec['path'], str(resolve_kicad_route_checkout()))
             if rec.get('error') is None:
                 self.assertIn('commit', rec)
-                self.assertTrue(os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT'))
+                self.assertIsNone(os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT'))
 

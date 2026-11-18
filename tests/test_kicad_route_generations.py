@@ -107,7 +107,7 @@ def derive_state(checkout, state, layout, *, copy_venv=False):
     return manifest
 
 
-def copy_tool(checkout, root):
+def copy_tool(checkout, root, *, include_engine=False):
     """A clean checkout of the checkout's HEAD commit at root, without its installed state.
 
     The image's checkout is a depth-1 clone; --update-shallow accepts its shallow root."""
@@ -117,6 +117,15 @@ def copy_tool(checkout, root):
     for argv in (['init', '-q'], ['fetch', '-q', '--update-shallow', str(Path(checkout).resolve()), 'HEAD'],
                  ['checkout', '-q', '--detach', 'FETCH_HEAD']):
         subprocess.run(git + argv, check=True, capture_output=True, env=env)
+    if include_engine:
+        src_co = Path(checkout)
+        for profile in ('release', 'debug'):
+            src_bin = src_co / 'rust-engine' / 'target' / profile / 'kicad-route-engine'
+            if src_bin.is_file():
+                dst_bin = root / 'rust-engine' / 'target' / profile / 'kicad-route-engine'
+                dst_bin.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_bin, dst_bin)
+                break
     return root
 
 
@@ -450,7 +459,7 @@ class GenerationStateTest(unittest.TestCase):
                 self.assertIn(expected[label], self.verify())
 
     def test_preflight_requires_the_generation_files(self):
-        root = copy_tool(self.checkout, Path(self.tmp.name) / 'tool')
+        root = copy_tool(self.checkout, Path(self.tmp.name) / 'tool', include_engine=True)
         state = Path(self.tmp.name) / 'state'
         manifest = derive_state(self.checkout, state, 'generation')
         manifest['state_dir'] = attempt.SANDBOX['state']
@@ -479,7 +488,7 @@ class GenerationNativeTest(unittest.TestCase):
         """The configured checkout's code with its engine as a self-contained generation."""
         if attempt.state_generation(self.checkout)[0] is not None:
             return self.checkout, attempt.state_generation(self.checkout)[0]
-        tool = copy_tool(self.checkout, self.root / 'tool')
+        tool = copy_tool(self.checkout, self.root / 'tool', include_engine=True)
         manifest = derive_state(self.checkout, tool, 'generation', copy_venv=True)
         manifest['state_dir'] = attempt.SANDBOX['checkout']
         (tool / 'manifest.json').write_text(json.dumps(manifest))

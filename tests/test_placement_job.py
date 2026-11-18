@@ -136,7 +136,7 @@ class Fixture(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
         self.board = build_board(self.dir / 'board.kicad_pcb')
         self.project = self.dir / 'board.kicad_pro'
-        self.project.write_text('{}\n')
+        self.project.write_text(json.dumps({'meta': {'filename': 'board.kicad_pro', 'version': 1}}) + '\n')
 
     def problem(self):
         return job.capture(self.board, job.normalize_intent(intent(), groups()))
@@ -487,12 +487,17 @@ class EntryPointTests(Fixture):
                  'groups': self.dir / 'groups.json'}
         files['intent'].write_text(json.dumps(intent()))
         files['groups'].write_text(json.dumps(groups()))
+        from agent_ee import routing_adapter
+        checkout = os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT']
+        rust_native = routing_adapter.is_rust_capable_checkout(checkout)
+        router_cfg = {'checkout': checkout, 'budget_s': 60}
+        if not rust_native:
+            router_cfg['grid_step_mm'] = 0.025
         config = {'schema': job.CONFIG_SCHEMA, 'budget_s': 300,
                   'inputs': {k: {'path': str(v), 'sha256': hashlib.sha256(Path(v).read_bytes()).hexdigest()}
                              for k, v in files.items()},
                   'search': self.search(2, 30000),
-                  'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'], 'budget_s': 60,
-                             'grid_step_mm': 0.025}}
+                  'router': router_cfg}
         before = {k: Path(v).read_bytes() for k, v in files.items()}
         config_path = self.dir / 'job-config.json'
         config_path.write_text(json.dumps(config))
@@ -514,8 +519,14 @@ class EntryPointTests(Fixture):
                                              'anchor': 'R1', 'members': 2}])
         self.assertEqual(report['final']['metrics']['group_links']['groups']['g']['anchor_pull'], True)
         argv = report['route']['argv']
-        self.assertEqual(argv[argv.index('--name') + 1], self.board.stem)
-        self.assertEqual(argv[argv.index('--grid-step') + 1], '0.025')
+        if rust_native:
+            self.assertIn('route-native', argv)
+            self.assertIn('--timeout-ms', argv)
+            self.assertNotIn('--grid-step', argv)
+            self.assertNotIn('--name', argv)
+        else:
+            self.assertEqual(argv[argv.index('--name') + 1], self.board.stem)
+            self.assertEqual(argv[argv.index('--grid-step') + 1], '0.025')
         self.assertNotIn('--diff-pairs', argv)  # No declared pairs: no pair handling (defect 31).
         self.assertEqual(report['routing_trials'][-1]['status'], 'completed')
         self.assertEqual(report['route_selection']['board_sha256'], report['routing_trials'][-1]['board_sha256'])
@@ -672,6 +683,20 @@ class NativeEscapeHintsTests(Fixture):
             note = next(f for f in capture['footprints'] if f['native_ref'] == 'U1')
             self.assertEqual(note['routing_preferences'], hints)
             self.assertEqual(before, (self.board.read_bytes(), self.project.read_bytes()))
+
+
+class RustGridSchedulingTests(unittest.TestCase):
+    def test_rust_capable_checkout_disables_025mm_grid_retries(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            co = Path(tmp) / 'kicad-route'
+            (co / 'tools').mkdir(parents=True)
+            (co / 'tools' / 'rust_engine_kicad.py').write_text('# bridge\n')
+            self.assertEqual(
+                job.router_grid({'router': {'checkout': str(co)}}, after_failed_route=True),
+                (None, 'router-default'),
+            )
+            self.assertIsNone(job.other_grid(None, 'router-default', rust_native=True))
 
 
 if __name__ == '__main__':

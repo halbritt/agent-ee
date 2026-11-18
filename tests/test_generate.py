@@ -16,6 +16,7 @@ import unittest
 from unittest import mock
 
 from agent_ee import generate as g
+from agent_ee import routing_adapter
 from agent_ee.storage import digest
 try:
     from toolchain import FOME_MC_COMMIT, fome_mc_checkout, fome_mc_store
@@ -556,13 +557,45 @@ class IntegrationTest(unittest.TestCase):
                                         'routing': 'ok', 'review': 'not_reached:review_skipped', 'fab': 'failed'},
                              [s['error'] for s in record['stages']])
             routing = json.loads((run / record['stages'][4]['receipt']).read_text())
-            self.assertEqual(routing['tools']['kicad-route']['resolved'], str(route / 'bin/kicad-route'))
+            if routing_adapter.is_rust_capable_checkout(route):
+                expected_engine = routing_adapter.resolve_kicad_route_engine(route)
+                self.assertIsNotNone(expected_engine)
+                self.assertEqual(routing['tools']['kicad-route-engine']['resolved'],
+                                 str(expected_engine.resolve()))
+                self.assertEqual(routing['details']['backend'], 'route-native')
+                self.assertNotIn('kicad-route', routing['tools'])
+            else:
+                self.assertEqual(routing['tools']['kicad-route']['resolved'], str(route / 'bin/kicad-route'))
             self.assertFalse(record['done'])
             self.assertFalse(record['fab_exports_exist'])
             for item in record['stages']:
                 g.validate_receipt(json.loads((run / item['receipt']).read_text()))
             console = (run / 'stages/7-fab/export-fab/run/console.log').read_text()
             self.assertIn('CPL rotation policy is not captured', console)
+
+    def test_tool_identity_kicad_route_engine_avoids_version_and_stage_routing_fails_closed(self):
+        with ReceiptTemporaryDirectory(prefix='agent-ee-gen-route-') as tmp, \
+                mock.patch.dict(g._TOOLS, clear=True):
+            tmp_path = Path(tmp)
+            co = tmp_path / 'kicad-route'
+            (co / '.git').mkdir(parents=True)
+            (co / 'rust-engine/target/release').mkdir(parents=True)
+            engine = co / 'rust-engine/target/release/kicad-route-engine'
+            engine.write_text('#!/bin/sh\necho bad >&2\nexit 8\n')
+            engine.chmod(0o755)
+            ident = g.tool_identity(str(engine))
+            self.assertIsNone(ident.get('error'))
+            self.assertEqual(ident.get('checkout'), str(co.resolve()))
+            self.assertIsNotNone(ident.get('sha256'))
+            placed = tmp_path / 'placed'
+            placed.mkdir()
+            (placed / 'b.kicad_pcb').write_text('(kicad_pcb)\n')
+            stage = g.Stage(tmp_path / 'run', 5, 'routing')
+            stage.dir.mkdir(parents=True)
+            missing = tmp_path / 'missing-checkout'
+            with mock.patch.dict(os.environ, {'AGENT_EE_KICAD_ROUTE_CHECKOUT': str(missing), 'PATH': '/usr/bin:/bin'}):
+                with self.assertRaisesRegex(g.StageFailure, 'checkout missing'):
+                    g.stage_routing(stage, {'name': 'b', 'placed': placed}, {})
 
 
 if __name__ == '__main__':

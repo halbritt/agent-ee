@@ -947,8 +947,9 @@ def main(argv=None):
     parser.add_argument('spec', type=Path)
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--profile', type=Path, default=REPO_ROOT / 'profiles' / 'claude-baseline.json')
-    parser.add_argument('--kicad-route', type=Path, default=DEFAULT_KICAD_ROUTE,
-                        help='kicad-route checkout or snapshot holding the owned engine and .venv-krt')
+    parser.add_argument('--kicad-route', type=Path, default=None,
+                        help='kicad-route checkout (default: resolved dynamically via '
+                             'AGENT_EE_KICAD_ROUTE_CHECKOUT -> /opt/kicad-route -> sibling ../kicad-route)')
     parser.add_argument('--cpl-inputs', type=Path, help='explicit CPL policy and supplier capture tree')
     parser.add_argument('--dry-run', action='store_true',
                         help='scaffold, scope and config validation, checks-only review of the empty candidate '
@@ -962,7 +963,8 @@ def main(argv=None):
             record = rebuild_record(args.out)
             print(json.dumps({k: record.get(k) for k in ('mode', 'verdict', 'done')}))
             return 0 if record['done'] else 1
-        record = run(args.spec, args.out, profile_path=args.profile, kicad_route=args.kicad_route.absolute(),
+        kicad_route = (args.kicad_route or resolve_kicad_route_checkout()).absolute()
+        record = run(args.spec, args.out, profile_path=args.profile, kicad_route=kicad_route,
                      dry_run=args.dry_run, max_seconds=args.max_seconds, cpl_inputs=args.cpl_inputs)
     except (FileExistsError, OSError, ValueError) as exc:
         parser.exit(2, f'rung1_campaign refused: {exc}\n')

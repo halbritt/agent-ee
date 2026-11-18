@@ -66,7 +66,7 @@ OWNED = {
     'schematic': ('schematic_emitter', 'AGENTEE-40'),
     'board_population': ('forward_annotation', 'AGENTEE-52'),
     'placement': ('placement_adapter + placer_runner (agent-ee.placer/1)', 'AGENTEE-91, AGENTEE-54'),
-    'routing': ('routing_adapter.step + kicad_route_attempt (kicad-route b577449)', 'AGENTEE-93'),
+    'routing': ('routing_adapter.step + kicad_route_attempt (route-native / kicad-route)', 'AGENTEE-93'),
     'parity': ('netlist_parity check (intent, topology, exactly); fixtures/rc/control as recorded reference',
                'AGENTEE-41, AGENTEE-102'),
     'placement_checks': ('placement check kind (courtyard-overlap/1, outline-containment/1)', 'AGENTEE-92'),
@@ -777,9 +777,8 @@ def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iteration
             'base_commit': git_head(REPO_ROOT),
             'owned_modules': {k: {'module': v[0], 'plane': v[1]} for k, v in OWNED.items()},
             'kicad_route': {**rc.route_identity(kicad_route), 'preflight': preflight(kicad_route),
-                            'note': ('clone of ~/git/kicad-route checked out at the adapter pin, vendor/ and '
-                                     '.venv-krt copied from build/kicad-route-snapshot; mounted read-only at '
-                                     '/opt/kicad-route as checkout and state by routing_adapter.step')},
+                            'note': ('kicad-route checkout mounted read-only at /opt/kicad-route '
+                                     '(and kicad-route-engine when external) by routing_adapter.step')},
             'prep_receipts': prep['prep_receipts'],
             'parts': {'manifest': 'scaffold/generation/parts-manifest.json',
                       'selection': ('canonical parts/1 replay' if 'approved_bundle' in prep['parts']
@@ -1090,9 +1089,10 @@ def main(argv=None):
     parser.add_argument('spec', type=Path)
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--profile', type=Path, default=REPO_ROOT / 'profiles' / 'claude-baseline.json')
-    parser.add_argument('--kicad-route', type=Path, default=DEFAULT_KICAD_ROUTE,
-                        help='kicad-route checkout at the adapter pin b577449 with the owned engine and .venv-krt '
-                             '(default: $AGENT_EE_KICAD_ROUTE_CHECKOUT, else /opt/kicad-route)')
+    parser.add_argument('--kicad-route', type=Path, default=None,
+                        help='kicad-route checkout with the Rust engine and native bridge '
+                             '(default: resolved dynamically via AGENT_EE_KICAD_ROUTE_CHECKOUT -> '
+                             '/opt/kicad-route -> sibling ../kicad-route)')
     parser.add_argument('--cpl-inputs', type=Path, help='explicit CPL policy and supplier capture tree')
     parser.add_argument('--dry-run', action='store_true',
                         help='scaffold, scope, config and registration probes; checks-only reviews and a step '
@@ -1103,7 +1103,8 @@ def main(argv=None):
                         help='captured parts/1 manifest at the root of its dependency bundle; requires assembled J1')
     args = parser.parse_args(argv)
     try:
-        record = run(args.spec, args.out, profile_path=args.profile, kicad_route=args.kicad_route.absolute(),
+        kicad_route = (args.kicad_route or resolve_kicad_route_checkout()).absolute()
+        record = run(args.spec, args.out, profile_path=args.profile, kicad_route=kicad_route,
                      dry_run_only=args.dry_run, max_seconds=args.max_seconds, max_iterations=args.max_iterations,
                      parts_manifest=args.parts_manifest, cpl_inputs=args.cpl_inputs)
     except (FileExistsError, OSError, ValueError) as exc:

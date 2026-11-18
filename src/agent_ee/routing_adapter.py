@@ -318,7 +318,11 @@ def validate_campaign_step(spec, *, host=True):
     expected_mounts = {ADAPTER_AT, attempt.SANDBOX['checkout'], *(m['at'] for m in BINDING_MOUNTS)}
     if separate:
         expected_mounts.add(attempt.SANDBOX['state'])
-    if attempt.SANDBOX['engine'] in mounts and checkout and attempt.is_native_request(request, checkout):
+    native_spec = (attempt.canonical_backend(request['backend']) == 'builtin' and
+                   spec.get('backend_report') == {'artifact': f'routing/attempt/{attempt.NATIVE_OPERATION_FILE}',
+                                                  'key': 'binary'})
+    is_native = (bool(checkout) and attempt.is_native_request(request, checkout)) if host else native_spec
+    if attempt.SANDBOX['engine'] in mounts and is_native:
         expected_mounts.add(attempt.SANDBOX['engine'])
     if not host and attempt.LEGACY_TABLE_AT in mounts:
         # Retained steps of 2026-10-26 to 2026-11-03 also mounted the retired commit table.
@@ -327,6 +331,8 @@ def validate_campaign_step(spec, *, host=True):
             (host and mounts[ADAPTER_AT] != str(ADAPTER_SOURCE))):
         raise ValueError('campaign routing step differs from the adapter command or mounts')
     if host:
+        if native_spec != is_native:
+            raise ValueError('campaign routing step differs from the adapter command or mounts')
         if any(mounts[m['at']] != m['source'] for m in BINDING_MOUNTS):
             raise ValueError('routing binding helper mounts differ from captured policy')
         check = preflight(checkout, state, request['backend'])
@@ -494,9 +500,9 @@ def _verify(run, report, inputs, receipt, layout):
             report['rejected_candidate_sha256'] is not None):
         raise ValueError(f'a {classification} attempt records a rejected candidate')
     result = record = op_result = None
-    backend = attempt.native_backend_of(None) if (f'attempt/{attempt.NATIVE_OPERATION_FILE}' in retained or 'kicad_route_engine' in (report.get('tool') or {})) else attempt.backend_of(None)
     native_run = (f'attempt/{attempt.NATIVE_OPERATION_FILE}' in retained
                   or 'kicad_route_engine' in (report.get('tool') or {}))
+    backend = attempt.native_backend_of(None) if native_run else attempt.backend_of(None)
     if classification == 'not_run':
         if (process is not None or retained or report['discovery'] is not None or
                 report['identity_after'] is not None or report['missing_artifacts'] != []):
@@ -504,7 +510,7 @@ def _verify(run, report, inputs, receipt, layout):
         if native_run and report['backend'] != backend:
             raise ValueError('routing backend identity differs from the retained operation-result.json')
     elif native_run:
-        op_found, op_result = _retained_json(routing, attempt.NATIVE_OPERATION_FILE, retained)
+        op_found, op_result = _retained_json(routing, attempt.NATIVE_OPERATION_FILE, retained, strict=True)
         req_found, op_req = _retained_json(routing, attempt.NATIVE_REQUEST_FILE, retained)
         malformed = (op_found and op_result is None) or (req_found and op_req is None)
         expected_missing = []
@@ -515,14 +521,18 @@ def _verify(run, report, inputs, receipt, layout):
             expected_missing.append(attempt.NATIVE_REQUEST_FILE)
         if report['missing_artifacts'] != expected_missing:
             raise ValueError('missing routing artifacts differ from the retained artifacts')
-        if classification in ('timeout', 'cancelled'):
-            native_status = op_result.get('status') if isinstance(op_result, dict) else None
-            expected_status = 'operation_timeout' if classification == 'timeout' else 'cancelled'
-            if not process['timed_out' if classification == 'timeout' else 'cancelled'] and native_status != expected_status:
-                raise ValueError(f'{classification} classification without that observation')
-        else:
+        adapter_killed = (
+            classification in ('timeout', 'cancelled')
+            and process['timed_out' if classification == 'timeout' else 'cancelled']
+        )
+        if not adapter_killed:
             if process['timed_out'] or process['cancelled']:
                 raise ValueError(f'a {classification} attempt was timed out or cancelled')
+            if classification in ('timeout', 'cancelled'):
+                native_status = op_result.get('status') if isinstance(op_result, dict) else None
+                expected_status = 'operation_timeout' if classification == 'timeout' else 'cancelled'
+                if native_status != expected_status:
+                    raise ValueError(f'{classification} classification without that observation')
             op_req_path = routing / 'attempt' / attempt.NATIVE_REQUEST_FILE
             derived, _ = attempt.native_semantics(
                 process['exit_code'], op_result, op_req_path, None,
@@ -855,11 +865,16 @@ def _receipt_agrees(receipt, report, request, routing, backend):
         raise ValueError('stage receipt backend differs from the retained result.json')
 
 
-def _retained_json(routing, name, retained):
+def _retained_json(routing, name, retained, *, strict=False):
     """(retained, value): value is None when the retained file is not JSON or exceeds the limit."""
     key = f'attempt/{name}'
     if key not in retained:
         return False, None
+    if strict:
+        try:
+            return True, attempt.strict_json_file(routing / key, name)
+        except attempt.RequestError:
+            return True, None
     return True, attempt.load_json(routing / key, [], name)
 
 
@@ -1165,6 +1180,8 @@ def copper_layer_count(board_path):
 
 def board_recipe_argv(argv, out_dir, budget_s, recipe):
     """The command of a board route again from the same input, at a kicad-route cost recipe."""
+    if 'route-native' in [str(a) for a in argv] or attempt.is_re01_enforced():
+        raise attempt.RE01OwnershipError('RE-01 forbids legacy board_recipe_argv on route-native invocations')
     again = list(argv)
     again[again.index('--out') + 1] = str(out_dir)
     again[again.index('--budget') + 1] = str(int(budget_s))
@@ -1207,6 +1224,8 @@ def board_route_env(checkout, home):
 
 def board_retry_argv(argv, retry_dir, budget_s, feedback, pads, board_path):
     """Build the bounded repair retry CLI command for a board-level kicad-route run."""
+    if 'route-native' in [str(a) for a in argv] or attempt.is_re01_enforced():
+        raise attempt.RE01OwnershipError('RE-01 forbids legacy board_retry_argv on route-native invocations')
     retry = list(argv)
     retry[retry.index('--out') + 1] = str(Path(retry_dir) / 'out')
     retry[retry.index('--budget') + 1] = str(int(budget_s))
@@ -1292,7 +1311,7 @@ def _bind_native_board_attempt(route_dir, argv, exit_code):
                 'failing_stage': 'routing',
                 'reason': f'route-native exit {exit_code}: missing {op_result_path.name}'}
     try:
-        op_result = json.loads(op_result_path.read_bytes())
+        op_result = attempt.strict_json_file(op_result_path, op_result_path.name)
     except (OSError, ValueError, RecursionError) as exc:
         return {**record, 'status': 'refused_result', 'failure_kind': 'environment',
                 'failing_stage': 'routing',
@@ -1312,11 +1331,14 @@ def _bind_native_board_attempt(route_dir, argv, exit_code):
         return {**record, 'status': 'routed', 'board': str(output_board), 'board_sha256': sha,
                 'router_accepted': True, 'via_in_pad': parse_via_in_pad_record({})}
     if outcome_class == 'refused':
-        return {**record, 'status': 'router_refused',
-                'refusal': {'reason_class': op_result.get('status'), 'message': '; '.join(reasons)},
-                'failure_kind': 'environment', 'failing_stage': 'routing',
-                'reason': '; '.join(reasons)}
-    if outcome_class == 'backend_failure' and exit_code in (3, 4, 5):
+        out = {**record, 'status': 'router_refused',
+               'refusal': {'reason_class': op_result.get('status'), 'message': '; '.join(reasons)},
+               'reason': '; '.join(reasons)}
+        if exit_code == 8:
+            out.update(failure_kind='environment', failing_stage='routing')
+        return out
+    if (outcome_class == 'backend_failure' and exit_code in (3, 4, 5)) or (
+            outcome_class == 'timeout' and exit_code == 6):
         return {**record, 'status': 'no_candidate', 'reason': '; '.join(reasons)}
     return {**record, 'status': 'backend_failure', 'failure_kind': 'environment',
             'failing_stage': 'routing', 'reason': '; '.join(reasons)}
@@ -1406,8 +1428,7 @@ def bind_board_attempt(route_dir, argv, exit_code):
 
 def _require_legacy_helper_allowed(checkout, what, route_native):
     if route_native is True or attempt.is_re01_enforced() or (
-            route_native is None and attempt.is_rust_capable_checkout(checkout)
-            and not (Path(checkout) / '.venv-krt').is_dir()):
+            route_native is None and attempt.is_rust_capable_checkout(checkout)):
         raise attempt.RE01OwnershipError(f'RE-01 forbids executing legacy Python {what} in route-native flows')
 
 

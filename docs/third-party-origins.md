@@ -256,9 +256,10 @@ attribution do not establish that the source-project licences have been satisfie
     F-M6-G2): locks `serde 1.0.229`, `serde_json 1.0.154`, and `sha2 0.11.0`
     (MIT / Apache-2.0 dual-licensed crates) alongside workspace sources.
   - `crates/placement-engine/Cargo.lock`: workspace lockfile for `agent-ee-placement`.
-- **Runtime-only benchmark inputs**: `benchmarks/krt-matched/boards.json`
-  and third-party benchmark boards stay external and runtime-only (never
-  committed into `agent-ee`).
+- **Runtime-only benchmark inputs**: `benchmarks/krt-matched/boards.json` is the
+  committed manifest of external benchmark repositories and commits; the
+  third-party benchmark boards it fetches under `~/.cache/agent-ee-krt-bench/`
+  stay external and runtime-only (never committed into `agent-ee`).
 - **Audit limits**: `agent-ee` records the `kicad-route` commit, tree
   cleanliness, `rust-engine/Cargo.lock` / `LICENSE` / `tools/rust_engine_kicad.py`
   digests, and `kicad-route-engine` SHA-256 per preflight/attempt without

@@ -61,7 +61,7 @@ class OwnedRouterStateTests(unittest.TestCase):
 
     def test_unreadable_commit_and_dirty_owned_source_refuse(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = copy_tool(self.checkout, Path(tmp) / 'tool')
+            root = copy_tool(self.checkout, Path(tmp) / 'tool', include_engine=True)
             self.assertEqual(attempt.checkout_record(root)[1], [])
             (root / 'src/kicad_route/router/UPSTREAM.json').write_text('{}')
             check = routing_adapter.preflight(root, self.checkout)
@@ -75,7 +75,7 @@ class OwnedRouterStateTests(unittest.TestCase):
 
     def test_ignored_bytecode_cannot_replace_verified_engine_source(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = copy_tool(self.checkout, Path(tmp) / 'tool')
+            root = copy_tool(self.checkout, Path(tmp) / 'tool', include_engine=True)
             # kicad-route binds its manifest to the sandbox location of a checkout state
             # (/opt/kicad-route), so the copy reuses the qualified runtime as its own state.
             # The venv is copied: kicad-route ignores .venv-krt only as a directory, and a
@@ -99,7 +99,7 @@ class OwnedRouterStateTests(unittest.TestCase):
 
     def test_state_manifest_qualifies_across_mount_locations_and_refuses_invalid_state_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = copy_tool(self.checkout, Path(tmp) / 'tool')
+            root = copy_tool(self.checkout, Path(tmp) / 'tool', include_engine=True)
             state = Path(tmp) / 'state'
             derive_state(self.checkout, state, 'legacy')
             self.assertEqual(routing_adapter.preflight(root, state)['problems'], [])

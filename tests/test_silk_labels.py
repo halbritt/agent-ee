@@ -20,7 +20,8 @@ from tests.test_placement_job_clearance import evaluate
 from tests.toolchain import require_kicad_route, require_toolchain
 
 SILK = ('silk_overlap', 'silk_over_copper', 'silk_edge_clearance')
-ERRORS = {'board': {'design_settings': {'rule_severities': {'silk_overlap': 'error', 'silk_over_copper': 'error'}}}}
+ERRORS = {'meta': {'filename': 'board.kicad_pro', 'version': 1},
+          'board': {'design_settings': {'rule_severities': {'silk_overlap': 'error', 'silk_over_copper': 'error'}}}}
 # The half sizes of the test part's courtyard, and its label's offset above the part.
 HALF = (3_200_000, 1_200_000)
 ABOVE = (0, -2_200_000)
@@ -614,16 +615,28 @@ class CaptureTests(SilkBoard):
 class JobTests(SilkBoard):
     def test_job_on_a_board_whose_rules_make_silk_findings_errors_ends_without_one(self):
         require_kicad_route()
+        from agent_ee import routing_adapter
+        checkout = os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT']
+        if routing_adapter.is_rust_capable_checkout(checkout):
+            import pcbnew as k
+            board = k.LoadBoard(str(self.board))
+            for dr in list(board.GetDrawings()):
+                if dr.GetLayer() == k.F_Cu and not isinstance(dr, k.PCB_SHAPE):
+                    board.Delete(dr)
+            self.assertTrue(k.SaveBoard(str(self.board), board))
         self.project.write_text(json.dumps(ERRORS))
         files = {'board': self.board, 'project': self.project, 'intent': self.dir / 'intent.json',
                  'groups': self.dir / 'groups.json'}
         files['intent'].write_text(json.dumps(intent()))
         files['groups'].write_text(json.dumps(groups()))
+        router_cfg = {'checkout': checkout}
+        if not routing_adapter.is_rust_capable_checkout(checkout):
+            router_cfg['grid_step_mm'] = 0.025
         config = {'schema': job.CONFIG_SCHEMA, 'budget_s': 300,
                   'inputs': {key: {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
                              for key, path in files.items()},
                   'search': self.search(2, 30000),
-                  'router': {'checkout': os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT'], 'grid_step_mm': 0.025}}
+                  'router': router_cfg}
         report = job.run_job(config, self.dir / 'job')
         checked = [entry for entry in report['shortlist'] if entry['status'] == 'checked']
         self.assertTrue(checked, report['shortlist'])

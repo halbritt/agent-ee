@@ -34,6 +34,7 @@ import os
 import posixpath
 import re
 import secrets
+import shlex
 import shutil
 import signal
 import subprocess
@@ -306,19 +307,22 @@ def resolve_native_bridge(checkout=None):
 
 
 def resolve_kicad_route_engine(checkout=None):
-    """Resolve kicad-route-engine: env -> checkout target -> sandbox mount -> sibling -> PATH."""
+    """Resolve kicad-route-engine: env -> checkout target -> sandbox mount -> sibling/PATH (implicit only)."""
     for var in ('AGENT_EE_KICAD_ROUTE_ENGINE', 'KICAD_ROUTE_ENGINE_BIN'):
         val = os.environ.get(var, '').strip()
         if val:
             return Path(val).expanduser()
+    explicit = checkout is not None and str(checkout).strip() != ''
     co = resolve_kicad_route_checkout(checkout)
     for profile in ('release', 'debug'):
         cand = Path(co) / 'rust-engine' / 'target' / profile / 'kicad-route-engine'
         if cand.is_file():
             return cand
     sandbox_engine = Path(SANDBOX['engine'])
-    if sandbox_engine.is_file():
+    if sandbox_engine.is_file() and (not explicit or Path(co) == Path(SANDBOX['checkout'])):
         return sandbox_engine
+    if explicit:
+        return None
     repo_root = _agent_ee_repo_root()
     main_root = _git_main_repo_root(repo_root)
     seen = set()
@@ -343,25 +347,133 @@ def is_re01_enforced():
     return _RE01_DEPTH.get() > 0
 
 
+_RE01_INLINE_MODULES = re.compile(r'\b(kicad_route|native_delay|grid_router)\b')
+_RE01_SHELL_NAMES = frozenset(('sh', 'bash', 'dash', 'zsh', 'ksh'))
+_RE01_RAW_BARE_KRT = re.compile(r'(?:^|[\s\'";|&=(])kicad-route(?=$|[\s\'";|&)])')
+_RE01_RAW_SRC_KRT = re.compile(r'(?:^|[\s/\'";|&])src/kicad_route(?=$|[\s/\'";|&])')
+
+
+def _decode_audit_arg(val):
+    if isinstance(val, (bytes, bytearray)):
+        return bytes(val).decode('utf-8', 'replace')
+    try:
+        raw = os.fspath(val)
+    except TypeError:
+        return str(val)
+    if isinstance(raw, (bytes, bytearray)):
+        return bytes(raw).decode('utf-8', 'replace')
+    return str(raw)
+
+
+def _safe_is_file(path_str):
+    try:
+        return Path(path_str).is_file()
+    except (OSError, ValueError):
+        return False
+
+
+def _symlink_chain_paths(token):
+    candidates = [token]
+    norm = token.replace('\\', '/')
+    if '/' not in norm and token and not token.startswith('-'):
+        try:
+            which = shutil.which(token)
+        except OSError:
+            which = None
+        if which:
+            candidates.append(which)
+    seen = []
+    seen_set = set()
+    for start in candidates:
+        cur = start
+        for _ in range(40):
+            n = cur.replace('\\', '/')
+            if n not in seen_set:
+                seen_set.add(n)
+                seen.append(n)
+            try:
+                p = Path(cur)
+                is_link = p.is_symlink()
+            except (OSError, ValueError):
+                break
+            if not is_link:
+                break
+            try:
+                target = os.readlink(cur)
+            except OSError:
+                break
+            cur = str((p.parent / target) if not os.path.isabs(target) else target)
+        try:
+            real = os.path.realpath(start).replace('\\', '/')
+        except (OSError, ValueError):
+            real = None
+        if real and real not in seen_set:
+            seen_set.add(real)
+            seen.append(real)
+    return seen
+
+
+def _re01_path_reason(norm, token, *, resolved=False):
+    if (norm == 'kicad-route' or norm.startswith('bin/kicad-route') or '/bin/kicad-route' in norm
+            or (resolved and norm.endswith('/kicad-route') and _safe_is_file(norm))):
+        return f'RE-01 forbids executing legacy Python router entrypoint: {token}'
+    if ('/src/kicad_route/' in norm or norm.startswith('src/kicad_route/')
+            or norm.endswith('/src/kicad_route')):
+        return f'RE-01 forbids executing legacy Python router module: {token}'
+    if ('/.venv-krt/' in norm or norm.startswith('.venv-krt/')
+            or norm.endswith('/.venv-krt')):
+        return f'RE-01 forbids executing legacy Python router venv: {token}'
+    return None
+
+
+def _re01_shell_command_reason(cmd_str):
+    norm_cmd = cmd_str.replace('\\', '/')
+    if ('bin/kicad-route' in norm_cmd or _RE01_RAW_SRC_KRT.search(norm_cmd)
+            or '.venv-krt' in norm_cmd or _RE01_INLINE_MODULES.search(cmd_str)
+            or _RE01_RAW_BARE_KRT.search(norm_cmd)):
+        return f'RE-01 forbids shell legacy Python router execution: {cmd_str}'
+    try:
+        lex = shlex.shlex(cmd_str, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        parsed = list(lex)
+    except ValueError:
+        parsed = cmd_str.split()
+    return _re01_forbidden_reason(parsed)
+
+
 def _re01_forbidden_reason(tokens):
     prev = ''
+    shell_seen = False
     for raw in tokens:
-        token = str(raw)
+        token = _decode_audit_arg(raw)
         norm = token.replace('\\', '/')
+        chain = _symlink_chain_paths(token)
+        for idx, cand in enumerate(chain):
+            reason = _re01_path_reason(cand, token, resolved=(idx > 0 or cand != norm))
+            if reason is not None:
+                return reason
+        if any(Path(c).name in _RE01_SHELL_NAMES for c in chain if c and not c.startswith('-')):
+            shell_seen = True
         if (norm == 'kicad-route-engine' or norm.endswith('/kicad-route-engine')
                 or norm.endswith('/tools/rust_engine_kicad.py') or norm == 'tools/rust_engine_kicad.py'):
             prev = token
             continue
-        if norm == 'kicad-route' or norm.startswith('bin/kicad-route') or '/bin/kicad-route' in norm:
-            return f'RE-01 forbids executing legacy Python router entrypoint: {token}'
-        if ('/src/kicad_route/' in norm or norm.startswith('src/kicad_route/')
-                or norm.endswith('/src/kicad_route')):
-            return f'RE-01 forbids executing legacy Python router module: {token}'
-        if ('/.venv-krt/' in norm or norm.startswith('.venv-krt/')
-                or norm.endswith('/.venv-krt')):
-            return f'RE-01 forbids executing legacy Python router venv: {token}'
-        if prev == '-c' and re.search(r'\b(kicad_route|native_delay|grid_router)\b', token):
-            return 'RE-01 forbids inline execution of legacy Python router modules'
+        if re.fullmatch(r'-[A-Za-z]*[cm]', prev):
+            if shell_seen and prev.endswith('c'):
+                reason = _re01_shell_command_reason(token)
+                if reason is not None:
+                    return reason
+            if _RE01_INLINE_MODULES.search(token):
+                return 'RE-01 forbids inline or module execution of legacy Python router modules'
+        attached = re.match(r'^-[A-Za-z]*?([cm])(.+)$', token, re.S)
+        if attached:
+            flag, body = attached.group(1), attached.group(2)
+            if shell_seen and flag == 'c':
+                reason = _re01_shell_command_reason(body)
+                if reason is not None:
+                    return reason
+            if _RE01_INLINE_MODULES.search(body):
+                return 'RE-01 forbids inline or module execution of legacy Python router modules'
         prev = token
     return None
 
@@ -379,20 +491,22 @@ def _re01_audit_hook(event, args):
         executable, cmd_args = args[0], args[1]
         tokens = []
         if executable is not None:
-            tokens.append(str(executable))
+            tokens.append(_decode_audit_arg(executable))
         if isinstance(cmd_args, (list, tuple)):
-            tokens.extend(str(a) for a in cmd_args)
+            tokens.extend(_decode_audit_arg(a) for a in cmd_args)
         elif cmd_args is not None:
-            tokens.append(str(cmd_args))
+            tokens.append(_decode_audit_arg(cmd_args))
         check_re01_command(tokens)
     elif event in ('os.exec', 'os.posix_spawn'):
-        tokens = [str(args[0])]
+        tokens = [_decode_audit_arg(args[0])]
         if len(args) > 1 and isinstance(args[1], (list, tuple)):
-            tokens.extend(str(a) for a in args[1])
+            tokens.extend(_decode_audit_arg(a) for a in args[1])
         check_re01_command(tokens)
     elif event == 'os.system':
-        if args and any(bad in str(args[0]) for bad in ('bin/kicad-route', 'src/kicad_route/', '.venv-krt')):
-            raise RE01OwnershipError(f'RE-01 forbids os.system legacy Python router execution: {args[0]}')
+        if args:
+            reason = _re01_shell_command_reason(_decode_audit_arg(args[0]))
+            if reason is not None:
+                raise RE01OwnershipError(reason)
 
 
 def install_re01_audit_hook():
@@ -2093,9 +2207,10 @@ def native_semantics(exit_code, op_result, saved_request_path, source_board, out
             return 'backend_failure', [f'route-native failed (exit 7) before writing {NATIVE_OPERATION_FILE}']
         return 'contradiction', [f'exit {exit_code} without {NATIVE_OPERATION_FILE}']
     if (not isinstance(op_result, dict) or op_result.get('schema') != NATIVE_OPERATION_SCHEMA
-            or op_result.get('version') != 1):
+            or not _is_int(op_result.get('version')) or op_result.get('version') != 1):
         return 'contradiction', ['unknown native operation schema or version']
-    if exit_code not in NATIVE_EXIT_STATUSES or op_result.get('exit_code') != exit_code:
+    if (exit_code not in NATIVE_EXIT_STATUSES or not _is_int(op_result.get('exit_code'))
+            or op_result.get('exit_code') != exit_code):
         return 'contradiction', [f'native operation exit_code {op_result.get("exit_code")!r} disagrees with process exit {exit_code}']
     status = op_result.get('status')
     if status not in NATIVE_EXIT_STATUSES[exit_code]:
@@ -2112,8 +2227,11 @@ def native_semantics(exit_code, op_result, saved_request_path, source_board, out
             return 'contradiction', ['saved native request digest differs from operation-result request_sha256']
     elif exit_code == 0:
         return 'contradiction', ['missing saved native request file']
-    elif isinstance(req_block.get('request_json'), str):
-        inline_sha = hashlib.sha256(req_block['request_json'].encode('utf-8')).hexdigest()
+    inline_req = req_block.get('request_json')
+    if inline_req is not None:
+        if not isinstance(inline_req, str):
+            return 'contradiction', ['inline native request_json must be a string']
+        inline_sha = hashlib.sha256(inline_req.encode('utf-8')).hexdigest()
         if not isinstance(req_sha, str) or not SHA256.match(req_sha) or inline_sha != req_sha:
             return 'contradiction', ['inline native request_json digest differs from operation-result request_sha256']
     if routing_block is not None:
@@ -3109,7 +3227,12 @@ def _run_native_attempt(report, request, layout, routing, candidate_root, inputs
     report['retained'] = {f'attempt/{k}': v for k, v in retained.items()}
     report['omitted_design_files'] = omitted
     load = []
-    op_result = load_json(op_result_path, load, NATIVE_OPERATION_FILE) if NATIVE_OPERATION_FILE in retained else None
+    op_result = None
+    if NATIVE_OPERATION_FILE in retained:
+        try:
+            op_result = strict_json_file(op_result_path, NATIVE_OPERATION_FILE)
+        except RequestError as exc:
+            load.append(str(exc))
     missing = []
     if NATIVE_OPERATION_FILE not in retained:
         missing.append(NATIVE_OPERATION_FILE)
@@ -3137,7 +3260,8 @@ def _run_native_attempt(report, request, layout, routing, candidate_root, inputs
         violations.append('the staged original changed during the attempt')
     if classification == 'complete' and missing:
         violations.extend(f'eligible attempt lacks {n}' for n in missing)
-    if violations and classification not in ('timeout', 'cancelled'):
+    adapter_killed = process['cancelled'] or process['timed_out']
+    if violations and not adapter_killed:
         classification, reasons = 'contradiction', reasons + violations
         report['rejected_candidate_sha256'] = None
     elif violations:
@@ -3196,6 +3320,7 @@ def attempt(request, layout, cancel=None):
     problems += constraint_binding_problems(candidate_root, request)
     rust_native = is_native_request(request, checkout)
     if rust_native:
+        report['backend'] = native_backend_of(None)
         problems += native_unsupported_problems(request)
     record, generation, qualification = preflight(checkout, state, request['backend'], mounted_at=state)
     # The version this attempt runs is fixed here and recorded; nothing compares it with a list.

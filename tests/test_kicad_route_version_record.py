@@ -507,7 +507,7 @@ class RouterCommandCacheTest(unittest.TestCase):
         configured = require_kicad_route()
         with tempfile.TemporaryDirectory(prefix='agent-ee-route-helper-cache-') as temp:
             root = Path(temp)
-            checkout = copy_tool(configured, root / 'router')
+            checkout = copy_tool(configured, root / 'router', include_engine=True)
             shutil.copytree(configured / '.venv-krt', checkout / '.venv-krt', symlinks=True)
             shutil.copyfile(configured / 'manifest.json', checkout / 'manifest.json')
             before = routing_adapter.preflight(checkout)
@@ -526,10 +526,10 @@ class RouterCommandCacheTest(unittest.TestCase):
             board = ROOT / 'fixtures/rc/control/rc_filter.kicad_pcb'
             request = root / 'request.json'
             request.write_text('{}')
-            commands = [('stackup', routing_adapter.preflight_stackup_argv(checkout, board, 'F.Cu')),
-                        ('delay', routing_adapter.preflight_delay_argv(checkout, board, ['GND']))]
+            commands = [('stackup', routing_adapter.preflight_stackup_argv(checkout, board, 'F.Cu', route_native=False)),
+                        ('delay', routing_adapter.preflight_delay_argv(checkout, board, ['GND'], route_native=False))]
             commands += [(kind, routing_adapter.post_route_checker_argv(checkout, kind, board, request,
-                                                                        root / f'{kind}.json'))
+                                                                        root / f'{kind}.json', route_native=False))
                          for kind in ('pair_impedance', 'length_groups', 'ac_matching')]
             with patch.dict('os.environ'):
                 os.environ.pop('PYTHONPYCACHEPREFIX', None)
@@ -558,7 +558,7 @@ class RouterCommandCacheTest(unittest.TestCase):
         self.assertIn('agent_ee.acquisition.placement', sys.modules)
         with tempfile.TemporaryDirectory(prefix='agent-ee-pose-cache-') as temp:
             root = Path(temp)
-            checkout = copy_tool(configured, root / 'router')
+            checkout = copy_tool(configured, root / 'router', include_engine=True)
             shutil.copytree(configured / '.venv-krt', checkout / '.venv-krt', symlinks=True)
             shutil.copyfile(configured / 'manifest.json', checkout / 'manifest.json')
             argv = pose_milp.child_argv(checkout)

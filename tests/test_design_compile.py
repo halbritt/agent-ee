@@ -1505,9 +1505,9 @@ class DiffPairIntentTests(unittest.TestCase):
         self.nets("LOAD_P", "RXP")
         self.design["parts"].update({r: dict(self.design["parts"]["R1"]) for r in ("R5", "R6")})
         self.design["nets"].update(RXN=["R5.1", "R6.1"], **{"V+": ["R5.2", "R6.2"]})
+        from agent_ee.kicad_route_attempt import resolve_kicad_route_checkout
         router = self.plan()["placement"]["router"]
-        import os
-        self.assertEqual(router, {"checkout": os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '/opt/kicad-route')})
+        self.assertEqual(router, {"checkout": str(resolve_kicad_route_checkout())})
         project = json.loads((self.root / "bundle/inputs/project/owned.kicad_pro").read_text())
         self.assertFalse([k for k in project["net_settings"]["classes"][0] if k.startswith("diff_pair")])
         options = routing_adapter.validate_router_options(router)

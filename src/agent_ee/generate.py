@@ -269,10 +269,12 @@ def tool_identity(name):
             _TOOLS[name] = record
             return record
         else:
-            record['path'] = shutil.which(name)
+            is_engine = name == 'kicad-route-engine' or Path(name).name == 'kicad-route-engine'
+            record['path'] = shutil.which(name) or (str(Path(name)) if is_engine and Path(name).is_file() else None)
             command = {'kicad-cli': [name, 'version'], 'bwrap': [name, '--version'],
-                       '/usr/bin/python3': [name, '--version'], 'kicad-route': None}.get(name, [name, '--version'])
-            if name == 'kicad-route' and record['path']:
+                       '/usr/bin/python3': [name, '--version'], 'kicad-route': None}.get(
+                           name, None if is_engine else [name, '--version'])
+            if (name == 'kicad-route' or is_engine) and record['path']:
                 real = Path(record['path']).resolve()
                 record['resolved'] = str(real)
                 root = next((p for p in real.parents if (p / '.git').exists()), None)
@@ -1077,7 +1079,7 @@ def stage_schematic(stage, state, options):
 
 def envelope(params):
     board = params['board']
-    x, y = 100.0, 100.0
+    x, y = 0.0, 0.0
     pitch = 2.54
     # board_build's envelope contract has exact keys, so the experimental marker is the schema name.
     return {'schema': ENVELOPE_SCHEMA,
@@ -1168,6 +1170,7 @@ def stage_placement(stage, state, options):
 # ------------------------------------------------------------------ stage 5: routing
 
 def stage_routing(stage, state, options):
+    from . import kicad_route_attempt as attempt
     from . import routing_adapter
 
     name = state['name']
@@ -1183,6 +1186,7 @@ def stage_routing(stage, state, options):
         stage.receipt['tools']['kicad-route-engine'] = {
             **tool_identity(str(engine)),
             'resolved': str(engine.resolve()),
+            'checkout': str(Path(checkout).resolve()),
         }
         (out / 'native').mkdir(parents=True, exist_ok=True)
         out_board = out / 'native' / f'{name}.kicad_pcb'
@@ -1197,7 +1201,10 @@ def stage_routing(stage, state, options):
         bound = routing_adapter.bind_board_attempt(out, argv, command['exit_code'])
         if op_result_path.is_file():
             stage.output(op_result_path, 'kicad-route operation-result.json')
-            op_result = json.loads(op_result_path.read_text())
+            try:
+                op_result = attempt.strict_json_file(op_result_path, op_result_path.name)
+            except attempt.RequestError as exc:
+                raise StageFailure(f'invalid {op_result_path.name}: {exc}') from exc
             stage.receipt['details'].update(
                 operation_result=stage.rel(op_result_path),
                 backend='route-native',
@@ -1214,6 +1221,18 @@ def stage_routing(stage, state, options):
         stage.receipt['details']['candidate_sha256'] = digest(design / f'{name}.kicad_pcb')
         state['design'] = design
         return
+    which = shutil.which('kicad-route')
+    if not Path(checkout).is_dir() and which is None:
+        raise StageFailure(f'kicad-route checkout missing: {checkout}')
+    if which is not None:
+        real_which = Path(which).resolve()
+        which_root = next((p for p in real_which.parents if (p / '.git').exists()), None)
+        if which_root is None and real_which.parent.name == 'bin':
+            which_root = real_which.parent.parent
+        if which_root is not None and routing_adapter.is_rust_capable_checkout(which_root):
+            raise StageFailure(f'RE-01 forbids falling back to legacy kicad-route for Rust-capable checkout: {which_root}')
+    if which is None:
+        raise StageFailure(f'kicad-route missing: checkout {checkout} is not Rust-capable and kicad-route is not on PATH')
     stage.tool('kicad-route')
     # 'builtin' is the canonical name since KICADROUTE-82; the deprecated 'krt' is never emitted (AGENTEE-450).
     command = stage.run(['kicad-route', '--out', str(out), 'run', '--backend', 'builtin', '--budget', '300'],

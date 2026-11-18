@@ -250,6 +250,55 @@ class RefusalReportTests(fixture.Fixture):
         self.assert_report(out, report, 2, 'forced engine refusal')
         self.assertEqual({name: (out / name).read_bytes() for name in protected}, protected)
 
+    def test_rust_checkout_refuses_grid_step_mm_as_job_refusal(self):
+        from agent_ee import routing_adapter
+        checkout = os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT']
+        if not routing_adapter.is_rust_capable_checkout(checkout):
+            self.skipTest('requires Rust-capable kicad-route checkout')
+        config = self.config()
+        config['router']['grid_step_mm'] = 0.025
+        report = job.run_job(config, self.dir / 'job-grid-refusal')
+        self.assertEqual(report['status'], 'refused')
+        self.assertIn('grid_step_mm', report['reason'])
+
+    def test_bind_native_board_attempt_classifies_exit2_exit6_and_exit8(self):
+        from agent_ee import kicad_route_attempt as attempt, routing_adapter
+        src = self.dir / 'src.kicad_pcb'
+        src.write_text('(kicad_pcb)\n')
+        src_sha = job.digest(src)
+        out_board = self.dir / 'out.kicad_pcb'
+        req_file = self.dir / 'operation-request.json'
+        req_file.write_text('{"schema":"kicad-route/native-request/1"}\n')
+        req_sha = job.digest(req_file)
+        for label, exit_code, status, exp_status, exp_env in (
+            ('exit2_invalid', 2, 'invalid', 'router_refused', False),
+            ('exit2_unsupported', 2, 'unsupported', 'router_refused', False),
+            ('exit8_usage', 8, 'usage_refused', 'router_refused', True),
+            ('exit6_timeout', 6, 'operation_timeout', 'no_candidate', False),
+        ):
+            with self.subTest(label=label):
+                op_path = self.dir / f'{label}-op-result.json'
+                op_path.write_text(json.dumps({
+                    'schema': attempt.NATIVE_OPERATION_SCHEMA,
+                    'version': 1,
+                    'exit_code': exit_code,
+                    'status': status,
+                    'reason': f'{status} detail',
+                    'request': {'request_sha256': req_sha},
+                    'source': {'source_sha256': src_sha, 'sidecar_check': {'passed': True}},
+                    'publication': {'published': False, 'ambiguous_termination': False, 'output_sha256': None},
+                }))
+                argv = ['kicad-route-engine', 'route-native', str(src), str(out_board),
+                        '--operation-result', str(op_path), '--save-request', str(req_file)]
+                bound = routing_adapter.bind_board_attempt(self.dir, argv, exit_code)
+                self.assertEqual(bound['status'], exp_status, bound)
+                if exp_env:
+                    self.assertEqual((bound.get('failure_kind'), bound.get('failing_stage')),
+                                     ('environment', 'routing'))
+                else:
+                    self.assertNotIn('failure_kind', bound)
+                    self.assertNotIn('failing_stage', bound)
+
 
 if __name__ == '__main__':
     unittest.main()

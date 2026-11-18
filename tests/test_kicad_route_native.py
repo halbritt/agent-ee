@@ -506,9 +506,10 @@ class NativeKicadRouteTest(unittest.TestCase):
         from tests.test_kicad_route_generations import copy_tool
         broken = copy_tool(self.checkout, self.root / 'broken-route')
         if routing_adapter.is_rust_capable_checkout(self.checkout):
-            missing_engine = self.root / 'no-such-engine'
-            with unittest.mock.patch.dict(os.environ, {'AGENT_EE_KICAD_ROUTE_ENGINE': str(missing_engine),
-                                                       'AGENT_EE_KICAD_ROUTE_CHECKOUT': str(broken)}):
+            with unittest.mock.patch.dict(os.environ, {'AGENT_EE_KICAD_ROUTE_CHECKOUT': str(broken)}):
+                os.environ.pop('AGENT_EE_KICAD_ROUTE_ENGINE', None)
+                os.environ.pop('KICAD_ROUTE_ENGINE_BIN', None)
+                self.assertIsNone(attempt.resolve_kicad_route_engine(broken))
                 problems = routing_adapter.preflight(broken)['problems']
                 self.assertIn('missing executable kicad-route-engine binary', problems)
                 with self.assertRaisesRegex(AssertionError, 'missing executable kicad-route-engine binary'):
@@ -517,7 +518,7 @@ class NativeKicadRouteTest(unittest.TestCase):
             sep_state = self.root / 'broken-state'
             (sep_state / '.venv-krt').mkdir(parents=True)
             (sep_state / 'manifest.json').write_text('{invalid')
-            sep_problems = routing_adapter.preflight(broken, sep_state)['problems']
+            sep_problems = routing_adapter.preflight(self.checkout, sep_state)['problems']
             self.assertTrue(any('installed engine verification failed' in p for p in sep_problems), sep_problems)
             return
         subprocess.run(['/usr/bin/python3', '-m', 'venv', '--without-pip', str(broken / '.venv-krt')], check=True)
@@ -695,6 +696,11 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             co = Path(tmp) / 'kicad-route'
             (co / 'tools').mkdir(parents=True)
+            (co / '.venv-krt').mkdir()
+            (co / 'bin').mkdir()
+            krt_bin = co / 'bin/kicad-route'
+            krt_bin.write_text('#!/bin/sh\nexit 0\n')
+            krt_bin.chmod(0o755)
             bridge = co / 'tools/rust_engine_kicad.py'
             bridge.write_text('import sys; sys.exit(0)\n')
             self.assertIsNone(routing_adapter.router_recipe(co))
@@ -703,16 +709,196 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                 lambda: routing_adapter.preflight_stackup_argv(co, '/b.kicad_pcb', 'F.Cu'),
                 lambda: routing_adapter.preflight_delay_argv(co, '/b.kicad_pcb', ['N']),
                 lambda: routing_adapter.post_route_checker_argv(co, 'pair_impedance', '/b', '/req', '/res'),
+                lambda: routing_adapter.board_recipe_argv(['kicad-route-engine', 'route-native'], '/out', 10, 'auto'),
+                lambda: routing_adapter.board_retry_argv(['kicad-route-engine', 'route-native'], '/retry', 10, {'kind': 'thermal_corridors', 'pads': []}, [], '/b.kicad_pcb'),
             ):
                 with self.assertRaises(routing_adapter.RE01OwnershipError):
                     fn()
+            fake_engine = Path(tmp) / 'kicad-route-engine'
+            fake_engine.symlink_to(krt_bin)
             with routing_adapter.re01_enforced():
+                for argv in (
+                    [sys.executable, str(co / 'bin/kicad-route'), '--help'],
+                    [sys.executable, str(co / 'src/kicad_route/cli.py')],
+                    [sys.executable, '-m', 'kicad_route.cli'],
+                    [sys.executable, '-mkicad_route.cli'],
+                    [sys.executable, '-Bc', 'import kicad_route'],
+                    [sys.executable, '-Ic', 'import kicad_route'],
+                    [str(fake_engine), '--help'],
+                    ['/bin/sh', '-c', f'PATH={co / "bin"}:$PATH kicad-route'],
+                ):
+                    with self.subTest(argv=argv):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            subprocess.run(argv, timeout=5)
+                for cmd in ('bin/kicad-route', b'kicad-route'):
+                    with self.assertRaises(routing_adapter.RE01OwnershipError):
+                        os.system(cmd)
                 with self.assertRaises(routing_adapter.RE01OwnershipError):
-                    subprocess.run([sys.executable, str(co / 'bin/kicad-route'), '--help'], timeout=5)
-                with self.assertRaises(routing_adapter.RE01OwnershipError):
-                    subprocess.run([sys.executable, str(co / 'src/kicad_route/cli.py')], timeout=5)
+                    os.posix_spawn('/bin/sh', [b'/bin/sh', b'-c', b'kicad-route'], os.environ)
                 done = subprocess.run([sys.executable, str(bridge)], capture_output=True, timeout=5)
                 self.assertEqual(done.returncode, 0)
+
+
+class NativeAdapterHardeningTests(unittest.TestCase):
+    def test_not_run_attempt_sets_native_backend_and_verifies(self):
+        checkout = require_kicad_route()
+        if not routing_adapter.is_rust_capable_checkout(checkout):
+            self.skipTest('requires Rust-capable kicad-route checkout')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cand = root / 'candidate'
+            work = root / 'work'
+            (cand / 'project').mkdir(parents=True)
+            work.mkdir()
+            (cand / 'project/b.kicad_pcb').write_text('(kicad_pcb)\n')
+            # Omit schematic so attempt() stops at not_run before launching the router.
+            request = attempt.parse_request([
+                '--project', 'project', '--board', 'b.kicad_pcb', '--schematic', 'b.kicad_sch',
+                '--name', 'b', '--label', 'l', '--budget', '10', '--timeout', '30', '--backend', 'builtin',
+                '--state', 'checkout',
+            ])
+            layout = {
+                'work': str(work), 'candidate': str(cand), 'checkout': str(checkout),
+                'state': str(checkout), 'staged': str(work / 'staged'), 'probe': [],
+            }
+            report = attempt.attempt(request, layout)
+            self.assertEqual(report['semantics']['classification'], 'not_run')
+            self.assertEqual(report['backend'], attempt.native_backend_of(None))
+            summary = routing_adapter.verify(work, attempt.files_of(attempt.tree(cand)), layout=layout)
+            self.assertEqual(summary['classification'], 'not_run')
+
+    def test_validate_campaign_step_host_false_with_external_engine_mount(self):
+        checkout = require_kicad_route()
+        if not routing_adapter.is_rust_capable_checkout(checkout):
+            self.skipTest('requires Rust-capable kicad-route checkout')
+        with tempfile.TemporaryDirectory() as tmp:
+            ext_engine = Path(tmp) / 'kicad-route-engine'
+            ext_engine.write_text('#!/bin/sh\nexit 0\n')
+            ext_engine.chmod(0o755)
+            with unittest.mock.patch.dict(os.environ, {'AGENT_EE_KICAD_ROUTE_ENGINE': str(ext_engine)}):
+                spec = routing_adapter.step(
+                    project='project', board='b.kicad_pcb', schematic='b.kicad_sch',
+                    name='b', label='l', checkout=checkout, budget=10,
+                )
+            self.assertTrue(any(m['at'] == attempt.SANDBOX['engine'] for m in spec['mounts']))
+            # With host=False and an absent checkout, spec['backend_report'] still validates the engine mount.
+            for m in spec['mounts']:
+                if m['at'] == attempt.SANDBOX['checkout']:
+                    m['source'] = str(Path(tmp) / 'absent-checkout-on-replay-host')
+            validated = routing_adapter.validate_campaign_step(spec, host=False)
+            self.assertEqual(validated['backend_report'], spec['backend_report'])
+
+    def test_native_semantics_rejects_bool_float_inline_mismatch_and_strict_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            src = root / 'src.kicad_pcb'
+            src.write_text('(kicad_pcb)\n')
+            req_file = root / 'operation-request.json'
+            req_text = '{"schema":"kicad-route/native-request/1"}\n'
+            req_file.write_text(req_text)
+            req_sha = attempt.digest(req_file)
+            base_op = {
+                'schema': attempt.NATIVE_OPERATION_SCHEMA,
+                'version': 1,
+                'exit_code': 2,
+                'status': 'invalid',
+                'request': {'request_sha256': req_sha, 'request_json': req_text},
+                'source': {'source_sha256': attempt.digest(src), 'sidecar_check': {'passed': True}},
+                'publication': {'published': False, 'ambiguous_termination': False, 'output_sha256': None},
+            }
+            self.assertEqual(attempt.native_semantics(2, base_op, req_file, src)[0], 'refused')
+            for mutate in (
+                lambda o: o.update(version=True),
+                lambda o: o.update(version=1.0),
+                lambda o: o.update(exit_code=2.0),
+                lambda o: o['request'].update(request_json='{"tampered":true}'),
+            ):
+                bad = json.loads(json.dumps(base_op))
+                mutate(bad)
+                self.assertEqual(attempt.native_semantics(2, bad, req_file, src)[0], 'contradiction')
+            op_path = root / 'dup-op.json'
+            op_path.write_text('{"schema":"kicad-route/native-operation/1","version":1,"version":1}')
+            bound = routing_adapter.bind_board_attempt(
+                root, ['kicad-route-engine', 'route-native', str(src), str(root / 'out.kicad_pcb'),
+                       '--operation-result', str(op_path)], 2)
+            self.assertEqual(bound['status'], 'refused_result')
+
+    def test_verify_and_run_native_attempt_enforce_checks_on_self_reported_exit6(self):
+        checkout = require_kicad_route()
+        if not routing_adapter.is_rust_capable_checkout(checkout):
+            self.skipTest('requires Rust-capable kicad-route checkout')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cand = root / 'candidate'
+            work = root / 'work'
+            (cand / 'project').mkdir(parents=True)
+            work.mkdir()
+            src = cand / 'project/b.kicad_pcb'
+            src.write_text('(kicad_pcb)\n')
+            (cand / 'project/b.kicad_sch').write_text('(kicad_sch)\n')
+            request = attempt.parse_request([
+                '--project', 'project', '--board', 'b.kicad_pcb', '--schematic', 'b.kicad_sch',
+                '--name', 'b', '--label', 'l', '--budget', '10', '--timeout', '30',
+                '--backend', 'builtin', '--state', 'checkout',
+            ])
+            layout = {
+                'work': str(work), 'candidate': str(cand), 'checkout': str(checkout),
+                'state': str(checkout), 'staged': str(work / 'staged'), 'probe': [],
+            }
+            rec, generation, _ = attempt.preflight(checkout, checkout, 'builtin', mounted_at=checkout)
+            routing = work / 'routing'
+            attempt_dir = routing / 'attempt'
+            attempt_dir.mkdir(parents=True)
+            req_path = attempt_dir / attempt.NATIVE_REQUEST_FILE
+            req_path.write_text('{"schema":"kicad-route/native-request/1"}\n')
+            op_path = attempt_dir / attempt.NATIVE_OPERATION_FILE
+            # Tampered op_result claims exit_code 0 while process exit_code was 6 (self-reported timeout).
+            op_path.write_text(json.dumps({
+                'schema': attempt.NATIVE_OPERATION_SCHEMA, 'version': 1, 'exit_code': 0,
+                'status': 'operation_timeout',
+                'request': {'request_sha256': attempt.digest(req_path)},
+                'source': {'source_sha256': attempt.digest(src), 'sidecar_check': {'passed': True}},
+                'publication': {'published': False, 'ambiguous_termination': False, 'output_sha256': None},
+                'binary': {'name': 'kicad-route-engine'},
+            }))
+            inputs_tree = attempt.tree(cand)
+            staged = attempt.stage_original(cand, inputs_tree, attempt.staged_root(layout))
+            engine_bin = attempt.resolve_kicad_route_engine(checkout)
+            argv = attempt.native_tool_argv(request, {**layout, 'engine': str(engine_bin)})
+            report = {
+                'schema': attempt.REPORT_SCHEMA,
+                'adapter': attempt.adapter_claim(rec['commit']),
+                'request': request,
+                'reproducibility': attempt.REPRODUCIBILITY['builtin'],
+                'tool_version': dict(attempt.TOOL_VERSION),
+                'backend': attempt.native_backend_of({'binary': {'name': 'kicad-route-engine'}}),
+                'tool': {**rec,
+                         'kicad_route': attempt._executable(checkout / 'bin/kicad-route'),
+                         'kicad_route_engine': attempt._executable(engine_bin),
+                         'python': attempt._executable(attempt.PYTHON),
+                         'kicad_cli': attempt._executable('/usr/bin/kicad-cli'),
+                         'kicad_share_templates': {t: attempt._executable(f'/usr/share/kicad/template/{t}')['sha256']
+                                                   for t in ('sym-lib-table', 'fp-lib-table')}},
+                'inputs': {'files': attempt.files_of(inputs_tree),
+                           'sha256': attempt.canonical_identity(inputs_tree),
+                           'staged': attempt.staged_record(request, layout, staged),
+                           'staged_after': {'status': 'observed', 'files': attempt.files_of(inputs_tree),
+                                            'sha256': attempt.canonical_identity(inputs_tree)}},
+                'process': {'argv': argv, 'env': attempt.tool_env(layout), 'cwd': str(routing),
+                            'timeout_s': 30, 'exit_code': 6, 'timed_out': False, 'cancelled': False},
+                'discovery': {'attempt_dir': None, 'problems': []}, 'missing_artifacts': [],
+                'retained': {f'attempt/{attempt.NATIVE_OPERATION_FILE}': attempt.digest(op_path),
+                             f'attempt/{attempt.NATIVE_REQUEST_FILE}': attempt.digest(req_path)},
+                'omitted_design_files': {}, 'candidate': None, 'candidate_editor_state': {},
+                'candidate_files': {}, 'rejected_candidate_sha256': None,
+                'identity_before': attempt._identities(request, layout, generation),
+                'identity_after': attempt._identities(request, layout, generation),
+                'state_write_probe': [],
+                'semantics': {'classification': 'timeout', 'reasons': ['forged'], 'exit_code': 6},
+            }
+            attempt._finish(report, routing)
+            with self.assertRaisesRegex(ValueError, 'classify as contradiction'):
+                routing_adapter.verify(work, attempt.files_of(inputs_tree), layout=layout)
 
 
 if __name__ == '__main__':
