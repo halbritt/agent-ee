@@ -1484,6 +1484,280 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
             finally:
                 os.chdir(old_cwd)
 
+    def test_re01_r12_strict_allowlist_vfs_git_zip_venv_and_startup_hardening(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / 'marker.txt'
+            co = root / 'kicad-route'
+            (co / 'bin').mkdir(parents=True)
+            (co / 'tools').mkdir(parents=True)
+            krt_bin = co / 'bin/kicad-route'
+            krt_bin.write_text(f'#!/bin/sh\necho BIN_KRT >> "{marker}"\n')
+            krt_bin.chmod(0o755)
+            bridge = co / 'tools/rust_engine_kicad.py'
+            bridge.write_text('#!/usr/bin/env python3\nimport sys; sys.exit(0)\n')
+            bridge.chmod(0o755)
+
+            dash_dir = root / 'dash_bin'
+            dash_dir.mkdir()
+            (dash_dir / '-mytool').symlink_to(krt_bin)
+            evil_sbin = root / 'evil_sbin'
+            evil_sbin.mkdir()
+            (evil_sbin / 'mytool').symlink_to(krt_bin)
+            host_link_base = root / 'host_link_base'
+            (host_link_base / 'real/sub').mkdir(parents=True)
+            (host_link_base / 'link').symlink_to('real')
+            evil_sub = root / 'evil_sub'
+            evil_sub.mkdir()
+            (evil_sub / 'mytool').symlink_to(krt_bin)
+            fake_true = root / 'true'
+            shutil.copy2('/bin/sh', fake_true)
+            fake_true.chmod(0o755)
+
+            site_pkg = root / 'site_pkg'
+            (site_pkg / 'sitecustomize').mkdir(parents=True)
+            (site_pkg / 'sitecustomize/__init__.py').write_text(
+                f'open({str(marker)!r}, "a").write("SITE_PKG\\n")\n')
+            host_site_link = root / 'host_site_link'
+            host_site_link.symlink_to('/var/tmp/empty')
+
+            sub_zip = root / 'sub.zip'
+            with zipfile.ZipFile(sub_zip, 'w') as zf:
+                zf.writestr('sub/sitecustomize.py', f'open({str(marker)!r}, "a").write("ZIP_SUB\\n")\n')
+            dat_zip = root / 'archive.dat'
+            with zipfile.ZipFile(dat_zip, 'w') as zf:
+                zf.writestr('a/b/encodings/__init__.py', f'open({str(marker)!r}, "a").write("DAT_ENC\\n")\n')
+            dat_link = root / 'link.dat'
+            dat_link.symlink_to(dat_zip)
+
+            startup_dir = root / 'startup_hooks'
+            for mod in ('types.py', 'apport_python_hook.py', '_distutils_hack.py', 'linecache.py'):
+                startup_dir.mkdir(exist_ok=True)
+                (startup_dir / mod).write_text(f'open({str(marker)!r}, "a").write("MOD\\n")\n')
+            enc_dir = root / 'enc_override'
+            (enc_dir / 'encodings').mkdir(parents=True)
+            (enc_dir / 'encodings/__init__.py').write_text(f'open({str(marker)!r}, "a").write("ENC\\n")\n')
+
+            sp0_dir = root / 'sp0_dir'
+            (sp0_dir / 'kicad_route').mkdir(parents=True)
+            (sp0_dir / 'kicad_route/__init__.py').write_text(f'open({str(marker)!r}, "a").write("SP0\\n")\n')
+            (sp0_dir / 'json.py').write_text(f'open({str(marker)!r}, "a").write("SP0_JSON\\n")\n')
+            sp0_script = sp0_dir / 'innocent.py'
+            sp0_script.write_text('import sys; sys.exit(0)\n')
+
+            myvenv = root / 'myvenv'
+            (myvenv / 'bin').mkdir(parents=True)
+            ver = f'{sys.version_info.major}.{sys.version_info.minor}'
+            (myvenv / f'lib/python{ver}/site-packages').mkdir(parents=True)
+            (myvenv / 'pyvenv.cfg').write_text('home = /usr/bin\ninclude-system-site-packages = false\n')
+            (myvenv / 'bin/python3').symlink_to(sys.executable)
+            (myvenv / f'lib/python{ver}/site-packages/evil.pth').write_text(
+                f'import builtins; open({str(marker)!r}, "a").write("PTH\\n")\n')
+            ghost_venv = root / 'ghost_venv'
+            (ghost_venv / 'bin').mkdir(parents=True)
+            (ghost_venv / f'lib/python{ver}/site-packages').mkdir(parents=True)
+            (ghost_venv / 'pyvenv.cfg').write_text('home = /usr/bin\ninclude-system-site-packages = false\n')
+            (ghost_venv / f'lib/python{ver}/site-packages/evil.pth').write_text(
+                f'import builtins; open({str(marker)!r}, "a").write("GHOST_PTH\\n")\n')
+            fake_home = root / 'fake_home'
+            (fake_home / f'.local/lib/python{ver}/site-packages').mkdir(parents=True)
+            (fake_home / f'.local/lib/python{ver}/site-packages/evil.pth').write_text(
+                f'import builtins; open({str(marker)!r}, "a").write("USER_PTH\\n")\n')
+
+            git_repo = root / 'git_repo'
+            git_repo.mkdir()
+            subprocess.run(['git', 'init', '-q', str(git_repo)], check=True)
+            (git_repo / 'f.txt').write_text('hi\n')
+            subprocess.run(['git', '-C', str(git_repo), 'add', 'f.txt'], check=True)
+            subprocess.run(['git', '-C', str(git_repo), '-c', 'user.name=t', '-c', 'user.email=t@e',
+                            'commit', '-qm', 'init'], check=True)
+            (git_repo / '.git/config').write_text(
+                (git_repo / '.git/config').read_text() + f'[core]\n\tfsmonitor = {krt_bin}\n')
+            git_exec_dir = root / 'git_exec'
+            git_exec_dir.mkdir()
+            (git_exec_dir / 'git-mytool').symlink_to(krt_bin)
+            tar_file = root / 'sample.tar'
+            tar_file.write_bytes(b'\x00' * 1024)
+            with routing_adapter.re01_enforced():
+                for label, fn in (
+                    ('ld_linux_sh', lambda: subprocess.run(
+                        ['/lib64/ld-linux-x86-64.so.2', '/bin/sh', '-c', str(krt_bin)], timeout=5)),
+                    ('ld_linux_py_c', lambda: subprocess.run(
+                        ['/lib64/ld-linux-x86-64.so.2', sys.executable, '-c', 'import os'], timeout=5)),
+                    ('ld_linux_bwrap', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--', '/lib64/ld-linux-x86-64.so.2',
+                         '/bin/sh', '-c', str(krt_bin)], timeout=5)),
+                    ('ld_linux_alias', lambda: routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', '/lib64/ld-linux-x86-64.so.2', '/opt/true', '--', '/opt/true'])),
+                    ('qemu_x86_64', lambda: routing_adapter.check_re01_command(['qemu-x86_64', '/bin/true'])),
+                    ('tar_to_cmd', lambda: subprocess.run(
+                        ['tar', '-xf', str(tar_file), f'--to-command=/bin/sh -c "{krt_bin}"'], timeout=5)),
+                    ('rsync_cmd', lambda: routing_adapter.check_re01_command(['rsync', '--version'])),
+                    ('fake_true_copy', lambda: subprocess.run([str(fake_true), '-c', str(krt_bin)], timeout=5)),
+                    ('unallowlisted_cat', lambda: routing_adapter.check_re01_command(['/usr/bin/cat', '/dev/null'])),
+                    ('unallowlisted_s9', lambda: routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', '/bin/true', '/opt/s9', '--', '/opt/s9'])),
+                    ('engine_bad_subcmd', lambda: routing_adapter.check_re01_command(
+                        ['kicad-route-engine', 'bogus'])),
+                    ('popen_exec_mismatch', lambda: subprocess.Popen(
+                        ['/usr/bin/true', str(bridge)], executable=sys.executable)),
+                    ('dash_cmd_path', lambda: subprocess.run(
+                        ['-mytool'], env={'PATH': f'{dash_dir}:/usr/bin:/bin'}, timeout=5)),
+                    ('dash_cmd_bwrap', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root), '--tmpfs', '/opt',
+                         '--ro-bind', str(dash_dir), '/opt/d', '--setenv', 'PATH', '/opt/d:/usr/bin:/bin',
+                         '--', '-mytool'], timeout=5)),
+                    ('bwrap_host_sym_sbin', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--ro-bind', str(evil_sbin), '/sbin', '--', '/usr/sbin/mytool'], timeout=5)),
+                    ('bwrap_tmpfs_sbin_sym', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--tmpfs', '/sbin', '--ro-bind', str(evil_sbin), '/usr/sbin',
+                         '--', '/sbin/mytool'], timeout=5)),
+                    ('bwrap_host_link_sub', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--tmpfs', '/opt', '--ro-bind', str(host_link_base), '/opt/b',
+                         '--ro-bind', str(evil_sub), '/opt/b/link/sub',
+                         '--', '/opt/b/real/sub/mytool'], timeout=5)),
+                    ('bwrap_sym_target_mount', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--tmpfs', '/opt', '--dir', '/opt/real', '--symlink', 'real', '/opt/l',
+                         '--ro-bind', str(evil_sub), '/opt/l', '--', '/opt/real/mytool'], timeout=5)),
+                    ('bwrap_tmpfs_sym_pypath', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--tmpfs', '/var/tmp/empty',
+                         '--ro-bind', str(site_pkg / 'sitecustomize'), '/var/tmp/empty/sitecustomize',
+                         '--symlink', '/var/tmp/empty', '/var/tmp/link',
+                         '--setenv', 'PYTHONPATH', '/var/tmp/link',
+                         '--', sys.executable, str(bridge)], timeout=5)),
+                    ('bwrap_tmpfs_dotdot_pypath', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--tmpfs', '/var/tmp/empty',
+                         '--ro-bind', str(site_pkg / 'sitecustomize'), '/var/tmp/empty/sitecustomize',
+                         '--symlink', '/var/tmp/empty', '/var/tmp/link',
+                         '--setenv', 'PYTHONPATH', '/var/tmp/link/../empty',
+                         '--', sys.executable, str(bridge)], timeout=5)),
+                    ('bwrap_host_sym_tmpfs_pypath', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--tmpfs', '/var/tmp/empty',
+                         '--ro-bind', str(site_pkg / 'sitecustomize'), '/var/tmp/empty/sitecustomize',
+                         '--setenv', 'PYTHONPATH', str(host_site_link),
+                         '--', sys.executable, str(bridge)], timeout=5)),
+                    ('bwrap_implicit_dir_sym_pypath', lambda: routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', str(site_pkg / 'sitecustomize'), '/sbin/sitecustomize',
+                         '--symlink', '/sbin', '/opt/link',
+                         '--setenv', 'PYTHONPATH', '/opt/link',
+                         '--', sys.executable, str(bridge)])),
+                    ('git_exec_path', lambda: subprocess.run(
+                        ['git', f'--exec-path={git_exec_dir}', 'mytool'], timeout=5)),
+                    ('git_env_exec_path', lambda: subprocess.run(
+                        ['git', 'mytool'], env={'PATH': '/usr/bin:/bin', 'GIT_EXEC_PATH': str(git_exec_dir)},
+                        timeout=5)),
+                    ('git_c_alias', lambda: subprocess.run(
+                        ['git', '-c', f'alias.pwn=!{krt_bin}', 'pwn'], timeout=5)),
+                    ('git_status_no_fsmonitor_false', lambda: subprocess.run(
+                        ['git', '-C', str(git_repo), 'status', '--porcelain'], timeout=5)),
+                    ('git_config_global_evil', lambda: routing_adapter.check_re01_command(
+                        ['git', '-C', str(git_repo), 'rev-parse', 'HEAD'],
+                        env={'PATH': '/usr/bin:/bin', 'GIT_CONFIG_GLOBAL': str(root / 'evil.cfg')})),
+                    ('git_editor_evil', lambda: routing_adapter.check_re01_command(
+                        ['git', '-C', str(git_repo), 'rev-parse', 'HEAD'],
+                        env={'PATH': '/usr/bin:/bin', 'GIT_EDITOR': '/bin/sh'})),
+                    ('zip_subdir_direct', lambda: subprocess.run(
+                        [sys.executable, str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': f'{sub_zip}/sub'}, timeout=5)),
+                    ('zip_dat_subdir', lambda: subprocess.run(
+                        [sys.executable, str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': f'{dat_zip}/a/b/'}, timeout=5)),
+                    ('zip_sym_subdir', lambda: subprocess.run(
+                        [sys.executable, str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': f'{dat_link}/a/b'}, timeout=5)),
+                    ('zip_dotdot_subdir', lambda: subprocess.run(
+                        [sys.executable, str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': f'{sub_zip}/x/../sub'}, timeout=5)),
+                    ('zip_subdir_bwrap', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--tmpfs', '/opt', '--ro-bind', str(sub_zip), '/opt/z.zip',
+                         '--setenv', 'PYTHONPATH', '/opt/z.zip/sub',
+                         '--', sys.executable, str(bridge)], timeout=5)),
+                    ('pypath_encodings', lambda: subprocess.run(
+                        [sys.executable, str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(enc_dir)}, timeout=5)),
+                    ('pypath_startup_hooks', lambda: subprocess.run(
+                        [sys.executable, str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(startup_dir)}, timeout=5)),
+                    ('env_pyvenv_launcher_BI', lambda: subprocess.run(
+                        [sys.executable, '-BI', str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', '__PYVENV_LAUNCHER__': str(myvenv / 'bin/python3')},
+                        timeout=5)),
+                    ('env_pythonexecutable_BI', lambda: subprocess.run(
+                        [sys.executable, '-BI', str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONEXECUTABLE': str(myvenv / 'bin/python3')},
+                        timeout=5)),
+                    ('env_pythonwarnings', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONWARNINGS': 'default::evil.W'})),
+                    ('env_frozen_off', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHON_FROZEN_MODULES': 'off'})),
+                    ('custom_venv_direct', lambda: subprocess.run(
+                        [str(myvenv / 'bin/python3'), '-BI', str(bridge)], timeout=5)),
+                    ('custom_venv_spoof_argv0', lambda: subprocess.Popen(
+                        [str(myvenv / 'bin/python3'), str(bridge)], executable=sys.executable)),
+                    ('custom_venv_nonexistent_argv0', lambda: subprocess.Popen(
+                        [str(ghost_venv / 'bin/python3'), str(bridge)], executable=sys.executable)),
+                    ('custom_venv_bwrap_cfg', lambda: routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', '/', '/',
+                         '--ro-bind', str(myvenv / 'pyvenv.cfg'), '/usr/pyvenv.cfg',
+                         '--ro-bind', str(bridge), '/opt/bridge.py',
+                         '--', sys.executable, '-BI', '/opt/bridge.py'])),
+                    ('custom_venv_bwrap_argv0', lambda: routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--argv0', str(myvenv / 'bin/python3'),
+                         '--', sys.executable, '-BI', str(bridge)])),
+                    ('user_site_pth', lambda: subprocess.run(
+                        [sys.executable, str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'HOME': str(fake_home)}, timeout=5)),
+                    ('syspath0_no_I', lambda: subprocess.run(
+                        [sys.executable, '-B', str(sp0_script)], timeout=5)),
+                ):
+                    with self.subTest(case=label):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            fn()
+                self.assertFalse(marker.exists())
+                for pos_argv, pos_env in (
+                    ([sys.executable, str(bridge)], None),
+                    ([sys.executable, '-BI', str(bridge)], None),
+                    ([sys.executable, '-BI', str(sp0_script)], None),
+                    ([sys.executable, '-BP', str(sp0_script)], None),
+                    ([sys.executable, str(bridge)], {'PATH': '/usr/bin:/bin', 'HOME': str(fake_home), 'PYTHONNOUSERSITE': '1'}),
+                    ([sys.executable, '-s', str(bridge)], {'PATH': '/usr/bin:/bin', 'HOME': str(fake_home)}),
+                    (['git', '-C', str(git_repo), '-c', 'core.fsmonitor=false', 'rev-parse', 'HEAD'], None),
+                    (['git', '-C', str(git_repo), '-c', 'safe.directory=*', '-c', 'core.fsmonitor=false',
+                      '-c', 'core.hooksPath=/dev/null', '-c', 'core.untrackedCache=false',
+                      'status', '--porcelain=v1', '-z'], None),
+                    (['bwrap', '--version'], None),
+                    (['/bin/true'], None),
+                    (['/usr/bin/echo', 'ok'], None),
+                    (['bwrap', '--ro-bind', '/', '/', '--', '/bin/echo', 'bwrap-ok'], None),
+                    (['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                      '--ro-bind', str(bridge), '/opt/bridge.py',
+                      '--', sys.executable, '-BI', '/opt/bridge.py'],
+                     {'PATH': '/usr/bin:/bin', 'LD_LIBRARY_PATH': '/usr/lib'}),
+                ):
+                    with self.subTest(pos_argv=pos_argv):
+                        done = subprocess.run(pos_argv, env=pos_env, capture_output=True, timeout=5)
+                        self.assertEqual(done.returncode, 0, done.stderr)
+                routing_adapter.check_re01_command([
+                    'bwrap', '--ro-bind', str(co), '/opt/kicad-route', '--',
+                    '/usr/bin/kicad-route-engine', 'route-native', '/work/in.kicad_pcb', '/work/out.kicad_pcb',
+                ])
+                routing_adapter.check_re01_command(
+                    [sys.executable, str(bridge)],
+                    cwd=str(ROOT),
+                    env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': 'src:tests', 'LD_LIBRARY_PATH': '/usr/lib'},
+                )
+
 
 class NativeAdapterHardeningTests(unittest.TestCase):
     def test_not_run_attempt_sets_native_backend_and_verifies(self):
