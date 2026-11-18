@@ -194,15 +194,26 @@ class NativeKicadRouteTest(unittest.TestCase):
                          '/candidate/control/rc_filter.kicad_pcb', '/work/placed.kicad_pcb'], timeout=300)
         self.assertEqual(record['exit_code'], 0, (self.root / 'strip/console.log').read_text()[-2000:])
         shutil.copyfile(self.root / 'strip/placed.kicad_pcb', placed / 'project/rc_filter.kicad_pcb')
-        return placed
-
-    def placed_native(self):
-        placed = self.placed_rc()
         if routing_adapter.is_rust_capable_checkout(self.checkout):
-            made = execute(placed, self.root / 'make-native',
-                           ['/usr/bin/python3', '-I', '-B', '-c', PAIR_BOARD, '/work/native.kicad_pcb'], timeout=300)
-            self.assertEqual(made['exit_code'], 0, (self.root / 'make-native/console.log').read_text()[-2000:])
-            shutil.copyfile(self.root / 'make-native/native.kicad_pcb', placed / 'project/rc_filter.kicad_pcb')
+            # Translate rc_filter.kicad_pcb into [-100, +100] mm while preserving rc_filter.kicad_sch parity.
+            shift = (
+                "import sys, pcbnew as k\n"
+                "b = k.LoadBoard(sys.argv[1])\n"
+                "d = k.VECTOR2I(k.FromMM(-50), k.FromMM(-50))\n"
+                "for fp in b.GetFootprints():\n"
+                "    fp.SetPosition(fp.GetPosition() + d)\n"
+                "for dr in b.GetDrawings():\n"
+                "    dr.Move(d)\n"
+                "k.SaveBoard(sys.argv[2], b)\n"
+            )
+            shifted = execute(
+                placed, self.root / 'shift-rc',
+                ['/usr/bin/python3', '-I', '-B', '-c', shift,
+                 '/candidate/project/rc_filter.kicad_pcb', '/work/shifted.kicad_pcb'],
+                timeout=300,
+            )
+            self.assertEqual(shifted['exit_code'], 0, (self.root / 'shift-rc/console.log').read_text()[-2000:])
+            shutil.copyfile(self.root / 'shift-rc/shifted.kicad_pcb', placed / 'project/rc_filter.kicad_pcb')
         return placed
 
     def state(self):
@@ -269,7 +280,7 @@ class NativeKicadRouteTest(unittest.TestCase):
         attempt.write_report(work / 'routing/adapter-report.json', report)
 
     def test_krt_attempt_on_the_placed_rc_with_read_only_code_and_state(self):
-        placed = self.placed_native()
+        placed = self.placed_rc()
         spec = self.spec()
         before = self.state()
         work = self.root / 'work'
@@ -292,7 +303,7 @@ class NativeKicadRouteTest(unittest.TestCase):
     def test_repeated_krt_runs_compare_geometry_and_name_a_moved_segment(self):
         with retain_failed_run(self.root, self.id()):
             from agent_ee.routing_equivalence import compare_boards
-            placed = self.placed_native()
+            placed = self.placed_rc()
             spec = self.spec()
             outputs = []
             for index in (1, 2):
@@ -535,7 +546,7 @@ class NativeKicadRouteTest(unittest.TestCase):
                 require_kicad_route()
 
     def test_krt_attempt_as_a_coordinator_stage_receipt(self):
-        placed = self.placed_native()
+        placed = self.placed_rc()
         spec = self.spec()
         before = self.state()
         receipt_dir = self.root / 'receipts/1-kicad-route-builtin'
@@ -616,6 +627,8 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
             with unittest.mock.patch.dict(os.environ, {}, clear=False):
                 os.environ.pop('AGENT_EE_KICAD_ROUTE_ENGINE', None)
                 os.environ.pop('KICAD_ROUTE_ENGINE_BIN', None)
+                with unittest.mock.patch.dict(os.environ, {'AGENT_EE_KICAD_ROUTE_CHECKOUT': str(env_co)}):
+                    self.assertIsNone(attempt.resolve_kicad_route_engine())
                 self.assertEqual(attempt.resolve_kicad_route_engine(explicit), dbg_bin)
                 rel_bin.parent.mkdir(parents=True)
                 rel_bin.write_text('#!/bin/sh\nexit 0\n')
@@ -628,6 +641,73 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                 with unittest.mock.patch.dict(os.environ, {'AGENT_EE_KICAD_ROUTE_ENGINE': str(override2),
                                                            'KICAD_ROUTE_ENGINE_BIN': str(override)}):
                     self.assertEqual(attempt.resolve_kicad_route_engine(explicit), override2)
+
+    def test_worktree_git_file_and_symlink_refuse_preflight_with_sandbox_parity(self):
+        git_env = {
+            'PATH': '/usr/bin:/bin',
+            'HOME': '/nonexistent',
+            'LC_ALL': 'C',
+            'GIT_CONFIG_NOSYSTEM': '1',
+            'GIT_CONFIG_GLOBAL': '/dev/null',
+            'GIT_AUTHOR_NAME': 'agent-ee test',
+            'GIT_AUTHOR_EMAIL': 'test@agent-ee.invalid',
+            'GIT_AUTHOR_DATE': '2026-11-18T00:00:00Z',
+            'GIT_COMMITTER_NAME': 'agent-ee test',
+            'GIT_COMMITTER_EMAIL': 'test@agent-ee.invalid',
+            'GIT_COMMITTER_DATE': '2026-11-18T00:00:00Z',
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            main_co = root / 'main-route'
+            main_co.mkdir()
+            for rel in ('bin/kicad-route', 'src/kicad_route/__init__.py',
+                        'tools/rust_engine_kicad.py', 'rust-engine/Cargo.lock', 'LICENSE'):
+                p = main_co / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text('# stub\n')
+            engine = main_co / 'rust-engine/target/release/kicad-route-engine'
+            engine.parent.mkdir(parents=True)
+            engine.write_text('#!/bin/sh\nexit 0\n')
+            engine.chmod(0o755)
+            (main_co / '.gitignore').write_text('/rust-engine/target/\n')
+            for argv in (
+                ['init', '-q', '-b', 'main'],
+                ['add', '.gitignore', 'bin', 'src', 'tools', 'rust-engine/Cargo.lock', 'LICENSE'],
+                ['commit', '-q', '-m', 'init'],
+            ):
+                subprocess.run(['/usr/bin/git', '-C', str(main_co), *argv],
+                               check=True, capture_output=True, text=True, env=git_env)
+            worktree_co = root / 'wt-route'
+            subprocess.run(['/usr/bin/git', '-C', str(main_co), 'worktree', 'add', '-q', '-b', 'wt', str(worktree_co)],
+                           check=True, capture_output=True, text=True, env=git_env)
+            (worktree_co / 'rust-engine/target/release').mkdir(parents=True)
+            shutil.copy2(engine, worktree_co / 'rust-engine/target/release/kicad-route-engine')
+            symlink_co = root / 'symlink-route'
+            shutil.copytree(main_co, symlink_co, ignore=shutil.ignore_patterns('.git'))
+            (symlink_co / '.git').symlink_to(main_co / '.git')
+
+            with unittest.mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop('AGENT_EE_KICAD_ROUTE_ENGINE', None)
+                os.environ.pop('KICAD_ROUTE_ENGINE_BIN', None)
+                self.assertEqual(routing_adapter.preflight(main_co)['problems'], [])
+                self.assertTrue((worktree_co / '.git').is_file())
+                host_pf = routing_adapter.preflight(worktree_co)
+                self.assertIsNone(host_pf['commit'])
+                self.assertTrue(host_pf['problems'])
+                self.assertTrue(any('cannot read the checkout HEAD' in p for p in host_pf['problems']),
+                                host_pf['problems'])
+                _, _, sandbox_problems = attempt.preflight(
+                    worktree_co, worktree_co, 'builtin', mounted_at=attempt.SANDBOX['checkout'])
+                self.assertTrue(any('cannot read the checkout HEAD' in p for p in sandbox_problems),
+                                sandbox_problems)
+                with self.assertRaisesRegex(ValueError, 'kicad-route does not qualify: .*cannot read the checkout HEAD'):
+                    routing_adapter.step(
+                        project='project', board='b.kicad_pcb', schematic='b.kicad_sch',
+                        name='b', label='wt', checkout=worktree_co)
+                sym_pf = routing_adapter.preflight(symlink_co)
+                self.assertIsNone(sym_pf['commit'])
+                self.assertTrue(any('cannot read the checkout HEAD' in p for p in sym_pf['problems']),
+                                sym_pf['problems'])
 
     def test_native_semantics_exit_codes_and_integrity_checks(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -698,6 +778,8 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
             (co / 'tools').mkdir(parents=True)
             (co / '.venv-krt').mkdir()
             (co / 'bin').mkdir()
+            (co / 'src/kicad_route').mkdir(parents=True)
+            (co / 'src/kicad_route/__init__.py').write_text('MARKER = "krt"\n')
             krt_bin = co / 'bin/kicad-route'
             krt_bin.write_text('#!/bin/sh\nexit 0\n')
             krt_bin.chmod(0o755)
@@ -726,17 +808,63 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     [sys.executable, '-Ic', 'import kicad_route'],
                     [str(fake_engine), '--help'],
                     ['/bin/sh', '-c', f'PATH={co / "bin"}:$PATH kicad-route'],
+                    ['/bin/sh', '-ce', f'PATH={co / "bin"}:$PATH kicad-route'],
+                    ['/bin/sh', '-ce', f'PYTHONPATH={co / "src"} {sys.executable} -m kicad_route'],
+                    ['/bin/bash', '-cu', f'PYTHONPATH={co / "src"} {sys.executable} -c "import kicad_route"'],
+                    ['/bin/sh', '-eu', '-c', f'PATH={co / "bin"}:$PATH kicad-route'],
+                    ['/bin/sh', '-c', '-e', f'PYTHONPATH={co / "src"} {sys.executable} -m kicad_route'],
+                    ['/bin/sh', '-c', '--', f'PYTHONPATH={co / "src"} {sys.executable} -m kicad_route'],
+                    ['/bin/bash', '-c', '-o', 'errexit', f'PYTHONPATH={co / "src"} {sys.executable} -m kicad_route'],
+                    ['/usr/bin/env', '-S', f'PYTHONPATH={co / "src"} {sys.executable} -m kicad_route'],
+                    ['/usr/bin/env', '-i', '-S', f'PYTHONPATH={co / "src"} {sys.executable} -m kicad_route'],
+                    ['/usr/bin/env', '-u', 'HOME', '-S', f'PYTHONPATH={co / "src"} {sys.executable} -m kicad_route'],
+                    ['/usr/bin/env', f'-SPYTHONPATH={co / "src"} {sys.executable} -m kicad_route'],
+                    ['/usr/bin/env', f'--split-string=PYTHONPATH={co / "src"} {sys.executable} -m kicad_route'],
+                    ['/usr/bin/env', '-S', f'PYTHONPATH={co / "src"} {sys.executable} -m', 'kicad_route'],
+                    ['/usr/bin/env', f'PYTHONPATH={co / "src"}', sys.executable, '-m', 'kicad_route'],
                 ):
                     with self.subTest(argv=argv):
                         with self.assertRaises(routing_adapter.RE01OwnershipError):
                             subprocess.run(argv, timeout=5)
-                for cmd in ('bin/kicad-route', b'kicad-route'):
-                    with self.assertRaises(routing_adapter.RE01OwnershipError):
-                        os.system(cmd)
+                for sh_name in ('dash', 'zsh', 'ksh', 'ash'):
+                    with self.subTest(shell=sh_name):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            routing_adapter.check_re01_command([sh_name, '-ce', f'PATH={co / "bin"}:$PATH kicad-route'])
+                with self.assertRaises(routing_adapter.RE01OwnershipError):
+                    routing_adapter.check_re01_command(
+                        ['busybox', 'sh', '-ce', f'PYTHONPATH={co / "src"} {sys.executable} -m kicad_route'])
+                with self.assertRaises(routing_adapter.RE01OwnershipError):
+                    subprocess.run(['innocent', '-ce', f'PATH={co / "bin"}:$PATH kicad-route'],
+                                   executable='/bin/sh', timeout=5)
+                with self.assertRaises(routing_adapter.RE01OwnershipError):
+                    subprocess.run(['innocent', '-S', f'PYTHONPATH={co / "src"} {sys.executable} -m kicad_route'],
+                                   executable='/usr/bin/env', timeout=5)
+                with self.assertRaises(routing_adapter.RE01OwnershipError):
+                    subprocess.run(f'PATH={co / "bin"}:$PATH kicad-route', shell=True, timeout=5)
+                for cmd in (
+                    'bin/kicad-route',
+                    b'kicad-route',
+                    'echo `kicad-route`',
+                    f'echo `{fake_engine}`',
+                    f'echo "$({fake_engine})"',
+                    f'true && /bin/sh -ce "{fake_engine}"',
+                ):
+                    with self.subTest(cmd=cmd):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            os.system(cmd)
+                with self.assertRaises(routing_adapter.RE01OwnershipError):
+                    os.popen(f'/bin/bash -cu "PATH={co / "bin"}:$PATH kicad-route"')
                 with self.assertRaises(routing_adapter.RE01OwnershipError):
                     os.posix_spawn('/bin/sh', [b'/bin/sh', b'-c', b'kicad-route'], os.environ)
-                done = subprocess.run([sys.executable, str(bridge)], capture_output=True, timeout=5)
-                self.assertEqual(done.returncode, 0)
+                for ok_argv in (
+                    [sys.executable, str(bridge)],
+                    ['git', '-C', str(co), '-c', 'core.fsmonitor=false', '--version'],
+                    ['/bin/sh', '-ce', 'true'],
+                    ['/usr/bin/env', '-S', f'{sys.executable} {bridge}'],
+                ):
+                    with self.subTest(ok_argv=ok_argv):
+                        done = subprocess.run(ok_argv, capture_output=True, timeout=5)
+                        self.assertEqual(done.returncode, 0, done.stderr)
 
 
 class NativeAdapterHardeningTests(unittest.TestCase):
@@ -787,6 +915,46 @@ class NativeAdapterHardeningTests(unittest.TestCase):
                     m['source'] = str(Path(tmp) / 'absent-checkout-on-replay-host')
             validated = routing_adapter.validate_campaign_step(spec, host=False)
             self.assertEqual(validated['backend_report'], spec['backend_report'])
+
+    def test_validate_campaign_step_host_true_validates_engine_mount(self):
+        checkout = require_kicad_route()
+        if not routing_adapter.is_rust_capable_checkout(checkout):
+            self.skipTest('requires Rust-capable kicad-route checkout')
+        with tempfile.TemporaryDirectory() as tmp:
+            ext_engine = Path(tmp) / 'kicad-route-engine'
+            ext_engine.write_text('#!/bin/sh\nexit 0\n')
+            ext_engine.chmod(0o755)
+            with unittest.mock.patch.dict(os.environ, {'AGENT_EE_KICAD_ROUTE_ENGINE': str(ext_engine)}):
+                spec = routing_adapter.step(
+                    project='project', board='b.kicad_pcb', schematic='b.kicad_sch',
+                    name='b', label='l', checkout=checkout, budget=10,
+                )
+                self.assertEqual(routing_adapter.validate_campaign_step(spec, host=True)['backend_report'],
+                                 spec['backend_report'])
+                tampered = json.loads(json.dumps(spec))
+                for m in tampered['mounts']:
+                    if m['at'] == attempt.SANDBOX['engine']:
+                        m['source'] = '/usr/bin/true'
+                with self.assertRaisesRegex(ValueError, 'routing mount sources must use resolved host paths'):
+                    routing_adapter.validate_campaign_step(tampered, host=True)
+                omitted = json.loads(json.dumps(spec))
+                omitted['mounts'] = [m for m in omitted['mounts'] if m['at'] != attempt.SANDBOX['engine']]
+                with self.assertRaisesRegex(ValueError, 'campaign routing step differs'):
+                    routing_adapter.validate_campaign_step(omitted, host=True)
+            with unittest.mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop('AGENT_EE_KICAD_ROUTE_ENGINE', None)
+                os.environ.pop('KICAD_ROUTE_ENGINE_BIN', None)
+                internal_spec = routing_adapter.step(
+                    project='project', board='b.kicad_pcb', schematic='b.kicad_sch',
+                    name='b', label='l', checkout=checkout, budget=10,
+                )
+                self.assertFalse(any(m['at'] == attempt.SANDBOX['engine'] for m in internal_spec['mounts']))
+                self.assertEqual(routing_adapter.validate_campaign_step(internal_spec, host=True)['backend_report'],
+                                 internal_spec['backend_report'])
+                spurious = json.loads(json.dumps(internal_spec))
+                spurious['mounts'].append({'source': '/usr/bin/true', 'at': attempt.SANDBOX['engine']})
+                with self.assertRaisesRegex(ValueError, 'campaign routing step differs'):
+                    routing_adapter.validate_campaign_step(spurious, host=True)
 
     def test_native_semantics_rejects_bool_float_inline_mismatch_and_strict_json(self):
         with tempfile.TemporaryDirectory() as tmp:

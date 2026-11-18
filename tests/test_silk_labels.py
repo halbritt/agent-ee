@@ -617,13 +617,6 @@ class JobTests(SilkBoard):
         require_kicad_route()
         from agent_ee import routing_adapter
         checkout = os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT']
-        if routing_adapter.is_rust_capable_checkout(checkout):
-            import pcbnew as k
-            board = k.LoadBoard(str(self.board))
-            for dr in list(board.GetDrawings()):
-                if dr.GetLayer() == k.F_Cu and not isinstance(dr, k.PCB_SHAPE):
-                    board.Delete(dr)
-            self.assertTrue(k.SaveBoard(str(self.board), board))
         self.project.write_text(json.dumps(ERRORS))
         files = {'board': self.board, 'project': self.project, 'intent': self.dir / 'intent.json',
                  'groups': self.dir / 'groups.json'}

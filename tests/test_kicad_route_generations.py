@@ -502,11 +502,28 @@ class GenerationNativeTest(unittest.TestCase):
         shutil.copytree(ROOT / 'fixtures/rc/control', placed / 'project')
         shutil.copytree(ROOT / 'fixtures/rc/requirements', placed / 'requirements')
         if routing_adapter.is_rust_capable_checkout(tool):
-            from tests.test_kicad_route_native import VIA_BOARD
-            made = execute(placed, self.root / 'make-vias',
-                           ['/usr/bin/python3', '-I', '-B', '-c', VIA_BOARD, '/work/vias.kicad_pcb'], timeout=300)
-            self.assertEqual(made['exit_code'], 0)
-            shutil.copyfile(self.root / 'make-vias/vias.kicad_pcb', placed / 'project/rc_filter.kicad_pcb')
+            shift = (
+                "import sys, pcbnew as k\n"
+                "b = k.LoadBoard(sys.argv[1])\n"
+                "d = k.VECTOR2I(k.FromMM(-50), k.FromMM(-50))\n"
+                "for fp in b.GetFootprints():\n"
+                "    fp.SetPosition(fp.GetPosition() + d)\n"
+                "for dr in b.GetDrawings():\n"
+                "    dr.Move(d)\n"
+                "for tr in b.GetTracks():\n"
+                "    tr.Move(d)\n"
+                "for zn in b.Zones():\n"
+                "    zn.Move(d)\n"
+                "k.SaveBoard(sys.argv[2], b)\n"
+            )
+            shifted = execute(
+                placed, self.root / 'shift-rc',
+                ['/usr/bin/python3', '-I', '-B', '-c', shift,
+                 '/candidate/project/rc_filter.kicad_pcb', '/work/shifted.kicad_pcb'],
+                timeout=300,
+            )
+            self.assertEqual(shifted['exit_code'], 0, (self.root / 'shift-rc/console.log').read_text()[-2000:])
+            shutil.copyfile(self.root / 'shift-rc/shifted.kicad_pcb', placed / 'project/rc_filter.kicad_pcb')
         spec = routing_adapter.step(project='project', board='rc_filter.kicad_pcb', schematic='rc_filter.kicad_sch',
                                     name='rc_filter', label='generation-native', checkout=tool, budget=120)
         work = self.root / 'work'

@@ -312,7 +312,8 @@ def resolve_kicad_route_engine(checkout=None):
         val = os.environ.get(var, '').strip()
         if val:
             return Path(val).expanduser()
-    explicit = checkout is not None and str(checkout).strip() != ''
+    env_checkout = os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '').strip()
+    explicit = (checkout is not None and str(checkout).strip() != '') or bool(env_checkout)
     co = resolve_kicad_route_checkout(checkout)
     for profile in ('release', 'debug'):
         cand = Path(co) / 'rust-engine' / 'target' / profile / 'kicad-route-engine'
@@ -348,9 +349,13 @@ def is_re01_enforced():
 
 
 _RE01_INLINE_MODULES = re.compile(r'\b(kicad_route|native_delay|grid_router)\b')
-_RE01_SHELL_NAMES = frozenset(('sh', 'bash', 'dash', 'zsh', 'ksh'))
-_RE01_RAW_BARE_KRT = re.compile(r'(?:^|[\s\'";|&=(])kicad-route(?=$|[\s\'";|&)])')
-_RE01_RAW_SRC_KRT = re.compile(r'(?:^|[\s/\'";|&])src/kicad_route(?=$|[\s/\'";|&])')
+_RE01_SHELL_NAMES = frozenset(('sh', 'bash', 'dash', 'zsh', 'ksh', 'ash', 'mksh', 'pdksh', 'rbash', 'rksh', 'rzsh'))
+_RE01_RAW_BARE_KRT = re.compile(r'(?:^|[\s\'";|&=(`<>{])kicad-route(?=$|[\s\'";|&)`<>{])')
+_RE01_RAW_SRC_KRT = re.compile(r'(?:^|[\s/\'";|&`<>{])src/kicad_route(?=$|[\s/\'";|&)`<>{])')
+_RE01_SHELL_SEPARATORS = frozenset((';', '&', '&&', '|', '||', '(', ')', '\n'))
+_RE01_SHELL_ARG_OPTS = frozenset(('-o', '+o', '-O', '+O', '--rcfile', '--init-file'))
+_RE01_ENV_ARG_OPTS = frozenset(('-u', '-C', '--unset', '--chdir', '--block-signal', '--ignore-signal', '--default-signal'))
+_RE01_MAX_WRAPPER_DEPTH = 8
 
 
 def _decode_audit_arg(val):
@@ -426,52 +431,189 @@ def _re01_path_reason(norm, token, *, resolved=False):
     return None
 
 
-def _re01_shell_command_reason(cmd_str):
+def _re01_dollar_subcommands(cmd_str):
+    subs = []
+    i = 0
+    n = len(cmd_str)
+    while i < n - 1:
+        if cmd_str[i] == '$' and cmd_str[i + 1] == '(':
+            depth = 1
+            j = i + 2
+            in_sq = False
+            in_dq = False
+            while j < n and depth > 0:
+                ch = cmd_str[j]
+                if ch == '\\' and not in_sq and j + 1 < n:
+                    j += 2
+                    continue
+                if ch == "'" and not in_dq:
+                    in_sq = not in_sq
+                elif ch == '"' and not in_sq:
+                    in_dq = not in_dq
+                elif not in_sq and not in_dq:
+                    if ch == '(':
+                        depth += 1
+                    elif ch == ')':
+                        depth -= 1
+                j += 1
+            if depth == 0:
+                inner = cmd_str[i + 2:j - 1]
+                if inner.strip():
+                    subs.append(inner)
+                i = j
+                continue
+        i += 1
+    return subs
+
+
+def _re01_split_env_string(s_val):
+    normalized = s_val.replace('\\_', ' ')
+    try:
+        return shlex.split(normalized), True
+    except ValueError:
+        return normalized.split(), False
+
+
+def _re01_shell_command_reason(cmd_str, _depth=0):
+    if _depth >= _RE01_MAX_WRAPPER_DEPTH:
+        return 'RE-01 forbids deeply nested shell or wrapper execution'
     norm_cmd = cmd_str.replace('\\', '/')
     if ('bin/kicad-route' in norm_cmd or _RE01_RAW_SRC_KRT.search(norm_cmd)
             or '.venv-krt' in norm_cmd or _RE01_INLINE_MODULES.search(cmd_str)
             or _RE01_RAW_BARE_KRT.search(norm_cmd)):
         return f'RE-01 forbids shell legacy Python router execution: {cmd_str}'
+    for sub in re.findall(r'`([^`]+)`', cmd_str) + _re01_dollar_subcommands(cmd_str):
+        reason = _re01_shell_command_reason(sub, _depth + 1)
+        if reason is not None:
+            return reason
     try:
         lex = shlex.shlex(cmd_str, posix=True, punctuation_chars=True)
         lex.whitespace_split = True
         parsed = list(lex)
     except ValueError:
         parsed = cmd_str.split()
-    return _re01_forbidden_reason(parsed)
+    return _re01_forbidden_reason(parsed, _depth=_depth + 1)
 
 
-def _re01_forbidden_reason(tokens):
+def _re01_forbidden_reason(tokens, _depth=0):
+    if _depth >= _RE01_MAX_WRAPPER_DEPTH:
+        return 'RE-01 forbids deeply nested shell or wrapper execution'
+    token_list = [_decode_audit_arg(raw) for raw in tokens]
     prev = ''
     shell_seen = False
-    for raw in tokens:
-        token = _decode_audit_arg(raw)
+    shell_c_pending = False
+    shell_end_opts = False
+    shell_opt_takes_arg = False
+    env_parsing_opts = False
+    env_opt_takes_arg = False
+    for idx, token in enumerate(token_list):
+        if token in _RE01_SHELL_SEPARATORS:
+            prev = token
+            shell_seen = False
+            shell_c_pending = False
+            shell_end_opts = False
+            shell_opt_takes_arg = False
+            env_parsing_opts = False
+            env_opt_takes_arg = False
+            continue
         norm = token.replace('\\', '/')
         chain = _symlink_chain_paths(token)
-        for idx, cand in enumerate(chain):
-            reason = _re01_path_reason(cand, token, resolved=(idx > 0 or cand != norm))
+        for cand_idx, cand in enumerate(chain):
+            reason = _re01_path_reason(cand, token, resolved=(cand_idx > 0 or cand != norm))
             if reason is not None:
                 return reason
-        if any(Path(c).name in _RE01_SHELL_NAMES for c in chain if c and not c.startswith('-')):
+        if env_parsing_opts:
+            if env_opt_takes_arg:
+                env_opt_takes_arg = False
+                prev = token
+                continue
+            if token == '--':
+                env_parsing_opts = False
+                prev = token
+                continue
+            if token in ('-S', '--split-string') or token.startswith('--split-string='):
+                if token.startswith('--split-string='):
+                    s_val = token[len('--split-string='):]
+                    rest = token_list[idx + 1:]
+                else:
+                    s_val = token_list[idx + 1] if idx + 1 < len(token_list) else ''
+                    rest = token_list[idx + 2:]
+                split_tokens, clean_parse = _re01_split_env_string(s_val)
+                if not clean_parse:
+                    reason = _re01_shell_command_reason(s_val, _depth + 1)
+                    if reason is not None:
+                        return reason
+                return _re01_forbidden_reason(split_tokens + rest, _depth=_depth + 1)
+            env_short_s = re.match(r'^-[A-Za-z]*?S(.*)$', token, re.S)
+            if env_short_s:
+                attached_s = env_short_s.group(1)
+                if attached_s:
+                    s_val = attached_s
+                    rest = token_list[idx + 1:]
+                else:
+                    s_val = token_list[idx + 1] if idx + 1 < len(token_list) else ''
+                    rest = token_list[idx + 2:]
+                split_tokens, clean_parse = _re01_split_env_string(s_val)
+                if not clean_parse:
+                    reason = _re01_shell_command_reason(s_val, _depth + 1)
+                    if reason is not None:
+                        return reason
+                return _re01_forbidden_reason(split_tokens + rest, _depth=_depth + 1)
+            if token in _RE01_ENV_ARG_OPTS:
+                env_opt_takes_arg = True
+                prev = token
+                continue
+            if token.startswith('-') or '=' in token:
+                prev = token
+                continue
+            env_parsing_opts = False
+        if shell_seen:
+            if not shell_end_opts:
+                if shell_opt_takes_arg:
+                    shell_opt_takes_arg = False
+                    prev = token
+                    continue
+                if token == '--':
+                    shell_end_opts = True
+                    prev = token
+                    continue
+                if token in _RE01_SHELL_ARG_OPTS:
+                    shell_opt_takes_arg = True
+                    prev = token
+                    continue
+                if re.fullmatch(r'-[A-Za-z]*c[A-Za-z]*', token):
+                    shell_c_pending = True
+                    prev = token
+                    continue
+                if token.startswith('-') or (token.startswith('+') and len(token) > 1):
+                    prev = token
+                    continue
+            if shell_c_pending:
+                reason = _re01_shell_command_reason(token, _depth + 1)
+                if reason is not None:
+                    return reason
+                shell_c_pending = False
+            shell_seen = False
+            shell_end_opts = False
+            shell_opt_takes_arg = False
+            prev = token
+            continue
+        if (not token.startswith('-') and '=' not in token
+                and any(Path(c).name == 'env' for c in chain if c and not c.startswith('-'))):
+            env_parsing_opts = True
+        if (not token.startswith('-') and '=' not in token
+                and any(Path(c).name in _RE01_SHELL_NAMES for c in chain if c and not c.startswith('-'))):
             shell_seen = True
         if (norm == 'kicad-route-engine' or norm.endswith('/kicad-route-engine')
                 or norm.endswith('/tools/rust_engine_kicad.py') or norm == 'tools/rust_engine_kicad.py'):
             prev = token
             continue
         if re.fullmatch(r'-[A-Za-z]*[cm]', prev):
-            if shell_seen and prev.endswith('c'):
-                reason = _re01_shell_command_reason(token)
-                if reason is not None:
-                    return reason
             if _RE01_INLINE_MODULES.search(token):
                 return 'RE-01 forbids inline or module execution of legacy Python router modules'
         attached = re.match(r'^-[A-Za-z]*?([cm])(.+)$', token, re.S)
         if attached:
-            flag, body = attached.group(1), attached.group(2)
-            if shell_seen and flag == 'c':
-                reason = _re01_shell_command_reason(body)
-                if reason is not None:
-                    return reason
+            body = attached.group(2)
             if _RE01_INLINE_MODULES.search(body):
                 return 'RE-01 forbids inline or module execution of legacy Python router modules'
         prev = token
@@ -489,19 +631,29 @@ def _re01_audit_hook(event, args):
         return
     if event == 'subprocess.Popen':
         executable, cmd_args = args[0], args[1]
-        tokens = []
+        argv_tokens = ([_decode_audit_arg(a) for a in cmd_args]
+                       if isinstance(cmd_args, (list, tuple))
+                       else ([_decode_audit_arg(cmd_args)] if cmd_args is not None else []))
         if executable is not None:
-            tokens.append(_decode_audit_arg(executable))
-        if isinstance(cmd_args, (list, tuple)):
-            tokens.extend(_decode_audit_arg(a) for a in cmd_args)
-        elif cmd_args is not None:
-            tokens.append(_decode_audit_arg(cmd_args))
-        check_re01_command(tokens)
+            exec_tok = _decode_audit_arg(executable)
+            if isinstance(cmd_args, (list, tuple)) and argv_tokens:
+                check_re01_command([argv_tokens[0]])
+                check_re01_command([exec_tok, *argv_tokens[1:]])
+            else:
+                check_re01_command([exec_tok, *argv_tokens])
+        else:
+            check_re01_command(argv_tokens)
     elif event in ('os.exec', 'os.posix_spawn'):
-        tokens = [_decode_audit_arg(args[0])]
+        exec_tok = _decode_audit_arg(args[0])
         if len(args) > 1 and isinstance(args[1], (list, tuple)):
-            tokens.extend(_decode_audit_arg(a) for a in args[1])
-        check_re01_command(tokens)
+            argv_tokens = [_decode_audit_arg(a) for a in args[1]]
+            if argv_tokens:
+                check_re01_command([argv_tokens[0]])
+                check_re01_command([exec_tok, *argv_tokens[1:]])
+            else:
+                check_re01_command([exec_tok])
+        else:
+            check_re01_command([exec_tok])
     elif event == 'os.system':
         if args:
             reason = _re01_shell_command_reason(_decode_audit_arg(args[0]))
@@ -1539,33 +1691,24 @@ def links_of(entries):
 
 def checkout_commit(checkout):
     """HEAD commit from the git files themselves; running git could write the index."""
-    checkout = Path(checkout)
-    git = checkout / '.git'
-    common = git
+    git = Path(checkout) / '.git'
+    if git.is_symlink():
+        raise OSError(f'checkout .git must not be a symlink: {git}')
     if git.is_file():
-        for line in git.read_text().splitlines():
-            if line.startswith('gitdir:'):
-                raw = line[len('gitdir:'):].strip()
-                git = Path(raw) if Path(raw).is_absolute() else (checkout / raw).resolve()
-                break
-        if (git / 'commondir').is_file():
-            rel_common = (git / 'commondir').read_text().strip()
-            common = (git / rel_common).resolve()
+        raise NotADirectoryError(errno.ENOTDIR, 'checkout .git is a worktree file, not a directory', str(git))
     head = (git / 'HEAD').read_text().strip()
     if not head.startswith('ref: '):
         return head
     ref = head[5:]
-    for base in (git, common):
-        loose = base / ref
-        if loose.is_file():
-            return loose.read_text().strip()
-    for base in (git, common):
-        packed = base / 'packed-refs'
-        if packed.is_file():
-            for line in packed.read_text().splitlines():
-                parts = line.split()
-                if len(parts) == 2 and parts[1] == ref:
-                    return parts[0]
+    loose = git / ref
+    if loose.is_file():
+        return loose.read_text().strip()
+    packed = git / 'packed-refs'
+    if packed.is_file():
+        for line in packed.read_text().splitlines():
+            parts = line.split()
+            if len(parts) == 2 and parts[1] == ref:
+                return parts[0]
     return None
 
 

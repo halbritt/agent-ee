@@ -322,7 +322,14 @@ def validate_campaign_step(spec, *, host=True):
                    spec.get('backend_report') == {'artifact': f'routing/attempt/{attempt.NATIVE_OPERATION_FILE}',
                                                   'key': 'binary'})
     is_native = (bool(checkout) and attempt.is_native_request(request, checkout)) if host else native_spec
-    if attempt.SANDBOX['engine'] in mounts and is_native:
+    expected_engine = None
+    if host and is_native:
+        engine_bin = attempt.resolve_kicad_route_engine(checkout)
+        if engine_bin is not None and engine_bin.is_file():
+            real_engine = Path(engine_bin).resolve()
+            if not real_engine.is_relative_to(Path(checkout).resolve()):
+                expected_engine = str(real_engine)
+    if is_native and ((host and expected_engine is not None) or (not host and attempt.SANDBOX['engine'] in mounts)):
         expected_mounts.add(attempt.SANDBOX['engine'])
     if not host and attempt.LEGACY_TABLE_AT in mounts:
         # Retained steps of 2026-10-26 to 2026-11-03 also mounted the retired commit table.
@@ -338,7 +345,8 @@ def validate_campaign_step(spec, *, host=True):
         check = preflight(checkout, state, request['backend'])
         if check['problems']:
             raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))
-        if checkout != check['checkout'] or (state is not None and state != check['state']):
+        if (checkout != check['checkout'] or (state is not None and state != check['state']) or
+                (expected_engine is not None and mounts.get(attempt.SANDBOX['engine']) != expected_engine)):
             raise ValueError('routing mount sources must use resolved host paths')
     _receipt_step({'spec': spec}, request)
     if spec['timeout_s'] != request['timeout_s'] + STEP_MARGIN_S:

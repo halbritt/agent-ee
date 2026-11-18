@@ -502,26 +502,6 @@ class NativeRoutingCampaignTests(unittest.TestCase):
         native.setUp()
         self.addCleanup(native.doCleanups)
         placed = native.placed_rc()
-        if routing.is_rust_capable_checkout(checkout):
-            # Translate rc_filter.kicad_pcb into [-100, +100] mm while preserving rc_filter.kicad_sch parity.
-            shift = (
-                "import sys, pcbnew as k\n"
-                "b = k.LoadBoard(sys.argv[1])\n"
-                "d = k.VECTOR2I(k.FromMM(-50), k.FromMM(-50))\n"
-                "for fp in b.GetFootprints():\n"
-                "    fp.SetPosition(fp.GetPosition() + d)\n"
-                "for dr in b.GetDrawings():\n"
-                "    dr.Move(d)\n"
-                "k.SaveBoard(sys.argv[2], b)\n"
-            )
-            shifted = native_fixture.execute(
-                placed, native.root / 'shift-rc',
-                ['/usr/bin/python3', '-I', '-B', '-c', shift,
-                 '/candidate/project/rc_filter.kicad_pcb', '/work/shifted.kicad_pcb'],
-                timeout=300,
-            )
-            self.assertEqual(shifted['exit_code'], 0, (native.root / 'shift-rc/console.log').read_text()[-2000:])
-            shutil.copyfile(native.root / 'shift-rc/shifted.kicad_pcb', placed / 'project/rc_filter.kicad_pcb')
         scope = read_json(native_fixture.ROOT / 'fixtures/rc/control.scope.json')
         scope.update(schema='agent-ee.scope/2', mutable_inputs=['project/rc_filter.kicad_pcb'])
         scope['inputs'][0]['path'] = str(placed / 'project')
