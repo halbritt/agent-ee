@@ -457,7 +457,7 @@ def _decode_audit_arg(val):
 
 
 def _re01_norm_posix(path_str):
-    norm = posixpath.normpath(path_str.replace('\\', '/'))
+    norm = posixpath.normpath(path_str)
     while norm.startswith('//'):
         norm = norm[1:]
     return norm
@@ -512,10 +512,9 @@ def _re01_is_py_hook_name(name):
 
 def _re01_abs_cwd(cwd):
     raw = os.getcwd() if cwd is None else cwd
-    slash = raw.replace('\\', '/')
-    if not posixpath.isabs(slash):
-        slash = os.path.abspath(raw).replace('\\', '/')
-    return _re01_norm_posix(slash)
+    if not posixpath.isabs(raw):
+        raw = os.path.abspath(raw)
+    return _re01_norm_posix(raw)
 
 
 def _re01_mount_lookup(norm, mounts):
@@ -546,7 +545,7 @@ def _re01_shadow_mounts(mounts, dest_norm):
 
 
 def _re01_resolve_mount_symlinks(raw_path, mounts):
-    pending = collections.deque(s for s in raw_path.replace('\\', '/').split('/') if s and s != '.')
+    pending = collections.deque(s for s in raw_path.split('/') if s and s != '.')
     parts = []
     hops = 0
     while pending:
@@ -579,7 +578,7 @@ def _re01_resolve_mount_symlinks(raw_path, mounts):
                 if hops > 40:
                     return None, f'RE-01 forbids excessive bwrap symlink nesting: {raw_path}'
                 try:
-                    target = os.readlink(mapped).replace('\\', '/')
+                    target = os.readlink(mapped)
                 except OSError:
                     break
                 if posixpath.isabs(target):
@@ -598,7 +597,7 @@ def _re01_follow_path(raw_path, mounts, *, seen, seen_set):
                 seen_set.add(n)
                 seen.append(n)
 
-    pending = collections.deque(s for s in raw_path.replace('\\', '/').split('/') if s and s != '.')
+    pending = collections.deque(s for s in raw_path.split('/') if s and s != '.')
     sandbox_parts = []
     hops = 0
     while pending:
@@ -649,13 +648,12 @@ def _re01_follow_path(raw_path, mounts, *, seen, seen_set):
                     target = os.readlink(host_cand)
                 except OSError:
                     break
-                target_slash = target.replace('\\', '/')
-                if posixpath.isabs(target_slash):
-                    record(target_slash)
+                if posixpath.isabs(target):
+                    record(target)
                     sandbox_parts = []
                 else:
                     sandbox_parts.pop()
-                pending.extendleft(reversed([s for s in target_slash.split('/') if s and s != '.']))
+                pending.extendleft(reversed([s for s in target.split('/') if s and s != '.']))
     final_sb = '/' + '/'.join(sandbox_parts)
     record(final_sb)
     if mounts:
@@ -679,13 +677,12 @@ def _re01_follow_path(raw_path, mounts, *, seen, seen_set):
 def _re01_resolve_exec_chain(token, *, cwd=None, search_path=None, is_cmd=False, mounts=None):
     if not token:
         return [], None, None, None, None
-    slash_tok = token.replace('\\', '/')
-    norm_tok = _re01_norm_posix(slash_tok)
+    norm_tok = _re01_norm_posix(token)
     seen, seen_set = [norm_tok], {norm_tok}
     resolved_file = resolved_any = resolved_sb = None
     base_dir = _re01_abs_cwd(cwd)
-    if not is_cmd or '/' in slash_tok:
-        target_path = slash_tok if posixpath.isabs(slash_tok) else posixpath.join(base_dir, slash_tok)
+    if not is_cmd or '/' in token:
+        target_path = token if posixpath.isabs(token) else posixpath.join(base_dir, token)
         norm_target = _re01_norm_posix(target_path)
         if norm_target not in seen_set:
             seen_set.add(norm_target)
@@ -701,9 +698,8 @@ def _re01_resolve_exec_chain(token, *, cwd=None, search_path=None, is_cmd=False,
         if p == '' or p == '.':
             seg_dir = base_dir
         else:
-            p_slash = p.replace('\\', '/')
-            seg_dir = p_slash if posixpath.isabs(p_slash) else posixpath.join(base_dir, p_slash)
-        cand_cmd = posixpath.join(seg_dir, slash_tok)
+            seg_dir = p if posixpath.isabs(p) else posixpath.join(base_dir, p)
+        cand_cmd = posixpath.join(seg_dir, token)
         c_seen, c_set = [], set()
         c_file, c_any, c_sb, c_err = _re01_follow_path(cand_cmd, mounts, seen=c_seen, seen_set=c_set)
         if c_err is not None:
@@ -745,7 +741,7 @@ def _re01_path_reason(norm, token, *, is_cmd_pos=False, cwd=None):
 
 
 def _re01_check_zip_py_hooks(zip_path, entry, *, sub_prefix=''):
-    prefix_parts = [p for p in sub_prefix.replace('\\', '/').split('/') if p and p != '.']
+    prefix_parts = [p for p in sub_prefix.split('/') if p and p != '.']
     try:
         if not zipfile.is_zipfile(zip_path):
             return None
@@ -770,9 +766,81 @@ def _re01_check_zip_py_hooks(zip_path, entry, *, sub_prefix=''):
     return None
 
 
-def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbid_pth=False):
+def _re01_trusted_repo_import_dirs():
+    repo_root = _agent_ee_repo_root()
+    main_root = _git_main_repo_root(repo_root)
+    dirs = set()
+    for r in (repo_root, main_root):
+        for sub in ('src', 'tests'):
+            p = r / sub
+            try:
+                dirs.add(_re01_norm_posix(os.path.realpath(p)))
+            except OSError:
+                pass
+    try:
+        co = resolve_kicad_route_checkout()
+    except (OSError, ValueError):
+        co = None
+    co_bases = []
+    if co is not None:
+        co_bases.extend((Path(co), Path(co).parent / 'kicad-route'))
+    co_bases.extend((repo_root.parent / 'kicad-route', main_root.parent / 'kicad-route'))
+    for base in co_bases:
+        p = base / 'tools'
+        try:
+            dirs.add(_re01_norm_posix(os.path.realpath(p)))
+        except OSError:
+            pass
+    return dirs
+
+
+def _re01_is_trusted_repo_import_dir(dir_path):
+    if not dir_path:
+        return False
+    try:
+        real_dir = _re01_norm_posix(os.path.realpath(dir_path))
+    except OSError:
+        return False
+    for trusted in _re01_trusted_repo_import_dirs():
+        if real_dir == trusted or real_dir.startswith(trusted + '/'):
+            return True
+    return False
+
+
+def _re01_dir_strict_pycache(dir_path, sb_targets, mounts):
+    if not mounts:
+        return False
+    for target_sb in sb_targets:
+        if not target_sb:
+            continue
+        prefix = '/' if target_sb == '/' else target_sb + '/'
+        if any(dest.startswith(prefix) for dest in mounts):
+            return True
+        kind, best_dest, _ = _re01_mount_lookup(target_sb, mounts)
+        if kind == 'opaque':
+            return True
+        if best_dest is not None and best_dest != '/' and not _re01_is_trusted_repo_import_dir(dir_path):
+            return True
+    return False
+
+
+def _re01_scan_pycache_dir(cache_path, entry, label, *, strict_pycache=False):
+    try:
+        with os.scandir(cache_path) as sub_it:
+            for sub in sub_it:
+                if (sub.is_symlink() or _re01_is_py_hook_name(sub.name)
+                        or (strict_pycache and sub.name.lower().endswith(('.pyc', '.pyo')))):
+                    return f'RE-01 forbids {label} containing __pycache__/{sub.name}: {entry}'
+    except OSError:
+        pass
+    return None
+
+
+def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbid_pth=False,
+                             strict_pycache=False, sb_targets=(), mounts=None):
     try:
         with os.scandir(dir_path) as it:
+            subdirs = []
             for de in it:
                 name = de.name
                 if forbid_pth and name.endswith('.pth'):
@@ -783,13 +851,77 @@ def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbi
                     if de.is_symlink():
                         return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
                     if de.is_dir(follow_symlinks=False):
-                        with os.scandir(de.path) as sub_it:
-                            for sub in sub_it:
-                                if sub.is_symlink() or _re01_is_py_hook_name(sub.name):
-                                    return (f'RE-01 forbids {label} containing '
-                                            f'__pycache__/{sub.name}: {entry}')
+                        err = _re01_scan_pycache_dir(de.path, entry, label, strict_pycache=strict_pycache)
+                        if err is not None:
+                            return err
+                elif strict_pycache and name != '.git':
+                    try:
+                        if de.is_dir(follow_symlinks=True):
+                            subdirs.append(de.path)
+                    except OSError:
+                        pass
+    except OSError:
+        return None
+    if not strict_pycache:
+        return None
+    try:
+        real_root = _re01_norm_posix(os.path.realpath(dir_path))
+    except OSError:
+        real_root = None
+    has_nonroot_mount = bool(
+        mounts and sb_targets
+        and any(_re01_mount_lookup(t, mounts)[1] not in (None, '/') for t in sb_targets))
+    if not has_nonroot_mount or real_root in ('/', '/tmp', '/var/tmp', '/opt', '/var', '/home', '/usr', '/etc'):
+        if mounts and sb_targets:
+            for target_sb in sb_targets:
+                prefix = '/' if target_sb == '/' else target_sb + '/'
+                for dest in mounts:
+                    if dest.startswith(prefix):
+                        rel_parts = [p for p in dest[len(prefix):].split('/') if p and p != '.']
+                        for i in range(1, len(rel_parts)):
+                            pkg_dir = os.path.join(dir_path, *rel_parts[:i])
+                            cache_dir = os.path.join(pkg_dir, '__pycache__')
+                            if os.path.islink(cache_dir):
+                                return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
+                            if os.path.isdir(cache_dir):
+                                err = _re01_scan_pycache_dir(cache_dir, entry, label, strict_pycache=True)
+                                if err is not None:
+                                    return err
+        return None
+    seen_inodes = set()
+    try:
+        st_root = os.stat(dir_path)
+        seen_inodes.add((st_root.st_dev, st_root.st_ino))
     except OSError:
         pass
+    queue = collections.deque((sd, 1) for sd in subdirs)
+    while queue:
+        cur_dir, depth = queue.popleft()
+        if depth > 8:
+            continue
+        try:
+            st = os.stat(cur_dir)
+            key = (st.st_dev, st.st_ino)
+            if key in seen_inodes:
+                continue
+            seen_inodes.add(key)
+            with os.scandir(cur_dir) as sub_it:
+                for de in sub_it:
+                    if de.name == '__pycache__':
+                        if de.is_symlink():
+                            return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
+                        if de.is_dir(follow_symlinks=False):
+                            err = _re01_scan_pycache_dir(de.path, entry, label, strict_pycache=True)
+                            if err is not None:
+                                return err
+                    elif de.name != '.git' and depth < 8:
+                        try:
+                            if de.is_dir(follow_symlinks=True):
+                                queue.append((de.path, depth + 1))
+                        except OSError:
+                            pass
+        except OSError:
+            continue
     return None
 
 
@@ -804,9 +936,8 @@ def _re01_check_pycache_prefix(raw_val, *, cwd=None, mounts=None):
         reason = _re01_path_reason(cand, raw_val, is_cmd_pos=False, cwd=cwd)
         if reason is not None:
             return reason
-    pc_slash = raw_val.replace('\\', '/')
     sb_entry = _re01_norm_posix(
-        pc_slash if posixpath.isabs(pc_slash) else posixpath.join(_re01_abs_cwd(cwd), pc_slash))
+        raw_val if posixpath.isabs(raw_val) else posixpath.join(_re01_abs_cwd(cwd), raw_val))
     if sb_entry == '/' or pc_sb == '/':
         return f'RE-01 forbids root PYTHONPYCACHEPREFIX: {raw_val}'
     parent_sb = posixpath.dirname(sb_entry)
@@ -878,6 +1009,45 @@ def _re01_check_pycache_prefix(raw_val, *, cwd=None, mounts=None):
     return None
 
 
+def _re01_check_mounted_import_children(sb_targets, mounts, entry_label, *, label, cwd=None,
+                                        forbid_pth=False, check_path_reason=False):
+    for target_sb in sb_targets:
+        prefix = '/' if target_sb == '/' else target_sb + '/'
+        for dest, (kind, host_tgt) in mounts.items():
+            if not dest.startswith(prefix):
+                continue
+            rel = dest[len(prefix):]
+            rel_parts = rel.split('/')
+            first_comp = rel_parts[0]
+            if '__pycache__' in rel_parts:
+                return f'RE-01 forbids {label} mounted/symlinked __pycache__: {entry_label}'
+            if (forbid_pth and first_comp.endswith('.pth')) or _re01_is_py_hook_name(first_comp):
+                return f'RE-01 forbids {label} mounted {first_comp}: {entry_label}'
+            if check_path_reason and kind == 'bind' and host_tgt:
+                reason = _re01_path_reason(host_tgt, entry_label, is_cmd_pos=False, cwd=cwd)
+                if reason is not None:
+                    return reason
+            if kind == 'bind' and host_tgt and os.path.isdir(host_tgt):
+                d_err = _re01_check_dir_py_hooks(
+                    host_tgt, entry_label, label=label, forbid_pth=forbid_pth,
+                    strict_pycache=True, sb_targets=(dest,), mounts=mounts)
+                if d_err is not None:
+                    return d_err
+            elif kind == 'symlink':
+                _, _, t_any, t_sb, t_err = _re01_resolve_exec_chain(
+                    dest, cwd=cwd, is_cmd=False, mounts=mounts)
+                if t_err is not None:
+                    return t_err
+                if t_any and os.path.isdir(t_any):
+                    t_targets = (dest, t_sb) if t_sb and t_sb != dest else (dest,)
+                    d_err = _re01_check_dir_py_hooks(
+                        t_any, entry_label, label=label, forbid_pth=forbid_pth,
+                        strict_pycache=True, sb_targets=t_targets, mounts=mounts)
+                    if d_err is not None:
+                        return d_err
+    return None
+
+
 def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
                     python_no_usersite=False, python_ignore_env=False, python_xy=None):
     raw_env = os.environ if env is None else env
@@ -940,9 +1110,8 @@ def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
                     z_err = _re01_check_zip_py_hooks(zcand, entry)
                     if z_err is not None:
                         return None, z_err
-            slash_e = entry.replace('\\', '/')
             sb_entry = _re01_norm_posix(
-                slash_e if posixpath.isabs(slash_e) else posixpath.join(base_dir, slash_e))
+                entry if posixpath.isabs(entry) else posixpath.join(base_dir, entry))
             sb_targets = [sb_entry]
             if cand_sb and cand_sb not in sb_targets:
                 sb_targets.append(cand_sb)
@@ -966,27 +1135,19 @@ def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
                             return None, z_err
             checked_dirs = set()
             for dcand in (cand_any, *chain):
-                if dcand and dcand not in checked_dirs and os.path.isdir(dcand):
-                    checked_dirs.add(dcand)
-                    d_err = _re01_check_dir_py_hooks(dcand, entry)
-                    if d_err is not None:
-                        return None, d_err
+                if dcand and os.path.isdir(dcand):
+                    strict = _re01_dir_strict_pycache(dcand, sb_targets, mounts)
+                    if (dcand, strict) not in checked_dirs:
+                        checked_dirs.add((dcand, strict))
+                        d_err = _re01_check_dir_py_hooks(
+                            dcand, entry, strict_pycache=strict, sb_targets=sb_targets, mounts=mounts)
+                        if d_err is not None:
+                            return None, d_err
             if mounts:
-                for target_sb in sb_targets:
-                    prefix = '/' if target_sb == '/' else target_sb + '/'
-                    for dest, (kind, host_tgt) in mounts.items():
-                        if dest.startswith(prefix):
-                            rel = dest[len(prefix):]
-                            rel_parts = rel.split('/')
-                            first_comp = rel_parts[0]
-                            if '__pycache__' in rel_parts:
-                                return None, f'RE-01 forbids PYTHONPATH mounted/symlinked __pycache__: {entry}'
-                            if _re01_is_py_hook_name(first_comp):
-                                return None, f'RE-01 forbids PYTHONPATH mounted hook {first_comp}: {entry}'
-                            if kind == 'bind' and host_tgt:
-                                reason = _re01_path_reason(host_tgt, entry, is_cmd_pos=False, cwd=cwd)
-                                if reason is not None:
-                                    return None, reason
+                c_err = _re01_check_mounted_import_children(
+                    sb_targets, mounts, entry, label='PYTHONPATH', cwd=cwd, check_path_reason=True)
+                if c_err is not None:
+                    return None, c_err
     no_usersite_env = decoded.get('PYTHONNOUSERSITE')
     env_disables_usersite = (
         not python_ignore_env
@@ -1019,35 +1180,34 @@ def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
         ver = python_xy or f'{sys.version_info.major}.{sys.version_info.minor}'
         abi_thread = 't' if 't' in getattr(sys, 'abiflags', '') else ''
         for home_val in home_candidates:
-            home_slash = home_val.replace('\\', '/')
             home_abs = _re01_norm_posix(
-                home_slash if posixpath.isabs(home_slash) else posixpath.join(base_dir, home_slash))
+                home_val if posixpath.isabs(home_val) else posixpath.join(base_dir, home_val))
             for pkg_dir_name in ('site-packages', 'dist-packages'):
                 user_site = posixpath.join(home_abs, '.local', 'lib', f'python{ver}{abi_thread}', pkg_dir_name)
                 u_chain, _, u_any, u_sb, u_err = _re01_resolve_exec_chain(
                     user_site, cwd=cwd, is_cmd=False, mounts=mounts)
                 if u_err is not None:
                     return None, u_err
+                u_targets = [user_site]
+                if u_sb and u_sb not in u_targets:
+                    u_targets.append(u_sb)
                 checked_u = set()
                 for dcand in (u_any, *u_chain):
-                    if dcand and dcand not in checked_u and os.path.isdir(dcand):
-                        checked_u.add(dcand)
-                        d_err = _re01_check_dir_py_hooks(
-                            dcand, user_site, label='user site-packages', forbid_pth=True)
-                        if d_err is not None:
-                            return None, d_err
+                    if dcand and os.path.isdir(dcand):
+                        strict = _re01_dir_strict_pycache(dcand, u_targets, mounts)
+                        if (dcand, strict) not in checked_u:
+                            checked_u.add((dcand, strict))
+                            d_err = _re01_check_dir_py_hooks(
+                                dcand, user_site, label='user site-packages', forbid_pth=True,
+                                strict_pycache=strict, sb_targets=u_targets, mounts=mounts)
+                            if d_err is not None:
+                                return None, d_err
                 if mounts:
-                    for target_sb in (user_site, *([u_sb] if u_sb and u_sb != user_site else [])):
-                        prefix = target_sb + '/'
-                        for dest, (kind, host_tgt) in mounts.items():
-                            if dest.startswith(prefix):
-                                rel_parts = dest[len(prefix):].split('/')
-                                first_comp = rel_parts[0]
-                                if '__pycache__' in rel_parts:
-                                    return None, (f'RE-01 forbids user site-packages '
-                                                  f'mounted/symlinked __pycache__: {user_site}')
-                                if first_comp.endswith('.pth') or _re01_is_py_hook_name(first_comp):
-                                    return None, f'RE-01 forbids user site-packages mounted {first_comp}: {user_site}'
+                    c_err = _re01_check_mounted_import_children(
+                        u_targets, mounts, user_site, label='user site-packages',
+                        cwd=cwd, forbid_pth=True)
+                    if c_err is not None:
+                        return None, c_err
     return decoded.get('PATH', os.defpath), None
 
 
@@ -1088,19 +1248,18 @@ def _re01_check_python_venv(exe_tok, host_exe, sb_exe, chain, *, cwd=None, mount
     for raw in (exe_tok, argv0_tok):
         if not raw:
             continue
-        if '/' in raw.replace('\\', '/'):
-            s = raw.replace('\\', '/')
-            cand_paths.append(_re01_norm_posix(s if posixpath.isabs(s) else posixpath.join(base_dir, s)))
+        if '/' in raw:
+            cand_paths.append(_re01_norm_posix(raw if posixpath.isabs(raw) else posixpath.join(base_dir, raw)))
         else:
             a_chain, a_host, _, a_sb, a_err = _re01_resolve_exec_chain(
                 raw, cwd=cwd, search_path=search_path, is_cmd=True, mounts=mounts)
             if a_err is not None:
                 return a_err
             for p in (a_host, a_sb, *a_chain):
-                if p and '/' in p.replace('\\', '/'):
+                if p and '/' in p:
                     cand_paths.append(_re01_norm_posix(p))
     for p in (host_exe, sb_exe, *chain):
-        if p and '/' in p.replace('\\', '/'):
+        if p and '/' in p:
             cand_paths.append(_re01_norm_posix(p))
     seen_dirs = set()
     own_cfg = None
@@ -1156,7 +1315,7 @@ def _re01_check_python_args(args, *, cwd=None, mounts=None, env=None):
     if script_idx is None:
         return 'RE-01 forbids interactive or stdin Python execution under audit enforcement'
     script_tok = args[script_idx]
-    norm_tok = _re01_norm_posix(script_tok.replace('\\', '/'))
+    norm_tok = _re01_norm_posix(script_tok)
     if (norm_tok == '-' or norm_tok == '/dev/stdin' or norm_tok.startswith('/dev/fd/')
             or re.fullmatch(r'/proc/(?:\d+|self|thread-self)/fd/.*', norm_tok)):
         return f'RE-01 forbids FD/stdin Python execution: {script_tok}'
@@ -1195,45 +1354,54 @@ def _re01_check_python_args(args, *, cwd=None, mounts=None, env=None):
     if not isolated and not (not ignore_env and safepath):
         checked_sp0_dirs = set()
         script_dir = os.path.dirname(host_file)
-        if script_dir:
-            checked_sp0_dirs.add(script_dir)
-            d_err = _re01_check_dir_py_hooks(script_dir, script_tok, label='script sys.path[0]')
-            if d_err is not None:
-                return d_err
         if mounts:
             base_dir = _re01_abs_cwd(cwd)
-            slash_s = script_tok.replace('\\', '/')
             orig_sb_script = _re01_norm_posix(
-                slash_s if posixpath.isabs(slash_s) else posixpath.join(base_dir, slash_s))
+                script_tok if posixpath.isabs(script_tok) else posixpath.join(base_dir, script_tok))
             sb_dirs = []
             for s_cand in (sb_script, orig_sb_script):
                 if s_cand:
                     d_cand = posixpath.dirname(s_cand)
                     if d_cand and d_cand not in sb_dirs:
                         sb_dirs.append(d_cand)
+            all_sb_targets = []
             for sb_dir in sb_dirs:
                 _, _, sb_any, sb_resolved, sb_err = _re01_resolve_exec_chain(
                     sb_dir, cwd=cwd, is_cmd=False, mounts=mounts)
                 if sb_err is not None:
                     return sb_err
-                if sb_any and sb_any not in checked_sp0_dirs and os.path.isdir(sb_any):
-                    checked_sp0_dirs.add(sb_any)
-                    d_err = _re01_check_dir_py_hooks(sb_any, script_tok, label='script sys.path[0]')
-                    if d_err is not None:
-                        return d_err
                 sb_targets = [sb_dir]
                 if sb_resolved and sb_resolved not in sb_targets:
                     sb_targets.append(sb_resolved)
-                for target_sb in sb_targets:
-                    prefix = '/' if target_sb == '/' else target_sb + '/'
-                    for dest, (kind, host_tgt) in mounts.items():
-                        if dest.startswith(prefix):
-                            rel_parts = dest[len(prefix):].split('/')
-                            first_comp = rel_parts[0]
-                            if '__pycache__' in rel_parts:
-                                return f'RE-01 forbids script sys.path[0] mounted/symlinked __pycache__: {script_tok}'
-                            if _re01_is_py_hook_name(first_comp):
-                                return f'RE-01 forbids script sys.path[0] mounted hook {first_comp}: {script_tok}'
+                for t in sb_targets:
+                    if t not in all_sb_targets:
+                        all_sb_targets.append(t)
+                if sb_any and os.path.isdir(sb_any):
+                    strict = _re01_dir_strict_pycache(sb_any, sb_targets, mounts)
+                    if (sb_any, strict) not in checked_sp0_dirs:
+                        checked_sp0_dirs.add((sb_any, strict))
+                        d_err = _re01_check_dir_py_hooks(
+                            sb_any, script_tok, label='script sys.path[0]',
+                            strict_pycache=strict, sb_targets=sb_targets, mounts=mounts)
+                        if d_err is not None:
+                            return d_err
+                c_err = _re01_check_mounted_import_children(
+                    sb_targets, mounts, script_tok, label='script sys.path[0]', cwd=cwd)
+                if c_err is not None:
+                    return c_err
+            if script_dir and os.path.isdir(script_dir):
+                strict_host = _re01_dir_strict_pycache(script_dir, all_sb_targets, mounts)
+                if (script_dir, strict_host) not in checked_sp0_dirs:
+                    checked_sp0_dirs.add((script_dir, strict_host))
+                    d_err = _re01_check_dir_py_hooks(
+                        script_dir, script_tok, label='script sys.path[0]',
+                        strict_pycache=strict_host, sb_targets=all_sb_targets, mounts=mounts)
+                    if d_err is not None:
+                        return d_err
+        elif script_dir:
+            d_err = _re01_check_dir_py_hooks(script_dir, script_tok, label='script sys.path[0]')
+            if d_err is not None:
+                return d_err
     for arg_tok in args[script_idx + 1:]:
         arg_chain, _, _, _, arg_err = _re01_resolve_exec_chain(
             arg_tok, cwd=cwd, is_cmd=False, mounts=mounts)
@@ -1384,7 +1552,7 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
             return f'RE-01 forbids incomplete bwrap option {tok} under audit enforcement'
         if tok in _RE01_BWRAP_BIND_SRC_OPTS:
             src, dest = args[idx + 1], args[idx + 2]
-            if not posixpath.isabs(dest.replace('\\', '/')):
+            if not posixpath.isabs(dest):
                 return f'RE-01 forbids relative bwrap mount destination: {dest}'
             dest_norm, d_err = _re01_resolve_mount_symlinks(dest, mounts)
             if d_err is not None:
@@ -1401,9 +1569,8 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
                 alias_err = _re01_alias_reason(src_chain, dest_norm, src)
                 if alias_err is not None:
                     return alias_err
-            src_slash = src.replace('\\', '/')
             src_abs = _re01_norm_posix(
-                src_slash if posixpath.isabs(src_slash) else posixpath.join(_re01_abs_cwd(cwd), src_slash))
+                src if posixpath.isabs(src) else posixpath.join(_re01_abs_cwd(cwd), src))
             if outer_mounts is not None:
                 eff_src_sb = src_sb or src_abs
                 okind, _, omapped = _re01_mount_lookup(eff_src_sb, outer_mounts)
@@ -1444,9 +1611,9 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
                         rw_mounts.add(dest_norm)
         elif tok == '--symlink':
             src, dest = args[idx + 1], args[idx + 2]
-            if not posixpath.isabs(dest.replace('\\', '/')):
+            if not posixpath.isabs(dest):
                 return f'RE-01 forbids relative bwrap symlink destination: {dest}'
-            raw_segs = [s for s in dest.replace('\\', '/').split('/') if s and s != '.']
+            raw_segs = [s for s in dest.split('/') if s and s != '.']
             if not raw_segs or raw_segs[-1] == '..':
                 return f'RE-01 forbids invalid bwrap symlink destination: {dest}'
             dest_parent_raw = '/' + '/'.join(raw_segs[:-1])
@@ -1454,9 +1621,8 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
             if d_err is not None:
                 return d_err
             dest_norm = _re01_norm_posix(posixpath.join(dest_parent, raw_segs[-1]))
-            src_slash = src.replace('\\', '/')
             target_norm = _re01_norm_posix(
-                src_slash if posixpath.isabs(src_slash) else posixpath.join(dest_parent, src_slash))
+                src if posixpath.isabs(src) else posixpath.join(dest_parent, src))
             reason = _re01_path_reason(target_norm, src, is_cmd_pos=False, cwd=cwd)
             if reason is not None:
                 return reason
@@ -1476,7 +1642,7 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
                 mounts[dest_norm] = ('symlink', target_norm)
         elif tok in _RE01_BWRAP_OPAQUE_OPTS:
             dest = args[idx + 1]
-            if not posixpath.isabs(dest.replace('\\', '/')):
+            if not posixpath.isabs(dest):
                 return f'RE-01 forbids relative bwrap mount destination: {dest}'
             dest_norm, d_err = _re01_resolve_mount_symlinks(dest, mounts)
             if d_err is not None:
@@ -1487,7 +1653,7 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
             mounts[dest_norm] = ('opaque', None)
         elif tok == '--dir':
             dest = args[idx + 1]
-            if not posixpath.isabs(dest.replace('\\', '/')):
+            if not posixpath.isabs(dest):
                 return f'RE-01 forbids relative bwrap {tok} destination: {dest}'
             dir_norm, d_err = _re01_resolve_mount_symlinks(dest, mounts)
             if d_err is not None:
@@ -1495,7 +1661,7 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
             dir_dests.append(dir_norm)
         elif tok == '--remount-ro':
             dest = args[idx + 1]
-            if not posixpath.isabs(dest.replace('\\', '/')):
+            if not posixpath.isabs(dest):
                 return f'RE-01 forbids relative bwrap {tok} destination: {dest}'
             _, d_err = _re01_resolve_mount_symlinks(dest, mounts)
             if d_err is not None:
@@ -1511,7 +1677,7 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
                     or argv0_name == 'kicad-route'):
                 return f'RE-01 forbids bwrap --argv0 masquerading as {bwrap_argv0}'
         elif tok == '--chdir':
-            chdir_arg = args[idx + 1].replace('\\', '/')
+            chdir_arg = args[idx + 1]
             bwrap_cwd = _re01_norm_posix(
                 chdir_arg if posixpath.isabs(chdir_arg) else posixpath.join('/', chdir_arg))
         elif tok == '--clearenv':
@@ -1599,9 +1765,29 @@ def _re01_check_engine_implicit_bridge(eff_python, *, host_exe, sb_exe, cwd=None
                 break
             cur = parent
 
+    abs_cwd = _re01_abs_cwd(cwd)
     _add_anc_bridges(sb_exe)
     _add_anc_bridges(host_exe)
-    _add_anc_bridges(_re01_abs_cwd(cwd) + '/_')
+    _add_anc_bridges(abs_cwd + '/_')
+    cwd_chain, _, cwd_any, cwd_sb, cwd_err = _re01_resolve_exec_chain(
+        abs_cwd, cwd=cwd, is_cmd=False, mounts=mounts)
+    if cwd_err is not None:
+        return cwd_err
+    for cand in cwd_chain:
+        reason = _re01_path_reason(cand, abs_cwd, is_cmd_pos=False, cwd=cwd)
+        if reason is not None:
+            return reason
+    if cwd_sb:
+        _add_anc_bridges(cwd_sb + '/_')
+    if cwd_any:
+        _add_anc_bridges(cwd_any + '/_')
+    if mounts is None:
+        try:
+            cwd_real = _re01_norm_posix(os.path.realpath(abs_cwd))
+        except OSError:
+            cwd_real = None
+        if cwd_real:
+            _add_anc_bridges(cwd_real + '/_')
     sb_bridge = f"{SANDBOX['checkout']}/tools/rust_engine_kicad.py"
     if sb_bridge not in seen:
         seen.add(sb_bridge)
@@ -1673,11 +1859,10 @@ def _re01_check_engine_implicit_bridge(eff_python, *, host_exe, sb_exe, cwd=None
         if not (py_host.startswith(_RE01_SYSTEM_EXEC_PREFIXES) or py_host == py_real):
             return f'RE-01 forbids non-system --python path in route-native: {py_host}'
     else:
-        slash_py = eff_python.replace('\\', '/')
-        if '/' not in slash_py:
+        if '/' not in eff_python:
             return f'RE-01 forbids untrusted --python executable in route-native: {eff_python}'
         norm_py = _re01_norm_posix(
-            slash_py if posixpath.isabs(slash_py) else posixpath.join(_re01_abs_cwd(cwd), slash_py))
+            eff_python if posixpath.isabs(eff_python) else posixpath.join(_re01_abs_cwd(cwd), eff_python))
         if not (norm_py.startswith(_RE01_SYSTEM_EXEC_PREFIXES) or norm_py == py_real):
             return f'RE-01 forbids non-system --python path in route-native: {eff_python}'
     py_xy = _re01_python_xy(eff_python, py_host)
@@ -1856,19 +2041,17 @@ def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=No
                     or (py_real is not None and host_exe == py_real)):
                 return f'RE-01 forbids non-system executable path under audit enforcement: {host_exe}'
     elif invoked_cat == 'kicad-route-engine' and _mounts is None:
-        slash_e = exe_tok.replace('\\', '/')
-        if '/' not in slash_e:
+        if '/' not in exe_tok:
             return f'RE-01 forbids untrusted kicad-route-engine executable: {exe_tok}'
         norm_exe = _re01_norm_posix(
-            slash_e if posixpath.isabs(slash_e) else posixpath.join(_re01_abs_cwd(cwd_str), slash_e))
+            exe_tok if posixpath.isabs(exe_tok) else posixpath.join(_re01_abs_cwd(cwd_str), exe_tok))
         trusted_engines = _re01_trusted_engine_paths()
         if not (norm_exe.startswith(_RE01_SYSTEM_EXEC_PREFIXES) or norm_exe in trusted_engines):
             return f'RE-01 forbids untrusted kicad-route-engine path: {exe_tok}'
     elif invoked_cat == 'python' and _mounts is None:
-        slash_py = exe_tok.replace('\\', '/')
-        if '/' in slash_py:
+        if '/' in exe_tok:
             norm_py = _re01_norm_posix(
-                slash_py if posixpath.isabs(slash_py) else posixpath.join(_re01_abs_cwd(cwd_str), slash_py))
+                exe_tok if posixpath.isabs(exe_tok) else posixpath.join(_re01_abs_cwd(cwd_str), exe_tok))
             py_real = os.path.realpath(sys.executable)
             if not (norm_py.startswith(_RE01_SYSTEM_EXEC_PREFIXES) or norm_py == py_real):
                 return f'RE-01 forbids non-system Python path under audit enforcement: {exe_tok}'
@@ -1902,7 +2085,7 @@ def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=No
                 shebang_argv, cwd=cwd_str, env=env, _depth=_depth + 1, _mounts=_mounts)
             if reason is not None:
                 return reason
-            if '/' not in parts[0].replace('\\', '/'):
+            if '/' not in parts[0]:
                 cwd_interp = posixpath.join(_re01_abs_cwd(cwd_str), parts[0])
                 reason = _re01_check_command_reason(
                     [cwd_interp, *shebang_argv[1:]],

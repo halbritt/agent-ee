@@ -2242,6 +2242,186 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                         [str(real_engine), 'route-native', str(in_pcb), str(out_pcb), '--native-bridge', str(bridge)],
                         env=b_env)
 
+    def test_re01_r15_sym_cwd_backslash_paths_and_shadow_pycache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / 'marker.txt'
+            ver = f'{sys.version_info.major}.{sys.version_info.minor}'
+            tag = sys.implementation.cache_tag
+            co = root / 'kicad-route'
+            (co / 'tools').mkdir(parents=True)
+            bridge = co / 'tools/rust_engine_kicad.py'
+            bridge.write_text('import json, sys; sys.exit(0)\n')
+            bridge.chmod(0o755)
+            in_pcb, out_pcb = root / 'in.kicad_pcb', root / 'out.kicad_pcb'
+            in_pcb.write_text('(kicad_pcb)\n')
+            evil_src = root / 'evil_src.py'
+            evil_src.write_text(f'open({str(marker)!r}, "a").write("R15_PWN\\n")\n')
+
+            # M51-R14-C1-1: host symlink cwd and bwrap --symlink --chdir
+            evil_cwd_root = root / 'evil_cwd_root'
+            (evil_cwd_root / 'sub').mkdir(parents=True)
+            (evil_cwd_root / 'tools').mkdir(parents=True)
+            (evil_cwd_root / 'tools/rust_engine_kicad.py').write_text('import json\n')
+            (evil_cwd_root / 'tools/json.py').write_text(f'open({str(marker)!r}, "a").write("CWD_JSON\\n")\n')
+            host_sym_cwd = root / 'host_sym_cwd'
+            host_sym_cwd.symlink_to(evil_cwd_root / 'sub')
+
+            # M51-R14-C2-1: literal backslash in Linux directory names
+            bs_pc = root / 'bs\\pc'
+            (bs_pc / 'json').mkdir(parents=True)
+            py_compile.compile(str(evil_src), cfile=str(bs_pc / f'json/__init__.{tag}.pyc'), doraise=True)
+            bs_pp = root / 'bs\\pp'
+            bs_pp.mkdir()
+            (bs_pp / 'json.py').write_text(f'open({str(marker)!r}, "a").write("BS_PP\\n")\n')
+            bs_home = root / 'bs\\home'
+            (bs_home / f'.local/lib/python{ver}/site-packages').mkdir(parents=True)
+            (bs_home / f'.local/lib/python{ver}/site-packages/evil.pth').write_text(
+                f'import builtins; open({str(marker)!r}, "a").write("BS_HOME\\n")\n')
+            bs_path = root / 'bs\\path'
+            bs_path.mkdir()
+            (bs_path / 'kicad-cli').write_text(f'#!/bin/sh\necho BS_KCLI >> "{marker}"\n')
+            (bs_path / 'kicad-cli').chmod(0o755)
+
+            # M51-R14-C2-2: bwrap-mounted/overlaid dirs with forged non-hook .pyc
+            clean_src_dir = root / 'clean_src'
+            clean_src_dir.mkdir()
+            clean_imp = clean_src_dir / 'bridge_helper.py'
+            clean_imp.write_text('import helper_mod, sys; sys.exit(0)\n')
+            clean_helper = clean_src_dir / 'helper_mod.py'
+            clean_helper.write_text('VAL = 1\n')
+            clean_pkg_imp = clean_src_dir / 'pkg_helper.py'
+            clean_pkg_imp.write_text('import pkg.helper_mod, sys; sys.exit(0)\n')
+            shadow_dir = root / 'shadow_dir'
+            (shadow_dir / '__pycache__').mkdir(parents=True)
+            (shadow_dir / 'pkg/__pycache__').mkdir(parents=True)
+            (shadow_dir / 'pkg/__init__.py').write_text('')
+            py_compile.compile(str(evil_src), cfile=str(shadow_dir / f'__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+            py_compile.compile(
+                str(evil_src), cfile=str(shadow_dir / f'pkg/__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+            evil_pkg = root / 'evil_pkg'
+            (evil_pkg / '__pycache__').mkdir(parents=True)
+            (evil_pkg / '__init__.py').write_text('')
+            py_compile.compile(str(evil_src), cfile=str(evil_pkg / f'__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+            host_overlaid = root / 'host_overlaid'
+            (host_overlaid / '__pycache__').mkdir(parents=True)
+            (host_overlaid / 'bridge_helper.py').write_text('import helper_mod, sys; sys.exit(0)\n')
+            (host_overlaid / 'helper_mod.py').write_text('VAL = 1\n')
+            py_compile.compile(
+                str(evil_src), cfile=str(host_overlaid / f'__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+
+            real_engine = routing_adapter.resolve_kicad_route_engine()
+            real_bridge = routing_adapter.resolve_native_bridge()
+            with routing_adapter.re01_enforced():
+                blocked_cases = [
+                    ('c2_1_bs_pycache', lambda: subprocess.run(
+                        [sys.executable, '-B', str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPYCACHEPREFIX': str(bs_pc)}, timeout=5)),
+                    ('c2_1_bs_pypath', lambda: subprocess.run(
+                        [sys.executable, '-B', str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(bs_pp)}, timeout=5)),
+                    ('c2_1_bs_bwrap_robind_pypath', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                         '--ro-bind', str(bs_pp), '/opt/d', '--setenv', 'PYTHONPATH', '/opt/d',
+                         '--', sys.executable, '-B', str(bridge)], timeout=5)),
+                    ('c2_1_bs_home_usersite', lambda: subprocess.run(
+                        [sys.executable, '-B', str(bridge)],
+                        env={'PATH': '/usr/bin:/bin', 'HOME': str(bs_home)}, timeout=5)),
+                    ('c2_1_bs_path_kicad_cli', lambda: routing_adapter.check_re01_command(
+                        ['/usr/bin/kicad-route-engine', 'route-native', str(in_pcb), str(out_pcb),
+                         '--native-bridge', str(bridge)],
+                        env={'PATH': f'{bs_path}:/usr/bin:/bin'})),
+                    ('c2_2_shadow_sp0_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root), '--tmpfs', '/opt',
+                         '--ro-bind', str(shadow_dir), '/opt/d',
+                         '--ro-bind', str(clean_imp), '/opt/d/bridge_helper.py',
+                         '--ro-bind', str(clean_helper), '/opt/d/helper_mod.py',
+                         '--', sys.executable, '/opt/d/bridge_helper.py'], timeout=5)),
+                    ('c2_2_shadow_pypath_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root), '--tmpfs', '/opt',
+                         '--ro-bind', str(shadow_dir), '/opt/d',
+                         '--ro-bind', str(clean_helper), '/opt/d/helper_mod.py',
+                         '--setenv', 'PYTHONPATH', '/opt/d',
+                         '--', sys.executable, str(clean_imp)], timeout=5)),
+                    ('c2_2_shadow_usersite_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root), '--tmpfs', '/opt',
+                         '--ro-bind', str(shadow_dir), f'/opt/h/.local/lib/python{ver}/site-packages',
+                         '--ro-bind', str(clean_helper), f'/opt/h/.local/lib/python{ver}/site-packages/helper_mod.py',
+                         '--setenv', 'HOME', '/opt/h',
+                         '--', sys.executable, str(clean_imp)], timeout=5)),
+                    ('c2_2_host_child_overlay_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--ro-bind', str(clean_helper), str(host_overlaid / 'helper_mod.py'),
+                         '--', sys.executable, str(host_overlaid / 'bridge_helper.py')], timeout=5)),
+                    ('c2_2_shadow_subpkg_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root), '--tmpfs', '/opt',
+                         '--ro-bind', str(shadow_dir), '/opt/d',
+                         '--ro-bind', str(clean_pkg_imp), '/opt/d/pkg_helper.py',
+                         '--ro-bind', str(clean_helper), '/opt/d/pkg/helper_mod.py',
+                         '--', sys.executable, '/opt/d/pkg_helper.py'], timeout=5)),
+                    ('c2_2_mounted_subpkg_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root), '--tmpfs', '/opt',
+                         '--ro-bind', str(clean_src_dir), '/opt/d',
+                         '--ro-bind', str(evil_pkg), '/opt/d/pkg',
+                         '--ro-bind', str(clean_helper), '/opt/d/pkg/helper_mod.py',
+                         '--', sys.executable, '/opt/d/pkg_helper.py'], timeout=5)),
+                    ('c1_1_host_sym_cwd_bridge', lambda: routing_adapter.check_re01_command(
+                        ['/usr/bin/kicad-route-engine', 'route-native', str(in_pcb), str(out_pcb)],
+                        cwd=str(host_sym_cwd))),
+                    ('c1_1_bwrap_host_sym_chdir', lambda: routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', '/', '/', '--chdir', str(host_sym_cwd),
+                         '--', '/usr/bin/kicad-route-engine', 'route-native', str(in_pcb), str(out_pcb)])),
+                    ('c1_1_bwrap_sym_chdir', lambda: routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                         '--symlink', str(evil_cwd_root / 'sub'), '/opt/sym_cwd', '--chdir', '/opt/sym_cwd',
+                         '--', '/usr/bin/kicad-route-engine', 'route-native', str(in_pcb), str(out_pcb)])),
+                ]
+                if real_engine is not None and real_engine.is_file():
+                    eng_str = str(real_engine)
+                    blocked_cases.extend([
+                        ('c2_1_real_engine_bs_path_kcli', lambda: routing_adapter.check_re01_command(
+                            [eng_str, 'route-native', str(in_pcb), str(out_pcb)],
+                            env={'PATH': f'{bs_path}:/usr/bin:/bin'})),
+                        ('c1_1_real_engine_host_sym_cwd', lambda: subprocess.run(
+                            [eng_str, 'route-native', str(in_pcb), str(out_pcb)],
+                            cwd=str(host_sym_cwd), timeout=5)),
+                    ])
+                    if real_bridge is not None and real_bridge.is_file():
+                        blocked_cases.extend([
+                            ('c1_1_real_engine_bwrap_host_sym_chdir', lambda: subprocess.run(
+                                ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                                 '--tmpfs', str(real_bridge.parent), '--chdir', str(host_sym_cwd),
+                                 '--', eng_str, 'route-native', str(in_pcb), str(out_pcb)], timeout=5)),
+                            ('c1_1_real_engine_bwrap_sym_chdir', lambda: subprocess.run(
+                                ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                                 '--tmpfs', str(real_bridge.parent), '--tmpfs', '/opt',
+                                 '--symlink', str(evil_cwd_root / 'sub'), '/opt/sym_cwd',
+                                 '--chdir', '/opt/sym_cwd',
+                                 '--', eng_str, 'route-native', str(in_pcb), str(out_pcb)], timeout=5)),
+                        ])
+                for label, fn in blocked_cases:
+                    with self.subTest(case=label):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            fn()
+                self.assertFalse(marker.exists())
+                # Positive controls: repo PYTHONPATH=src:tests, sandbox_argv, and repo tools under bwrap
+                routing_adapter.check_re01_command(
+                    [sys.executable, str(bridge)], cwd=str(ROOT),
+                    env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': 'src:tests'})
+                ex_in, ex_work = root / 'ex_in', root / 'ex_work'
+                ex_in.mkdir()
+                ex_work.mkdir()
+                routing_adapter.check_re01_command(
+                    sandbox_argv(ex_in, ex_work, [sys.executable, '-I', '-B', '/app/agent_ee/__init__.py']))
+                if real_engine is not None and real_engine.is_file():
+                    routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', '/', '/',
+                         '--', str(real_engine), 'route-native', '--help'])
+                    if real_bridge is not None and real_bridge.is_file():
+                        routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', '/', '/',
+                             '--', str(real_engine), 'route-native', str(in_pcb), str(out_pcb)])
+
 
 class NativeAdapterHardeningTests(unittest.TestCase):
     def test_not_run_attempt_sets_native_backend_and_verifies(self):
