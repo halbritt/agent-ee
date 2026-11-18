@@ -11,6 +11,7 @@ router; the policy fixture tests live in test_kicad_route_adapter.py.
 import contextlib
 import json
 import os
+import py_compile
 import re
 import shutil
 import subprocess
@@ -20,6 +21,7 @@ import unittest
 import unittest.mock
 import traceback
 import uuid
+import zipfile
 from pathlib import Path
 
 from agent_ee import kicad_route_attempt as attempt
@@ -1252,6 +1254,235 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                 ])
                 done = subprocess.run([sys.executable, str(bridge)], capture_output=True, timeout=5)
                 self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_re01_r10_and_r11_vfs_env_cwd_payload_and_wrapper_hardening(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / 'marker.txt'
+            co = root / 'kicad-route'
+            (co / 'bin').mkdir(parents=True)
+            (co / 'src/kicad_route').mkdir(parents=True)
+            (co / 'tools').mkdir(parents=True)
+            krt_bin = co / 'bin/kicad-route'
+            krt_bin.write_text(f'#!/bin/sh\necho HIT >> "{marker}"\n')
+            krt_bin.chmod(0o755)
+            krt_main = co / 'src/kicad_route/__main__.py'
+            (co / 'src/kicad_route/__init__.py').write_text('')
+            krt_main.write_text(f'open({str(marker)!r}, "a").write("MOD\\n")\n')
+            bridge = co / 'tools/rust_engine_kicad.py'
+            bridge.write_text('#!/usr/bin/env python3\nimport sys; sys.exit(0)\n')
+            bridge.chmod(0o755)
+
+            # Aud-1 / R2-F2: bare relative .py script anchored to cwd (not process CWD) & bwrap --chdir
+            proc_cwd = root / 'proc_cwd'
+            outside = root / 'outside'
+            sub_path = outside / 'sub'
+            proc_cwd.mkdir()
+            sub_path.mkdir(parents=True)
+            (proc_cwd / 'rel.py').write_text('print("ok")\n')
+            (outside / 'rel.py').symlink_to(krt_main)
+            (outside / 'mytool').symlink_to(krt_bin)
+            (sub_path / 'mytool').symlink_to(krt_bin)
+
+            # Aud-2 / R1-F6 / R2-F1 / C1-V4 / N1: shebang zipapp .py & renamed .pyc / binary .py
+            zipapp_py = root / 'shebang_zip.py'
+            with zipfile.ZipFile(zipapp_py, 'w') as zf:
+                zf.writestr('__main__.py', f'open({str(marker)!r}, "a").write("ZIPAPP\\n")\n')
+            zipapp_py.write_bytes(b'#!/usr/bin/python3\n' + zipapp_py.read_bytes())
+            pyc_src = root / 'evil_src.py'
+            pyc_src.write_text(f'open({str(marker)!r}, "a").write("PYC\\n")\n')
+            pyc_as_py = root / 'renamed_pyc.py'
+            py_compile.compile(str(pyc_src), cfile=str(pyc_as_py), doraise=True)
+            nul_py = root / 'nul_payload.py'
+            nul_py.write_bytes(b'# fake\n\x00binary')
+
+            # N2 / R1-F5 / C2-4 / N8: PYTHONPATH .zip, package dirs, native_delay/grid_router
+            site_dir = root / 'site'
+            site_pkg = root / 'site_pkg'
+            user_pkg = root / 'user_pkg'
+            delay_dir = root / 'delay_dir'
+            (site_pkg / 'sitecustomize').mkdir(parents=True)
+            (user_pkg / 'usercustomize').mkdir(parents=True)
+            delay_dir.mkdir()
+            site_dir.mkdir()
+            (site_dir / 'sitecustomize.py').write_text(f'open({str(marker)!r}, "a").write("SITE\\n")\n')
+            (site_pkg / 'sitecustomize/__init__.py').write_text(f'open({str(marker)!r}, "a").write("PKG\\n")\n')
+            (user_pkg / 'usercustomize/__init__.py').write_text(f'open({str(marker)!r}, "a").write("UPKG\\n")\n')
+            (delay_dir / 'native_delay.py').write_text('x = 1\n')
+            pypath_zip = root / 'pypath_hook.zip'
+            with zipfile.ZipFile(pypath_zip, 'w') as zf:
+                zf.writestr('sitecustomize.py', f'open({str(marker)!r}, "a").write("ZIPSITE\\n")\n')
+            krt_zip = root / 'krt_pkg.zip'
+            with zipfile.ZipFile(krt_zip, 'w') as zf:
+                zf.writestr('kicad_route/__init__.py', '')
+
+            # C2-5 / N5 / N6 / N7: bare shebang, host shadow, mount-to-mount symlinks, relative bwrap
+            bare_sb = outside / 'wrap_bare_sb'
+            bare_sb.write_text('#!mytool\n')
+            bare_sb.chmod(0o755)
+            dir_a = root / 'dir_a'
+            dir_b = root / 'dir_b'
+            dir_a.mkdir()
+            dir_b.mkdir()
+            (dir_a / 'hop1').symlink_to('/opt/b/hop2')
+            (dir_b / 'hop2').symlink_to('/bin/sh')
+            innocent_py = root / 'innocent.py'
+            innocent_py.write_text('print("innocent")\n')
+            evil_dir = root / 'evil_dir'
+            evil_dir.mkdir()
+            (evil_dir / 'krt_alias').symlink_to(krt_bin)
+
+            old_cwd = os.getcwd()
+            try:
+                os.chdir(proc_cwd)
+                with routing_adapter.re01_enforced():
+                    for label, fn in (
+                        ('aud1_bare_rel_cwd', lambda: subprocess.run([sys.executable, 'rel.py'], cwd=outside, timeout=5)),
+                        ('aud1_bwrap_chdir_rel', lambda: subprocess.run(
+                            ['bwrap', '--ro-bind', '/', '/', '--chdir', str(outside), '--', sys.executable, 'rel.py'],
+                            timeout=5)),
+                        ('aud2_shebang_zipapp', lambda: subprocess.run([sys.executable, str(zipapp_py)], timeout=5)),
+                        ('n1_renamed_pyc', lambda: subprocess.run([sys.executable, str(pyc_as_py)], timeout=5)),
+                        ('n1_nul_py', lambda: subprocess.run([sys.executable, str(nul_py)], timeout=5)),
+                        ('aud3_bwrap_bind_sh', lambda: subprocess.run(
+                            ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/tmp', '--ro-bind', '/bin/sh',
+                             '/tmp/innocent', '--setenv', 'PATH', '/tmp', '--', 'innocent', '-c', 'true'], timeout=5)),
+                        ('aud3_bwrap_bind_py', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', sys.executable, '/tmp/notpy', '--', '/tmp/notpy', '-c', '1'])),
+                        ('c2_1_bwrap_bind_fd', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind-fd', '3', '/opt/x', '--', '/bin/true'])),
+                        ('c2_1_bwrap_args', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--args', '3', '--', '/bin/true'])),
+                        ('c2_1_bwrap_overlay', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--overlay-src', '/tmp', '--ro-overlay', '/opt', '--', '/bin/true'])),
+                        ('r1_f3_bwrap_rel_symlink', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', str(krt_bin), '/opt/real', '--symlink', '../real',
+                             '/opt/sub/link', '--', '/opt/sub/link'])),
+                        ('c2_1_bwrap_symlink_cycle', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--symlink', '/a', '/b', '--symlink', '/b', '/a', '--', '/a'])),
+                        ('r1_f3_bwrap_try_nonexistent_does_not_mask', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', str(krt_bin), '/opt/x', '--ro-bind-try',
+                             str(root / 'missing'), '/opt/x', '--', '/opt/x'])),
+                        ('r1_f1_bwrap_pypath_mount', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', str(site_dir), '/opt/s', '--setenv', 'PYTHONPATH',
+                             '/opt/s', '--', sys.executable, str(bridge)])),
+                        ('c1_child_mount_pypath', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', str(proc_cwd), '/opt/p', '--ro-bind',
+                             str(site_dir / 'sitecustomize.py'), '/opt/p/sitecustomize.py',
+                             '--setenv', 'PYTHONPATH', '/opt/p', '--', sys.executable, str(bridge)])),
+                        ('n5_bwrap_host_file_shadow', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', '/', '/', '--ro-bind', str(zipapp_py), str(innocent_py),
+                             '--', sys.executable, str(innocent_py)])),
+                        ('n6_mount_to_mount_symlink', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', str(dir_a), '/opt/a', '--ro-bind', str(dir_b), '/opt/b',
+                             '--', '/opt/a/hop1', '-c', 'true'])),
+                        ('n6_nested_bwrap', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', '/', '/', '--ro-bind', str(evil_dir), '/opt/e',
+                             '--', 'bwrap', '--ro-bind', '/opt/e/krt_alias', '/tmp/ok', '--', '/tmp/ok'])),
+                        ('n7_bwrap_rel_ro_bind_src', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', 'rel.py', '/opt/rel.py', '--', sys.executable, '/opt/rel.py'],
+                            cwd=outside)),
+                        ('n7_bwrap_rel_chdir', lambda: routing_adapter.check_re01_command(
+                            ['bwrap', '--ro-bind', '/', '/', '--chdir', str(outside).lstrip('/'),
+                             '--', sys.executable, 'rel.py'])),
+                        ('r1_f4_rel_path_sub', lambda: subprocess.run(
+                            ['mytool'], cwd=outside, env={'PATH': './sub'}, timeout=5)),
+                        ('n4_empty_path_env', lambda: subprocess.run(
+                            ['mytool'], cwd=outside, env={'PATH': ''}, timeout=5)),
+                        ('c2_4_empty_pypath_seg', lambda: subprocess.run(
+                            [sys.executable, str(bridge)], cwd=site_dir, env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': ':'},
+                            timeout=5)),
+                        ('r1_f5_site_pkg_dir', lambda: subprocess.run(
+                            [sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(site_pkg)},
+                            timeout=5)),
+                        ('r1_f5_user_pkg_dir', lambda: subprocess.run(
+                            [sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(user_pkg)},
+                            timeout=5)),
+                        ('n2_pypath_zip_site', lambda: subprocess.run(
+                            [sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(pypath_zip)},
+                            timeout=5)),
+                        ('n2_pypath_zip_krt', lambda: subprocess.run(
+                            [sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(krt_zip)},
+                            timeout=5)),
+                        ('n3_pythonuserbase', lambda: routing_adapter.check_re01_command(
+                            [sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'PYTHONUSERBASE': str(root)})),
+                        ('n3_pythoninspect', lambda: routing_adapter.check_re01_command(
+                            [sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'PYTHONINSPECT': '1'})),
+                        ('n3_ld_preload', lambda: routing_adapter.check_re01_command(
+                            [sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'LD_PRELOAD': '/tmp/x.so'})),
+                        ('n3_ld_audit', lambda: routing_adapter.check_re01_command(
+                            [sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'LD_AUDIT': '/tmp/x.so'})),
+                        ('n8_native_delay_path', lambda: routing_adapter.check_re01_command(
+                            [sys.executable, str(delay_dir / 'native_delay.py')])),
+                        ('n8_grid_router_arg', lambda: routing_adapter.check_re01_command(
+                            ['/bin/echo', str(root / 'grid_router/a.py')])),
+                        ('n8_router_generations_arg', lambda: routing_adapter.check_re01_command(
+                            ['/bin/echo', str(root / '.router-generations/abc/x')])),
+                        ('c2_5_bare_shebang_cwd', lambda: subprocess.run(['./wrap_bare_sb'], cwd=outside, timeout=5)),
+                        ('r2_f4_sh5', lambda: routing_adapter.check_re01_command(['sh5', '-c', 'true'])),
+                        ('r2_f4_sh_dash', lambda: routing_adapter.check_re01_command(['sh-5.2', '-c', 'true'])),
+                        ('r2_f4_su1', lambda: routing_adapter.check_re01_command(['su1'])),
+                        ('r2_f4_su_rs', lambda: routing_adapter.check_re01_command(['su-rs'])),
+                    ):
+                        with self.subTest(case=label):
+                            with self.assertRaises(routing_adapter.RE01OwnershipError):
+                                fn()
+
+                    # N9: newly blocked host wrappers/shells/runtimes
+                    for wrapper in (
+                        'static-sh', 'gnuenv', 'coreutils', 'script', 'flock', 'time', 'uv', 'uvx',
+                        'pip', 'pip3', 'pytest', 'py.test', 'mise', 'rlwrap', 'socat', 'gdb', 'lldb',
+                        'valgrind', 'systemd-run', 'runuser', 'run0', 'unshare', 'nsenter', 'capsh',
+                        'pkexec', 'aa-exec', 'eatmydata', 'fakeroot',
+                    ):
+                        with self.subTest(wrapper=wrapper):
+                            with self.assertRaises(routing_adapter.RE01OwnershipError):
+                                routing_adapter.check_re01_command([wrapper, '--version'])
+
+                    # Aud-4 & N7: inherited os.environ['PYTHONPATH'] inspected for env=None & bwrap --setenv
+                    with unittest.mock.patch.dict(os.environ, {'PYTHONPATH': str(site_dir)}):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            subprocess.run([sys.executable, str(bridge)], timeout=5)
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            routing_adapter.check_re01_command(
+                                ['bwrap', '--setenv', 'FOO', 'bar', '--', sys.executable, str(bridge)])
+                        # Positive control: bwrap --unsetenv PYTHONPATH clears inherited poison
+                        routing_adapter.check_re01_command(
+                            ['bwrap', '--unsetenv', 'PYTHONPATH', '--', sys.executable, str(bridge)])
+
+                    # C2-2: integer FD os.execve blocked in forked child
+                    fd = os.open('/bin/true', os.O_RDONLY)
+                    try:
+                        pid = os.fork()
+                        if pid == 0:
+                            try:
+                                os.execve(fd, [b'true'], {'PATH': '/usr/bin:/bin'})
+                            except routing_adapter.RE01OwnershipError:
+                                os._exit(42)
+                            os._exit(0)
+                        _, status = os.waitpid(pid, 0)
+                        self.assertEqual(os.waitstatus_to_exitcode(status), 42)
+                    finally:
+                        os.close(fd)
+
+                    self.assertFalse(marker.exists())
+
+                    # Positive controls: PYTHONPATH=src:tests, LD_LIBRARY_PATH, bwrap --ro-bind / / + route-native
+                    routing_adapter.check_re01_command(
+                        [sys.executable, str(bridge)],
+                        cwd=str(ROOT),
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': 'src:tests', 'LD_LIBRARY_PATH': '/usr/lib'},
+                    )
+                    done_bwrap = subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                         '--ro-bind', str(bridge), '/opt/bridge.py',
+                         '--', sys.executable, '-BI', '/opt/bridge.py'],
+                        env={'PATH': '/usr/bin:/bin', 'LD_LIBRARY_PATH': '/usr/lib'},
+                        capture_output=True, timeout=5,
+                    )
+                    self.assertEqual(done_bwrap.returncode, 0, done_bwrap.stderr)
+            finally:
+                os.chdir(old_cwd)
 
 
 class NativeAdapterHardeningTests(unittest.TestCase):

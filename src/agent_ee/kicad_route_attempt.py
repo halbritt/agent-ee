@@ -28,6 +28,7 @@ import contextlib
 import contextvars
 import errno
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -40,6 +41,7 @@ import stat
 import subprocess
 import sys
 import time
+import zipfile
 from pathlib import Path, PurePosixPath
 
 RESULT_SCHEMA = 'kicad-route/route/1'
@@ -351,17 +353,45 @@ def is_re01_enforced():
 _RE01_MAX_DEPTH = 8
 _RE01_SHELL_NAMES = frozenset((
     'sh', 'bash', 'dash', 'zsh', 'ksh', 'ash', 'csh', 'tcsh', 'fish', 'busybox',
-    'mksh', 'pdksh', 'rbash', 'rksh', 'rzsh',
+    'mksh', 'pdksh', 'rbash', 'rksh', 'rzsh', 'static-sh', 'sh.distrib', 'bashbug',
+    'git-shell', 'byobu-shell', 'toybox', 'pwsh', 'xonsh', 'elvish', 'nu', 'yash',
+    'posh', 'oksh', 'lksh',
 ))
 _RE01_LAUNCHER_NAMES = frozenset((
     'env', 'xargs', 'find', 'nice', 'nohup', 'timeout', 'stdbuf', 'setsid',
     'strace', 'ltrace', 'taskset', 'chrt', 'ionice', 'parallel', 'chroot',
-    'su', 'sudo', 'doas',
+    'su', 'sudo', 'doas', 'gnuenv', 'gnuchroot', 'gnunice', 'gnunohup',
+    'gnustdbuf', 'gnutimeout', 'gnuruncon', 'coreutils', 'su-rs', 'sudo-rs',
+    'sudo.ws', 'script', 'scriptlive', 'flock', 'lckdo', 'time', 'uv', 'uvx',
+    'pip', 'pip3', 'pipx', 'pytest', 'py.test', 'pydoc', 'pydoc3', 'pdb', 'pdb3',
+    'isympy', 'isympy3', 'trial', 'trial3', 'mise', 'watch', 'nsenter', 'unshare',
+    'setpriv', 'capsh', 'pkexec', 'aa-exec', 'eatmydata', 'fakeroot',
+    'fakeroot-sysv', 'fakeroot-tcp', 'runcon', 'runuser', 'run0', 'systemd-run',
+    'systemd-inhibit', 'run-one', 'run-one-constantly', 'run-one-until-failure',
+    'run-one-until-success', 'run-this-one', 'keep-one-running', 'run-parts',
+    'chronic', 'vipe', 'zrun', 'ifne', 'mispipe', 'pee', 'prlimit', 'choom',
+    'coresched', 'uclampset', 'fadvise', 'xvfb-run', 'dbus-run-session', 'socat',
+    'socat1', 'tmux', 'screen', 'byobu', 'byobu-tmux', 'byobu-screen',
+    'byobu-launch', 'byobu-launcher', 'ssh', 'mosh', 'gdb', 'rust-gdb', 'lldb',
+    'rust-lldb', 'valgrind', 'perf', 'bpftrace', 'trace-cmd', 'sotruss',
+    'memusage', 'mpirun', 'mpirun.openmpi', 'mpiexec', 'mpiexec.openmpi',
+    'oshrun', 'prterun', 'prun', 'cafrun', 'cafrun.openmpi', 'vcs-run',
+    'setarch', 'linux32', 'linux64', 'i386', 'x86_64', 'pivot_root', 'enosys',
+    'rlwrap', 'direnv', 'entr', 'at', 'batch', 'docker', 'runc', 'ctr',
+    'slirp4netns', 'rootlesskit', 'antigravity', 'claude', 'codex', 'herdr',
+    'hermes', 'agy',
 ))
 _RE01_ALT_RUNTIMES = frozenset((
     'perl', 'ruby', 'node', 'nodejs', 'awk', 'gawk', 'mawk', 'nawk',
-    'sed', 'lua', 'php', 'tclsh', 'expect', 'make',
+    'sed', 'lua', 'php', 'tclsh', 'expect', 'make', 'gmake', 'cmake',
+    'ctest', 'cpack', 'rake', 'irb', 'gem', 'bundle', 'bundler', 'rdbg',
+    'erb', 'wish', 'texlua', 'texluac', 'luahbtex', 'luatex', 'js', 'npm',
+    'npx', 'corepack', 'deno', 'bun', 'guile', 'julia', 'Rscript', 'm4', 'dc',
+    'sqlite3', 'ed', 'ex', 'vi', 'vim', 'nvim', 'rview', 'rvim', 'prove',
+    'cpan', 'java', 'jshell', 'go', 'cargo',
 ))
+_RE01_PY_HOOK_NAMES = ('sitecustomize', 'usercustomize', 'kicad_route', 'native_delay', 'grid_router')
+_RE01_PY_HOOK_PREFIXES = tuple(f'{m}.' for m in _RE01_PY_HOOK_NAMES)
 _RE01_PY_ALLOWED_SHORT_OPTS = frozenset('BEIOPqsSuv')
 _RE01_BWRAP_ARITY = {
     '--unshare-all': 0, '--share-net': 0, '--unshare-user': 0, '--unshare-user-try': 0,
@@ -376,13 +406,17 @@ _RE01_BWRAP_ARITY = {
     '--info-fd': 1, '--json-status-fd': 1, '--cap-add': 1, '--cap-drop': 1,
     '--perms': 1, '--size': 1, '--exec-label': 1, '--file-label': 1,
     '--setenv': 2, '--bind': 2, '--bind-try': 2, '--dev-bind': 2, '--dev-bind-try': 2,
-    '--ro-bind': 2, '--ro-bind-try': 2, '--bind-fd': 2, '--ro-bind-fd': 2,
-    '--symlink': 2, '--chmod': 2,
+    '--ro-bind': 2, '--ro-bind-try': 2, '--symlink': 2, '--chmod': 2,
 }
-_RE01_BWRAP_BIND_SRC_OPTS = frozenset((
-    '--bind', '--bind-try', '--dev-bind', '--dev-bind-try',
-    '--ro-bind', '--ro-bind-try', '--symlink',
+_RE01_BWRAP_FORBIDDEN_OPTS = frozenset((
+    '--args', '--bind-fd', '--ro-bind-fd', '--file', '--bind-data', '--ro-bind-data',
+    '--overlay-src', '--overlay', '--tmp-overlay', '--ro-overlay',
 ))
+_RE01_BWRAP_BIND_SRC_OPTS = frozenset((
+    '--bind', '--bind-try', '--dev-bind', '--dev-bind-try', '--ro-bind', '--ro-bind-try',
+))
+_RE01_BWRAP_TRY_OPTS = frozenset(('--bind-try', '--dev-bind-try', '--ro-bind-try'))
+_RE01_BWRAP_OPAQUE_OPTS = frozenset(('--tmpfs', '--proc', '--dev', '--mqueue'))
 
 
 def _decode_audit_arg(val):
@@ -418,7 +452,7 @@ def _re01_matches_cmd_name(base, names):
     if base in names:
         return True
     for n in names:
-        if len(n) >= 3 and base.startswith(n) and len(base) > len(n) and base[len(n)] in '0123456789.-':
+        if base.startswith(n) and len(base) > len(n) and base[len(n)] in '0123456789.-':
             return True
     return False
 
@@ -427,150 +461,357 @@ def _re01_is_python_name(base):
     return base == 'python' or base.startswith(('python2', 'python3', 'pypy'))
 
 
-def _re01_apply_mounts(norm, mounts):
+def _re01_abs_cwd(cwd):
+    raw = os.getcwd() if cwd is None else cwd
+    slash = raw.replace('\\', '/')
+    if not posixpath.isabs(slash):
+        slash = os.path.abspath(raw).replace('\\', '/')
+    return _re01_norm_posix(slash)
+
+
+def _re01_mount_lookup(norm, mounts):
     if not mounts:
-        return None
+        return None, None, None
     best_dest = None
     for dest in mounts:
-        if norm == dest or (dest != '/' and norm.startswith(dest + '/')):
+        if norm == dest or dest == '/' or norm.startswith(dest + '/'):
             if best_dest is None or len(dest) > len(best_dest):
                 best_dest = dest
     if best_dest is None:
-        return None
-    src = mounts[best_dest]
-    return src if norm == best_dest else posixpath.join(src, norm[len(best_dest) + 1:])
+        return None, None, None
+    kind, target = mounts[best_dest]
+    if kind == 'opaque':
+        return 'opaque', best_dest, None
+    if norm == best_dest:
+        return kind, best_dest, target
+    rel = norm[1:] if best_dest == '/' else norm[len(best_dest) + 1:]
+    return kind, best_dest, _re01_norm_posix(posixpath.join(target, rel))
 
 
-def _re01_resolve_exec_chain(token, *, cwd=None, search_path=None, is_cmd=False, mounts=None):
-    candidates = [token]
-    slash_tok = token.replace('\\', '/')
-    norm_tok = _re01_norm_posix(slash_tok)
-    if '/' in slash_tok and not posixpath.isabs(slash_tok):
-        base_dir = cwd if cwd is not None else os.getcwd()
-        joined = os.path.join(base_dir, slash_tok)
-        candidates.append(joined)
-        if mounts:
-            mapped_joined = _re01_apply_mounts(_re01_norm_posix(joined), mounts)
-            if mapped_joined:
-                candidates.append(mapped_joined)
-    if mounts:
-        cur_m = norm_tok
-        for _ in range(8):
-            mapped = _re01_apply_mounts(cur_m, mounts)
-            if not mapped or mapped == cur_m:
-                break
-            candidates.append(mapped)
-            cur_m = _re01_norm_posix(mapped)
-    if is_cmd and '/' not in slash_tok and token and not token.startswith('-'):
-        try:
-            which = shutil.which(token, path=search_path) if search_path is not None else shutil.which(token)
-        except OSError:
-            which = None
-        if which:
-            candidates.append(which)
-        if cwd is not None and search_path is not None and any(p in ('', '.') for p in search_path.split(os.pathsep)):
-            cwd_cand = os.path.join(cwd, token)
-            if _re01_safe_is_file(cwd_cand):
-                candidates.append(cwd_cand)
-    seen, seen_set = [], set()
-    resolved_file = None
-    for start in candidates:
-        cur = start
-        for _ in range(40):
-            n = _re01_norm_posix(cur)
+def _re01_shadow_mounts(mounts, dest_norm):
+    for existing in [
+        k for k in mounts
+        if k == dest_norm or dest_norm == '/' or k.startswith(dest_norm + '/')
+    ]:
+        del mounts[existing]
+
+
+def _re01_resolve_mount_symlinks(raw_path, mounts):
+    pending = collections.deque(s for s in raw_path.replace('\\', '/').split('/') if s and s != '.')
+    parts = []
+    hops = 0
+    while pending:
+        seg = pending.popleft()
+        if seg == '..':
+            if parts:
+                parts.pop()
+            continue
+        parts.append(seg)
+        sb_path = '/' + '/'.join(parts)
+        entry = mounts.get(sb_path)
+        if entry is not None and entry[0] == 'symlink':
+            hops += 1
+            if hops > 40:
+                return None, f'RE-01 forbids excessive bwrap symlink nesting: {raw_path}'
+            parts = []
+            pending.extendleft(reversed([s for s in entry[1].split('/') if s and s != '.']))
+    return '/' + '/'.join(parts), None
+
+
+def _re01_follow_path(raw_path, mounts, *, seen, seen_set):
+    def record(path_val):
+        if path_val:
+            n = _re01_norm_posix(path_val)
             if n not in seen_set:
                 seen_set.add(n)
                 seen.append(n)
+
+    pending = collections.deque(s for s in raw_path.replace('\\', '/').split('/') if s and s != '.')
+    sandbox_parts = []
+    hops = 0
+    while pending:
+        seg = pending.popleft()
+        if seg == '..':
+            if sandbox_parts:
+                sandbox_parts.pop()
+            continue
+        sandbox_parts.append(seg)
+        sb_path = '/' + '/'.join(sandbox_parts)
+        if mounts:
+            entry = mounts.get(sb_path)
+            if entry is not None and entry[0] == 'symlink':
+                hops += 1
+                if hops > 40:
+                    return None, None, None, f'RE-01 forbids excessive symlink nesting: {raw_path}'
+                record(sb_path)
+                record(entry[1])
+                sandbox_parts = []
+                pending.extendleft(reversed([s for s in entry[1].split('/') if s and s != '.']))
+                continue
+            kind, best_dest, mapped = _re01_mount_lookup(sb_path, mounts)
+            if kind == 'opaque':
+                if not pending or not any(k.startswith(sb_path + '/') for k in mounts):
+                    return None, None, None, None
+                continue
+            if kind == 'bind':
+                host_cand = mapped
+                check_host_link = (sb_path != best_dest)
+            else:
+                if '/' in mounts:
+                    if not pending or not any(k.startswith(sb_path + '/') for k in mounts):
+                        return None, None, None, None
+                    continue
+                host_cand = sb_path
+                check_host_link = not (pending and any(k.startswith(sb_path + '/') for k in mounts))
+        else:
+            host_cand = sb_path
+            check_host_link = True
+        if check_host_link:
             try:
-                p = Path(cur)
-                if not p.is_absolute() and cwd is not None and '/' in cur.replace('\\', '/'):
-                    p = Path(cwd) / p
-                is_link = p.is_symlink()
+                is_link = os.path.islink(host_cand)
             except (OSError, ValueError):
-                break
-            if not is_link:
-                break
-            try:
-                target = os.readlink(p)
-            except OSError:
-                break
-            cur = str((p.parent / target) if not os.path.isabs(target) else target)
-            if mounts and posixpath.isabs(cur):
-                mapped_cur = _re01_apply_mounts(_re01_norm_posix(cur), mounts)
-                if mapped_cur and _re01_norm_posix(mapped_cur) not in seen_set:
-                    seen_set.add(_re01_norm_posix(mapped_cur))
-                    seen.append(_re01_norm_posix(mapped_cur))
-        abs_target = start
-        if cwd is not None and '/' in start.replace('\\', '/') and not os.path.isabs(start):
-            abs_target = os.path.join(cwd, start)
-        if '/' in start.replace('\\', '/') or os.path.exists(abs_target):
-            try:
-                real = _re01_norm_posix(os.path.realpath(abs_target))
-            except (OSError, ValueError):
-                real = None
-            if real:
-                if real not in seen_set:
-                    seen_set.add(real)
-                    seen.append(real)
-                if resolved_file is None and _re01_safe_is_file(real):
-                    resolved_file = real
-    return seen, resolved_file
+                is_link = False
+            if is_link:
+                hops += 1
+                if hops > 40:
+                    return None, None, None, f'RE-01 forbids excessive symlink nesting: {raw_path}'
+                record(sb_path)
+                record(host_cand)
+                try:
+                    target = os.readlink(host_cand)
+                except OSError:
+                    break
+                if os.path.isabs(target):
+                    record(target)
+                    sandbox_parts = []
+                else:
+                    sandbox_parts.pop()
+                pending.extendleft(reversed([s for s in target.replace('\\', '/').split('/') if s and s != '.']))
+    final_sb = '/' + '/'.join(sandbox_parts)
+    record(final_sb)
+    if mounts:
+        kind, _, mapped = _re01_mount_lookup(final_sb, mounts)
+        if kind == 'opaque':
+            return None, None, None, None
+        if kind == 'bind':
+            host_path = mapped
+        elif '/' in mounts:
+            return None, None, None, None
+        else:
+            host_path = final_sb
+    else:
+        host_path = final_sb
+    record(host_path)
+    try:
+        if os.path.isdir(host_path):
+            return None, host_path, final_sb, None
+        if os.path.isfile(host_path):
+            return host_path, host_path, final_sb, None
+    except (OSError, ValueError):
+        pass
+    return None, None, None, None
+
+
+def _re01_resolve_exec_chain(token, *, cwd=None, search_path=None, is_cmd=False, mounts=None):
+    if not token:
+        return [], None, None, None, None
+    slash_tok = token.replace('\\', '/')
+    norm_tok = _re01_norm_posix(slash_tok)
+    seen, seen_set = [norm_tok], {norm_tok}
+    resolved_file = resolved_any = resolved_sb = None
+    base_dir = _re01_abs_cwd(cwd)
+    if not is_cmd or '/' in slash_tok:
+        target_path = slash_tok if posixpath.isabs(slash_tok) else posixpath.join(base_dir, slash_tok)
+        norm_target = _re01_norm_posix(target_path)
+        if norm_target not in seen_set:
+            seen_set.add(norm_target)
+            seen.append(norm_target)
+        resolved_file, resolved_any, resolved_sb, err = _re01_follow_path(
+            target_path, mounts, seen=seen, seen_set=seen_set)
+        if err is not None:
+            return seen, None, None, None, err
+        return seen, resolved_file, resolved_any, resolved_sb, None
+    if not token.startswith('-'):
+        eff_path = search_path if search_path is not None else os.environ.get('PATH', os.defpath)
+        first_reg = first_reg_sb = None
+        for p in eff_path.split(os.pathsep):
+            if p == '' or p == '.':
+                seg_dir = base_dir
+            else:
+                p_slash = p.replace('\\', '/')
+                seg_dir = p_slash if posixpath.isabs(p_slash) else posixpath.join(base_dir, p_slash)
+            cand_cmd = posixpath.join(seg_dir, slash_tok)
+            c_seen, c_set = [], set()
+            c_file, c_any, c_sb, c_err = _re01_follow_path(cand_cmd, mounts, seen=c_seen, seen_set=c_set)
+            if c_err is not None:
+                return seen, None, None, None, c_err
+            if c_file is not None:
+                for item in c_seen:
+                    if item not in seen_set:
+                        seen_set.add(item)
+                        seen.append(item)
+                if resolved_file is None and os.access(c_file, os.X_OK):
+                    resolved_file, resolved_any, resolved_sb = c_file, c_any, c_sb
+                if first_reg is None:
+                    first_reg, first_reg_sb = c_file, c_sb
+        if resolved_file is None and first_reg is not None:
+            resolved_file, resolved_any, resolved_sb = first_reg, first_reg, first_reg_sb
+    return seen, resolved_file, resolved_any, resolved_sb, None
 
 
 def _re01_path_reason(norm, token, *, is_cmd_pos=False, cwd=None):
     n = _re01_norm_posix(norm)
     base = posixpath.basename(n)
+    parts = n.split('/')
     if (n == 'kicad-route' or n == 'bin/kicad-route' or n.startswith('bin/kicad-route/')
             or n.endswith('/bin/kicad-route') or '/bin/kicad-route/' in n
-            or (base == 'kicad-route' and (is_cmd_pos or _re01_safe_is_file(n, cwd=cwd)))):
+            or (base == 'kicad-route' and not os.path.isdir(n)
+                and (is_cmd_pos or _re01_safe_is_file(n, cwd=cwd)))):
         return f'RE-01 forbids executing legacy Python router entrypoint: {token}'
     if ('/src/kicad_route/' in n or n.startswith('src/kicad_route/')
             or n == 'src/kicad_route' or n.endswith('/src/kicad_route')
-            or 'kicad_route' in n.split('/') or base == 'kicad_route.py'):
+            or 'kicad_route' in parts or base == 'kicad_route.py'
+            or 'native_delay' in parts or base == 'native_delay.py'
+            or 'grid_router' in parts or base == 'grid_router.py'):
         return f'RE-01 forbids executing legacy Python router module: {token}'
     if ('/.venv-krt/' in n or n.startswith('.venv-krt/')
-            or n == '.venv-krt' or n.endswith('/.venv-krt')):
+            or n == '.venv-krt' or n.endswith('/.venv-krt')
+            or '.router-generations' in parts):
         return f'RE-01 forbids executing legacy Python router venv: {token}'
     return None
 
 
-def _re01_check_env(env, *, cwd=None):
-    if env is None:
-        return None, None
+def _re01_check_zip_py_hooks(zip_path, entry):
     try:
-        items = list(env.items())
+        if not zipfile.is_zipfile(zip_path):
+            return None
+        with zipfile.ZipFile(zip_path) as zf:
+            for name in zf.namelist():
+                parts = [p for p in name.replace('\\', '/').split('/') if p]
+                if not parts:
+                    continue
+                top = parts[0]
+                if top in _RE01_PY_HOOK_NAMES or top.startswith(_RE01_PY_HOOK_PREFIXES):
+                    return f'RE-01 forbids PYTHONPATH zipfile containing {top}: {entry}'
+                if top == '__pycache__' and len(parts) > 1 and parts[1].startswith(_RE01_PY_HOOK_PREFIXES):
+                    return f'RE-01 forbids PYTHONPATH zipfile containing {name}: {entry}'
+    except (OSError, zipfile.BadZipFile, ValueError):
+        return f'RE-01 forbids unreadable zipfile on PYTHONPATH: {entry}'
+    return None
+
+
+def _re01_check_dir_py_hooks(dir_path, entry):
+    try:
+        with os.scandir(dir_path) as it:
+            for de in it:
+                name = de.name
+                if name in _RE01_PY_HOOK_NAMES or name.startswith(_RE01_PY_HOOK_PREFIXES):
+                    return f'RE-01 forbids PYTHONPATH entry containing {name}: {entry}'
+                if name == '__pycache__' and de.is_dir():
+                    with os.scandir(de.path) as sub_it:
+                        for sub in sub_it:
+                            if sub.name.startswith(_RE01_PY_HOOK_PREFIXES):
+                                return (f'RE-01 forbids PYTHONPATH entry containing '
+                                        f'__pycache__/{sub.name}: {entry}')
+    except OSError:
+        pass
+    return None
+
+
+def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True):
+    raw_env = os.environ if env is None else env
+    try:
+        items = list(raw_env.items())
     except AttributeError:
         return None, 'RE-01 forbids invalid environment mapping under audit enforcement'
     decoded = {_decode_audit_arg(k): _decode_audit_arg(v) for k, v in items}
-    if decoded.get('PYTHONSTARTUP'):
-        return None, 'RE-01 forbids PYTHONSTARTUP under audit enforcement'
-    for var in ('PYTHONHOME', 'VIRTUAL_ENV'):
-        val = decoded.get(var)
-        if val:
-            chain, _ = _re01_resolve_exec_chain(val, cwd=cwd, is_cmd=False)
+    for var in ('LD_PRELOAD', 'LD_AUDIT'):
+        if decoded.get(var):
+            return None, f'RE-01 forbids {var} under audit enforcement'
+    ld_lib = decoded.get('LD_LIBRARY_PATH')
+    if ld_lib:
+        for seg in ld_lib.split(os.pathsep):
+            if not seg:
+                continue
+            chain, _, _, _, err = _re01_resolve_exec_chain(seg, cwd=cwd, is_cmd=False, mounts=mounts)
+            if err is not None:
+                return None, err
             for cand in chain:
-                reason = _re01_path_reason(cand, val, is_cmd_pos=False, cwd=cwd)
+                reason = _re01_path_reason(cand, seg, is_cmd_pos=False, cwd=cwd)
                 if reason is not None:
                     return None, reason
+    if not check_python:
+        return decoded.get('PATH', os.defpath), None
+    for var in ('PYTHONSTARTUP', 'PYTHONINSPECT', 'PYTHONHOME', 'PYTHONUSERBASE'):
+        if decoded.get(var):
+            return None, f'RE-01 forbids {var} under audit enforcement'
+    venv = decoded.get('VIRTUAL_ENV')
+    if venv:
+        chain, _, _, _, err = _re01_resolve_exec_chain(venv, cwd=cwd, is_cmd=False, mounts=mounts)
+        if err is not None:
+            return None, err
+        for cand in chain:
+            reason = _re01_path_reason(cand, venv, is_cmd_pos=False, cwd=cwd)
+            if reason is not None:
+                return None, reason
     pypath = decoded.get('PYTHONPATH')
     if pypath:
-        for entry in pypath.split(os.pathsep):
-            if not entry:
-                continue
-            chain, _ = _re01_resolve_exec_chain(entry, cwd=cwd, is_cmd=False)
+        base_dir = _re01_abs_cwd(cwd)
+        for raw_entry in pypath.split(os.pathsep):
+            entry = '.' if raw_entry == '' else raw_entry
+            chain, cand_file, cand_any, _, err = _re01_resolve_exec_chain(
+                entry, cwd=cwd, is_cmd=False, mounts=mounts)
+            if err is not None:
+                return None, err
             for cand in chain:
                 reason = _re01_path_reason(cand, entry, is_cmd_pos=False, cwd=cwd)
                 if reason is not None:
                     return None, reason
                 if posixpath.basename(cand) in ('sitecustomize.py', 'usercustomize.py'):
                     return None, f'RE-01 forbids PYTHONPATH startup hook: {entry}'
-            entry_dir = os.path.join(cwd, entry) if (cwd and not os.path.isabs(entry)) else entry
-            for marker in ('sitecustomize.py', 'usercustomize.py', 'kicad_route.py', 'kicad_route'):
-                try:
-                    if (Path(entry_dir) / marker).exists():
+            for zcand in (cand_file, cand_any):
+                if zcand and os.path.isfile(zcand):
+                    z_err = _re01_check_zip_py_hooks(zcand, entry)
+                    if z_err is not None:
+                        return None, z_err
+            checked_dirs = set()
+            for dcand in (cand_any, *chain):
+                if dcand and dcand not in checked_dirs and os.path.isdir(dcand):
+                    checked_dirs.add(dcand)
+                    d_err = _re01_check_dir_py_hooks(dcand, entry)
+                    if d_err is not None:
+                        return None, d_err
+            if mounts:
+                slash_e = entry.replace('\\', '/')
+                sb_entry = _re01_norm_posix(
+                    slash_e if posixpath.isabs(slash_e) else posixpath.join(base_dir, slash_e))
+                prefix = '/' if sb_entry == '/' else sb_entry + '/'
+                for dest, (kind, host_tgt) in mounts.items():
+                    if dest.startswith(prefix):
+                        rel = dest[len(prefix):]
+                        rel_parts = rel.split('/')
+                        first_comp = rel_parts[0]
+                        if (first_comp in _RE01_PY_HOOK_NAMES
+                                or first_comp.startswith(_RE01_PY_HOOK_PREFIXES)
+                                or (first_comp == '__pycache__' and len(rel_parts) > 1
+                                    and rel_parts[1].startswith(_RE01_PY_HOOK_PREFIXES))):
+                            return None, f'RE-01 forbids PYTHONPATH mounted hook {first_comp}: {entry}'
+                        if kind == 'bind' and host_tgt:
+                            reason = _re01_path_reason(host_tgt, entry, is_cmd_pos=False, cwd=cwd)
+                            if reason is not None:
+                                return None, reason
+                for marker in (
+                    'sitecustomize.py', 'sitecustomize.pyc', 'sitecustomize',
+                    'usercustomize.py', 'usercustomize.pyc', 'usercustomize',
+                    'kicad_route.py', 'kicad_route.pyc', 'kicad_route',
+                    'native_delay.py', 'native_delay', 'grid_router.py', 'grid_router',
+                ):
+                    _, m_file, m_any, _, m_err = _re01_resolve_exec_chain(
+                        posixpath.join(sb_entry, marker), cwd=cwd, is_cmd=False, mounts=mounts)
+                    if m_err is not None:
+                        return None, m_err
+                    if m_any is not None or m_file is not None:
                         return None, f'RE-01 forbids PYTHONPATH entry containing {marker}: {entry}'
-                except (OSError, ValueError):
-                    pass
     return decoded.get('PATH', os.defpath), None
 
 
@@ -601,7 +842,10 @@ def _re01_check_python_args(args, *, cwd=None, mounts=None):
     if (norm_tok == '-' or norm_tok == '/dev/stdin' or norm_tok.startswith('/dev/fd/')
             or re.fullmatch(r'/proc/(?:\d+|self|thread-self)/fd/.*', norm_tok)):
         return f'RE-01 forbids FD/stdin Python execution: {script_tok}'
-    chain, host_file = _re01_resolve_exec_chain(script_tok, cwd=cwd, is_cmd=False, mounts=mounts)
+    chain, host_file, _, _, err = _re01_resolve_exec_chain(
+        script_tok, cwd=cwd, is_cmd=False, mounts=mounts)
+    if err is not None:
+        return err
     for cand in chain:
         reason = _re01_path_reason(cand, script_tok, is_cmd_pos=False, cwd=cwd)
         if reason is not None:
@@ -613,13 +857,18 @@ def _re01_check_python_args(args, *, cwd=None, mounts=None):
         if not stat.S_ISREG(st.st_mode):
             return f'RE-01 requires a regular .py script file: {script_tok}'
         with open(host_file, 'rb') as fh:
-            magic = fh.read(4)
-        if magic in (b'PK\x03\x04', b'PK\x05\x06'):
+            head = fh.read(512)
+        if head[:4] in (b'PK\x03\x04', b'PK\x05\x06') or zipfile.is_zipfile(host_file):
             return f'RE-01 forbids zipfile Python execution: {script_tok}'
+        if head[:4] == importlib.util.MAGIC_NUMBER or b'\x00' in head:
+            return f'RE-01 forbids binary/bytecode Python execution: {script_tok}'
     except OSError:
         return f'RE-01 requires a readable regular .py script file: {script_tok}'
     for arg_tok in args[script_idx + 1:]:
-        arg_chain, _ = _re01_resolve_exec_chain(arg_tok, cwd=cwd, is_cmd=False, mounts=mounts)
+        arg_chain, _, _, _, arg_err = _re01_resolve_exec_chain(
+            arg_tok, cwd=cwd, is_cmd=False, mounts=mounts)
+        if arg_err is not None:
+            return arg_err
         for cand in arg_chain:
             reason = _re01_path_reason(cand, arg_tok, is_cmd_pos=False, cwd=cwd)
             if reason is not None:
@@ -627,12 +876,37 @@ def _re01_check_python_args(args, *, cwd=None, mounts=None):
     return None
 
 
-def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0):
+def _re01_alias_reason(cands, dest_norm, src_label):
+    dest_base = posixpath.basename(dest_norm)
+    for cand in cands:
+        sb = posixpath.basename(cand)
+        if sb == 'sh.distrib' or _re01_matches_cmd_name(sb, _RE01_SHELL_NAMES):
+            if dest_base != 'sh.distrib' and not _re01_matches_cmd_name(dest_base, _RE01_SHELL_NAMES):
+                return f'RE-01 forbids aliasing shell {src_label} onto {dest_norm}'
+        elif _re01_matches_cmd_name(sb, _RE01_LAUNCHER_NAMES):
+            if not _re01_matches_cmd_name(dest_base, _RE01_LAUNCHER_NAMES):
+                return f'RE-01 forbids aliasing launcher {src_label} onto {dest_norm}'
+        elif _re01_matches_cmd_name(sb, _RE01_ALT_RUNTIMES):
+            if not _re01_matches_cmd_name(dest_base, _RE01_ALT_RUNTIMES):
+                return f'RE-01 forbids aliasing runtime {src_label} onto {dest_norm}'
+        elif _re01_is_python_name(sb):
+            if not _re01_is_python_name(dest_base):
+                return f'RE-01 forbids aliasing Python {src_label} onto {dest_norm}'
+    return None
+
+
+def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
     if args == ['--version']:
         return None
     mounts = {}
     bwrap_cwd = cwd
-    bwrap_env = dict(env) if env is not None else None
+    if env is None:
+        bwrap_env = dict(os.environ)
+    else:
+        try:
+            bwrap_env = {_decode_audit_arg(k): _decode_audit_arg(v) for k, v in env.items()}
+        except AttributeError:
+            return 'RE-01 forbids invalid environment mapping under audit enforcement'
     idx = 0
     n = len(args)
     while idx < n:
@@ -640,6 +914,8 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0):
         if tok == '--':
             idx += 1
             break
+        if tok in _RE01_BWRAP_FORBIDDEN_OPTS:
+            return f'RE-01 forbids unsupported bwrap option {tok} under audit enforcement'
         arity = _RE01_BWRAP_ARITY.get(tok)
         if arity is None:
             if tok.startswith('-'):
@@ -649,29 +925,110 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0):
             return f'RE-01 forbids incomplete bwrap option {tok} under audit enforcement'
         if tok in _RE01_BWRAP_BIND_SRC_OPTS:
             src, dest = args[idx + 1], args[idx + 2]
-            src_chain, _ = _re01_resolve_exec_chain(src, cwd=cwd, is_cmd=False)
+            if not posixpath.isabs(dest.replace('\\', '/')):
+                return f'RE-01 forbids relative bwrap mount destination: {dest}'
+            dest_norm, d_err = _re01_resolve_mount_symlinks(dest, mounts)
+            if d_err is not None:
+                return d_err
+            src_chain, src_file, src_any, _, src_err = _re01_resolve_exec_chain(
+                src, cwd=cwd, is_cmd=False, mounts=outer_mounts)
+            if src_err is not None:
+                return src_err
             for cand in src_chain:
                 reason = _re01_path_reason(cand, src, is_cmd_pos=False, cwd=cwd)
                 if reason is not None:
                     return reason
-            mounts[_re01_norm_posix(dest)] = _re01_norm_posix(src)
+            if src_file is not None:
+                alias_err = _re01_alias_reason(src_chain, dest_norm, src)
+                if alias_err is not None:
+                    return alias_err
+            src_slash = src.replace('\\', '/')
+            src_abs = _re01_norm_posix(
+                src_slash if posixpath.isabs(src_slash) else posixpath.join(_re01_abs_cwd(cwd), src_slash))
+            if outer_mounts is not None:
+                okind, _, omapped = _re01_mount_lookup(src_abs, outer_mounts)
+                if okind == 'opaque' or (okind is None and '/' in outer_mounts):
+                    if tok not in _RE01_BWRAP_TRY_OPTS:
+                        _re01_shadow_mounts(mounts, dest_norm)
+                        mounts[dest_norm] = ('opaque', None)
+                else:
+                    host_src = src_any or (omapped if okind == 'bind' else src_abs)
+                    if tok not in _RE01_BWRAP_TRY_OPTS or os.path.exists(host_src):
+                        src_pref = '/' if src_abs == '/' else src_abs + '/'
+                        outer_subs = [k for k in outer_mounts if k.startswith(src_pref)]
+                        if outer_subs and dest_norm != src_abs:
+                            return f'RE-01 forbids nested bwrap remapping outer mounts onto {dest_norm}'
+                        _re01_shadow_mounts(mounts, dest_norm)
+                        mounts[dest_norm] = ('bind', host_src)
+                        for k in outer_subs:
+                            mounts[k] = outer_mounts[k]
+            else:
+                host_src = src_any or src_abs
+                if tok not in _RE01_BWRAP_TRY_OPTS or os.path.exists(host_src):
+                    _re01_shadow_mounts(mounts, dest_norm)
+                    mounts[dest_norm] = ('bind', host_src)
+        elif tok == '--symlink':
+            src, dest = args[idx + 1], args[idx + 2]
+            if not posixpath.isabs(dest.replace('\\', '/')):
+                return f'RE-01 forbids relative bwrap symlink destination: {dest}'
+            dest_slash = _re01_norm_posix(dest.replace('\\', '/'))
+            dest_parent, d_err = _re01_resolve_mount_symlinks(posixpath.dirname(dest_slash), mounts)
+            if d_err is not None:
+                return d_err
+            dest_norm = _re01_norm_posix(posixpath.join(dest_parent, posixpath.basename(dest_slash)))
+            src_slash = src.replace('\\', '/')
+            target_norm = _re01_norm_posix(
+                src_slash if posixpath.isabs(src_slash) else posixpath.join(dest_parent, src_slash))
+            reason = _re01_path_reason(target_norm, src, is_cmd_pos=False, cwd=cwd)
+            if reason is not None:
+                return reason
+            t_chain, _, t_any, _, t_err = _re01_resolve_exec_chain(
+                target_norm, cwd=cwd, is_cmd=False, mounts=mounts)
+            if t_err is not None:
+                return t_err
+            for cand in t_chain:
+                reason = _re01_path_reason(cand, src, is_cmd_pos=False, cwd=cwd)
+                if reason is not None:
+                    return reason
+            if not (t_any and os.path.isdir(t_any)):
+                alias_err = _re01_alias_reason([target_norm, *t_chain], dest_norm, src)
+                if alias_err is not None:
+                    return alias_err
+            mounts[dest_norm] = ('symlink', target_norm)
+        elif tok in _RE01_BWRAP_OPAQUE_OPTS:
+            dest = args[idx + 1]
+            if not posixpath.isabs(dest.replace('\\', '/')):
+                return f'RE-01 forbids relative bwrap mount destination: {dest}'
+            dest_norm, d_err = _re01_resolve_mount_symlinks(dest, mounts)
+            if d_err is not None:
+                return d_err
+            _re01_shadow_mounts(mounts, dest_norm)
+            mounts[dest_norm] = ('opaque', None)
+        elif tok == '--dir':
+            dest = args[idx + 1]
+            if not posixpath.isabs(dest.replace('\\', '/')):
+                return f'RE-01 forbids relative bwrap dir destination: {dest}'
+            _, d_err = _re01_resolve_mount_symlinks(dest, mounts)
+            if d_err is not None:
+                return d_err
         elif tok == '--argv0':
             argv0_name = posixpath.basename(_re01_norm_posix(args[idx + 1]))
-            if (_re01_matches_cmd_name(argv0_name, _RE01_SHELL_NAMES)
+            if (argv0_name == 'sh.distrib'
+                    or _re01_matches_cmd_name(argv0_name, _RE01_SHELL_NAMES)
                     or _re01_matches_cmd_name(argv0_name, _RE01_LAUNCHER_NAMES)
                     or _re01_matches_cmd_name(argv0_name, _RE01_ALT_RUNTIMES)
                     or argv0_name == 'kicad-route'):
                 return f'RE-01 forbids bwrap --argv0 masquerading as {args[idx + 1]}'
         elif tok == '--chdir':
-            bwrap_cwd = args[idx + 1]
+            chdir_arg = args[idx + 1].replace('\\', '/')
+            bwrap_cwd = _re01_norm_posix(
+                chdir_arg if posixpath.isabs(chdir_arg) else posixpath.join('/', chdir_arg))
         elif tok == '--clearenv':
             bwrap_env = {}
         elif tok == '--setenv':
-            if bwrap_env is None:
-                bwrap_env = {}
-            bwrap_env[args[idx + 1]] = args[idx + 2]
-        elif tok == '--unsetenv' and bwrap_env is not None:
-            bwrap_env.pop(args[idx + 1], None)
+            bwrap_env[_decode_audit_arg(args[idx + 1])] = _decode_audit_arg(args[idx + 2])
+        elif tok == '--unsetenv':
+            bwrap_env.pop(_decode_audit_arg(args[idx + 1]), None)
         idx += 1 + arity
     if idx >= n:
         return 'RE-01 forbids bwrap without an inner command under audit enforcement'
@@ -685,15 +1042,18 @@ def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=No
     tokens = [_decode_audit_arg(a) for a in argv]
     if not tokens or not tokens[0]:
         return 'RE-01 forbids empty command execution under audit enforcement'
-    search_path, env_err = _re01_check_env(env, cwd=cwd)
+    cwd_str = _decode_audit_arg(cwd) if cwd is not None else None
+    search_path, env_err = _re01_check_env(env, cwd=cwd_str, mounts=_mounts, check_python=False)
     if env_err is not None:
         return env_err
     exe_tok = tokens[0]
-    chain, host_exe = _re01_resolve_exec_chain(
-        exe_tok, cwd=cwd, search_path=search_path, is_cmd=True, mounts=_mounts)
+    chain, host_exe, _, sb_exe, exe_err = _re01_resolve_exec_chain(
+        exe_tok, cwd=cwd_str, search_path=search_path, is_cmd=True, mounts=_mounts)
+    if exe_err is not None:
+        return exe_err
     is_python = is_bwrap = False
     for cand in chain:
-        reason = _re01_path_reason(cand, exe_tok, is_cmd_pos=True, cwd=cwd)
+        reason = _re01_path_reason(cand, exe_tok, is_cmd_pos=True, cwd=cwd_str)
         if reason is not None:
             return reason
         base = posixpath.basename(cand)
@@ -707,6 +1067,10 @@ def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=No
             is_python = True
         if base == 'bwrap':
             is_bwrap = True
+    if not is_bwrap:
+        _, py_env_err = _re01_check_env(env, cwd=cwd_str, mounts=_mounts, check_python=True)
+        if py_env_err is not None:
+            return py_env_err
     if host_exe is not None:
         try:
             with open(host_exe, 'rb') as fh:
@@ -714,23 +1078,39 @@ def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=No
         except OSError:
             head = b''
         if head.startswith(b'#!'):
-            first_line = head.split(b'\n', 1)[0][2:].strip().decode('utf-8', 'replace')
+            first_line = head.split(b'\n', 1)[0].split(b'\x00', 1)[0][2:].strip().decode('utf-8', 'replace')
             parts = first_line.split(None, 1)
             if not parts:
                 return f'RE-01 forbids empty shebang execution under audit enforcement: {exe_tok}'
-            shebang_argv = [parts[0], *([parts[1].strip()] if len(parts) > 1 and parts[1].strip() else []), host_exe]
+            target_script = sb_exe if (_mounts is not None and sb_exe is not None) else host_exe
+            shebang_argv = [
+                parts[0],
+                *([parts[1].strip()] if len(parts) > 1 and parts[1].strip() else []),
+                target_script,
+            ]
             reason = _re01_check_command_reason(
-                shebang_argv, cwd=cwd, env=env, _depth=_depth + 1, _mounts=_mounts)
+                shebang_argv, cwd=cwd_str, env=env, _depth=_depth + 1, _mounts=_mounts)
             if reason is not None:
                 return reason
+            if '/' not in parts[0].replace('\\', '/'):
+                cwd_interp = posixpath.join(_re01_abs_cwd(cwd_str), parts[0])
+                reason = _re01_check_command_reason(
+                    [cwd_interp, *shebang_argv[1:]],
+                    cwd=cwd_str, env=env, _depth=_depth + 1, _mounts=_mounts)
+                if reason is not None:
+                    return reason
     if is_bwrap:
-        return _re01_check_bwrap(tokens[1:], cwd=cwd, env=env, depth=_depth)
+        return _re01_check_bwrap(
+            tokens[1:], cwd=cwd_str, env=env, depth=_depth, outer_mounts=_mounts)
     if is_python:
-        return _re01_check_python_args(tokens[1:], cwd=cwd, mounts=_mounts)
+        return _re01_check_python_args(tokens[1:], cwd=cwd_str, mounts=_mounts)
     for arg_tok in tokens[1:]:
-        arg_chain, _ = _re01_resolve_exec_chain(arg_tok, cwd=cwd, is_cmd=False, mounts=_mounts)
+        arg_chain, _, _, _, arg_err = _re01_resolve_exec_chain(
+            arg_tok, cwd=cwd_str, is_cmd=False, mounts=_mounts)
+        if arg_err is not None:
+            return arg_err
         for cand in arg_chain:
-            reason = _re01_path_reason(cand, arg_tok, is_cmd_pos=False, cwd=cwd)
+            reason = _re01_path_reason(cand, arg_tok, is_cmd_pos=False, cwd=cwd_str)
             if reason is not None:
                 return reason
     return None
@@ -747,12 +1127,15 @@ def _re01_audit_hook(event, args):
         return
     if event == 'subprocess.Popen':
         executable, cmd_args = args[0], args[1]
+        if isinstance(executable, int):
+            raise RE01OwnershipError('RE-01 forbids file-descriptor subprocess.Popen execution under audit enforcement')
         cwd = _decode_audit_arg(args[2]) if len(args) > 2 and args[2] is not None else None
         env = args[3] if len(args) > 3 else None
         if isinstance(cmd_args, (str, bytes, bytearray)):
             raise RE01OwnershipError('RE-01 forbids shell string execution under audit enforcement')
-        argv_tokens = ([_decode_audit_arg(a) for a in cmd_args]
-                       if isinstance(cmd_args, (list, tuple)) else [])
+        if not isinstance(cmd_args, (list, tuple)):
+            raise RE01OwnershipError('RE-01 forbids non-sequence subprocess.Popen argv under audit enforcement')
+        argv_tokens = [_decode_audit_arg(a) for a in cmd_args]
         if executable is not None:
             exec_tok = _decode_audit_arg(executable)
             if argv_tokens:
@@ -763,6 +1146,8 @@ def _re01_audit_hook(event, args):
         else:
             check_re01_command(argv_tokens, cwd=cwd, env=env)
     elif event in ('os.exec', 'os.posix_spawn'):
+        if isinstance(args[0], int):
+            raise RE01OwnershipError(f'RE-01 forbids file-descriptor {event} execution under audit enforcement')
         exec_tok = _decode_audit_arg(args[0])
         env = args[2] if len(args) > 2 else None
         if len(args) > 1 and isinstance(args[1], (list, tuple)) and args[1]:
