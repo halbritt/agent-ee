@@ -1085,9 +1085,7 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     os.popen(f'/bin/bash -cu "PATH={co / "bin"}:$PATH kicad-route"')
                 with self.assertRaises(routing_adapter.RE01OwnershipError):
                     os.posix_spawn('/bin/sh', [b'/bin/sh', b'-c', b'kicad-route'], os.environ)
-                for ok_argv in (
-                    [sys.executable, str(bridge)],
-                    ['git', '-C', str(co), '-c', 'core.fsmonitor=false', '--version'],
+                for blocked_argv in (
                     ['/bin/sh', '-ce', 'true'],
                     ['/bin/sh', '-eo', 'errexit', '-c', 'true'],
                     ['/bin/sh', '-ceo', 'errexit', 'true'],
@@ -1128,10 +1126,132 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     ['/bin/sh', '-c', f'echo ok # `foo\n{sys.executable} {bridge}'],
                     ['/bin/sh', '-c', f'echo hi | /bin/sh -c "{sys.executable} {bridge}"'],
                     ['/bin/sh', '-c', f'echo hi | {sys.executable} {bridge}'],
+                    [sys.executable],
+                    [sys.executable, '-'],
+                    [sys.executable, '--', '-'],
+                    [sys.executable, '-W', 'ignore', str(bridge)],
+                    [sys.executable, '-X', 'dev', str(bridge)],
+                    [sys.executable, '-BW', 'ignore', str(bridge)],
+                    [sys.executable, '--check-hash-based-pycs=always', str(bridge)],
+                    [sys.executable, '/dev/stdin'],
+                    [sys.executable, '/dev/fd/0'],
+                    [sys.executable, '/proc/thread-self/fd/0'],
+                    [sys.executable, str(outside_dir)],
+                    ['xargs', 'echo', 'ok'],
+                    ['find', str(outside_dir), '-exec', 'echo', '{}', ';'],
+                    ['perl', '-e', 'print 1'],
+                    ['ruby', '-e', 'puts 1'],
+                    ['node', '-e', 'console.log(1)'],
+                    ['awk', 'BEGIN{print 1}'],
+                    ['sed', '-n', 'p'],
+                    ['make', '--version'],
+                ):
+                    with self.subTest(blocked_argv=blocked_argv):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            subprocess.run(blocked_argv, timeout=5)
+                for ok_argv in (
+                    [sys.executable, str(bridge)],
+                    [sys.executable, '-B', '-I', str(bridge)],
+                    [sys.executable, '-BI', str(bridge)],
+                    [sys.executable, '-OO', '-P', '-q', '-s', '-S', '-u', '-v', '-E', str(bridge)],
+                    [sys.executable, '--', str(bridge)],
+                    [sys.executable, str(bridge), '-c', 'arg-after-script'],
+                    ['git', '-C', str(co), '-c', 'core.fsmonitor=false', '--version'],
+                    ['bwrap', '--version'],
                 ):
                     with self.subTest(ok_argv=ok_argv):
                         done = subprocess.run(ok_argv, capture_output=True, timeout=5)
                         self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_re01_direct_exec_allowlist_shebang_env_cwd_and_bwrap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / 'marker.txt'
+            co = root / 'kicad-route'
+            (co / 'bin').mkdir(parents=True)
+            (co / 'src/kicad_route').mkdir(parents=True)
+            (co / 'tools').mkdir(parents=True)
+            krt_bin = co / 'bin/kicad-route'
+            krt_bin.write_text(f'#!/bin/sh\necho HIT >> "{marker}"\n')
+            krt_bin.chmod(0o755)
+            (co / 'src/kicad_route/__init__.py').write_text('')
+            (co / 'src/kicad_route/__main__.py').write_text(f'open({str(marker)!r}, "a").write("MOD\\n")\n')
+            bridge = co / 'tools/rust_engine_kicad.py'
+            bridge.write_text('#!/usr/bin/env python3\nimport sys; sys.exit(0)\n')
+            bridge.chmod(0o755)
+            outside = root / 'outside'
+            outside.mkdir()
+            (outside / 'kicad-route').write_text(f'#!/bin/sh\necho PLAIN >> "{marker}"\n')
+            (outside / 'kicad-route').chmod(0o755)
+            extra_bin = root / 'extra_bin'
+            extra_bin.mkdir()
+            (extra_bin / 'mytool').symlink_to(krt_bin)
+            (outside / 'mytool').symlink_to(krt_bin)
+            site_dir = root / 'site'
+            site_dir.mkdir()
+            (site_dir / 'sitecustomize.py').write_text(f'open({str(marker)!r}, "a").write("SITE\\n")\n')
+            startup_py = root / 'startup.py'
+            startup_py.write_text(f'open({str(marker)!r}, "a").write("START\\n")\n')
+            not_py = root / 'plain_script'
+            not_py.write_text('print(1)\n')
+            dir_py = root / 'dir.py'
+            dir_py.mkdir()
+            (dir_py / '__main__.py').write_text(f'open({str(marker)!r}, "a").write("DIR\\n")\n')
+            zip_py = root / 'fake_zip.py'
+            zip_py.write_bytes(b'PK\x03\x04dummy')
+            shebang_sh = outside / 'wrap_sh'
+            shebang_sh.write_text(f'#!/bin/sh\necho SB >> "{marker}"\n')
+            shebang_sh.chmod(0o755)
+            shebang_env = outside / 'wrap_env'
+            shebang_env.write_text(f'#!/usr/bin/env python3\nopen({str(marker)!r}, "a").write("ENV\\n")\n')
+            shebang_env.chmod(0o755)
+            shebang_krt = outside / 'wrap_krt'
+            shebang_krt.write_text(f'#!{krt_bin}\n')
+            shebang_krt.chmod(0o755)
+            shebang_pyc = outside / 'wrap_pyc.py'
+            shebang_pyc.write_text('#!/usr/bin/python3 -c\n')
+            shebang_pyc.chmod(0o755)
+            shebang_py_noext = outside / 'wrap_py_noext'
+            shebang_py_noext.write_text(f'#!/usr/bin/python3\nopen({str(marker)!r}, "a").write("NOEXT\\n")\n')
+            shebang_py_noext.chmod(0o755)
+            with routing_adapter.re01_enforced():
+                for fn in (
+                    lambda: subprocess.run(['./kicad-route'], cwd=outside, timeout=5),
+                    lambda: subprocess.run(['./mytool'], cwd=outside, timeout=5),
+                    lambda: subprocess.run(['mytool'], env={'PATH': str(extra_bin)}, timeout=5),
+                    lambda: subprocess.run([sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'PYTHONSTARTUP': str(startup_py)}, timeout=5),
+                    lambda: subprocess.run([sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(site_dir)}, timeout=5),
+                    lambda: subprocess.run([sys.executable, str(bridge)], env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(co / 'src')}, timeout=5),
+                    lambda: subprocess.run([str(shebang_sh)], timeout=5),
+                    lambda: subprocess.run([str(shebang_env)], timeout=5),
+                    lambda: subprocess.run([str(shebang_krt)], timeout=5),
+                    lambda: subprocess.run([str(shebang_pyc)], timeout=5),
+                    lambda: subprocess.run([str(shebang_py_noext)], timeout=5),
+                    lambda: subprocess.run([sys.executable, '--', str(not_py)], timeout=5),
+                    lambda: subprocess.run([sys.executable, str(dir_py)], timeout=5),
+                    lambda: subprocess.run([sys.executable, str(zip_py)], timeout=5),
+                    lambda: routing_adapter.check_re01_command(['bwrap', '--ro-bind', str(co), '/opt/kicad-route', '--', '/opt/kicad-route/bin/kicad-route']),
+                    lambda: routing_adapter.check_re01_command(['bwrap', '--ro-bind', str(krt_bin), '/tmp/innocent', '--', '/tmp/innocent']),
+                    lambda: routing_adapter.check_re01_command(['bwrap', '--ro-bind', '/usr', '/usr', '--', '/bin/sh', '-c', 'true']),
+                    lambda: routing_adapter.check_re01_command(['bwrap', '--ro-bind', '/usr', '/usr', '--', sys.executable, '-c', 'import kicad_route']),
+                    lambda: routing_adapter.check_re01_command(['bwrap', '--unknown-opt', '--', '/bin/true']),
+                    lambda: routing_adapter.check_re01_command(['bwrap', '--argv0', 'sh', '--', '/bin/true']),
+                    lambda: routing_adapter.check_re01_command(['bwrap', '--setenv', 'PYTHONPATH', str(site_dir), '--', sys.executable, str(bridge)]),
+                    lambda: routing_adapter.check_re01_command(['bwrap', '--ro-bind', str(co / 'bin'), '/opt/b', '--symlink', '/opt/b/kicad-route', '/opt/alias', '--', '/opt/alias']),
+                ):
+                    with self.assertRaises(routing_adapter.RE01OwnershipError):
+                        fn()
+                self.assertFalse(marker.exists())
+                routing_adapter.check_re01_command([
+                    'bwrap', '--ro-bind', str(co), '/opt/kicad-route', '--',
+                    '/usr/bin/kicad-route-engine', 'route-native', '/work/in.kicad_pcb', '/work/out.kicad_pcb',
+                ])
+                routing_adapter.check_re01_command([
+                    'bwrap', '--ro-bind', str(bridge), '/opt/bridge.py', '--',
+                    sys.executable, '-BI', '/opt/bridge.py', '--help',
+                ])
+                done = subprocess.run([sys.executable, str(bridge)], capture_output=True, timeout=5)
+                self.assertEqual(done.returncode, 0, done.stderr)
 
 
 class NativeAdapterHardeningTests(unittest.TestCase):

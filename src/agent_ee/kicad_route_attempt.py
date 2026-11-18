@@ -23,7 +23,6 @@ The report is provenance. It never makes a check pass: acceptance comes only
 from agent-ee's own fresh checks on the captured proposal.
 """
 
-import ast
 import collections
 import contextlib
 import contextvars
@@ -37,6 +36,7 @@ import re
 import secrets
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -348,24 +348,41 @@ def is_re01_enforced():
     return _RE01_DEPTH.get() > 0
 
 
-_RE01_INLINE_MODULES = re.compile(r'\b(kicad_route|native_delay|grid_router)\b')
-_RE01_SHELL_NAMES = frozenset(('sh', 'bash', 'dash', 'zsh', 'ksh', 'ash', 'mksh', 'pdksh', 'rbash', 'rksh', 'rzsh'))
-_RE01_RAW_BARE_KRT = re.compile(r'(?:^|[\s\'";|&=(`<>{])kicad-route(?=$|[\s\'";|&)`<>{])')
-_RE01_RAW_SRC_KRT = re.compile(r'(?:^|[\s/\'";|&`<>{])src/kicad_route(?=$|[\s/\'";|&)`<>{])')
-_RE01_SHELL_ARG_OPTS = frozenset(('-o', '+o', '-O', '+O', '--rcfile', '--init-file'))
-_RE01_ENV_ARG_OPTS = frozenset(('-u', '-C', '-a', '-f', '--unset', '--chdir', '--argv0', '--file'))
-_RE01_ENV_SPLIT_LONG = '--split-string'
-_RE01_MAX_WRAPPER_DEPTH = 8
-_RE01_SH_WS = frozenset(' \t\n')
-_RE01_SH_ASSIGN_RE = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=')
-_RE01_FORBIDDEN_KEYWORDS = frozenset((
-    'case', 'esac', '[[', ']]', 'coproc', 'select', 'function',
-    'for', 'if', 'then', 'elif', 'else', 'fi', 'while', 'until', 'do', 'done', 'eval',
+_RE01_MAX_DEPTH = 8
+_RE01_SHELL_NAMES = frozenset((
+    'sh', 'bash', 'dash', 'zsh', 'ksh', 'ash', 'csh', 'tcsh', 'fish', 'busybox',
+    'mksh', 'pdksh', 'rbash', 'rksh', 'rzsh',
 ))
-_RE01_STDIN_PATHS = frozenset(('-', '/dev/stdin', '/dev/fd/0', '/proc/self/fd/0'))
-_RE01_BASH_DIALECT_SHELLS = frozenset(('bash', 'rbash', 'zsh', 'ksh', 'mksh', 'pdksh', 'rksh', 'rzsh'))
-_RE01_DASH_DIALECT_SHELLS = frozenset(('dash', 'ash'))
-_RE01_MAX_LEX_DEPTH = 64
+_RE01_LAUNCHER_NAMES = frozenset((
+    'env', 'xargs', 'find', 'nice', 'nohup', 'timeout', 'stdbuf', 'setsid',
+    'strace', 'ltrace', 'taskset', 'chrt', 'ionice', 'parallel', 'chroot',
+    'su', 'sudo', 'doas',
+))
+_RE01_ALT_RUNTIMES = frozenset((
+    'perl', 'ruby', 'node', 'nodejs', 'awk', 'gawk', 'mawk', 'nawk',
+    'sed', 'lua', 'php', 'tclsh', 'expect', 'make',
+))
+_RE01_PY_ALLOWED_SHORT_OPTS = frozenset('BEIOPqsSuv')
+_RE01_BWRAP_ARITY = {
+    '--unshare-all': 0, '--share-net': 0, '--unshare-user': 0, '--unshare-user-try': 0,
+    '--unshare-ipc': 0, '--unshare-pid': 0, '--unshare-net': 0, '--unshare-uts': 0,
+    '--unshare-cgroup': 0, '--unshare-cgroup-try': 0, '--disable-userns': 0,
+    '--assert-userns-disabled': 0, '--clearenv': 0, '--new-session': 0,
+    '--die-with-parent': 0, '--as-pid-1': 0, '--level-prefix': 0,
+    '--argv0': 1, '--userns': 1, '--userns2': 1, '--pidns': 1, '--uid': 1, '--gid': 1,
+    '--hostname': 1, '--chdir': 1, '--unsetenv': 1, '--lock-file': 1, '--sync-fd': 1,
+    '--remount-ro': 1, '--proc': 1, '--dev': 1, '--tmpfs': 1, '--mqueue': 1, '--dir': 1,
+    '--seccomp': 1, '--add-seccomp-fd': 1, '--block-fd': 1, '--userns-block-fd': 1,
+    '--info-fd': 1, '--json-status-fd': 1, '--cap-add': 1, '--cap-drop': 1,
+    '--perms': 1, '--size': 1, '--exec-label': 1, '--file-label': 1,
+    '--setenv': 2, '--bind': 2, '--bind-try': 2, '--dev-bind': 2, '--dev-bind-try': 2,
+    '--ro-bind': 2, '--ro-bind-try': 2, '--bind-fd': 2, '--ro-bind-fd': 2,
+    '--symlink': 2, '--chmod': 2,
+}
+_RE01_BWRAP_BIND_SRC_OPTS = frozenset((
+    '--bind', '--bind-try', '--dev-bind', '--dev-bind-try',
+    '--ro-bind', '--ro-bind-try', '--symlink',
+))
 
 
 def _decode_audit_arg(val):
@@ -380,968 +397,347 @@ def _decode_audit_arg(val):
     return str(raw)
 
 
-def _safe_is_file(path_str):
+def _re01_norm_posix(path_str):
+    norm = posixpath.normpath(path_str.replace('\\', '/'))
+    while norm.startswith('//'):
+        norm = norm[1:]
+    return norm
+
+
+def _re01_safe_is_file(path_str, cwd=None):
     try:
-        return Path(path_str).is_file()
+        p = Path(path_str)
+        if not p.is_absolute() and cwd is not None:
+            p = Path(cwd) / p
+        return p.is_file()
     except (OSError, ValueError):
         return False
 
 
-def _symlink_chain_paths(token):
+def _re01_matches_cmd_name(base, names):
+    if base in names:
+        return True
+    for n in names:
+        if len(n) >= 3 and base.startswith(n) and len(base) > len(n) and base[len(n)] in '0123456789.-':
+            return True
+    return False
+
+
+def _re01_is_python_name(base):
+    return base == 'python' or base.startswith(('python2', 'python3', 'pypy'))
+
+
+def _re01_apply_mounts(norm, mounts):
+    if not mounts:
+        return None
+    best_dest = None
+    for dest in mounts:
+        if norm == dest or (dest != '/' and norm.startswith(dest + '/')):
+            if best_dest is None or len(dest) > len(best_dest):
+                best_dest = dest
+    if best_dest is None:
+        return None
+    src = mounts[best_dest]
+    return src if norm == best_dest else posixpath.join(src, norm[len(best_dest) + 1:])
+
+
+def _re01_resolve_exec_chain(token, *, cwd=None, search_path=None, is_cmd=False, mounts=None):
     candidates = [token]
-    norm = token.replace('\\', '/')
-    if '/' not in norm and token and not token.startswith('-'):
+    slash_tok = token.replace('\\', '/')
+    norm_tok = _re01_norm_posix(slash_tok)
+    if '/' in slash_tok and not posixpath.isabs(slash_tok):
+        base_dir = cwd if cwd is not None else os.getcwd()
+        joined = os.path.join(base_dir, slash_tok)
+        candidates.append(joined)
+        if mounts:
+            mapped_joined = _re01_apply_mounts(_re01_norm_posix(joined), mounts)
+            if mapped_joined:
+                candidates.append(mapped_joined)
+    if mounts:
+        cur_m = norm_tok
+        for _ in range(8):
+            mapped = _re01_apply_mounts(cur_m, mounts)
+            if not mapped or mapped == cur_m:
+                break
+            candidates.append(mapped)
+            cur_m = _re01_norm_posix(mapped)
+    if is_cmd and '/' not in slash_tok and token and not token.startswith('-'):
         try:
-            which = shutil.which(token)
+            which = shutil.which(token, path=search_path) if search_path is not None else shutil.which(token)
         except OSError:
             which = None
         if which:
             candidates.append(which)
-    seen = []
-    seen_set = set()
+        if cwd is not None and search_path is not None and any(p in ('', '.') for p in search_path.split(os.pathsep)):
+            cwd_cand = os.path.join(cwd, token)
+            if _re01_safe_is_file(cwd_cand):
+                candidates.append(cwd_cand)
+    seen, seen_set = [], set()
+    resolved_file = None
     for start in candidates:
         cur = start
         for _ in range(40):
-            n = cur.replace('\\', '/')
+            n = _re01_norm_posix(cur)
             if n not in seen_set:
                 seen_set.add(n)
                 seen.append(n)
             try:
                 p = Path(cur)
+                if not p.is_absolute() and cwd is not None and '/' in cur.replace('\\', '/'):
+                    p = Path(cwd) / p
                 is_link = p.is_symlink()
             except (OSError, ValueError):
                 break
             if not is_link:
                 break
             try:
-                target = os.readlink(cur)
+                target = os.readlink(p)
             except OSError:
                 break
             cur = str((p.parent / target) if not os.path.isabs(target) else target)
-        try:
-            real = os.path.realpath(start).replace('\\', '/')
-        except (OSError, ValueError):
-            real = None
-        if real and real not in seen_set:
-            seen_set.add(real)
-            seen.append(real)
-    return seen
+            if mounts and posixpath.isabs(cur):
+                mapped_cur = _re01_apply_mounts(_re01_norm_posix(cur), mounts)
+                if mapped_cur and _re01_norm_posix(mapped_cur) not in seen_set:
+                    seen_set.add(_re01_norm_posix(mapped_cur))
+                    seen.append(_re01_norm_posix(mapped_cur))
+        abs_target = start
+        if cwd is not None and '/' in start.replace('\\', '/') and not os.path.isabs(start):
+            abs_target = os.path.join(cwd, start)
+        if '/' in start.replace('\\', '/') or os.path.exists(abs_target):
+            try:
+                real = _re01_norm_posix(os.path.realpath(abs_target))
+            except (OSError, ValueError):
+                real = None
+            if real:
+                if real not in seen_set:
+                    seen_set.add(real)
+                    seen.append(real)
+                if resolved_file is None and _re01_safe_is_file(real):
+                    resolved_file = real
+    return seen, resolved_file
 
 
-def _re01_path_reason(norm, token, *, resolved=False):
-    del resolved
-    if (norm == 'kicad-route' or norm.startswith('bin/kicad-route') or '/bin/kicad-route' in norm
-            or (norm.endswith('/kicad-route') and _safe_is_file(norm))):
+def _re01_path_reason(norm, token, *, is_cmd_pos=False, cwd=None):
+    n = _re01_norm_posix(norm)
+    base = posixpath.basename(n)
+    if (n == 'kicad-route' or n == 'bin/kicad-route' or n.startswith('bin/kicad-route/')
+            or n.endswith('/bin/kicad-route') or '/bin/kicad-route/' in n
+            or (base == 'kicad-route' and (is_cmd_pos or _re01_safe_is_file(n, cwd=cwd)))):
         return f'RE-01 forbids executing legacy Python router entrypoint: {token}'
-    if ('/src/kicad_route/' in norm or norm.startswith('src/kicad_route/')
-            or norm.endswith('/src/kicad_route')):
+    if ('/src/kicad_route/' in n or n.startswith('src/kicad_route/')
+            or n == 'src/kicad_route' or n.endswith('/src/kicad_route')
+            or 'kicad_route' in n.split('/') or base == 'kicad_route.py'):
         return f'RE-01 forbids executing legacy Python router module: {token}'
-    if ('/.venv-krt/' in norm or norm.startswith('.venv-krt/')
-            or norm.endswith('/.venv-krt')):
+    if ('/.venv-krt/' in n or n.startswith('.venv-krt/')
+            or n == '.venv-krt' or n.endswith('/.venv-krt')):
         return f'RE-01 forbids executing legacy Python router venv: {token}'
     return None
 
 
-class _RE01LexTooDeep(Exception):
-    pass
-
-
-class _RE01ComplexShell(Exception):
-    pass
-
-
-@contextlib.contextmanager
-def _re01_lex_frame(state):
-    state['lex_depth'] += 1
-    if state['lex_depth'] > _RE01_MAX_LEX_DEPTH:
-        state['lex_depth'] -= 1
-        raise _RE01LexTooDeep()
+def _re01_check_env(env, *, cwd=None):
+    if env is None:
+        return None, None
     try:
-        yield
-    finally:
-        state['lex_depth'] -= 1
-
-
-def _re01_consume_line_cont(s, i, n):
-    if s[i] == '\\' and i + 1 < n:
-        nxt = s[i + 1]
-        if nxt == '\n':
-            return i + 2, True
-        if nxt == '\r' and i + 2 < n and s[i + 2] == '\n':
-            return i + 3, True
-    return i, False
-
-
-def _re01_scan_sq(s, i, n):
-    i += 1
-    start = i
-    while i < n and s[i] != "'":
-        i += 1
-    if i >= n:
-        raise _RE01ComplexShell('unclosed single quote')
-    return s[start:i], i + 1
-
-
-_RE01_ENV_S_ESCAPES = {
-    '_': ' ',
-    'f': '\f',
-    'n': '\n',
-    'r': '\r',
-    't': '\t',
-    'v': '\v',
-    '\\': '\\',
-    '"': '"',
-    "'": "'",
-    '#': '#',
-    '$': '$',
-}
-_RE01_ENV_S_WHITESPACE = frozenset(' \t\n\r\x0b\x0c')
-
-
-def _re01_split_env_string(s_val):
-    tokens = []
-    buf = []
-    has_tok = False
-    in_sq = False
-    in_dq = False
-    i = 0
-    n = len(s_val)
-    while i < n:
-        ch = s_val[i]
-        if in_sq:
-            if ch == "'":
-                in_sq = False
-                i += 1
+        items = list(env.items())
+    except AttributeError:
+        return None, 'RE-01 forbids invalid environment mapping under audit enforcement'
+    decoded = {_decode_audit_arg(k): _decode_audit_arg(v) for k, v in items}
+    if decoded.get('PYTHONSTARTUP'):
+        return None, 'RE-01 forbids PYTHONSTARTUP under audit enforcement'
+    for var in ('PYTHONHOME', 'VIRTUAL_ENV'):
+        val = decoded.get(var)
+        if val:
+            chain, _ = _re01_resolve_exec_chain(val, cwd=cwd, is_cmd=False)
+            for cand in chain:
+                reason = _re01_path_reason(cand, val, is_cmd_pos=False, cwd=cwd)
+                if reason is not None:
+                    return None, reason
+    pypath = decoded.get('PYTHONPATH')
+    if pypath:
+        for entry in pypath.split(os.pathsep):
+            if not entry:
                 continue
-            if ch == '\\':
-                if i + 1 >= n:
-                    return s_val.replace('\\_', ' ').split(), False
-                nxt = s_val[i + 1]
-                if nxt == '\n':
-                    i += 2
-                    continue
-                if nxt in ('\\', "'"):
-                    buf.append(nxt)
-                    i += 2
-                    continue
-                buf.append('\\' + nxt)
-                i += 2
+            chain, _ = _re01_resolve_exec_chain(entry, cwd=cwd, is_cmd=False)
+            for cand in chain:
+                reason = _re01_path_reason(cand, entry, is_cmd_pos=False, cwd=cwd)
+                if reason is not None:
+                    return None, reason
+                if posixpath.basename(cand) in ('sitecustomize.py', 'usercustomize.py'):
+                    return None, f'RE-01 forbids PYTHONPATH startup hook: {entry}'
+            entry_dir = os.path.join(cwd, entry) if (cwd and not os.path.isabs(entry)) else entry
+            for marker in ('sitecustomize.py', 'usercustomize.py', 'kicad_route.py', 'kicad_route'):
+                try:
+                    if (Path(entry_dir) / marker).exists():
+                        return None, f'RE-01 forbids PYTHONPATH entry containing {marker}: {entry}'
+                except (OSError, ValueError):
+                    pass
+    return decoded.get('PATH', os.defpath), None
+
+
+def _re01_check_python_args(args, *, cwd=None, mounts=None):
+    end_opts = False
+    script_idx = None
+    for idx, tok in enumerate(args):
+        if not end_opts:
+            if tok == '--':
+                end_opts = True
                 continue
-            buf.append(ch)
-            i += 1
-            continue
-        if in_dq:
-            if ch == '"':
-                in_dq = False
-                i += 1
+            if tok == '-':
+                return 'RE-01 forbids stdin Python execution under audit enforcement'
+            if tok.startswith('--'):
+                return f'RE-01 forbids Python option {tok} under audit enforcement'
+            if tok.startswith('-') and len(tok) > 1:
+                if any(ch not in _RE01_PY_ALLOWED_SHORT_OPTS for ch in tok[1:]):
+                    return f'RE-01 forbids Python option {tok} under audit enforcement'
                 continue
-            if ch == '\\':
-                if i + 1 >= n:
-                    return s_val.replace('\\_', ' ').split(), False
-                nxt = s_val[i + 1]
-                if nxt == '\r' and i + 2 < n and s_val[i + 2] == '\n':
-                    i += 3
-                    continue
-                if nxt == '\n':
-                    i += 2
-                    continue
-                if nxt == 'c':
-                    i = n
-                    continue
-                buf.append(_RE01_ENV_S_ESCAPES.get(nxt, '\\' + nxt))
-                i += 2
-                continue
-            buf.append(ch)
-            i += 1
-            continue
-        if ch in _RE01_ENV_S_WHITESPACE:
-            if has_tok:
-                tokens.append(''.join(buf))
-                buf.clear()
-                has_tok = False
-            i += 1
-            continue
-        if ch == '#' and not has_tok:
-            while i < n and s_val[i] != '\n':
-                i += 1
-            continue
-        if ch == "'":
-            in_sq = True
-            has_tok = True
-            i += 1
-            continue
-        if ch == '"':
-            in_dq = True
-            has_tok = True
-            i += 1
-            continue
-        if ch == '\\':
-            if i + 1 >= n:
-                return s_val.replace('\\_', ' ').split(), False
-            nxt = s_val[i + 1]
-            if nxt == '\r' and i + 2 < n and s_val[i + 2] == '\n':
-                i += 3
-                continue
-            if nxt == '\n':
-                i += 2
-                continue
-            if nxt == '_':
-                if has_tok:
-                    tokens.append(''.join(buf))
-                    buf.clear()
-                    has_tok = False
-                i += 2
-                continue
-            if nxt == 'c':
-                break
-            buf.append(_RE01_ENV_S_ESCAPES.get(nxt, nxt))
-            has_tok = True
-            i += 2
-            continue
-        buf.append(ch)
-        has_tok = True
-        i += 1
-    if in_sq or in_dq:
-        return s_val.replace('\\_', ' ').split(), False
-    if has_tok:
-        tokens.append(''.join(buf))
-    return tokens, True
-
-
-def _re01_scan_dq(s, i, n, state):
-    with _re01_lex_frame(state):
-        i += 1
-        buf = []
-        while i < n:
-            nj, cont = _re01_consume_line_cont(s, i, n)
-            if cont:
-                i = nj
-                continue
-            ch = s[i]
-            if ch == '"':
-                return ''.join(buf), i + 1
-            if ch == '\\':
-                if i + 1 >= n:
-                    raise _RE01ComplexShell('dangling backslash in double quote')
-                nxt = s[i + 1]
-                buf.append(nxt if nxt in '$`"\\' else '\\' + nxt)
-                i += 2
-                continue
-            if ch == '`':
-                raise _RE01ComplexShell('backtick command substitution')
-            if ch == '$' and i + 1 < n:
-                if s[i + 1] == '(':
-                    if i + 2 < n and s[i + 2] == '(':
-                        raise _RE01ComplexShell('arithmetic expansion')
-                    i = _re01_scan_dollar_paren(s, i, n, state)
-                    continue
-                if s[i + 1] == '{':
-                    raise _RE01ComplexShell('braced parameter expansion')
-            buf.append(ch)
-            i += 1
-        raise _RE01ComplexShell('unclosed double quote')
-
-
-def _re01_is_digit_fd(word_buf):
-    return bool(word_buf) and all('0' <= c <= '9' for c in word_buf)
-
-
-def _re01_scan_dollar_paren(s, i, n, state):
-    with _re01_lex_frame(state):
-        if i + 2 < n and s[i + 2] == '(':
-            raise _RE01ComplexShell('arithmetic expansion')
-        state['cmd_depth'] += 1
-        try:
-            sub_cmds, j, closed = _re01_scan_commands(s, i + 2, n, state, stop_on_paren=True)
-        finally:
-            state['cmd_depth'] -= 1
-        if not closed:
-            raise _RE01ComplexShell('unclosed command substitution')
-        state['cmd_lists'].append((sub_cmds, state['cmd_depth'] + 1))
-        return j
-
-
-def _re01_next_cmd_pos(word, word_dirty, quoted_before_eq, cmd_pos, cmd_prefix):
-    if not cmd_pos:
-        return False, None
-    if cmd_prefix == 'exec_arg':
-        return True, 'exec'
-    if not word_dirty:
-        if word == '!':
-            return True, None
-        if word in ('time', 'exec', 'command', 'builtin'):
-            return True, word
-    if cmd_prefix == 'time':
-        if not word_dirty and word in ('-p', '--'):
-            return True, 'time'
-        return False, None
-    if cmd_prefix == 'command':
-        if not word_dirty and word in ('-p', '--'):
-            return True, 'command'
-        return False, None
-    if cmd_prefix == 'builtin':
-        if not word_dirty and word == '--':
-            return True, 'builtin'
-        return False, None
-    if cmd_prefix == 'exec':
-        if not word_dirty and word == '--':
-            return True, 'exec'
-        if not word_dirty and word.startswith('-') and len(word) > 1:
-            for idx, opt_ch in enumerate(word[1:]):
-                if opt_ch == 'a':
-                    return True, ('exec_arg' if idx + 2 >= len(word) else 'exec')
-                if opt_ch not in ('c', 'l'):
-                    return False, None
-            return True, 'exec'
-        return False, None
-    if not quoted_before_eq and _RE01_SH_ASSIGN_RE.match(word):
-        return True, None
-    return False, None
-
-
-def _re01_scan_commands(s, i, n, state, *, stop_on_paren=False, piped_in=False):
-    with _re01_lex_frame(state):
-        commands, cur_words, word_buf = [], [], []
-        has_word = word_dirty = quoted_before_eq = prev_closed_word_paren = False
-        expect_redir_target = cmd_has_stdin_redir = False
-        cmd_pos, cmd_prefix, last_unquoted_ch = True, None, None
-        cur_piped_in = piped_in
-
-        def flush():
-            nonlocal has_word, word_dirty, quoted_before_eq, cmd_pos, cmd_prefix
-            nonlocal last_unquoted_ch, prev_closed_word_paren, expect_redir_target
-            if has_word:
-                word = ''.join(word_buf)
-                word_buf.clear()
-                if expect_redir_target:
-                    has_word = word_dirty = quoted_before_eq = expect_redir_target = False
-                    last_unquoted_ch = None
-                    prev_closed_word_paren = False
-                    return
-                if not word_dirty and word in ('[[', ']]'):
-                    raise _RE01ComplexShell(f'unsupported conditional keyword {word!r}')
-                if not word_dirty and cmd_pos and word in _RE01_FORBIDDEN_KEYWORDS:
-                    raise _RE01ComplexShell(f'unsupported shell keyword {word!r}')
-                cur_words.append(word)
-                cmd_pos, cmd_prefix = _re01_next_cmd_pos(
-                    word, word_dirty, quoted_before_eq, cmd_pos, cmd_prefix)
-                has_word = word_dirty = quoted_before_eq = False
-            last_unquoted_ch = None
-            prev_closed_word_paren = False
-
-        def finish_cmd(*, next_piped_in=False):
-            nonlocal cmd_pos, cmd_prefix, cur_piped_in, cmd_has_stdin_redir
-            flush()
-            if expect_redir_target:
-                raise _RE01ComplexShell('missing redirection target')
-            if cur_words:
-                cmd_words = list(cur_words)
-                cur_words.clear()
-                commands.append((cmd_words, cur_piped_in))
-                if cmd_has_stdin_redir:
-                    state['stdin_redir_cmds'].add(id(cmd_words))
-            cmd_has_stdin_redir = False
-            cur_piped_in = piped_in or next_piped_in
-            cmd_pos, cmd_prefix = True, None
-
-        while i < n:
-            ni, cont = _re01_consume_line_cont(s, i, n)
-            if cont:
-                i = ni
-                continue
-            ch = s[i]
-            if ch in _RE01_SH_WS:
-                if ch == '\n':
-                    finish_cmd(next_piped_in=False)
-                else:
-                    flush()
-                i += 1
-                continue
-            if ch == '#' and not has_word and not prev_closed_word_paren:
-                if expect_redir_target:
-                    raise _RE01ComplexShell('missing redirection target before comment')
-                while i < n and s[i] != '\n':
-                    i += 1
-                continue
-            if ch == '\\':
-                if i + 1 >= n:
-                    raise _RE01ComplexShell('dangling backslash')
-                if '=' not in word_buf:
-                    quoted_before_eq = True
-                word_buf.append(s[i + 1])
-                has_word = word_dirty = True
-                last_unquoted_ch = None
-                prev_closed_word_paren = False
-                i += 2
-                continue
-            if ch == "'":
-                if '=' not in word_buf:
-                    quoted_before_eq = True
-                sq_txt, i = _re01_scan_sq(s, i, n)
-                word_buf.append(sq_txt)
-                has_word = word_dirty = True
-                last_unquoted_ch = None
-                prev_closed_word_paren = False
-                continue
-            if ch == '"':
-                if '=' not in word_buf:
-                    quoted_before_eq = True
-                dq_txt, i = _re01_scan_dq(s, i, n, state)
-                word_buf.append(dq_txt)
-                has_word = word_dirty = True
-                last_unquoted_ch = None
-                prev_closed_word_paren = False
-                continue
-            if ch == '`':
-                raise _RE01ComplexShell('backtick command substitution')
-            if ch in '{}':
-                raise _RE01ComplexShell('brace construct')
-            if ch == '$' and i + 1 < n:
-                nxt = s[i + 1]
-                if nxt == '(':
-                    if '=' not in word_buf:
-                        quoted_before_eq = True
-                    i = _re01_scan_dollar_paren(s, i, n, state)
-                    has_word = word_dirty = prev_closed_word_paren = True
-                    last_unquoted_ch = None
-                    continue
-                if nxt == '{':
-                    raise _RE01ComplexShell('braced parameter expansion')
-                if nxt in ("'", '"'):
-                    raise _RE01ComplexShell('ANSI-C or locale quoting')
-            if ch == '(':
-                if expect_redir_target and not has_word:
-                    raise _RE01ComplexShell('unexpected parenthesis in redirection')
-                if last_unquoted_ch in ('@', '?', '*', '+', '!', '='):
-                    raise _RE01ComplexShell('extglob or array assignment construct')
-                if i + 1 < n and s[i + 1] == '(':
-                    raise _RE01ComplexShell('arithmetic or nested-paren construct')
-                flush()
-                if not cmd_pos or (cur_words and cur_words != ['!']):
-                    raise _RE01ComplexShell('unexpected subshell outside command position')
-                if cur_words == ['!']:
-                    cur_words.clear()
-                sub_cmds, j, closed = _re01_scan_commands(
-                    s, i + 1, n, state, stop_on_paren=True, piped_in=cur_piped_in)
-                if not closed:
-                    raise _RE01ComplexShell('unclosed subshell')
-                if not sub_cmds:
-                    raise _RE01ComplexShell('empty subshell')
-                commands.extend(sub_cmds)
-                cmd_pos, cmd_prefix = False, None
-                i = j
-                continue
-            if ch == ')':
-                finish_cmd(next_piped_in=False)
-                if stop_on_paren:
-                    return commands, i + 1, True
-                raise _RE01ComplexShell('unmatched closing parenthesis')
-            if ch in ';|&<>':
-                if s[i:i + 2] in ('<(', '>('):
-                    raise _RE01ComplexShell('process substitution')
-                if s[i:i + 2] == '<<':
-                    raise _RE01ComplexShell('heredoc or herestring')
-                if s[i:i + 2] in (';;', ';&'):
-                    raise _RE01ComplexShell('case clause terminator')
-                if s[i:i + 2] in ('&&', '||', '|&'):
-                    op = s[i:i + 2]
-                    finish_cmd(next_piped_in=(op == '|&'))
-                    i += 2
-                    continue
-                if s[i:i + 2] == '&>':
-                    if not state['bash_redir']:
-                        finish_cmd(next_piped_in=False)
-                        i += 1
-                        continue
-                    state['saw_amp_redir'] = True
-                    op_len = 3 if s[i:i + 3] == '&>>' else 2
-                    if not expect_redir_target and has_word and not word_dirty and _re01_is_digit_fd(word_buf):
-                        word_buf.clear()
-                        has_word = False
-                    flush()
-                    if expect_redir_target:
-                        raise _RE01ComplexShell('missing redirection target')
-                    expect_redir_target = True
-                    i += op_len
-                    continue
-                if s[i:i + 2] in ('>>', '<>', '>&', '<&', '>|') or ch in '<>':
-                    op_len = 2 if s[i:i + 2] in ('>>', '<>', '>&', '<&', '>|') else 1
-                    op_str = s[i:i + op_len]
-                    if not expect_redir_target and has_word and not word_dirty and _re01_is_digit_fd(word_buf):
-                        word_buf.clear()
-                        has_word = False
-                    flush()
-                    if expect_redir_target:
-                        raise _RE01ComplexShell('missing redirection target')
-                    if op_str in ('<', '<>', '<&'):
-                        cmd_has_stdin_redir = True
-                    expect_redir_target = True
-                    i += op_len
-                    continue
-                finish_cmd(next_piped_in=(ch == '|'))
-                i += 1
-                continue
-            word_buf.append(ch)
-            has_word = True
-            last_unquoted_ch = ch
-            prev_closed_word_paren = False
-            i += 1
-        finish_cmd(next_piped_in=False)
-        return commands, i, False
-
-
-def _re01_lex_shell(cmd_str, *, bash_redir=True, base_depth=0):
-    state = {
-        'bash_redir': bash_redir,
-        'saw_amp_redir': False,
-        'lex_depth': 0,
-        'cmd_depth': base_depth,
-        'cmd_lists': [],
-        'stdin_redir_cmds': set(),
-    }
-    commands, _, _ = _re01_scan_commands(cmd_str, 0, len(cmd_str), state, stop_on_paren=False)
-    return commands, state
-
-
-def _re01_shell_command_reason(cmd_str, _depth=0, dialect=None):
-    if _depth >= _RE01_MAX_WRAPPER_DEPTH:
-        return 'RE-01 forbids deeply nested shell or wrapper execution'
-    norm_raw = cmd_str.replace('\\\r\n', '').replace('\\\n', '')
-    norm_cmd = norm_raw.replace('\\', '/')
-    if ('bin/kicad-route' in norm_cmd or _RE01_RAW_SRC_KRT.search(norm_cmd)
-            or '.venv-krt' in norm_cmd or _RE01_INLINE_MODULES.search(norm_raw)
-            or _RE01_RAW_BARE_KRT.search(norm_cmd)):
-        return f'RE-01 forbids shell legacy Python router execution: {cmd_str}'
-    try:
-        if dialect == 'dash':
-            runs = [_re01_lex_shell(cmd_str, bash_redir=False, base_depth=_depth)]
-        else:
-            first_cmds, first_state = _re01_lex_shell(cmd_str, bash_redir=True, base_depth=_depth)
-            runs = [(first_cmds, first_state)]
-            if dialect is None and first_state['saw_amp_redir']:
-                runs.append(_re01_lex_shell(cmd_str, bash_redir=False, base_depth=_depth))
-    except _RE01LexTooDeep:
-        return 'RE-01 forbids deeply nested shell or wrapper execution'
-    except _RE01ComplexShell as exc:
-        return f'RE-01 forbids complex or unsupported shell construct under audit enforcement: {exc}'
-    for run_cmds, run_state in runs:
-        for sub_cmds, sub_depth in run_state['cmd_lists']:
-            if sub_depth >= _RE01_MAX_WRAPPER_DEPTH:
-                return 'RE-01 forbids deeply nested shell or wrapper execution'
-            reason = _re01_check_command_specs(
-                sub_cmds, _depth=sub_depth + 1, in_shell=True,
-                stdin_redir_ids=run_state['stdin_redir_cmds'])
-            if reason is not None:
-                return reason
-        reason = _re01_check_command_specs(
-            run_cmds, _depth=_depth + 1, in_shell=True,
-            stdin_redir_ids=run_state['stdin_redir_cmds'])
+        elif tok == '-':
+            return 'RE-01 forbids stdin Python execution under audit enforcement'
+        script_idx = idx
+        break
+    if script_idx is None:
+        return 'RE-01 forbids interactive or stdin Python execution under audit enforcement'
+    script_tok = args[script_idx]
+    norm_tok = _re01_norm_posix(script_tok.replace('\\', '/'))
+    if (norm_tok == '-' or norm_tok == '/dev/stdin' or norm_tok.startswith('/dev/fd/')
+            or re.fullmatch(r'/proc/(?:\d+|self|thread-self)/fd/.*', norm_tok)):
+        return f'RE-01 forbids FD/stdin Python execution: {script_tok}'
+    chain, host_file = _re01_resolve_exec_chain(script_tok, cwd=cwd, is_cmd=False, mounts=mounts)
+    for cand in chain:
+        reason = _re01_path_reason(cand, script_tok, is_cmd_pos=False, cwd=cwd)
         if reason is not None:
             return reason
-    return None
-
-
-def _re01_env_split_long_arg(token):
-    if not token.startswith('--'):
-        return False, None
-    if '=' in token:
-        flag, eq_val = token.split('=', 1)
-        if len(flag) >= 3 and _RE01_ENV_SPLIT_LONG.startswith(flag):
-            return True, eq_val
-        return False, None
-    if len(token) >= 3 and _RE01_ENV_SPLIT_LONG.startswith(token):
-        return True, None
-    return False, None
-
-
-def _re01_env_is_arg_long_opt(token):
-    if token in _RE01_ENV_ARG_OPTS:
-        return True
-    if token.startswith('--') and '=' not in token and len(token) >= 3:
-        return any(opt.startswith(token) for opt in _RE01_ENV_ARG_OPTS if opt.startswith('--'))
-    return False
-
-
-def _re01_expand_env_outer_splits(tail_tokens, depth):
-    out = []
-    opt_takes_arg = False
-    did_split = False
-    j = 0
-    n = len(tail_tokens)
-    while j < n:
-        tok = tail_tokens[j]
-        if opt_takes_arg:
-            opt_takes_arg = False
-            out.append(tok)
-            j += 1
-            continue
-        if tok == '--':
-            out.extend(tail_tokens[j:])
-            break
-        is_split_long, split_eq_val = _re01_env_split_long_arg(tok)
-        if tok == '-S' or is_split_long:
-            if split_eq_val is not None:
-                s_val = split_eq_val
-                j += 1
-            else:
-                s_val = tail_tokens[j + 1] if j + 1 < n else ''
-                j += 2
-            depth += 1
-            if depth >= _RE01_MAX_WRAPPER_DEPTH:
-                return 'RE-01 forbids deeply nested shell or wrapper execution', None, depth, True
-            split_tokens, clean_parse = _re01_split_env_string(s_val)
-            if not clean_parse:
-                reason = _re01_shell_command_reason(s_val, depth)
-                if reason is not None:
-                    return reason, None, depth, True
-            out.extend(split_tokens)
-            did_split = True
-            continue
-        if tok.startswith('-') and not tok.startswith('--') and len(tok) > 1:
-            expanded_short_s = False
-            for opt_idx, opt_ch in enumerate(tok[1:]):
-                if opt_ch in ('u', 'C', 'a', 'f'):
-                    if opt_idx + 2 >= len(tok):
-                        opt_takes_arg = True
-                    break
-                if opt_ch == 'S':
-                    if opt_idx > 0:
-                        out.append('-' + tok[1:opt_idx + 1])
-                    attached_s = tok[opt_idx + 2:]
-                    if attached_s:
-                        s_val = attached_s
-                        j += 1
-                    else:
-                        s_val = tail_tokens[j + 1] if j + 1 < n else ''
-                        j += 2
-                    depth += 1
-                    if depth >= _RE01_MAX_WRAPPER_DEPTH:
-                        return 'RE-01 forbids deeply nested shell or wrapper execution', None, depth, True
-                    split_tokens, clean_parse = _re01_split_env_string(s_val)
-                    if not clean_parse:
-                        reason = _re01_shell_command_reason(s_val, depth)
-                        if reason is not None:
-                            return reason, None, depth, True
-                    out.extend(split_tokens)
-                    did_split = True
-                    expanded_short_s = True
-                    break
-            if expanded_short_s:
-                continue
-            out.append(tok)
-            j += 1
-            continue
-        if _re01_env_is_arg_long_opt(tok):
-            opt_takes_arg = True
-            out.append(tok)
-            j += 1
-            continue
-        if tok.startswith('-') or '=' in tok:
-            out.append(tok)
-            j += 1
-            continue
-        out.extend(tail_tokens[j:])
-        break
-    return None, out, depth, did_split
-
-
-def _re01_resolve_shell_dialect(chain):
-    for cand in reversed(chain):
-        if not cand or cand.startswith('-'):
-            continue
-        name = Path(cand).name
-        if name in _RE01_BASH_DIALECT_SHELLS:
-            return 'bash'
-        if name in _RE01_DASH_DIALECT_SHELLS:
-            return 'dash'
-    return None
-
-
-def _re01_is_python_chain(chain):
-    for cand in chain:
-        if not cand or cand.startswith('-'):
-            continue
-        name = Path(cand).name
-        if name == 'python' or name.startswith(('python2', 'python3', 'pypy')):
-            return True
-    return False
-
-
-def _re01_inline_python_reason(code_or_mod, raw_token, *, is_code):
-    norm_token = code_or_mod.replace('\\\r\n', '').replace('\\\n', '').replace('\\\r', '')
-    if _RE01_INLINE_MODULES.search(norm_token):
-        return 'RE-01 forbids inline or module execution of legacy Python router modules'
-    norm_slash = norm_token.replace('\\', '/')
-    if (re.search(r'(?:^|[\s\'"/])bin/kicad-route(?=$|[\s\'"/])', norm_slash)
-            or re.search(r'(?:^|[\s\'"/])\.venv-krt(?=$|[\s\'"/])', norm_slash)):
-        return f'RE-01 forbids executing legacy Python router entrypoint: {raw_token}'
-    reason = _re01_path_reason(norm_slash, raw_token)
-    if reason is not None:
-        return reason
-    if is_code:
-        try:
-            tree = ast.parse(norm_token)
-        except SyntaxError:
-            tree = None
-        if tree is not None:
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                    val = node.value
-                    if _RE01_INLINE_MODULES.search(val):
-                        return 'RE-01 forbids inline or module execution of legacy Python router modules'
-                    val_slash = val.replace('\\', '/')
-                    if (re.search(r'(?:^|[\s\'"/])bin/kicad-route(?=$|[\s\'"/])', val_slash)
-                            or re.search(r'(?:^|[\s\'"/])\.venv-krt(?=$|[\s\'"/])', val_slash)):
-                        return f'RE-01 forbids executing legacy Python router entrypoint: {raw_token}'
-                    reason = _re01_path_reason(val_slash, raw_token)
-                    if reason is not None:
-                        return reason
-    return None
-
-
-def _re01_forbidden_reason(tokens, _depth=0, _env_parsing_opts=False, *,
-                           piped_in=False, has_stdin_redir=False, in_shell=False):
-    if _depth >= _RE01_MAX_WRAPPER_DEPTH:
-        return 'RE-01 forbids deeply nested shell or wrapper execution'
-    token_list = [_decode_audit_arg(raw) for raw in tokens]
-    prev = ''
-    saw_shell = shell_seen = shell_c_pending = shell_end_opts = shell_opt_takes_arg = False
-    shell_c_seen = shell_s_seen = False
-    shell_dialect = shell_script = None
-    saw_python = py_seen = py_opt_takes_arg = py_has_c_or_m = py_has_script = py_reads_stdin = False
-    env_parsing_opts, env_opt_takes_arg = _env_parsing_opts, False
-    exec_parsing_opts = exec_opt_takes_arg = False
-    at_shell_cmd_pos, shell_wrapper, command_query_only = in_shell, None, False
-    for idx, token in enumerate(token_list):
-        chain = _symlink_chain_paths(token)
-        for cand in chain:
-            reason = _re01_path_reason(cand, token)
+    if host_file is None or not norm_tok.endswith('.py') or not host_file.endswith('.py'):
+        return f'RE-01 requires an existing regular .py script file: {script_tok}'
+    try:
+        st = os.stat(host_file)
+        if not stat.S_ISREG(st.st_mode):
+            return f'RE-01 requires a regular .py script file: {script_tok}'
+        with open(host_file, 'rb') as fh:
+            magic = fh.read(4)
+        if magic in (b'PK\x03\x04', b'PK\x05\x06'):
+            return f'RE-01 forbids zipfile Python execution: {script_tok}'
+    except OSError:
+        return f'RE-01 requires a readable regular .py script file: {script_tok}'
+    for arg_tok in args[script_idx + 1:]:
+        arg_chain, _ = _re01_resolve_exec_chain(arg_tok, cwd=cwd, is_cmd=False, mounts=mounts)
+        for cand in arg_chain:
+            reason = _re01_path_reason(cand, arg_tok, is_cmd_pos=False, cwd=cwd)
             if reason is not None:
                 return reason
-        if env_parsing_opts:
-            if env_opt_takes_arg:
-                env_opt_takes_arg = False
-                prev = token
-                continue
-            if token == '--':
-                env_parsing_opts = False
-                prev = token
-                continue
-            if token.startswith('-') and not token.startswith('--') and len(token) > 1:
-                consumed_attached_arg = False
-                for opt_idx, opt_ch in enumerate(token[1:]):
-                    if opt_ch in ('u', 'C', 'a', 'f'):
-                        if opt_idx + 2 < len(token):
-                            consumed_attached_arg = True
-                        else:
-                            env_opt_takes_arg = True
-                        break
-                if consumed_attached_arg or env_opt_takes_arg:
-                    prev = token
-                    continue
-            if _re01_env_is_arg_long_opt(token):
-                env_opt_takes_arg = True
-                prev = token
-                continue
-            if token.startswith('-') or '=' in token:
-                prev = token
-                continue
-            env_parsing_opts = False
-        if exec_parsing_opts:
-            if exec_opt_takes_arg:
-                exec_opt_takes_arg = False
-                prev = token
-                continue
-            if token == '--':
-                exec_parsing_opts = False
-                prev = token
-                continue
-            if token.startswith('-') and len(token) > 1:
-                valid_exec_opts = True
-                for opt_idx, opt_ch in enumerate(token[1:]):
-                    if opt_ch == 'a':
-                        if opt_idx + 2 >= len(token):
-                            exec_opt_takes_arg = True
-                        break
-                    if opt_ch not in ('c', 'l'):
-                        valid_exec_opts = False
-                        break
-                if valid_exec_opts:
-                    prev = token
-                    continue
-            exec_parsing_opts = False
-        if at_shell_cmd_pos:
-            if token == '!' or _RE01_SH_ASSIGN_RE.match(token):
-                prev = token
-                continue
-            if shell_wrapper == 'time':
-                if token == '-p':
-                    prev = token
-                    continue
-                if token == '--':
-                    shell_wrapper = None
-                    prev = token
-                    continue
-                shell_wrapper = None
-            elif shell_wrapper == 'command':
-                if token == '-p':
-                    prev = token
-                    continue
-                if token in ('-v', '-V'):
-                    shell_wrapper = None
-                    at_shell_cmd_pos = False
-                    command_query_only = True
-                    prev = token
-                    continue
-                if token == '--':
-                    shell_wrapper = None
-                    prev = token
-                    continue
-                shell_wrapper = None
-            elif shell_wrapper == 'builtin':
-                if token == '--':
-                    shell_wrapper = None
-                    prev = token
-                    continue
-                shell_wrapper = None
-            if token == 'eval':
-                return 'RE-01 forbids eval execution under audit enforcement'
-            if token == 'exec':
-                exec_parsing_opts = True
-                prev = token
-                continue
-            if token in ('time', 'command', 'builtin'):
-                shell_wrapper = token
-                prev = token
-                continue
-            at_shell_cmd_pos = False
-        if shell_seen:
-            if not shell_end_opts:
-                if shell_opt_takes_arg:
-                    shell_opt_takes_arg = False
-                    prev = token
-                    continue
-                if token == '--':
-                    shell_end_opts = True
-                    prev = token
-                    continue
-                if token in _RE01_SHELL_ARG_OPTS:
-                    shell_opt_takes_arg = True
-                    prev = token
-                    continue
-                if re.fullmatch(r'[-+][A-Za-z]+', token):
-                    handled_short = False
-                    if token.startswith('-'):
-                        if 'c' in token:
-                            shell_c_pending = True
-                            shell_c_seen = True
-                            handled_short = True
-                        if 's' in token:
-                            shell_s_seen = True
-                            handled_short = True
-                    if 'o' in token or 'O' in token:
-                        shell_opt_takes_arg = True
-                        handled_short = True
-                    if handled_short:
-                        prev = token
-                        continue
-                if token.startswith('-') or (token.startswith('+') and len(token) > 1):
-                    prev = token
-                    continue
-            if shell_c_pending:
-                reason = _re01_shell_command_reason(token, _depth + 1, dialect=shell_dialect)
+    return None
+
+
+def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0):
+    if args == ['--version']:
+        return None
+    mounts = {}
+    bwrap_cwd = cwd
+    bwrap_env = dict(env) if env is not None else None
+    idx = 0
+    n = len(args)
+    while idx < n:
+        tok = args[idx]
+        if tok == '--':
+            idx += 1
+            break
+        arity = _RE01_BWRAP_ARITY.get(tok)
+        if arity is None:
+            if tok.startswith('-'):
+                return f'RE-01 forbids unsupported bwrap option {tok} under audit enforcement'
+            break
+        if idx + arity >= n:
+            return f'RE-01 forbids incomplete bwrap option {tok} under audit enforcement'
+        if tok in _RE01_BWRAP_BIND_SRC_OPTS:
+            src, dest = args[idx + 1], args[idx + 2]
+            src_chain, _ = _re01_resolve_exec_chain(src, cwd=cwd, is_cmd=False)
+            for cand in src_chain:
+                reason = _re01_path_reason(cand, src, is_cmd_pos=False, cwd=cwd)
                 if reason is not None:
                     return reason
-                shell_c_pending = False
-            elif shell_script is None:
-                shell_script = token
-            shell_seen = False
-            shell_dialect = None
-            shell_end_opts = False
-            shell_opt_takes_arg = False
-            prev = token
-            continue
-        prev_cm = re.fullmatch(r'-[A-Za-z]*([cm])', prev)
-        if prev_cm:
-            reason = _re01_inline_python_reason(token, token, is_code=(prev_cm.group(1) == 'c'))
-            if reason is not None:
-                return reason
-        attached = re.match(r'^-[A-Za-z]*?([cm])(.+)$', token, re.S)
-        if attached:
-            reason = _re01_inline_python_reason(attached.group(2), token, is_code=(attached.group(1) == 'c'))
-            if reason is not None:
-                return reason
-        if py_seen:
-            if py_opt_takes_arg:
-                py_opt_takes_arg = False
-                if py_has_c_or_m:
-                    py_seen = False
-                prev = token
-                continue
-            if token in ('-W', '-X', '--check-hash-based-pycs'):
-                py_opt_takes_arg = True
-                prev = token
-                continue
-            if re.fullmatch(r'-[A-Za-z]*[cm]', token):
-                py_has_c_or_m = True
-                py_opt_takes_arg = True
-                prev = token
-                continue
-            if attached:
-                py_has_c_or_m = True
-                py_seen = False
-                prev = token
-                continue
-            if token.startswith('-') and len(token) > 1:
-                prev = token
-                continue
-            if token in _RE01_STDIN_PATHS:
-                py_reads_stdin = True
-            else:
-                py_has_script = True
-            py_seen = False
-        if (not token.startswith('-') and '=' not in token
-                and any(Path(c).name == 'env' for c in chain if c and not c.startswith('-'))):
-            reason, expanded_tail, new_depth, did_split = _re01_expand_env_outer_splits(
-                token_list[idx + 1:], _depth)
-            if reason is not None:
-                return reason
-            if did_split:
-                return _re01_forbidden_reason(
-                    expanded_tail, _depth=new_depth, _env_parsing_opts=True,
-                    piped_in=piped_in, has_stdin_redir=has_stdin_redir, in_shell=False)
-            env_parsing_opts = True
-        if (not token.startswith('-') and '=' not in token
-                and any(Path(c).name in _RE01_SHELL_NAMES for c in chain if c and not c.startswith('-'))):
-            saw_shell = True
-            shell_seen = True
-            shell_dialect = _re01_resolve_shell_dialect(chain)
-        elif not token.startswith('-') and '=' not in token and _re01_is_python_chain(chain):
-            saw_python = True
-            py_seen = True
-        prev = token
-    if not command_query_only and (piped_in or has_stdin_redir):
-        if saw_shell and (shell_s_seen or (
-                not shell_c_seen and (shell_script is None or shell_script in _RE01_STDIN_PATHS))):
-            return 'RE-01 forbids stdin-fed shell execution under audit enforcement'
-        if saw_python and not py_has_c_or_m and (not py_has_script or py_reads_stdin):
-            return 'RE-01 forbids stdin-fed Python execution under audit enforcement'
-    return None
+            mounts[_re01_norm_posix(dest)] = _re01_norm_posix(src)
+        elif tok == '--argv0':
+            argv0_name = posixpath.basename(_re01_norm_posix(args[idx + 1]))
+            if (_re01_matches_cmd_name(argv0_name, _RE01_SHELL_NAMES)
+                    or _re01_matches_cmd_name(argv0_name, _RE01_LAUNCHER_NAMES)
+                    or _re01_matches_cmd_name(argv0_name, _RE01_ALT_RUNTIMES)
+                    or argv0_name == 'kicad-route'):
+                return f'RE-01 forbids bwrap --argv0 masquerading as {args[idx + 1]}'
+        elif tok == '--chdir':
+            bwrap_cwd = args[idx + 1]
+        elif tok == '--clearenv':
+            bwrap_env = {}
+        elif tok == '--setenv':
+            if bwrap_env is None:
+                bwrap_env = {}
+            bwrap_env[args[idx + 1]] = args[idx + 2]
+        elif tok == '--unsetenv' and bwrap_env is not None:
+            bwrap_env.pop(args[idx + 1], None)
+        idx += 1 + arity
+    if idx >= n:
+        return 'RE-01 forbids bwrap without an inner command under audit enforcement'
+    return _re01_check_command_reason(
+        args[idx:], cwd=bwrap_cwd, env=bwrap_env, _depth=depth + 1, _mounts=mounts)
 
 
-def _re01_check_command_specs(cmd_specs, _depth=0, *, in_shell=False, stdin_redir_ids=()):
-    for cmd_tokens, cmd_piped_in in cmd_specs:
-        reason = _re01_forbidden_reason(
-            cmd_tokens, _depth=_depth, piped_in=cmd_piped_in,
-            has_stdin_redir=(id(cmd_tokens) in stdin_redir_ids), in_shell=in_shell)
+def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=None):
+    if _depth >= _RE01_MAX_DEPTH:
+        return 'RE-01 forbids deeply nested command execution under audit enforcement'
+    tokens = [_decode_audit_arg(a) for a in argv]
+    if not tokens or not tokens[0]:
+        return 'RE-01 forbids empty command execution under audit enforcement'
+    search_path, env_err = _re01_check_env(env, cwd=cwd)
+    if env_err is not None:
+        return env_err
+    exe_tok = tokens[0]
+    chain, host_exe = _re01_resolve_exec_chain(
+        exe_tok, cwd=cwd, search_path=search_path, is_cmd=True, mounts=_mounts)
+    is_python = is_bwrap = False
+    for cand in chain:
+        reason = _re01_path_reason(cand, exe_tok, is_cmd_pos=True, cwd=cwd)
         if reason is not None:
             return reason
+        base = posixpath.basename(cand)
+        if base == 'sh.distrib' or _re01_matches_cmd_name(base, _RE01_SHELL_NAMES):
+            return f'RE-01 forbids shell execution under audit enforcement: {exe_tok}'
+        if _re01_matches_cmd_name(base, _RE01_LAUNCHER_NAMES):
+            return f'RE-01 forbids launcher/wrapper execution under audit enforcement: {exe_tok}'
+        if _re01_matches_cmd_name(base, _RE01_ALT_RUNTIMES):
+            return f'RE-01 forbids scripting runtime execution under audit enforcement: {exe_tok}'
+        if _re01_is_python_name(base):
+            is_python = True
+        if base == 'bwrap':
+            is_bwrap = True
+    if host_exe is not None:
+        try:
+            with open(host_exe, 'rb') as fh:
+                head = fh.read(512)
+        except OSError:
+            head = b''
+        if head.startswith(b'#!'):
+            first_line = head.split(b'\n', 1)[0][2:].strip().decode('utf-8', 'replace')
+            parts = first_line.split(None, 1)
+            if not parts:
+                return f'RE-01 forbids empty shebang execution under audit enforcement: {exe_tok}'
+            shebang_argv = [parts[0], *([parts[1].strip()] if len(parts) > 1 and parts[1].strip() else []), host_exe]
+            reason = _re01_check_command_reason(
+                shebang_argv, cwd=cwd, env=env, _depth=_depth + 1, _mounts=_mounts)
+            if reason is not None:
+                return reason
+    if is_bwrap:
+        return _re01_check_bwrap(tokens[1:], cwd=cwd, env=env, depth=_depth)
+    if is_python:
+        return _re01_check_python_args(tokens[1:], cwd=cwd, mounts=_mounts)
+    for arg_tok in tokens[1:]:
+        arg_chain, _ = _re01_resolve_exec_chain(arg_tok, cwd=cwd, is_cmd=False, mounts=_mounts)
+        for cand in arg_chain:
+            reason = _re01_path_reason(cand, arg_tok, is_cmd_pos=False, cwd=cwd)
+            if reason is not None:
+                return reason
     return None
 
 
-def check_re01_command(argv):
-    cmd_tokens = [_decode_audit_arg(a) for a in argv]
-    reason = _re01_check_command_specs([(cmd_tokens, False)], in_shell=False)
+def check_re01_command(argv, *, cwd=None, env=None):
+    reason = _re01_check_command_reason(argv, cwd=cwd, env=env)
     if reason is not None:
         raise RE01OwnershipError(reason)
 
@@ -1351,34 +747,32 @@ def _re01_audit_hook(event, args):
         return
     if event == 'subprocess.Popen':
         executable, cmd_args = args[0], args[1]
+        cwd = _decode_audit_arg(args[2]) if len(args) > 2 and args[2] is not None else None
+        env = args[3] if len(args) > 3 else None
+        if isinstance(cmd_args, (str, bytes, bytearray)):
+            raise RE01OwnershipError('RE-01 forbids shell string execution under audit enforcement')
         argv_tokens = ([_decode_audit_arg(a) for a in cmd_args]
-                       if isinstance(cmd_args, (list, tuple))
-                       else ([_decode_audit_arg(cmd_args)] if cmd_args is not None else []))
+                       if isinstance(cmd_args, (list, tuple)) else [])
         if executable is not None:
             exec_tok = _decode_audit_arg(executable)
-            if isinstance(cmd_args, (list, tuple)) and argv_tokens:
-                check_re01_command([argv_tokens[0]])
-                check_re01_command([exec_tok, *argv_tokens[1:]])
+            if argv_tokens:
+                check_re01_command(argv_tokens, cwd=cwd, env=env)
+                check_re01_command([exec_tok, *argv_tokens[1:]], cwd=cwd, env=env)
             else:
-                check_re01_command([exec_tok, *argv_tokens])
+                check_re01_command([exec_tok], cwd=cwd, env=env)
         else:
-            check_re01_command(argv_tokens)
+            check_re01_command(argv_tokens, cwd=cwd, env=env)
     elif event in ('os.exec', 'os.posix_spawn'):
         exec_tok = _decode_audit_arg(args[0])
-        if len(args) > 1 and isinstance(args[1], (list, tuple)):
+        env = args[2] if len(args) > 2 else None
+        if len(args) > 1 and isinstance(args[1], (list, tuple)) and args[1]:
             argv_tokens = [_decode_audit_arg(a) for a in args[1]]
-            if argv_tokens:
-                check_re01_command([argv_tokens[0]])
-                check_re01_command([exec_tok, *argv_tokens[1:]])
-            else:
-                check_re01_command([exec_tok])
+            check_re01_command(argv_tokens, env=env)
+            check_re01_command([exec_tok, *argv_tokens[1:]], env=env)
         else:
-            check_re01_command([exec_tok])
-    elif event == 'os.system':
-        if args:
-            reason = _re01_shell_command_reason(_decode_audit_arg(args[0]))
-            if reason is not None:
-                raise RE01OwnershipError(reason)
+            check_re01_command([exec_tok], env=env)
+    elif event in ('os.system', 'os.popen'):
+        raise RE01OwnershipError(f'RE-01 forbids {event} execution under audit enforcement')
 
 
 def install_re01_audit_hook():
