@@ -477,6 +477,7 @@ def _re01_split_env_string(s_val):
 def _re01_shell_command_reason(cmd_str, _depth=0):
     if _depth >= _RE01_MAX_WRAPPER_DEPTH:
         return 'RE-01 forbids deeply nested shell or wrapper execution'
+    cmd_str = cmd_str.replace('\\\n', '')
     norm_cmd = cmd_str.replace('\\', '/')
     if ('bin/kicad-route' in norm_cmd or _RE01_RAW_SRC_KRT.search(norm_cmd)
             or '.venv-krt' in norm_cmd or _RE01_INLINE_MODULES.search(cmd_str)
@@ -544,21 +545,32 @@ def _re01_forbidden_reason(tokens, _depth=0):
                     if reason is not None:
                         return reason
                 return _re01_forbidden_reason(split_tokens + rest, _depth=_depth + 1)
-            env_short_s = re.match(r'^-[A-Za-z]*?S(.*)$', token, re.S)
-            if env_short_s:
-                attached_s = env_short_s.group(1)
-                if attached_s:
-                    s_val = attached_s
-                    rest = token_list[idx + 1:]
-                else:
-                    s_val = token_list[idx + 1] if idx + 1 < len(token_list) else ''
-                    rest = token_list[idx + 2:]
-                split_tokens, clean_parse = _re01_split_env_string(s_val)
-                if not clean_parse:
-                    reason = _re01_shell_command_reason(s_val, _depth + 1)
-                    if reason is not None:
-                        return reason
-                return _re01_forbidden_reason(split_tokens + rest, _depth=_depth + 1)
+            if token.startswith('-') and not token.startswith('--') and len(token) > 1:
+                consumed_attached_arg = False
+                for opt_idx, opt_ch in enumerate(token[1:]):
+                    if opt_ch in ('u', 'C'):
+                        if opt_idx + 2 < len(token):
+                            consumed_attached_arg = True
+                        else:
+                            env_opt_takes_arg = True
+                        break
+                    if opt_ch == 'S':
+                        attached_s = token[opt_idx + 2:]
+                        if attached_s:
+                            s_val = attached_s
+                            rest = token_list[idx + 1:]
+                        else:
+                            s_val = token_list[idx + 1] if idx + 1 < len(token_list) else ''
+                            rest = token_list[idx + 2:]
+                        split_tokens, clean_parse = _re01_split_env_string(s_val)
+                        if not clean_parse:
+                            reason = _re01_shell_command_reason(s_val, _depth + 1)
+                            if reason is not None:
+                                return reason
+                        return _re01_forbidden_reason(split_tokens + rest, _depth=_depth + 1)
+                if consumed_attached_arg or env_opt_takes_arg:
+                    prev = token
+                    continue
             if token in _RE01_ENV_ARG_OPTS:
                 env_opt_takes_arg = True
                 prev = token
@@ -581,10 +593,17 @@ def _re01_forbidden_reason(tokens, _depth=0):
                     shell_opt_takes_arg = True
                     prev = token
                     continue
-                if re.fullmatch(r'-[A-Za-z]*c[A-Za-z]*', token):
-                    shell_c_pending = True
-                    prev = token
-                    continue
+                if re.fullmatch(r'[-+][A-Za-z]+', token):
+                    handled_short = False
+                    if token.startswith('-') and 'c' in token:
+                        shell_c_pending = True
+                        handled_short = True
+                    if 'o' in token or 'O' in token:
+                        shell_opt_takes_arg = True
+                        handled_short = True
+                    if handled_short:
+                        prev = token
+                        continue
                 if token.startswith('-') or (token.startswith('+') and len(token) > 1):
                     prev = token
                     continue
