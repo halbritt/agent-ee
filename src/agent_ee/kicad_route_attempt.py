@@ -24,6 +24,7 @@ from agent-ee's own fresh checks on the captured proposal.
 """
 
 import collections
+import collections.abc
 import contextlib
 import contextvars
 import errno
@@ -33,10 +34,12 @@ import json
 import math
 import os
 import posixpath
+import pwd
 import re
 import secrets
 import shutil
 import signal
+import site
 import stat
 import subprocess
 import sys
@@ -418,10 +421,12 @@ _RE01_GIT_FORBIDDEN_ENV = frozenset((
     'GIT_EXEC_PATH', 'GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_EXTERNAL_DIFF',
     'GIT_ASKPASS', 'SSH_ASKPASS',
     'GIT_PROXY_COMMAND', 'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT',
-    'GIT_CONFIG_ENV', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE',
+    'GIT_CONFIG_ENV', 'GIT_CONFIG_TRACE', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE',
     'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_COMMON_DIR',
     'GIT_GRAFT_FILE', 'GIT_REPLACE_REF_BASE', 'GIT_TEMPLATE_DIR',
-    'GIT_TRACE_PACKET', 'GIT_TRACE', 'GIT_FSMONITOR_TEST',
+    'GIT_TRACE_PACKET', 'GIT_TRACE', 'GIT_TRACE2', 'GIT_TRACE2_EVENT',
+    'GIT_TRACE2_PERF', 'GIT_FSMONITOR_TEST', 'GIT_MAN_VIEWER', 'MANPAGER',
+    'BROWSER', 'GIT_ATTR_SOURCE',
 ))
 _RE01_PY_ALLOWED_SHORT_OPTS = frozenset('BEIOPqsSuv')
 _RE01_BWRAP_ARITY = {
@@ -928,15 +933,43 @@ def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True, check_git=
                                 reason = _re01_path_reason(host_tgt, entry, is_cmd_pos=False, cwd=cwd)
                                 if reason is not None:
                                     return None, reason
-    if not python_no_usersite and not (not python_ignore_env and decoded.get('PYTHONNOUSERSITE')):
-        home_val = decoded.get('HOME')
-        if home_val:
-            ver = python_xy or f'{sys.version_info.major}.{sys.version_info.minor}'
+    no_usersite_env = decoded.get('PYTHONNOUSERSITE')
+    env_disables_usersite = (
+        not python_ignore_env
+        and bool(no_usersite_env)
+        and bool(re.fullmatch(r'[1-9]\d*', no_usersite_env)))
+    if not python_no_usersite and not env_disables_usersite:
+        home_candidates = []
+        if 'HOME' in decoded:
+            home_val = decoded['HOME']
+            if home_val == '':
+                home_candidates.append('/')
+                try:
+                    pw_dir = pwd.getpwuid(os.getuid()).pw_dir
+                    if pw_dir:
+                        home_candidates.append(pw_dir)
+                except KeyError:
+                    pass
+            else:
+                home_candidates.append(home_val)
+        else:
+            try:
+                pw_dir = pwd.getpwuid(os.getuid()).pw_dir
+                if pw_dir:
+                    home_candidates.append(pw_dir)
+            except KeyError:
+                pass
+            exp_home = os.path.expanduser('~')
+            if exp_home and exp_home != '~' and exp_home not in home_candidates:
+                home_candidates.append(exp_home)
+        ver = python_xy or f'{sys.version_info.major}.{sys.version_info.minor}'
+        abi_thread = 't' if 't' in getattr(sys, 'abiflags', '') else ''
+        for home_val in home_candidates:
             home_slash = home_val.replace('\\', '/')
             home_abs = _re01_norm_posix(
                 home_slash if posixpath.isabs(home_slash) else posixpath.join(base_dir, home_slash))
             for pkg_dir_name in ('site-packages', 'dist-packages'):
-                user_site = posixpath.join(home_abs, '.local', 'lib', f'python{ver}', pkg_dir_name)
+                user_site = posixpath.join(home_abs, '.local', 'lib', f'python{ver}{abi_thread}', pkg_dir_name)
                 u_chain, _, u_any, u_sb, u_err = _re01_resolve_exec_chain(
                     user_site, cwd=cwd, is_cmd=False, mounts=mounts)
                 if u_err is not None:
@@ -956,8 +989,16 @@ def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True, check_git=
                             if dest.startswith(prefix):
                                 rel_parts = dest[len(prefix):].split('/')
                                 first_comp = rel_parts[0]
-                                if first_comp.endswith('.pth') or _re01_is_py_hook_name(first_comp):
+                                if (first_comp.endswith('.pth') or _re01_is_py_hook_name(first_comp)
+                                        or (first_comp == '__pycache__' and len(rel_parts) > 1
+                                            and _re01_is_py_hook_name(rel_parts[1]))):
                                     return None, f'RE-01 forbids user site-packages mounted {first_comp}: {user_site}'
+                                if (first_comp == '__pycache__' and len(rel_parts) == 1
+                                        and kind == 'bind' and host_tgt and os.path.isdir(host_tgt)):
+                                    d_err = _re01_check_dir_py_hooks(
+                                        host_tgt, user_site, label='user site-packages __pycache__')
+                                    if d_err is not None:
+                                        return None, d_err
     return decoded.get('PATH', os.defpath), None
 
 
@@ -991,13 +1032,24 @@ def _re01_python_opt_flags(args):
     return isolated, no_usersite, ignore_env
 
 
-def _re01_check_python_venv(exe_tok, host_exe, sb_exe, chain, *, cwd=None, mounts=None, argv0_tok=None):
+def _re01_check_python_venv(exe_tok, host_exe, sb_exe, chain, *, cwd=None, mounts=None,
+                            argv0_tok=None, search_path=None):
     base_dir = _re01_abs_cwd(cwd)
     cand_paths = []
     for raw in (exe_tok, argv0_tok):
-        if raw and '/' in raw.replace('\\', '/'):
+        if not raw:
+            continue
+        if '/' in raw.replace('\\', '/'):
             s = raw.replace('\\', '/')
             cand_paths.append(_re01_norm_posix(s if posixpath.isabs(s) else posixpath.join(base_dir, s)))
+        else:
+            a_chain, a_host, _, a_sb, a_err = _re01_resolve_exec_chain(
+                raw, cwd=cwd, search_path=search_path, is_cmd=True, mounts=mounts)
+            if a_err is not None:
+                return a_err
+            for p in (a_host, a_sb, *a_chain):
+                if p and '/' in p.replace('\\', '/'):
+                    cand_paths.append(_re01_norm_posix(p))
     for p in (host_exe, sb_exe, *chain):
         if p and '/' in p.replace('\\', '/'):
             cand_paths.append(_re01_norm_posix(p))
@@ -1082,27 +1134,63 @@ def _re01_check_python_args(args, *, cwd=None, mounts=None, env=None):
     except OSError:
         return f'RE-01 requires a readable regular .py script file: {script_tok}'
     raw_env = os.environ if env is None else env
-    try:
-        safepath = bool(raw_env.get('PYTHONSAFEPATH'))
-    except AttributeError:
-        safepath = False
+    safepath = False
+    if isinstance(raw_env, collections.abc.Mapping) or hasattr(raw_env, 'items'):
+        try:
+            for k, v in raw_env.items():
+                if _decode_audit_arg(k) == 'PYTHONSAFEPATH':
+                    sv = _decode_audit_arg(v).strip()
+                    safepath = bool(re.fullmatch(r'[1-9]\d*', sv) or sv.lower() == 'true')
+        except AttributeError:
+            safepath = False
     if not isolated and not (not ignore_env and safepath):
+        checked_sp0_dirs = set()
         script_dir = os.path.dirname(host_file)
         if script_dir:
+            checked_sp0_dirs.add(script_dir)
             d_err = _re01_check_dir_py_hooks(script_dir, script_tok, label='script sys.path[0]')
             if d_err is not None:
                 return d_err
-        if mounts and sb_script:
-            sb_dir = posixpath.dirname(sb_script)
-            prefix = '/' if sb_dir == '/' else sb_dir + '/'
-            for dest, (kind, host_tgt) in mounts.items():
-                if dest.startswith(prefix):
-                    rel_parts = dest[len(prefix):].split('/')
-                    first_comp = rel_parts[0]
-                    if (_re01_is_py_hook_name(first_comp)
-                            or (first_comp == '__pycache__' and len(rel_parts) > 1
-                                and _re01_is_py_hook_name(rel_parts[1]))):
-                        return f'RE-01 forbids script sys.path[0] mounted hook {first_comp}: {script_tok}'
+        if mounts:
+            base_dir = _re01_abs_cwd(cwd)
+            slash_s = script_tok.replace('\\', '/')
+            orig_sb_script = _re01_norm_posix(
+                slash_s if posixpath.isabs(slash_s) else posixpath.join(base_dir, slash_s))
+            sb_dirs = []
+            for s_cand in (sb_script, orig_sb_script):
+                if s_cand:
+                    d_cand = posixpath.dirname(s_cand)
+                    if d_cand and d_cand not in sb_dirs:
+                        sb_dirs.append(d_cand)
+            for sb_dir in sb_dirs:
+                _, _, sb_any, sb_resolved, sb_err = _re01_resolve_exec_chain(
+                    sb_dir, cwd=cwd, is_cmd=False, mounts=mounts)
+                if sb_err is not None:
+                    return sb_err
+                if sb_any and sb_any not in checked_sp0_dirs and os.path.isdir(sb_any):
+                    checked_sp0_dirs.add(sb_any)
+                    d_err = _re01_check_dir_py_hooks(sb_any, script_tok, label='script sys.path[0]')
+                    if d_err is not None:
+                        return d_err
+                sb_targets = [sb_dir]
+                if sb_resolved and sb_resolved not in sb_targets:
+                    sb_targets.append(sb_resolved)
+                for target_sb in sb_targets:
+                    prefix = '/' if target_sb == '/' else target_sb + '/'
+                    for dest, (kind, host_tgt) in mounts.items():
+                        if dest.startswith(prefix):
+                            rel_parts = dest[len(prefix):].split('/')
+                            first_comp = rel_parts[0]
+                            if (_re01_is_py_hook_name(first_comp)
+                                    or (first_comp == '__pycache__' and len(rel_parts) > 1
+                                        and _re01_is_py_hook_name(rel_parts[1]))):
+                                return f'RE-01 forbids script sys.path[0] mounted hook {first_comp}: {script_tok}'
+                            if (first_comp == '__pycache__' and len(rel_parts) == 1
+                                    and kind == 'bind' and host_tgt and os.path.isdir(host_tgt)):
+                                d_err = _re01_check_dir_py_hooks(
+                                    host_tgt, script_tok, label='script sys.path[0] __pycache__')
+                                if d_err is not None:
+                                    return d_err
     for arg_tok in args[script_idx + 1:]:
         arg_chain, _, _, _, arg_err = _re01_resolve_exec_chain(
             arg_tok, cwd=cwd, is_cmd=False, mounts=mounts)
@@ -1123,15 +1211,332 @@ _RE01_GIT_SAFE_SUBCMDS = frozenset(('rev-parse', 'cat-file', 'ls-tree', 'merge-b
 _RE01_GIT_FSMONITOR_SUBCMDS = frozenset(('status', 'ls-files', 'describe', 'check-ignore'))
 _RE01_GIT_FORBIDDEN_SUBCMD_FLAGS = (
     '--exec', '--upload-pack', '--receive-pack', '--remote', '--ext-diff',
-    '--textconv', '--show-signature', '--verify-signatures', '--paginate',
-    '--output', '--git-dir', '--work-tree', '--config', '--pager',
+    '--textconv', '--filter', '--filters', '--batch', '--batch-check', '--batch-command',
+    '--batch-all-objects', '--dirty', '--broken', '--modified', '--help',
+    '--man-path', '--html-path', '--info-path', '--show-signature',
+    '--verify-signatures', '--paginate', '--output', '--git-dir', '--work-tree',
+    '--config', '--pager',
 )
 
 
-def _re01_check_git_args(args, *, cwd=None, mounts=None):
+def _re01_parse_gitconfig(path):
+    entries = []
+    try:
+        raw = Path(path).read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return entries
+    lines = []
+    buf = ''
+    for line in raw.splitlines():
+        if line.endswith('\\'):
+            buf += line[:-1]
+        else:
+            lines.append(buf + line)
+            buf = ''
+    if buf:
+        lines.append(buf)
+    sec = sub = ''
+    for line in lines:
+        out = []
+        in_q = esc = False
+        for ch in line:
+            if esc:
+                out.append(ch)
+                esc = False
+            elif ch == '\\' and in_q:
+                out.append(ch)
+                esc = True
+            elif ch == '"':
+                in_q = not in_q
+                out.append(ch)
+            elif ch in ('#', ';') and not in_q:
+                break
+            else:
+                out.append(ch)
+        s = ''.join(out).strip()
+        if not s:
+            continue
+        if s.startswith('['):
+            end_b = s.find(']')
+            if end_b == -1:
+                continue
+            hdr = s[1:end_b].strip()
+            m = re.match(r'^([A-Za-z0-9.-]+)(?:\s+"(.*)")?\Z', hdr)
+            if m:
+                sec = m.group(1).lower()
+                sub = m.group(2) if m.group(2) is not None else ''
+            s = s[end_b + 1:].strip()
+            if not s:
+                continue
+        if '=' in s:
+            k, v = s.split('=', 1)
+            key = k.strip().lower()
+            val = v.strip()
+            if len(val) >= 2 and val[0] == '"' and val[-1] == '"':
+                val = val[1:-1]
+        else:
+            key = s.lower()
+            val = 'true'
+        entries.append((sec, sub, key, val))
+    return entries
+
+
+def _re01_git_attr_has_filter(path):
+    try:
+        raw = Path(path).read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return False
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s.startswith('#'):
+            continue
+        if re.search(r'(?:^|\s)filter=\S+', s):
+            return True
+    return False
+
+
+def _re01_check_git_configs(c_dirs, *, cwd=None, mounts=None, env=None, subcmd='',
+                            fsmonitor_disabled=False, hooks_null=False,
+                            pager_safe=False, diff_ext_empty=False):
+    raw_env = os.environ if env is None else env
+    try:
+        decoded = {_decode_audit_arg(k): _decode_audit_arg(v) for k, v in raw_env.items()}
+    except AttributeError:
+        return 'RE-01 forbids invalid environment mapping under audit enforcement'
+    eff_cwd = _re01_abs_cwd(cwd)
+    for d in c_dirs:
+        ds = d.replace('\\', '/')
+        eff_cwd = _re01_norm_posix(ds if posixpath.isabs(ds) else posixpath.join(eff_cwd, ds))
+
+    def _resolve_sb(sb_path):
+        _, hf, ha, _, err = _re01_resolve_exec_chain(sb_path, cwd=cwd, is_cmd=False, mounts=mounts)
+        return (hf or ha), err
+
+    worktree_sb = None
+    git_dirs_sb = []
+    cur = eff_cwd
+    while True:
+        dotgit_sb = posixpath.join(cur, '.git')
+        dg_host, dg_err = _resolve_sb(dotgit_sb)
+        if dg_err is not None:
+            return dg_err
+        if dg_host is not None:
+            if os.path.isdir(dg_host):
+                worktree_sb = cur
+                git_dirs_sb.append(dotgit_sb)
+                break
+            if os.path.isfile(dg_host):
+                worktree_sb = cur
+                try:
+                    txt = Path(dg_host).read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    txt = ''
+                for line in txt.splitlines():
+                    if line.startswith('gitdir:'):
+                        raw_gd = line[len('gitdir:'):].strip().replace('\\', '/')
+                        gd_sb = _re01_norm_posix(
+                            raw_gd if posixpath.isabs(raw_gd) else posixpath.join(cur, raw_gd))
+                        git_dirs_sb.append(gd_sb)
+                        break
+                break
+        parent = posixpath.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+
+    extra_common = []
+    for gd_sb in git_dirs_sb:
+        cd_host, cd_err = _resolve_sb(posixpath.join(gd_sb, 'commondir'))
+        if cd_err is not None:
+            return cd_err
+        if cd_host and os.path.isfile(cd_host):
+            try:
+                raw_cd = Path(cd_host).read_text(encoding='utf-8', errors='replace').strip().replace('\\', '/')
+            except OSError:
+                raw_cd = ''
+            if raw_cd:
+                c_sb = _re01_norm_posix(raw_cd if posixpath.isabs(raw_cd) else posixpath.join(gd_sb, raw_cd))
+                if c_sb not in git_dirs_sb and c_sb not in extra_common:
+                    extra_common.append(c_sb)
+    git_dirs_sb.extend(extra_common)
+
+    repo_cfg_hosts = []
+    seen_cfg_hosts = set()
+
+    def _add_cfg_sb(sb_p, dst):
+        h, e = _resolve_sb(sb_p)
+        if e is not None:
+            return e
+        if h and os.path.isfile(h) and h not in seen_cfg_hosts:
+            seen_cfg_hosts.add(h)
+            dst.append((sb_p, h))
+        return None
+
+    for gd_sb in git_dirs_sb:
+        for fname in ('config', 'config.worktree'):
+            e = _add_cfg_sb(posixpath.join(gd_sb, fname), repo_cfg_hosts)
+            if e is not None:
+                return e
+        mod_sb = posixpath.join(gd_sb, 'modules')
+        mod_host, mod_err = _resolve_sb(mod_sb)
+        if mod_err is not None:
+            return mod_err
+        if mod_host and os.path.isdir(mod_host):
+            for dirpath, _, filenames in os.walk(mod_host):
+                if 'config' in filenames:
+                    rel = os.path.relpath(posixpath.join(dirpath, 'config'), mod_host).replace('\\', '/')
+                    e = _add_cfg_sb(posixpath.join(mod_sb, rel), repo_cfg_hosts)
+                    if e is not None:
+                        return e
+        if mounts:
+            gd_pref = gd_sb + '/'
+            for dest, (kind, host_tgt) in mounts.items():
+                if (dest.startswith(gd_pref) and kind == 'bind' and host_tgt
+                        and posixpath.basename(dest) in ('config', 'config.worktree')
+                        and os.path.isfile(host_tgt) and host_tgt not in seen_cfg_hosts):
+                    seen_cfg_hosts.add(host_tgt)
+                    repo_cfg_hosts.append((dest, host_tgt))
+
+    global_cfg_hosts = []
+    nosys = decoded.get('GIT_CONFIG_NOSYSTEM', '').strip().lower() in ('1', 'true', 'yes', 'on')
+    if not nosys and decoded.get('GIT_CONFIG_SYSTEM') != '/dev/null':
+        e = _add_cfg_sb('/etc/gitconfig', global_cfg_hosts)
+        if e is not None:
+            return e
+    if decoded.get('GIT_CONFIG_GLOBAL') != '/dev/null':
+        homes = []
+        if 'HOME' in decoded:
+            hv = decoded['HOME']
+            if hv == '':
+                homes.append('/')
+            else:
+                homes.append(hv)
+        if 'HOME' not in decoded or decoded['HOME'] == '':
+            try:
+                pw_dir = pwd.getpwuid(os.getuid()).pw_dir
+                if pw_dir and pw_dir not in homes:
+                    homes.append(pw_dir)
+            except KeyError:
+                pass
+            if 'HOME' not in decoded:
+                exp = os.path.expanduser('~')
+                if exp and exp != '~' and exp not in homes:
+                    homes.append(exp)
+        for hdir in homes:
+            hs = hdir.replace('\\', '/')
+            ha = _re01_norm_posix(hs if posixpath.isabs(hs) else posixpath.join(eff_cwd, hs))
+            for rel in ('.gitconfig', '.config/git/config'):
+                e = _add_cfg_sb(posixpath.join(ha, rel), global_cfg_hosts)
+                if e is not None:
+                    return e
+        xdg_cfg = decoded.get('XDG_CONFIG_HOME')
+        if xdg_cfg:
+            xs = xdg_cfg.replace('\\', '/')
+            xa = _re01_norm_posix(xs if posixpath.isabs(xs) else posixpath.join(eff_cwd, xs))
+            e = _add_cfg_sb(posixpath.join(xa, 'git', 'config'), global_cfg_hosts)
+            if e is not None:
+                return e
+
+    global_filters = []
+    attr_files_cfg = []
+    for scope, cfg_list in (('repo', repo_cfg_hosts), ('global', global_cfg_hosts)):
+        for cfg_label, cfg_host in cfg_list:
+            for sec, sub, key, val in _re01_parse_gitconfig(cfg_host):
+                if sec in ('include', 'includeif') and key == 'path' and val:
+                    return f'RE-01 forbids git config [{sec}] in {cfg_label}'
+                if sec == 'filter' and key in ('clean', 'smudge', 'process') and val:
+                    if scope == 'repo':
+                        return f'RE-01 forbids git filter.{sub}.{key} in {cfg_label}'
+                    global_filters.append((cfg_label, sub, key))
+                if sec == 'diff':
+                    if sub == '' and key == 'external' and val and not diff_ext_empty:
+                        return f'RE-01 forbids git diff.external in {cfg_label}'
+                    if sub != '' and key in ('command', 'textconv') and val:
+                        return f'RE-01 forbids git diff.{sub}.{key} in {cfg_label}'
+                if sec == 'merge' and sub != '' and key == 'driver' and val:
+                    return f'RE-01 forbids git merge.{sub}.driver in {cfg_label}'
+                if sec == 'core':
+                    if key == 'fsmonitor' and val and val.lower() not in ('false', 'no', 'off', '0'):
+                        if subcmd in _RE01_GIT_FSMONITOR_SUBCMDS and not fsmonitor_disabled:
+                            return f'RE-01 forbids git core.fsmonitor in {cfg_label}'
+                    if key == 'hookspath' and val and val != '/dev/null' and not hooks_null:
+                        return f'RE-01 forbids git core.hooksPath in {cfg_label}'
+                    if key == 'pager' and val and val != 'cat' and not pager_safe:
+                        return f'RE-01 forbids git core.pager in {cfg_label}'
+                    if key in ('sshcommand', 'askpass') and val:
+                        return f'RE-01 forbids git core.{key} in {cfg_label}'
+                    if key == 'editor' and val and val not in ('false', 'true', ':'):
+                        if scope == 'repo' or '/.config/git/config' in cfg_label or '/git/config' in cfg_label:
+                            return f'RE-01 forbids git core.editor in {cfg_label}'
+                    if key == 'attributesfile' and val:
+                        attr_files_cfg.append(val)
+                if sec == 'credential' and key == 'helper' and val and scope == 'repo':
+                    return f'RE-01 forbids git credential.helper in {cfg_label}'
+                if sec in ('man', 'web') and key in ('viewer', 'browser') and val:
+                    return f'RE-01 forbids git {sec}.{key} in {cfg_label}'
+                if sec in ('uploadpack', 'receivepack', 'gpg') and val:
+                    if sec == 'gpg' and key != 'program':
+                        continue
+                    return f'RE-01 forbids git {sec}.{key} in {cfg_label}'
+                if sec == 'alias' and val.startswith('!'):
+                    if scope == 'repo' or key == subcmd.lower():
+                        return f'RE-01 forbids git shell alias.{key} in {cfg_label}'
+
+    if global_filters:
+        attr_cands = []
+        for gd_sb in git_dirs_sb:
+            attr_cands.append(posixpath.join(gd_sb, 'info', 'attributes'))
+        attr_cands.append('/etc/gitattributes')
+        for af in attr_files_cfg:
+            afs = af.replace('\\', '/')
+            if afs.startswith('~/'):
+                afs = posixpath.join(decoded.get('HOME') or os.path.expanduser('~'), afs[2:])
+            attr_cands.append(afs if posixpath.isabs(afs) else posixpath.join(eff_cwd, afs))
+        xdg_cfg = decoded.get('XDG_CONFIG_HOME')
+        if xdg_cfg:
+            attr_cands.append(posixpath.join(xdg_cfg.replace('\\', '/'), 'git', 'attributes'))
+        home_eff = decoded.get('HOME') or os.path.expanduser('~')
+        if home_eff and home_eff != '~':
+            attr_cands.append(posixpath.join(home_eff.replace('\\', '/'), '.config', 'git', 'attributes'))
+        for ac in attr_cands:
+            ah, ae = _resolve_sb(ac)
+            if ae is not None:
+                return ae
+            if ah and os.path.isfile(ah) and _re01_git_attr_has_filter(ah):
+                cfg_label, sub, key = global_filters[0]
+                return f'RE-01 forbids git global filter.{sub}.{key} with active attributes: {cfg_label}'
+        if worktree_sb is not None:
+            wt_host, wt_err = _resolve_sb(worktree_sb)
+            if wt_err is not None:
+                return wt_err
+            if wt_host and os.path.isdir(wt_host):
+                for dirpath, dirnames, filenames in os.walk(wt_host):
+                    dirnames[:] = [d for d in dirnames if d != '.git']
+                    if '.gitattributes' in filenames:
+                        rel_attr = os.path.relpath(
+                            posixpath.join(dirpath, '.gitattributes'), wt_host).replace('\\', '/')
+                        ah, ae = _resolve_sb(posixpath.join(worktree_sb, rel_attr))
+                        if ae is not None:
+                            return ae
+                        if ah and os.path.isfile(ah) and _re01_git_attr_has_filter(ah):
+                            cfg_label, sub, key = global_filters[0]
+                            return f'RE-01 forbids git global filter.{sub}.{key} with .gitattributes: {cfg_label}'
+            if mounts:
+                wt_pref = '/' if worktree_sb == '/' else worktree_sb + '/'
+                for dest, (kind, host_tgt) in mounts.items():
+                    if (dest.startswith(wt_pref) and kind == 'bind' and host_tgt
+                            and posixpath.basename(dest) == '.gitattributes'
+                            and os.path.isfile(host_tgt) and _re01_git_attr_has_filter(host_tgt)):
+                        cfg_label, sub, key = global_filters[0]
+                        return f'RE-01 forbids git global filter.{sub}.{key} with mounted .gitattributes: {cfg_label}'
+    return None
+
+
+def _re01_check_git_args(args, *, cwd=None, mounts=None, env=None):
     idx = 0
     n = len(args)
-    fsmonitor_disabled = False
+    fsmonitor_disabled = hooks_null = pager_safe = diff_ext_empty = False
+    c_dirs = []
     path_tokens = []
     while idx < n:
         tok = args[idx]
@@ -1149,6 +1554,8 @@ def _re01_check_git_args(args, *, cwd=None, mounts=None):
                         return reason
             return None
         if tok in _RE01_GIT_SAFE_GLOBAL_FLAGS:
+            if tok == '--no-pager':
+                pager_safe = True
             idx += 1
             continue
         if tok == '-C' or (tok.startswith('-C') and len(tok) > 2):
@@ -1162,6 +1569,7 @@ def _re01_check_git_args(args, *, cwd=None, mounts=None):
                 idx += 1
             if not dir_tok:
                 return 'RE-01 forbids empty git -C path'
+            c_dirs.append(dir_tok)
             path_tokens.append(dir_tok)
             continue
         if tok == '-c' or (tok.startswith('-c') and len(tok) > 2):
@@ -1193,6 +1601,7 @@ def _re01_check_git_args(args, *, cwd=None, mounts=None):
             elif k == 'core.hookspath':
                 if v != '/dev/null':
                     return f'RE-01 forbids git -c core.hooksPath={val}'
+                hooks_null = True
             elif k == 'core.untrackedcache':
                 if v.lower() not in ('false', 'no', 'off', '0'):
                     return f'RE-01 forbids git -c core.untrackedCache={val}'
@@ -1202,9 +1611,11 @@ def _re01_check_git_args(args, *, cwd=None, mounts=None):
             elif k == 'core.pager':
                 if v not in ('', 'cat'):
                     return f'RE-01 forbids git -c core.pager={val}'
+                pager_safe = True
             elif k == 'diff.external':
                 if v != '':
                     return f'RE-01 forbids git -c diff.external={val}'
+                diff_ext_empty = True
             else:
                 return f'RE-01 forbids git -c config {key}'
             continue
@@ -1226,10 +1637,23 @@ def _re01_check_git_args(args, *, cwd=None, mounts=None):
         for sa in sub_args[1:]:
             if sa.startswith('-') and sa not in ('--all', '--push', '--'):
                 return f'RE-01 forbids git remote get-url option {sa}'
+    after_dd = False
     for sa in sub_args:
-        if sa in ('-p', '-o', '-c', '-C') or sa.startswith(_RE01_GIT_FORBIDDEN_SUBCMD_FLAGS):
-            return f'RE-01 forbids git {subcmd} option {sa}'
+        if not after_dd:
+            if sa == '--':
+                after_dd = True
+            else:
+                if sa in ('-p', '-o', '-c', '-C') or sa.startswith(_RE01_GIT_FORBIDDEN_SUBCMD_FLAGS):
+                    return f'RE-01 forbids git {subcmd} option {sa}'
+                if subcmd == 'ls-files' and sa.startswith('-') and not sa.startswith('--') and 'm' in sa[1:]:
+                    return f'RE-01 forbids git ls-files option {sa}'
         path_tokens.append(sa)
+    cfg_err = _re01_check_git_configs(
+        c_dirs, cwd=cwd, mounts=mounts, env=env, subcmd=subcmd,
+        fsmonitor_disabled=fsmonitor_disabled, hooks_null=hooks_null,
+        pager_safe=pager_safe, diff_ext_empty=diff_ext_empty)
+    if cfg_err is not None:
+        return cfg_err
     for pt in path_tokens:
         p_chain, _, _, _, p_err = _re01_resolve_exec_chain(
             pt, cwd=cwd, is_cmd=False, mounts=mounts)
@@ -1261,8 +1685,89 @@ def _re01_alias_reason(cands, dest_norm, src_label):
                 return f'RE-01 forbids aliasing Python {src_label} onto {dest_norm}'
         else:
             sb_cat = _re01_exec_category(sb)
-            if sb_cat is not None and dest_cat != sb_cat:
+            if ((sb_cat is not None and dest_cat != sb_cat)
+                    or (dest_cat == 'kicad-route-engine' and sb_cat != 'kicad-route-engine')):
                 return f'RE-01 forbids aliasing {src_label} onto {dest_norm}'
+    return None
+
+
+_RE01_SYSTEM_PROTECTED_RE = re.compile(
+    r'^/(?:'
+    r'(?:usr/(?:local/)?)?lib(?:32|64)?/(?:python|pypy)[^/]*(?:/.*)?'
+    r'|etc/python[^/]*(?:/.*)?'
+    r'|etc/ld\.so(?:\.preload|\.cache|\.conf(?:\.d(?:/.*)?)?)'
+    r'|etc/passwd'
+    r'|etc/nsswitch\.conf'
+    r'|(?:usr/)?lib(?:32|64)?/(?:x86_64-linux-gnu|aarch64-linux-gnu|ld-linux[^/]*)(?:/.*)?'
+    r')\Z'
+)
+_RE01_SYSTEM_PROTECTED_ROOTS = (
+    '/usr', '/lib', '/lib64', '/lib32', '/bin', '/sbin', '/etc',
+)
+_RE01_SYSTEM_ANCESTORS = frozenset((
+    '/', '/usr', '/usr/local', '/usr/lib', '/usr/lib64', '/usr/lib32',
+    '/usr/local/lib', '/usr/local/lib64', '/lib', '/lib64', '/lib32', '/etc',
+))
+
+
+def _re01_system_python_roots():
+    roots = set()
+    for p in (os.path.dirname(os.__file__), *site.getsitepackages([sys.base_prefix, sys.base_exec_prefix])):
+        if p:
+            n = _re01_norm_posix(p)
+            if n != '/':
+                roots.add(n)
+    return tuple(sorted(roots))
+
+
+def _re01_is_protected_system_path(dest_norm, py_roots):
+    if _RE01_SYSTEM_PROTECTED_RE.match(dest_norm) or dest_norm in _RE01_SYSTEM_ANCESTORS:
+        return True
+    for r in (*_RE01_SYSTEM_PROTECTED_ROOTS, *py_roots):
+        if dest_norm == r or r.startswith(dest_norm + '/') or dest_norm.startswith(r + '/'):
+            return True
+    return False
+
+
+def _re01_bwrap_system_mount_reason(mounts, *, rw_mounts=(), dir_dests=()):
+    py_roots = _re01_system_python_roots()
+    for dest_norm, (kind, target) in mounts.items():
+        if not _re01_is_protected_system_path(dest_norm, py_roots):
+            continue
+        if kind == 'opaque':
+            return f'RE-01 forbids opaque bwrap mount over system path {dest_norm}'
+        if kind == 'symlink':
+            is_id = False
+            try:
+                if os.path.islink(dest_norm):
+                    host_tgt = _re01_norm_posix(posixpath.join(posixpath.dirname(dest_norm), os.readlink(dest_norm)))
+                    is_id = (host_tgt == target)
+            except OSError:
+                is_id = False
+            if not is_id:
+                return f'RE-01 forbids bwrap symlink over system path {dest_norm} -> {target}'
+        elif kind == 'bind':
+            if dest_norm in rw_mounts:
+                return f'RE-01 forbids writable bwrap mount {target} onto system path {dest_norm}'
+            try:
+                same = bool(target) and os.path.exists(dest_norm) and (
+                    os.path.realpath(target) == os.path.realpath(dest_norm))
+            except OSError:
+                same = False
+            if not same:
+                return f'RE-01 forbids non-identity bwrap mount {target} onto system path {dest_norm}'
+    for dir_norm in dir_dests:
+        if not _re01_is_protected_system_path(dir_norm, py_roots):
+            continue
+        kind, best_dest, mapped = _re01_mount_lookup(dir_norm, mounts)
+        try:
+            ok = (kind == 'bind' and best_dest not in rw_mounts and bool(mapped)
+                  and os.path.isdir(dir_norm)
+                  and os.path.realpath(mapped) == os.path.realpath(dir_norm))
+        except OSError:
+            ok = False
+        if not ok:
+            return f'RE-01 forbids bwrap --dir over system path {dir_norm}'
     return None
 
 
@@ -1270,6 +1775,8 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
     if args == ['--version']:
         return None
     mounts = {}
+    rw_mounts = set()
+    dir_dests = []
     bwrap_cwd = cwd
     bwrap_argv0 = None
     if env is None:
@@ -1330,6 +1837,8 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
                             mounts[k] = outer_mounts[k]
                     elif tok not in _RE01_BWRAP_TRY_OPTS:
                         _re01_shadow_mounts(mounts, dest_norm)
+                        rw_mounts.difference_update(
+                            {k for k in rw_mounts if k == dest_norm or dest_norm == '/' or k.startswith(dest_norm + '/')})
                         mounts[dest_norm] = ('opaque', None)
                 else:
                     host_src = src_any or (omapped if okind == 'bind' else eff_src_sb)
@@ -1337,14 +1846,22 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
                         if outer_subs and dest_norm != eff_src_sb:
                             return f'RE-01 forbids nested bwrap remapping outer mounts onto {dest_norm}'
                         _re01_shadow_mounts(mounts, dest_norm)
+                        rw_mounts.difference_update(
+                            {k for k in rw_mounts if k == dest_norm or dest_norm == '/' or k.startswith(dest_norm + '/')})
                         mounts[dest_norm] = ('bind', host_src)
+                        if tok not in ('--ro-bind', '--ro-bind-try'):
+                            rw_mounts.add(dest_norm)
                         for k in outer_subs:
                             mounts[k] = outer_mounts[k]
             else:
                 host_src = src_any or src_abs
                 if tok not in _RE01_BWRAP_TRY_OPTS or os.path.exists(host_src):
                     _re01_shadow_mounts(mounts, dest_norm)
+                    rw_mounts.difference_update(
+                        {k for k in rw_mounts if k == dest_norm or dest_norm == '/' or k.startswith(dest_norm + '/')})
                     mounts[dest_norm] = ('bind', host_src)
+                    if tok not in ('--ro-bind', '--ro-bind-try'):
+                        rw_mounts.add(dest_norm)
         elif tok == '--symlink':
             src, dest = args[idx + 1], args[idx + 2]
             if not posixpath.isabs(dest.replace('\\', '/')):
@@ -1385,8 +1902,18 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
             if d_err is not None:
                 return d_err
             _re01_shadow_mounts(mounts, dest_norm)
+            rw_mounts.difference_update(
+                {k for k in rw_mounts if k == dest_norm or dest_norm == '/' or k.startswith(dest_norm + '/')})
             mounts[dest_norm] = ('opaque', None)
-        elif tok in ('--dir', '--remount-ro'):
+        elif tok == '--dir':
+            dest = args[idx + 1]
+            if not posixpath.isabs(dest.replace('\\', '/')):
+                return f'RE-01 forbids relative bwrap {tok} destination: {dest}'
+            dir_norm, d_err = _re01_resolve_mount_symlinks(dest, mounts)
+            if d_err is not None:
+                return d_err
+            dir_dests.append(dir_norm)
+        elif tok == '--remount-ro':
             dest = args[idx + 1]
             if not posixpath.isabs(dest.replace('\\', '/')):
                 return f'RE-01 forbids relative bwrap {tok} destination: {dest}'
@@ -1416,8 +1943,211 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
         idx += 1 + arity
     if idx >= n:
         return 'RE-01 forbids bwrap without an inner command under audit enforcement'
+    sys_mount_err = _re01_bwrap_system_mount_reason(mounts, rw_mounts=rw_mounts, dir_dests=dir_dests)
+    if sys_mount_err is not None:
+        return sys_mount_err
     return _re01_check_command_reason(
         args[idx:], cwd=bwrap_cwd, env=bwrap_env, _depth=depth + 1, _mounts=mounts, _argv0=bwrap_argv0)
+
+
+_RE01_ENGINE_VALUE_FLAGS = frozenset((
+    '--rules', '--project', '--limits', '--max-expansions',
+    '--operation-result', '--save-request', '--native-bridge',
+    '--python', '--timeout-ms', '--max-child-output-bytes',
+    '--pour-area-loss', '--pour-min-spokes',
+))
+_RE01_ENGINE_PATH_FLAGS = frozenset((
+    '--rules', '--project', '--limits', '--operation-result', '--save-request',
+))
+
+
+def _re01_trusted_engine_paths():
+    trusted = {
+        SANDBOX['engine'],
+        f"{SANDBOX['checkout']}/rust-engine/target/release/kicad-route-engine",
+        f"{SANDBOX['checkout']}/rust-engine/target/debug/kicad-route-engine",
+    }
+    for var in ('AGENT_EE_KICAD_ROUTE_ENGINE', 'KICAD_ROUTE_ENGINE_BIN'):
+        val = os.environ.get(var, '').strip()
+        if val:
+            p = Path(val).expanduser()
+            trusted.add(_re01_norm_posix(os.path.abspath(str(p))))
+            try:
+                trusted.add(_re01_norm_posix(os.path.realpath(p)))
+            except OSError:
+                pass
+    try:
+        co = resolve_kicad_route_checkout()
+    except (OSError, ValueError):
+        co = None
+    repo_root = _agent_ee_repo_root()
+    main_root = _git_main_repo_root(repo_root)
+    co_bases = []
+    if co is not None:
+        co_bases.append(Path(co))
+        co_bases.append(Path(co).parent / 'kicad-route')
+    co_bases.extend((repo_root.parent / 'kicad-route', main_root.parent / 'kicad-route'))
+    for base in co_bases:
+        for profile in ('release', 'debug'):
+            cand = base / 'rust-engine' / 'target' / profile / 'kicad-route-engine'
+            trusted.add(_re01_norm_posix(os.path.abspath(str(cand))))
+            try:
+                trusted.add(_re01_norm_posix(os.path.realpath(cand)))
+            except OSError:
+                pass
+    return trusted
+
+
+def _re01_check_engine_implicit_bridge(eff_python, *, host_exe, sb_exe, cwd=None, env=None,
+                                       depth=0, mounts=None):
+    cands = []
+    seen = set()
+
+    def _add_anc_bridges(ref):
+        if not ref:
+            return
+        cur = posixpath.dirname(_re01_norm_posix(ref))
+        while cur and cur != '/':
+            c = posixpath.join(cur, 'tools', 'rust_engine_kicad.py')
+            if c not in seen:
+                seen.add(c)
+                cands.append(c)
+            parent = posixpath.dirname(cur)
+            if parent == cur:
+                break
+            cur = parent
+
+    _add_anc_bridges(sb_exe if (mounts is not None and sb_exe) else host_exe)
+    _add_anc_bridges(_re01_abs_cwd(cwd) + '/_')
+    sb_bridge = f"{SANDBOX['checkout']}/tools/rust_engine_kicad.py"
+    if sb_bridge not in seen:
+        seen.add(sb_bridge)
+        cands.append(sb_bridge)
+    if mounts is None:
+        nb = resolve_native_bridge()
+        if nb is not None and str(nb) not in seen:
+            seen.add(str(nb))
+            cands.append(str(nb))
+    for cand in cands:
+        _, c_file, _, _, c_err = _re01_resolve_exec_chain(
+            cand, cwd=cwd, is_cmd=False, mounts=mounts)
+        if c_err is not None:
+            return c_err
+        if c_file is not None:
+            return _re01_check_command_reason(
+                [eff_python, '-B', cand], cwd=cwd, env=env, _depth=depth + 1, _mounts=mounts)
+
+    # Fallback validation when no bridge file exists in synthetic check_re01_command calls.
+    sp, env_err = _re01_check_env(env, cwd=cwd, mounts=mounts, check_python=False)
+    if env_err is not None:
+        return env_err
+    py_chain, py_host, _, py_sb, py_err = _re01_resolve_exec_chain(
+        eff_python, cwd=cwd, search_path=sp, is_cmd=True, mounts=mounts)
+    if py_err is not None:
+        return py_err
+    for p in py_chain:
+        r = _re01_path_reason(p, eff_python, is_cmd_pos=True, cwd=cwd)
+        if r is not None:
+            return r
+    py_real = os.path.realpath(sys.executable)
+    if py_host is not None:
+        if _re01_exec_category(posixpath.basename(py_host)) != 'python':
+            return f'RE-01 forbids non-Python --python executable in route-native: {py_host}'
+        if not (py_host.startswith(_RE01_SYSTEM_EXEC_PREFIXES) or py_host == py_real):
+            return f'RE-01 forbids non-system --python path in route-native: {py_host}'
+    else:
+        slash_py = eff_python.replace('\\', '/')
+        if '/' not in slash_py:
+            return f'RE-01 forbids untrusted --python executable in route-native: {eff_python}'
+        norm_py = _re01_norm_posix(
+            slash_py if posixpath.isabs(slash_py) else posixpath.join(_re01_abs_cwd(cwd), slash_py))
+        if not (norm_py.startswith(_RE01_SYSTEM_EXEC_PREFIXES) or norm_py == py_real):
+            return f'RE-01 forbids non-system --python path in route-native: {eff_python}'
+    py_xy = _re01_python_xy(eff_python, py_host)
+    _, py_env_err = _re01_check_env(
+        env, cwd=cwd, mounts=mounts, check_python=True, python_xy=py_xy)
+    if py_env_err is not None:
+        return py_env_err
+    return _re01_check_python_venv(
+        eff_python, py_host, py_sb, py_chain, cwd=cwd, mounts=mounts, search_path=sp)
+
+
+def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, depth=0, mounts=None):
+    if tokens[1:] in (['--help'], ['-h'], ['--version']):
+        return None
+    if len(tokens) < 2 or tokens[1] != 'route-native':
+        return f'RE-01 forbids unsupported kicad-route-engine subcommand: {tokens[1:]}'
+    seen_flags = set()
+    py_tok = bridge_tok = None
+    saw_help = after_dd = False
+    positional = []
+    i = 2
+    n = len(tokens)
+    while i < n:
+        tok = tokens[i]
+        if not after_dd and tok == '--':
+            after_dd = True
+            i += 1
+            continue
+        if not after_dd and tok in ('--help', '-h'):
+            saw_help = True
+            i += 1
+            continue
+        if not after_dd and tok.startswith('-'):
+            if '=' in tok:
+                flag, val = tok.split('=', 1)
+                i += 1
+            else:
+                flag = tok
+                if i + 1 >= n:
+                    return f'RE-01 forbids incomplete route-native option {flag}'
+                val = tokens[i + 1]
+                i += 2
+            if flag not in _RE01_ENGINE_VALUE_FLAGS:
+                return f'RE-01 forbids unknown route-native option {flag}'
+            if flag in seen_flags:
+                return f'RE-01 forbids duplicate route-native option {flag}'
+            seen_flags.add(flag)
+            if not val:
+                return f'RE-01 forbids empty route-native option value for {flag}'
+            if flag == '--python':
+                py_tok = val
+            elif flag == '--native-bridge':
+                bridge_tok = val
+            elif flag in _RE01_ENGINE_PATH_FLAGS:
+                p_chain, _, _, _, p_err = _re01_resolve_exec_chain(
+                    val, cwd=cwd, is_cmd=False, mounts=mounts)
+                if p_err is not None:
+                    return p_err
+                for cand in p_chain:
+                    reason = _re01_path_reason(cand, val, is_cmd_pos=False, cwd=cwd)
+                    if reason is not None:
+                        return reason
+        else:
+            positional.append(tok)
+            i += 1
+    for arg_tok in tokens[1:]:
+        a_chain, _, _, _, a_err = _re01_resolve_exec_chain(
+            arg_tok, cwd=cwd, is_cmd=False, mounts=mounts)
+        if a_err is not None:
+            return a_err
+        for cand in a_chain:
+            reason = _re01_path_reason(cand, arg_tok, is_cmd_pos=False, cwd=cwd)
+            if reason is not None:
+                return reason
+    eff_python = py_tok if py_tok is not None else PYTHON
+    py_base = posixpath.basename(_re01_norm_posix(eff_python))
+    if _re01_exec_category(py_base) != 'python':
+        return f'RE-01 forbids non-Python --python executable in route-native: {eff_python}'
+    if saw_help:
+        return None
+    if len(positional) != 2:
+        return f'RE-01 forbids invalid route-native positional arguments: {positional}'
+    if bridge_tok is not None:
+        return _re01_check_command_reason(
+            [eff_python, '-B', bridge_tok], cwd=cwd, env=env, _depth=depth + 1, _mounts=mounts)
+    return _re01_check_engine_implicit_bridge(
+        eff_python, host_exe=host_exe, sb_exe=sb_exe, cwd=cwd, env=env, depth=depth, mounts=mounts)
 
 
 def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=None, _argv0=None):
@@ -1458,14 +2188,44 @@ def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=No
         resolved_cat = _re01_exec_category(posixpath.basename(host_exe))
         if resolved_cat != invoked_cat:
             return f'RE-01 forbids unallowlisted resolved executable {host_exe} for {exe_tok}'
-        if invoked_cat != 'kicad-route-engine':
+        if invoked_cat == 'kicad-route-engine':
+            trusted_engines = _re01_trusted_engine_paths()
+            host_real = _re01_norm_posix(os.path.realpath(host_exe))
+            if not (host_exe.startswith(_RE01_SYSTEM_EXEC_PREFIXES)
+                    or host_exe in trusted_engines or host_real in trusted_engines):
+                return f'RE-01 forbids untrusted kicad-route-engine path: {host_exe}'
+        else:
             py_real = os.path.realpath(sys.executable) if invoked_cat == 'python' else None
             if not (host_exe.startswith(_RE01_SYSTEM_EXEC_PREFIXES)
                     or (py_real is not None and host_exe == py_real)):
                 return f'RE-01 forbids non-system executable path under audit enforcement: {host_exe}'
+    elif invoked_cat == 'kicad-route-engine':
+        trusted_sb_engines = {
+            SANDBOX['engine'],
+            f"{SANDBOX['checkout']}/rust-engine/target/release/kicad-route-engine",
+            f"{SANDBOX['checkout']}/rust-engine/target/debug/kicad-route-engine",
+        }
+        if _mounts is not None:
+            if not sb_exe or not (sb_exe.startswith(_RE01_SYSTEM_EXEC_PREFIXES)
+                                  or sb_exe in trusted_sb_engines):
+                return f'RE-01 forbids untrusted sandbox kicad-route-engine path: {exe_tok}'
+        else:
+            slash_e = exe_tok.replace('\\', '/')
+            if '/' not in slash_e:
+                return f'RE-01 forbids untrusted kicad-route-engine executable: {exe_tok}'
+            norm_exe = _re01_norm_posix(
+                slash_e if posixpath.isabs(slash_e) else posixpath.join(_re01_abs_cwd(cwd_str), slash_e))
+            trusted_engines = _re01_trusted_engine_paths()
+            if not (norm_exe.startswith(_RE01_SYSTEM_EXEC_PREFIXES) or norm_exe in trusted_engines):
+                return f'RE-01 forbids untrusted kicad-route-engine path: {exe_tok}'
     if _argv0 is not None:
+        if invoked_cat == 'python':
+            return f'RE-01 forbids bwrap --argv0 on Python under audit enforcement: {_argv0}'
+        a0_reason = _re01_path_reason(_argv0, _argv0, is_cmd_pos=True, cwd=cwd_str)
+        if a0_reason is not None:
+            return a0_reason
         a0_cat = _re01_exec_category(posixpath.basename(_re01_norm_posix(_argv0)))
-        if a0_cat is not None and a0_cat != invoked_cat:
+        if a0_cat != invoked_cat:
             return f'RE-01 forbids mismatched bwrap --argv0 {_argv0} for {exe_tok}'
     if host_exe is not None:
         try:
@@ -1507,7 +2267,8 @@ def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=No
         if py_env_err is not None:
             return py_env_err
         venv_err = _re01_check_python_venv(
-            exe_tok, host_exe, sb_exe, chain, cwd=cwd_str, mounts=_mounts, argv0_tok=_argv0)
+            exe_tok, host_exe, sb_exe, chain, cwd=cwd_str, mounts=_mounts,
+            argv0_tok=_argv0, search_path=search_path)
         if venv_err is not None:
             return venv_err
         return _re01_check_python_args(tokens[1:], cwd=cwd_str, mounts=_mounts, env=env)
@@ -1516,11 +2277,10 @@ def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=No
             env, cwd=cwd_str, mounts=_mounts, check_python=False, check_git=True)
         if git_env_err is not None:
             return git_env_err
-        return _re01_check_git_args(tokens[1:], cwd=cwd_str, mounts=_mounts)
+        return _re01_check_git_args(tokens[1:], cwd=cwd_str, mounts=_mounts, env=env)
     if invoked_cat == 'kicad-route-engine':
-        if not (tokens[1:] in (['--help'], ['--version'])
-                or (len(tokens) >= 2 and tokens[1] == 'route-native')):
-            return f'RE-01 forbids unsupported kicad-route-engine subcommand: {tokens[1:]}'
+        return _re01_check_engine_args(
+            tokens, host_exe=host_exe, sb_exe=sb_exe, cwd=cwd_str, env=env, depth=_depth, mounts=_mounts)
     for arg_tok in tokens[1:]:
         arg_chain, _, _, _, arg_err = _re01_resolve_exec_chain(
             arg_tok, cwd=cwd_str, is_cmd=False, mounts=_mounts)
