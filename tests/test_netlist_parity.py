@@ -998,3 +998,23 @@ class FailureBoundaryTests(unittest.TestCase):
             path.write_bytes(b'[' * 10000 + b'0' + b']' * 10000)
             with self.assertRaisesRegex(ValueError, 'nesting'):
                 read_json_source(path)
+
+    def test_json_depth_counts_objects_and_arrays_but_ignores_quoted_delimiters(self):
+        import tempfile
+        from agent_ee.netlist_parity import read_json_source
+        label = 'pin "A" \\' + '[{' * 128
+        encoded_label = json.dumps(label)
+        outer = '{"pins":[' * 64
+        close = ']}' * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'connectivity.json'
+            for encoding in ('utf-8', 'utf-16', 'utf-32'):
+                with self.subTest(encoding=encoding):
+                    path.write_bytes((outer + encoded_label + close).encode(encoding))
+                    value = read_json_source(path)
+                    for _ in range(64):
+                        value = value['pins'][0]
+                    self.assertEqual(value, label)
+                    path.write_bytes((outer + '[' + encoded_label + ']' + close).encode(encoding))
+                    with self.assertRaisesRegex(ValueError, 'nesting'):
+                        read_json_source(path)
