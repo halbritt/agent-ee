@@ -4332,6 +4332,7 @@ def native_tool_argv(request, layout):
         '--native-bridge', str(bridge),
         '--python', PYTHON,
         '--timeout-ms', str(int(request['budget_s']) * 1000),
+        '--protect', 'existing',
         *(['--diff-pairs', 'auto'] if request.get('diff_pairs') == 'auto' else []),
     ]
 

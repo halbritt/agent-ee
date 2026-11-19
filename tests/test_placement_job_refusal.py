@@ -250,16 +250,15 @@ class RefusalReportTests(fixture.Fixture):
         self.assert_report(out, report, 2, 'forced engine refusal')
         self.assertEqual({name: (out / name).read_bytes() for name in protected}, protected)
 
-    def test_rust_checkout_refuses_grid_step_mm_as_job_refusal(self):
-        from agent_ee import routing_adapter
-        checkout = os.environ['AGENT_EE_KICAD_ROUTE_CHECKOUT']
-        if not routing_adapter.is_rust_capable_checkout(checkout):
-            self.skipTest('requires Rust-capable kicad-route checkout')
-        config = self.config()
-        config['router']['grid_step_mm'] = 0.025
-        report = job.run_job(config, self.dir / 'job-grid-refusal')
-        self.assertEqual(report['status'], 'refused')
-        self.assertIn('grid_step_mm', report['reason'])
+    def test_invalid_grid_step_is_refused_before_routing(self):
+        for index, value in enumerate((0, -.025, True, '0.025')):
+            with self.subTest(value=value):
+                config = self.config()
+                config['router']['grid_step_mm'] = value
+                report = job.run_job(config, self.dir / f'job-grid-refusal-{index}')
+                self.assertEqual(report['status'], 'refused')
+                self.assertIn('grid_step_mm', report['reason'])
+                self.assertNotIn('route', report)
 
     def test_bind_native_board_attempt_classifies_exit2_exit6_and_exit8(self):
         from agent_ee import kicad_route_attempt as attempt, routing_adapter

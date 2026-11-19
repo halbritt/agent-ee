@@ -1,4 +1,5 @@
 """Native CAN pair routing and negative skew, with immutable captured constraints."""
+import copy
 import importlib.util
 import os
 from pathlib import Path
@@ -68,6 +69,22 @@ class NativeCanPairTests(unittest.TestCase):
         self.assertFalse(any(v['type'].startswith('diff_pair_gap') for v in raw['violations']))
         self.assertTrue(next(c for c in read_json(self.out / 'positive/checks/can-routing.json')
                              ['details']['constraints'] if c['id'] == 'can-skew')['tool_load_witness'])
+
+    def test_replay_binds_native_copper_protection_to_saved_request(self):
+        from agent_ee import routing_adapter
+        run = self.out / 'route/run'
+        report = read_json(run / 'routing/adapter-report.json')
+        if 'route-native' not in report['process']['argv']:
+            self.assertIn('--protect', report['process']['argv'])
+            return
+        request = read_json(run / 'routing/attempt/operation-request.json')
+        self.assertEqual(request['routing_options']['protect_mode'], 'existing')
+        changed = copy.deepcopy(report)
+        argv = changed['process']['argv']
+        flag = argv.index('--protect')
+        del argv[flag:flag + 2]
+        with self.assertRaisesRegex(ValueError, 'native copper protection differs'):
+            routing_adapter._verify(run, changed, None, None, None)
 
     def single_ended(self, name, rules=None):
         """Route the probe board without the pair request; rules replaces the gap rule first."""

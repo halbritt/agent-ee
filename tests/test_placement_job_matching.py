@@ -1,5 +1,6 @@
 """Saved native copper decides the public job's intra-pair matching result."""
 import copy
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -84,15 +85,30 @@ class MatchingJobTests(unittest.TestCase):
         self.assertIn('--diff-pair-intra-match', argv)
         self.assertEqual(argv[argv.index('--meander-amplitude') + 1], '2')
 
-    def test_insufficient_meander_room_rejects_connected_result(self):
+    def test_bounded_meander_grades_connected_result(self):
         config = copy.deepcopy(self.config)
         config['router']['intra_pair_match']['amplitude_mm'] = 1
         path = self.root / 'insufficient.json'
         write_json(path, config)
         out = self.root / 'insufficient'
         done = public_job(path, out)
-        self.assertNotEqual(done.returncode, 0)
         report = read_json(out / 'job-report.json')
+        if 'route-native' in report['route']['argv']:
+            import pcbnew as k
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertEqual(report['status'], 'completed')
+            final = Path(report['final']['board'])
+            native = read_json(final.parent / 'native-drc.json')
+            self.assertEqual(native['unconnected_items'], [])
+            self.assertEqual(native['violations'], [])
+            board = k.LoadBoard(str(final))
+            lengths = [sum(t.GetLength() for t in board.GetTracks() if t.GetNetname() == net)
+                       for net in ('CAN+', 'CAN-')]
+            self.assertGreater(min(lengths), 0)
+            self.assertLessEqual(abs(lengths[0] - lengths[1]), 100000)
+            self.assertEqual(digest(final.with_suffix('.kicad_dru')), config['inputs']['rules']['sha256'])
+            return
+        self.assertNotEqual(done.returncode, 0)
         self.assertEqual(report['status'], 'verification_failed', report)
         self.assertEqual(report['final']['opens'], 0)
         native = read_json(Path(report['final']['board']).parent / 'native-drc.json')
@@ -104,6 +120,55 @@ class MatchingJobTests(unittest.TestCase):
         self.assertTrue(found, native)
         self.assertLessEqual(found, {'skew_out_of_range', 'diff_pair_uncoupled_length_too_long'})
         self.assertFalse((out / 'routed-incumbent.json').exists())
+
+    def test_connected_protected_pair_outside_requested_tolerance_is_rejected(self):
+        import pcbnew as k
+        inputs = self.root / 'protected-input'
+        config = prepare(inputs, self.config['router']['checkout'])
+        path = Path(config['inputs']['board']['path'])
+        board = k.LoadBoard(str(path))
+        project = path.with_suffix('.kicad_pro').read_bytes()
+        # Stagger one connector contact along the trace. Both straight rails retain the
+        # original 0.35-mm gap and .25-mm class width. Only the tighter job skew is missed.
+        connector = next(fp for fp in board.GetFootprints() if fp.GetReference() == 'J2')
+        contact = next(pad for pad in connector.Pads() if pad.GetNetname() == 'CAN+')
+        at = contact.GetPosition()
+        contact.SetPosition(k.VECTOR2I(at.x + 120000, at.y))
+        lengths = []
+        for net in ('CAN+', 'CAN-'):
+            pads = [p for fp in board.GetFootprints() for p in fp.Pads() if p.GetNetname() == net]
+            self.assertEqual(len(pads), 2)
+            track = k.PCB_TRACK(board)
+            track.SetNet(board.FindNet(net))
+            track.SetLayer(k.F_Cu)
+            track.SetWidth(250000)
+            track.SetLocked(True)
+            track.SetStart(pads[0].GetPosition())
+            track.SetEnd(pads[1].GetPosition())
+            board.Add(track)
+            lengths.append(track.GetLength())
+        self.assertTrue(100000 < abs(lengths[0] - lengths[1]) < 150000)
+        k.SaveBoard(str(path), board)
+        path.with_suffix('.kicad_pro').write_bytes(project)
+        config['inputs']['board']['sha256'] = digest(path)
+        config['router']['intra_pair_match'] = dict(tolerance_mm=.1, amplitude_mm=1)
+        write_json(inputs / 'job.json', config)
+        out = self.root / 'protected-skew'
+        done = public_job(inputs / 'job.json', out)
+        native = read_json(out / 'input-drc-a1/native-drc.json')
+        self.assertEqual(native['unconnected_items'], [])
+        self.assertEqual(native['violations'], [])
+        report = read_json(out / 'job-report.json')
+        self.assertNotEqual(done.returncode, 0, report['status'])
+        if 'route-native' in report['route']['argv']:
+            operation = read_json(report['route']['result_path'])
+            request = json.loads(operation['request']['request_json'])
+            self.assertEqual(request['routing_options']['protect_mode'], 'existing')
+            self.assertEqual(request['routing_options']['length_match_tolerance_nm'], 100000)
+            self.assertFalse(operation['publication']['published'])
+            self.assertIn('skew', operation['reason'].lower())
+        self.assertFalse((out / 'routed-incumbent.json').exists())
+        self.assertEqual(config['inputs']['board']['sha256'], digest(path))
 
     def test_matching_config_rejects_missing_unknown_non_numeric_and_nonfinite_controls(self):
         for i, value in enumerate([None, {}, {'tolerance_mm': .1, 'amplitude_mm': 2, 'extra': 1},

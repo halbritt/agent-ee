@@ -27,6 +27,7 @@ class PairCoverageTests(unittest.TestCase):
             request = attempt.parse_request(spec['argv'][4:])
             argv = attempt.tool_argv(request, {**attempt.default_layout(request), 'checkout': rust_checkout})
             self.assertEqual(argv[1], 'route-native')
+            self.assertEqual(argv[argv.index('--protect') + 1], 'existing')
             self.assertEqual(argv[argv.index('--diff-pairs') + 1], 'auto')
             board_argv = routing_adapter.board_route_argv(
                 rust_checkout, '/staged', '/out', budget_s=60, diff_pairs='auto')
