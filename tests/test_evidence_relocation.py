@@ -209,6 +209,19 @@ class RelocatedOriginCheckTests(unittest.TestCase):
                       errors)
         self.assertIn("evidence/grp/candidate.json: captured inputs come from ['T3'], not declared by rule 0", errors)
 
+    def test_origin_without_capture_sources_leaves_recorded_facts_valid(self):
+        prior = origins.facts_basis(self.inventory, include_empty=True)
+        canonical = self.relocation['origin_facts']['basis_sha256']
+        self.assertNotEqual(prior, canonical)
+        self.relocation['origin_facts']['basis_sha256'] = prior
+        self.assertEqual(self.check()[0], [])
+        self.relocation['origin_facts']['basis_sha256'] = canonical
+        self.inventory['origins']['library'] = {
+            **self.inventory['origins']['T3'], 'capture_sources': []}
+        self.assertEqual(self.check()[0], [])
+        self.inventory['origins']['library']['capture_sources'] = ['/library/']
+        self.assertIn('relocated origin facts were recorded under different', self.check()[0][0])
+
     def test_changed_basis_or_missing_facts_refuse(self):
         self.inventory['origins']['T3']['capture_sources'] = ['/donor-moved/']
         self.assertIn('relocated origin facts were recorded under different', self.check()[0][0])

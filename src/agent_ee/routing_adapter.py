@@ -484,7 +484,13 @@ def _verify(run, report, inputs, receipt, layout):
     process = report['process']
     if sem['exit_code'] != (process['exit_code'] if process is not None else None):
         raise ValueError('reported router exit differs from the observed process exit')
-    _tool_claims(report, request, expected, ran=process is not None)
+    native_run = (f'attempt/{attempt.NATIVE_OPERATION_FILE}' in retained
+                  or 'kicad_route_engine' in (report.get('tool') or {}))
+    req_found, op_req = _retained_json(routing, attempt.NATIVE_REQUEST_FILE, retained) if native_run else (False, None)
+    op_found, op_result = (_retained_json(routing, attempt.NATIVE_OPERATION_FILE, retained, strict=True)
+                           if native_run else (False, None))
+    _tool_claims(report, request, expected, ran=process is not None,
+                 native_request=attempt.native_exported_request(op_result, op_req))
     _staged(routing, report, request, expected, ran=process is not None)
     if report['tool_version'] != (attempt.TOOL_VERSION if legacy_claim(report) is None else
                                   attempt.LEGACY_TOOL_VERSION):
@@ -507,9 +513,7 @@ def _verify(run, report, inputs, receipt, layout):
     if (classification not in ('validation_failed', 'policy_failed') and
             report['rejected_candidate_sha256'] is not None):
         raise ValueError(f'a {classification} attempt records a rejected candidate')
-    result = record = op_result = None
-    native_run = (f'attempt/{attempt.NATIVE_OPERATION_FILE}' in retained
-                  or 'kicad_route_engine' in (report.get('tool') or {}))
+    result = record = None
     backend = attempt.native_backend_of(None) if native_run else attempt.backend_of(None)
     if classification == 'not_run':
         if (process is not None or retained or report['discovery'] is not None or
@@ -518,8 +522,6 @@ def _verify(run, report, inputs, receipt, layout):
         if native_run and report['backend'] != backend:
             raise ValueError('routing backend identity differs from the retained operation-result.json')
     elif native_run:
-        op_found, op_result = _retained_json(routing, attempt.NATIVE_OPERATION_FILE, retained, strict=True)
-        req_found, op_req = _retained_json(routing, attempt.NATIVE_REQUEST_FILE, retained)
         malformed = (op_found and op_result is None) or (req_found and op_req is None)
         expected_missing = []
         if not op_found:
@@ -598,9 +600,17 @@ def _verify(run, report, inputs, receipt, layout):
             raise ValueError('routing backend identity differs from the retained result.json')
     if receipt is not None:
         _receipt_agrees(receipt, report, request, routing, backend)
-    pairs = attempt.pair_coverage(request, result, record, classification)
+    if native_run and op_result is not None:
+        pairs = attempt.pair_coverage(request, op_result, op_req, classification)
+    else:
+        pairs = attempt.pair_coverage(request, result, record, classification)
     if 'pair_coverage' in sem and sem['pair_coverage'] != pairs:
-        raise ValueError('pair coverage differs from retained routing evidence')
+        # Older native adapters had no per-pair result and reported no coverage.
+        historical = (native_run and isinstance(op_result, dict)
+                      and (not isinstance(op_result.get('routing'), dict) or 'diff_pairs' not in op_result['routing'])
+                      and sem['pair_coverage'] == attempt.pair_coverage(request, None, None, classification))
+        if not historical:
+            raise ValueError('pair coverage differs from retained routing evidence')
     policy = _policy_grade(routing, report, request, result, classification)
     experiment = _experiment_grade(routing, report, request, result, classification, retained, expected)
     return {'classification': classification, 'proposal': proposal, 'coverage': coverage,
@@ -660,7 +670,7 @@ def _policy_grade(routing, report, request, result, classification):
     return grade
 
 
-def _tool_claims(report, request, layout, *, ran):
+def _tool_claims(report, request, layout, *, ran, native_request=None):
     """The tool identity the report claims, against its own checkout record and the layout.
 
     A report records the commit it ran (tool.commit, named by adapter.compatibility), its
@@ -710,6 +720,17 @@ def _tool_claims(report, request, layout, *, ran):
                 eng_path == attempt.SANDBOX['engine'] or eng_path.startswith(checkout_prefix)):
             raise ValueError('routing attempt claims an engine outside the verified checkout or engine mount')
         expected_argv = attempt.native_tool_argv(request, {**layout, 'engine': eng_path})
+        options = native_request.get('routing_options', {}) if isinstance(native_request, dict) else {}
+        protect_mode = options.get('protect_mode') if isinstance(options, dict) else None
+        if '--protect' not in process['argv']:
+            # Earlier native invocations omitted the option. Only their exact argv
+            # and an exported request without a protection override can replay.
+            if protect_mode is not None:
+                raise ValueError('native copper protection differs between the executed argv and saved request')
+            offset = expected_argv.index('--protect')
+            del expected_argv[offset:offset + 2]
+        elif report['semantics']['classification'] == 'complete' and protect_mode != 'existing':
+            raise ValueError('saved native request did not protect existing copper')
     else:
         expected_argv = attempt.tool_argv(request, layout)
     if (process['argv'] != expected_argv or process['env'] != attempt.tool_env(layout) or
@@ -914,6 +935,9 @@ def _request_argv(request):
 def validate_router_options(router_config):
     """Validate and normalize board-level kicad-route options."""
     import math
+    grid = router_config.get('grid_step_mm')
+    if grid is not None and (type(grid) not in (int, float) or not math.isfinite(grid) or grid < .000001):
+        raise ValueError('router.grid_step_mm must be finite and at least 0.000001 mm')
     ac_match = router_config.get('ac_match')
     if 'ac_match' in router_config:
         if not isinstance(ac_match, dict) or set(ac_match) != {'chains', 'tolerance_mm', 'amplitude_mm'}:
@@ -1125,6 +1149,7 @@ def _native_board_route_argv(checkout, staged_dir, out_dir, *, budget_s, owned_c
         '--native-bridge', str(bridge),
         '--python', attempt.PYTHON,
         '--timeout-ms', str(int(budget_s) * 1000),
+        '--protect', 'locked' if owned_copper else 'existing',
         *diff_pair_args,
     ]
     proj = Path(project_file) if project_file is not None else (staged_path / (Path(board_name).stem + '.kicad_pro'))

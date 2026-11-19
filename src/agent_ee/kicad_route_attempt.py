@@ -4332,6 +4332,7 @@ def native_tool_argv(request, layout):
         '--native-bridge', str(bridge),
         '--python', PYTHON,
         '--timeout-ms', str(int(request['budget_s']) * 1000),
+        '--protect', 'existing',
         *(['--diff-pairs', 'auto'] if request.get('diff_pairs') == 'auto' else []),
     ]
 
@@ -4863,6 +4864,33 @@ def pair_binding(plans, record, result):
     return True
 
 
+def native_exported_request(result, saved):
+    """A rejected board can retain its exact exported request only inside the operation result."""
+    if isinstance(saved, dict):
+        return saved
+    info = result.get('request') if isinstance(result, dict) else None
+    if isinstance(info, dict):
+        raw = info.get('request_json')
+        if isinstance(raw, str) and hashlib.sha256(raw.encode('utf-8')).hexdigest() == info.get('request_sha256'):
+            try:
+                request = json.loads(raw)
+            except (ValueError, RecursionError):
+                return {}
+            if isinstance(request, dict):
+                return request
+    return {}
+
+
+def _native_pair_binding(pair, nets, seen):
+    if not isinstance(pair, dict) or pair.get('disposition') not in ('coupled', 'existing', 'unverified'):
+        return False
+    ids = [pair.get('pos_net'), pair.get('neg_net')]
+    return (all(type(n) is int and n > 0 and n in nets and n not in seen for n in ids)
+            and ids[0] != ids[1] and [nets[n] for n in ids] == [pair.get('pos_name'), pair.get('neg_name')]
+            and isinstance(pair.get('class_name'), str) and bool(pair['class_name'])
+            and all(type(pair.get(k)) is int and pair[k] > 0 for k in ('width_nm', 'gap_nm')))
+
+
 def pair_coverage(request, result, record, classification):
     """Describe retained pair evidence, never replace fresh board acceptance checks.
 
@@ -4871,6 +4899,38 @@ def pair_coverage(request, result, record, classification):
     """
     limitations = ['Pair reports do not qualify length/skew limits or impedance; fresh board checks are required.']
     coverage = {'status': 'unknown', 'pairs': [], 'limitations': limitations, 'acceptance_ready': False}
+    native = isinstance(result, dict) and result.get('schema') == NATIVE_OPERATION_SCHEMA
+    if native:
+        native_request = native_exported_request(result, record)
+        exported_nets = native_request.get('nets')
+        nets = {row['id']: row['name'] for row in (exported_nets if isinstance(exported_nets, list) else [])
+                if isinstance(row, dict) and type(row.get('id')) is int and isinstance(row.get('name'), str)}
+        routed = result.get('routing') if isinstance(result.get('routing'), dict) else {}
+        if request.get('diff_pairs') == 'auto':
+            pairs = routed.get('diff_pairs')
+            options = native_request.get('routing_options')
+            if (not isinstance(options, dict) or options.get('diff_pairs_mode') != 'auto'
+                    or classification != 'complete' or result.get('status') != 'complete'
+                    or routed.get('status') != 'complete' or not isinstance(pairs, list) or not pairs):
+                limitations.append('Requested differential pair capability or eligible native pair evidence is unavailable')
+                return coverage
+            seen = set()
+            for pair in pairs:
+                if not _native_pair_binding(pair, nets, seen):
+                    coverage['pairs'] = []
+                    limitations.append('Native pair reports do not match distinct members of the exported board')
+                    return coverage
+                pos, neg = pair['pos_net'], pair['neg_net']
+                seen.update((pos, neg))
+                disposition = pair['disposition']
+                coverage['pairs'].append({'p': nets[pos], 'n': nets[neg], 'disposition': disposition,
+                    'status': 'reported_coupled' if disposition == 'coupled' else 'unknown'})
+                if disposition != 'coupled':
+                    limitations.append(f'{nets[pos]}/{nets[neg]}: {disposition} pair geometry')
+            if all(p['status'] == 'reported_coupled' for p in coverage['pairs']):
+                coverage['status'] = 'reported_coupled'
+            return coverage
+        record = {'scope': {'nets': list(nets.values())}}
     if request.get('diff_pairs') != 'auto':
         scope = record.get('scope', {}) if isinstance(record, dict) else {}
         nets = scope.get('nets', []) if isinstance(scope, dict) else []
@@ -4878,8 +4938,9 @@ def pair_coverage(request, result, record, classification):
                 any(n.rsplit('/', 1)[-1] == 'CAN+' and n[:-1] + '-' in nets for n in nets)):
             completed = (classification in ('complete', 'incomplete') or
                          (classification == 'validation_failed' and isinstance(result, dict) and
-                          result.get('routing', {}).get('status') == 'COMPLETE' and
-                          result.get('process', {}).get('status') == 'PASS'))
+                          ((native and routed.get('status') == 'complete') or
+                           (not native and result.get('routing', {}).get('status') == 'COMPLETE' and
+                            result.get('process', {}).get('status') == 'PASS'))))
             limitations.append('CAN pair routed single-ended' if completed else
                                 'CAN pair coupling unavailable; single-ended attempt did not complete routing')
             if classification not in ('complete', 'incomplete'):
@@ -5669,7 +5730,7 @@ def _run_native_attempt(report, request, layout, routing, candidate_root, inputs
         report['rejected_candidate_sha256'] = digest(output_board)
     report['semantics'] = {'classification': classification, 'reasons': reasons,
                            'exit_code': process['exit_code']}
-    return _finish(report, routing)
+    return _finish(report, routing, native_result=op_result)
 
 
 def attempt(request, layout, cancel=None):
@@ -5865,15 +5926,19 @@ def attempt(request, layout, cancel=None):
     return _finish(report, routing)
 
 
-def _finish(report, routing):
+def _finish(report, routing, *, native_result=None):
     for name in ('kicad-route.stdout', 'kicad-route.stderr'):
         if (routing / name).is_file():
             report['retained'][name] = digest(routing / name)
     report['retained'] = dict(sorted(report['retained'].items()))
     proposal, coverage, code = CLASSES[report['semantics']['classification']]
     report['semantics'].update(proposal=proposal, coverage=coverage, adapter_exit=code)
-    result = load_json(routing / 'attempt/result.json', [], 'result')
-    record = load_json(routing / 'attempt/attempt.json', [], 'attempt')
+    if native_result is not None:
+        result = native_result
+        record = load_json(routing / 'attempt' / NATIVE_REQUEST_FILE, [], NATIVE_REQUEST_FILE)
+    else:
+        result = load_json(routing / 'attempt/result.json', [], 'result')
+        record = load_json(routing / 'attempt/attempt.json', [], 'attempt')
     report['semantics']['pair_coverage'] = pair_coverage(
         report['request'], result, record, report['semantics']['classification'])
     policy = report['request'].get('layer_policy')

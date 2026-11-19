@@ -102,6 +102,12 @@ k.SaveBoard(sys.argv[2],b)
 '''
 
 
+def router_result(receipt):
+    directory = Path(receipt) / 'run/routing/attempt'
+    operation = directory / 'operation-result.json'
+    return read_json(operation if operation.is_file() else directory / 'result.json')
+
+
 def run(out, checkout):
     out = Path(out)
     out.mkdir()
@@ -118,9 +124,10 @@ def run(out, checkout):
     negative = evaluate(root, out / 'negative')
     after = {p.relative_to(root).as_posix(): digest(p) for p in root.rglob('*') if p.is_file()}
     assert {k for k in before if before[k] != after[k]} == {'project/can.kicad_pcb'}
-    pair_result = read_json(out / 'route/run/routing/attempt/result.json')
+    pair_result = router_result(out / 'route')
     record = {'schema': 'agent-ee.can-pair-probe/1', 'routing': summary,
-        'pair_result': pair_result.get('pairs'),
+        'pair_result': (pair_result.get('routing', {}).get('diff_pairs')
+                        if pair_result.get('schema') == 'kicad-route/native-operation/1' else pair_result.get('pairs')),
         'positive': {'execution': positive['execution'], 'outcome': positive['outcome']},
         'negative': {'execution': negative['execution'], 'outcome': negative['outcome'],
                      'violations': negative['details'].get('violations')},

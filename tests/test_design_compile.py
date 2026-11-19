@@ -1549,6 +1549,7 @@ class DiffPairIntentTests(unittest.TestCase):
                     pair_layers=options["pair_layers"], pair_impedance=options["pair_impedance"],
                     intra_pair_match=options["intra_pair_match"])
                 self.assertEqual(argv[argv.index("--diff-pairs") + 1], "auto")
+                self.assertEqual(argv[argv.index("--protect") + 1], "existing")
                 self.assertEqual(argv[argv.index("--pair-impedance") + 1], "90")
                 self.assertEqual(argv[argv.index("--impedance-reference") + 1], "GND")
                 self.assertIn("--diff-pair-intra-match", argv)

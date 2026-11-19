@@ -31,8 +31,11 @@ sandbox mounts. No model or network call is involved.
   explicit member length bound and 0.15 mm skew, evaluated independently through
   native DRC with the existing rule-loading witness.
 - `route/receipt.json` retains the captured input hashes and dedicated adapter
-  identity; `route/run/routing/attempt/result.json` carries the native `/route/2`
-  pair report. Adapter replay verifies the retained attempt before adoption.
+  identity. Rust `operation-result.json` records each resolved pair, its rule width
+  and gap, and whether the solver produced coupled copper. Its sibling
+  `operation-request.json` maps the net IDs to the captured board. The legacy
+  router retains its pair report in `route/run/routing/attempt/result.json`.
+  Adapter replay verifies the retained attempt before adoption.
 - `positive/` grades the exact delivered board, without extending copper to pad
   centres. `negative/` captures the same rules and a connected leg exactly 5 mm
   longer. Its skew must fail; this negative is not a routable candidate proposal.

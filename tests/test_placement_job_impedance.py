@@ -1,5 +1,6 @@
 """Nominal pair impedance and actual filled reference through the normal job."""
 import copy
+import json
 import os
 from pathlib import Path
 import shutil
@@ -47,6 +48,34 @@ k.SaveBoard(sys.argv[1],b)
     return config
 
 
+def assert_missing_reference(case, positive, rejected, layer, directory):
+    """The native solver checks original fill, and the final checker measures saved copper independently."""
+    if 'route-native' not in positive['route']['argv']:
+        failed = rejected['final']['impedance']
+    else:
+        import pcbnew as k
+        from agent_ee import placement_impedance
+        operation = read_json(rejected['route']['result_path'])
+        case.assertFalse(operation['publication']['published'])
+        case.assertEqual(operation['status'], 'invalid')
+        case.assertIn('no filled zone on reference layer', operation['reason'])
+        case.assertIn(layer, operation['reason'])
+        final = Path(positive['final']['board'])
+        board = k.LoadBoard(str(final))
+        sources = [z for z in board.Zones() if z.IsOnLayer(board.GetLayerID(layer))]
+        case.assertTrue(sources)
+        for zone in sources:
+            board.Remove(zone)
+        path = directory / 'interrupted-reference.kicad_pcb'
+        k.SaveBoard(str(path), board)
+        plan = positive['final']['impedance']['plan']
+        model = placement_impedance.stackup(final.read_bytes(), plan['layer'])
+        failed = placement_impedance.check(path, plan, model)
+        case.assertEqual(failed['board_sha256'], digest(path))
+    case.assertEqual(failed['status'], 'FAIL')
+    case.assertTrue(any(layer in reason for reason in failed['defects']), failed)
+
+
 class PairImpedanceJobTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -91,7 +120,7 @@ class PairImpedanceJobTests(unittest.TestCase):
         self.assertNotEqual(report['status'], 'completed', report)
         self.assertFalse((out / 'routed-incumbent.json').exists())
 
-        self.assertEqual(report['final']['impedance']['status'], 'FAIL')
+        assert_missing_reference(self, self.report, report, 'In1.Cu', out)
 
     def test_public_job_rejects_missing_dielectric_data(self):
         config = prepare(self.root / 'missing-er-inputs', self.config['router']['checkout'])
@@ -119,8 +148,25 @@ class PairImpedanceJobTests(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0)
         report = read_json(out / 'job-report.json')
         self.assertNotEqual(report['status'], 'completed', report)
-        self.assertEqual(report['final']['impedance']['status'], 'FAIL')
-        self.assertEqual(report['final']['opens'], 0)
+        if 'route-native' in self.report['route']['argv']:
+            from agent_ee import placement_impedance
+            operation = read_json(report['route']['result_path'])
+            self.assertFalse(operation['publication']['published'])
+            request = json.loads(operation['request']['request_json'])
+            self.assertEqual(request['routing_options']['impedance_uncoupled_nm'], 500000)
+            final = self.report['final']
+            self.assertEqual(final['opens'], 0)
+            board = Path(final['board'])
+            plan = copy.deepcopy(final['impedance']['plan'])
+            plan['requirement'] = config['router']['pair_impedance']
+            result = placement_impedance.check(board, plan, placement_impedance.stackup(board.read_bytes(), plan['layer']))
+            self.assertEqual(result['board_sha256'], digest(board))
+            self.assertEqual(result['status'], 'FAIL')
+            self.assertTrue(all(n['uncoupled_mm'] > .5 for n in result['nets']))
+            self.assertTrue(any('uncoupled-length limit' in error for error in result['defects']))
+        else:
+            self.assertEqual(report['final']['impedance']['status'], 'FAIL')
+            self.assertEqual(report['final']['opens'], 0)
         self.assertFalse((out / 'routed-incumbent.json').exists())
 
     def test_impedance_request_binds_resume(self):

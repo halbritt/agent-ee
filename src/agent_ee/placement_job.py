@@ -2543,18 +2543,22 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
         report['preflight'] = {}
         report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
         rust_route = routing_adapter.is_rust_capable_checkout(config['router']['checkout'])
-        if rust_route and impedance is not None:
-            raise JobRefusal('router.pair_impedance requires final saved-board measurement; '
-                             'route-native does not provide this placement check')
         if impedance is not None:
             # Native load/save inserts dielectric defaults. Check the authored
             # bytes before placement can make an omitted value look declared.
-            done = _run_child(routing_adapter.preflight_stackup_argv(
-                config['router']['checkout'], board_path, pair_layers[0]),
-                clock=clock, cancel_dir=None)
-            if done.returncode:
-                raise JobRefusal('original impedance stackup is unproven: '
-                                 + done.stderr.decode(errors='replace')[-2000:])
+            if rust_route:
+                from .placement_impedance import stackup
+                try:
+                    stackup(board_bytes, pair_layers[0])
+                except ValueError as exc:
+                    raise JobRefusal('original impedance stackup is unproven: ' + str(exc)) from exc
+            else:
+                done = _run_child(routing_adapter.preflight_stackup_argv(
+                    config['router']['checkout'], board_path, pair_layers[0]),
+                    clock=clock, cancel_dir=None)
+                if done.returncode:
+                    raise JobRefusal('original impedance stackup is unproven: '
+                                     + done.stderr.decode(errors='replace')[-2000:])
             report['preflight']['impedance_stackup'] = {
                 'status': 'PASS', 'board_sha256': sha256_bytes(board_bytes), 'layer': pair_layers[0]}
         if length_match is not None and 'tolerance_ps' in length_match:
@@ -2971,7 +2975,7 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                                            refinement=selected_seed.get('refinement'),
                                            clock=clock, cancel_dir=job_dir,
                                            owned_zone_uuids=plane_ids, planes=plane_bytes,
-                                           pair_impedance=impedance, router_checkout=config['router']['checkout'],
+                                           pair_impedance=impedance, pair_layers=pair_layers, router_checkout=config['router']['checkout'],
                                            length_match=length_match, ac_match=ac_match,
                                            local_routing=local_seed,
                                            input_board=board_path, input_board_sha256=sha256_bytes(board_bytes),
@@ -3279,7 +3283,7 @@ def _cleanup_local_router_stubs(board, report, receipt, directory, *, owned_zone
 
 
 def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, refinement=None, clock=None, cancel_dir=None,
-                 owned_zone_uuids=(), planes=None, pair_impedance=None, router_checkout=None, length_match=None, ac_match=None,
+                 owned_zone_uuids=(), planes=None, pair_impedance=None, pair_layers=None, router_checkout=None, length_match=None, ac_match=None,
                  input_board=None, input_board_sha256=None, local_routing=None, reject_silk_graphics=False,
                  reject_track_dangling=False, rigid=None):
     groups, intent, rails = (_bundle(normalized)[k] for k in ('groups', 'intent', 'rails'))
@@ -3399,7 +3403,17 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
             problems.append('final saved plane verification failed')
     from . import routing_adapter
     impedance_result = None
-    if pair_impedance is not None:
+    if pair_impedance is not None and native_routed:
+        request, result = final_dir / 'impedance-request.json', final_dir / 'impedance.json'
+        write_json(request, dict(requirement=pair_impedance, layers=pair_layers, operation=routed.get('result_path'),
+                                 original_board=str(input_board), original_sha256=input_board_sha256))
+        done = _run_child([sys.executable, '-B', '-m', 'agent_ee.placement_impedance', str(board),
+                           str(request), str(result)], clock=clock, cancel_dir=cancel_dir)
+        impedance_result = read_json(result) if result.is_file() else {
+            'status': 'FAIL', 'defects': [done.stderr.decode(errors='replace')[-2000:]]}
+        if done.returncode or impedance_result.get('board_sha256') != digest(board):
+            impedance_result['status'] = 'FAIL'
+    elif pair_impedance is not None:
         plan = routed.get('impedance_plan')
         impedance_result = {'status': 'FAIL', 'defects': ['router omitted or changed required impedance plan']}
         if isinstance(plan, dict) and plan.get('requirement') == pair_impedance and plan.get('status') == 'PASS':

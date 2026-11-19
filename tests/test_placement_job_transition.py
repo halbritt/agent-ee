@@ -75,7 +75,16 @@ class PairTransitionTests(unittest.TestCase):
         vias = [t for t in board.GetTracks() if t.GetClass() == 'PCB_VIA']
         tracks = [t for t in board.GetTracks() if t.GetClass() != 'PCB_VIA']
         self.assertEqual(len(vias), 4)
-        self.assertEqual({board.GetLayerName(t.GetLayer()) for t in tracks}, {'F.Cu', 'In1.Cu'})
+        track_layers = {board.GetLayerName(t.GetLayer()) for t in tracks}
+        if 'route-native' in self.report['route']['argv']:
+            inner, = track_layers - {'F.Cu'}
+            self.assertIn(inner, LAYERS[1:-1])
+            for net in ('CAN+', 'CAN-'):
+                self.assertEqual({board.GetLayerName(t.GetLayer()) for t in tracks if t.GetNetname() == net},
+                                 {'F.Cu', inner})
+                self.assertEqual(sum(t.GetNetname() == net for t in vias), 2)
+        else:
+            self.assertEqual(track_layers, {'F.Cu', 'In1.Cu'})
         self.assertEqual({t.GetWidth() for t in tracks}, {250000})
         zone, = list(board.Zones())
         self.assertTrue(zone.GetIsRuleArea())
