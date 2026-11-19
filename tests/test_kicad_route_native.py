@@ -788,6 +788,7 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                 (8, 'ambiguous_termination', 'contradiction'),
                 (3, 'unroutable', 'contradiction'),
                 (2, 'native_validation_failed', 'contradiction'),
+                (6, 'admission_exceeded', 'contradiction'),
                 (0, 'complete', 'contradiction'),
             ):
                 op = json.loads(json.dumps(base_op))
@@ -802,6 +803,30 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     expected,
                     (code, status),
                 )
+            # Pre-admission >16 MiB source/sidecar admission_exceeded has source_sha256=None
+            # strictly before snapshot_stage/source_bytes/request_sha256 (and no saved request file).
+            absent_req = root / 'absent-request.json'
+            pre_adm = json.loads(json.dumps(base_op))
+            pre_adm['exit_code'], pre_adm['status'] = 6, 'admission_exceeded'
+            pre_adm['source'] = {'source_sha256': None, 'source_bytes': None, 'snapshot_sha256': None,
+                                 'sidecar_check': {'passed': True}}
+            pre_adm['request'] = {'request_sha256': None}
+            pre_adm['routing'] = None
+            pre_adm['publication']['published'] = False
+            pre_adm['publication']['output_sha256'] = None
+            pre_adm['phases'] = [{'phase': 'pre_snapshot_admission', 'status': 'failed'}]
+            self.assertEqual(attempt.native_semantics(6, pre_adm, absent_req, src, out)[0], 'backend_failure')
+            for mutate_adm in (
+                lambda o: o['phases'].append({'phase': 'snapshot_stage', 'status': 'ok'}),
+                lambda o: o['phases'][0].update(status='ok'),
+                lambda o: o['source'].update(source_bytes=123),
+                lambda o: o['source'].update(snapshot_sha256='0' * 64),
+                lambda o: o['request'].update(request_sha256=req_sha),
+                lambda o: o.update(routing={'status': 'admission_exceeded', 'request_sha256': None}),
+            ):
+                bad_adm = json.loads(json.dumps(pre_adm))
+                mutate_adm(bad_adm)
+                self.assertEqual(attempt.native_semantics(6, bad_adm, absent_req, src, out)[0], 'contradiction')
             # Non-None source_sha256 mismatch still fails closed to contradiction on exit 8.
             bad_src = json.loads(json.dumps(base_op))
             bad_src['exit_code'], bad_src['status'] = 8, 'destination_exists'
@@ -1310,13 +1335,27 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     ['--diff-pairs', 'auto', '--diff-pairs', 'auto'],
                     ['--diff-pairs', 'CAN+'],
                     ['--diff-pairs', 'CAN+,'],
+                    ['--diff-pairs', ',CAN-'],
+                    ['--diff-pairs', 'A,A'],
+                    ['--diff-pairs=A,A'],
+                    ['--diff-pairs', ' , '],
+                    ['--diff-pairs', 'A, '],
+                    ['--diff-pairs', ' ,B'],
+                    ['--diff-pairs', '\t,\n'],
+                    ['--diff-pairs', 'A,-B'],
+                    ['--diff-pairs', 'A,B', '--diff-pairs', 'A,B'],
+                    ['--diff-pairs', 'A,B', '--diff-pairs', 'A,C'],
+                    ['--diff-pairs', 'A,B', '--diff-pairs', 'B,A'],
+                    ['--diff-pairs', 'A\x00,B'],
+                    ['--diff-pairs', 'A,\udcff'],
                 ):
-                    with self.assertRaises(routing_adapter.RE01OwnershipError):
-                        routing_adapter.check_re01_command([
-                            'bwrap', '--ro-bind', str(co), '/opt/kicad-route', '--',
-                            '/usr/bin/kicad-route-engine', 'route-native',
-                            '/work/in.kicad_pcb', '/work/out.kicad_pcb', *bad_dp,
-                        ])
+                    with self.subTest(bad_dp=bad_dp):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            routing_adapter.check_re01_command([
+                                'bwrap', '--ro-bind', str(co), '/opt/kicad-route', '--',
+                                '/usr/bin/kicad-route-engine', 'route-native',
+                                '/work/in.kicad_pcb', '/work/out.kicad_pcb', *bad_dp,
+                            ])
                 routing_adapter.check_re01_command([
                     'bwrap', '--ro-bind', str(bridge), '/opt/bridge.py', '--',
                     sys.executable, '-BI', '/opt/bridge.py', '--help',

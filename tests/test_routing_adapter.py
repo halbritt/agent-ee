@@ -35,9 +35,35 @@ class PairCoverageTests(unittest.TestCase):
             pair_argv = routing_adapter.board_route_argv(
                 rust_checkout, '/staged', '/out', budget_s=60, diff_pairs=['CAN+,CAN-'])
             self.assertEqual(pair_argv[pair_argv.index('--diff-pairs') + 1], 'CAN+,CAN-')
-            with self.assertRaisesRegex(ValueError, 'diff_pairs'):
-                routing_adapter.board_route_argv(
-                    rust_checkout, '/staged', '/out', budget_s=60, diff_pairs='manual')
+            tuple_argv = routing_adapter.board_route_argv(
+                rust_checkout, '/staged', '/out', budget_s=60, diff_pairs=[('USB_DP', 'USB_DM')])
+            self.assertEqual(tuple_argv[tuple_argv.index('--diff-pairs') + 1], 'USB_DP,USB_DM')
+            for bad_pairs in (
+                'manual',
+                '',
+                [],
+                ['manual'],
+                ['A,A'],
+                [('A', 'A')],
+                [' , '],
+                ['A, '],
+                [' ,B'],
+                ['\t,\n'],
+                ['A,-B'],
+                [('A', '-B')],
+                [('A,B', 'C')],
+                ['A,B', 'A,B'],
+                ['A,B', 'A,C'],
+                ['A,B', 'B,A'],
+                [('A', 'B'), ('A', 'C')],
+                ['A\x00,B'],
+                ['A,\udcff'],
+                [('A', 'B\x00')],
+            ):
+                with self.subTest(bad_pairs=bad_pairs):
+                    with self.assertRaisesRegex(ValueError, 'diff_pairs'):
+                        routing_adapter.board_route_argv(
+                            rust_checkout, '/staged', '/out', budget_s=60, diff_pairs=bad_pairs)
 
     def test_single_ended_can_is_never_pair_coverage(self):
         record = {'scope': {'nets': ['CAN+', 'CAN-']}}

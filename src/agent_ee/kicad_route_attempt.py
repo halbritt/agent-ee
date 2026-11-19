@@ -2437,6 +2437,7 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
     seen_flags = set()
     diff_pairs_mode = None
     seen_explicit_pairs = set()
+    seen_explicit_nets = set()
     py_tok = bridge_tok = None
     saw_help = after_dd = False
     positional = []
@@ -2477,11 +2478,17 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
                     if diff_pairs_mode == 'auto':
                         return 'RE-01 forbids combining --diff-pairs auto with explicit pairs'
                     parts = val.split(',')
-                    if len(parts) != 2 or not parts[0] or not parts[1] or parts[0].startswith('-'):
+                    if (len(parts) != 2 or not parts[0] or not parts[1]
+                            or parts[0] != parts[0].strip() or parts[1] != parts[1].strip()
+                            or parts[0].startswith('-') or parts[1].startswith('-')
+                            or parts[0] == parts[1]):
                         return f'RE-01 forbids invalid --diff-pairs pair spec: {val}'
                     if val in seen_explicit_pairs:
                         return f'RE-01 forbids duplicate --diff-pairs pair: {val}'
+                    if parts[0] in seen_explicit_nets or parts[1] in seen_explicit_nets:
+                        return f'RE-01 forbids reusing net across --diff-pairs pairs: {val}'
                     seen_explicit_pairs.add(val)
+                    seen_explicit_nets.update(parts)
                     diff_pairs_mode = 'explicit'
                 continue
             if flag in seen_flags:
@@ -4495,8 +4502,21 @@ def native_semantics(exit_code, op_result, saved_request_path, source_board, out
     if source_board is not None and Path(source_board).is_file() and not Path(source_board).is_symlink():
         src_sha = source_block.get('source_sha256')
         if src_sha is None:
-            if exit_code == 0 or status not in (
-                    'destination_exists', 'publication_refused', 'usage_refused', 'invalid', 'unsupported'):
+            phases = op_result.get('phases')
+            pre_admission_only = (
+                isinstance(phases, list) and len(phases) == 1
+                and isinstance(phases[0], dict)
+                and phases[0].get('phase') == 'pre_snapshot_admission'
+                and phases[0].get('status') == 'failed'
+                and source_block.get('source_bytes') is None
+                and source_block.get('snapshot_sha256') is None
+                and req_block.get('request_sha256') is None
+                and routing_block is None
+                and pub.get('published') is False
+            )
+            if exit_code == 0 or (
+                    status not in ('destination_exists', 'publication_refused', 'usage_refused', 'invalid', 'unsupported')
+                    and not (status == 'admission_exceeded' and pre_admission_only)):
                 return 'contradiction', ['native source_sha256 differs from staged source board']
         elif src_sha != digest(source_board):
             return 'contradiction', ['native source_sha256 differs from staged source board']

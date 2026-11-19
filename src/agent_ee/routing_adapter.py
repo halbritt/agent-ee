@@ -1086,13 +1086,33 @@ def _native_board_route_argv(checkout, staged_dir, out_dir, *, budget_s, owned_c
         if diff_pairs == 'auto':
             diff_pair_args = ['--diff-pairs', 'auto']
         elif isinstance(diff_pairs, (list, tuple)) and diff_pairs:
+            seen_pairs = set()
+            seen_nets = set()
             for pair in diff_pairs:
-                if not isinstance(pair, str) or pair.startswith('-'):
+                if isinstance(pair, str):
+                    if attempt._re01_has_nul_or_surrogate(pair):
+                        raise ValueError("diff_pairs must not contain NUL or surrogate characters")
+                    parts = pair.split(',')
+                    if len(parts) != 2:
+                        raise ValueError("diff_pairs must be 'auto' or non-empty '<POS>,<NEG>' specs")
+                    pos, neg = parts
+                elif isinstance(pair, (list, tuple)) and len(pair) == 2:
+                    pos, neg = pair
+                    if not isinstance(pos, str) or not isinstance(neg, str) or ',' in pos or ',' in neg:
+                        raise ValueError("diff_pairs must be 'auto' or non-empty '<POS>,<NEG>' specs")
+                    if attempt._re01_has_nul_or_surrogate(pos) or attempt._re01_has_nul_or_surrogate(neg):
+                        raise ValueError("diff_pairs must not contain NUL or surrogate characters")
+                else:
                     raise ValueError("diff_pairs must be 'auto' or non-empty '<POS>,<NEG>' specs")
-                parts = pair.split(',')
-                if len(parts) != 2 or not parts[0] or not parts[1] or parts[0].startswith('-'):
+                if (not pos or not neg or pos != pos.strip() or neg != neg.strip()
+                        or pos.startswith('-') or neg.startswith('-') or pos == neg):
                     raise ValueError("diff_pairs must be 'auto' or non-empty '<POS>,<NEG>' specs")
-                diff_pair_args += ['--diff-pairs', pair]
+                spec = f'{pos},{neg}'
+                if spec in seen_pairs or pos in seen_nets or neg in seen_nets:
+                    raise ValueError(f"diff_pairs contains duplicate or overlapping net in pair: {spec}")
+                seen_pairs.add(spec)
+                seen_nets.update((pos, neg))
+                diff_pair_args += ['--diff-pairs', spec]
         else:
             raise ValueError("diff_pairs must be 'auto' or None")
     engine_bin = attempt.resolve_kicad_route_engine(checkout)
