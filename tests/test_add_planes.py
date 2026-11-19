@@ -16,6 +16,7 @@ from agent_ee.storage import digest, read_json, write_json
 from tests.toolchain import require_toolchain, require_kicad_route
 
 BUILD = r'''
+import json
 import pcbnew as k
 from pathlib import Path
 out=Path('/work/project');out.mkdir()
@@ -42,7 +43,7 @@ z.Outline().NewOutline()
 for x,y in [(28,20),(32,20),(32,30),(28,30)]:z.Outline().Append(k.FromMM(x),k.FromMM(y))
 owner.Add(z)
 assert k.SaveBoard(str(out/'pod.kicad_pcb'),b)
-(out/'pod.kicad_pro').write_text('{}\n');(out/'pod.kicad_prl').write_text('{"owned":"sibling sentinel"}\n')
+(out/'pod.kicad_pro').write_text(json.dumps({'meta': {'filename': 'pod.kicad_pro', 'version': 1}}) + '\n');(out/'pod.kicad_prl').write_text('{"owned":"sibling sentinel"}\n')
 '''
 
 

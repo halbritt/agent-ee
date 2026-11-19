@@ -20,7 +20,6 @@ from agent_ee import native_run, placement_job as job
 from agent_ee.storage import digest
 import test_placement_job as fixtures
 from test_placement_job import Fixture, groups, intent, MM
-from test_placement_job_guards import materialize
 from toolchain import require_kicad_route
 
 # Millimetres. The fixture piles its three netted parts at the board centre.
@@ -124,7 +123,8 @@ class RoutedBoard(Fixture):
     @staticmethod
     def project_beside(path):
         """KiCad writes its own project file when it saves a board; put the authored one back."""
-        Path(path).with_suffix('.kicad_pro').write_text('{}\n')
+        project = Path(path).with_suffix('.kicad_pro')
+        project.write_text(json.dumps({'meta': {'filename': project.name, 'version': 1}}) + '\n')
         Path(path).with_suffix('.kicad_prl').unlink(missing_ok=True)
 
     def candidate(self):
@@ -133,7 +133,8 @@ class RoutedBoard(Fixture):
         problem, record = job.capture(self.board, self.normalized)
         self.assertTrue(record['routing_only'])
         poses = fixtures.NativeTransformTests._evaluate(self, problem, {})['poses']
-        placed = materialize(self.board, poses, self.dir / 'placed')
+        placed = job.materialize(self.board, poses, self.dir / 'placed', self.project.read_bytes(),
+                                 normalized=self.normalized)
         self.assertEqual((placed['integrity'], placed['moved']), ('preserved', []))
         job.drc(Path(placed['board']), self.dir / 'placed', refill=True, label='native-drc')
         (self.dir / 'input-drc').mkdir()

@@ -164,7 +164,7 @@ class JobEntryTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
         self.board = build_board(self.dir / 'board.kicad_pcb')
         self.project = self.dir / 'board.kicad_pro'
-        self.project.write_text('{}\n')
+        self.project.write_text(json.dumps({'meta': {'filename': 'board.kicad_pro', 'version': 1}}) + '\n')
 
     def run_job(self, declared, grouped, *, rails=None, located=None):
         from toolchain import require_kicad_route

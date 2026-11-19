@@ -149,11 +149,22 @@ class NativeRoutingInput(unittest.TestCase):
                                              {'implementation': 1, 'receipt_index': 1})
             self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
             summary = routing_adapter.verify(receipt_dir / 'run', receipt=receipt)
-            result = json.loads((receipt_dir / 'run/routing/attempt/result.json').read_text())
-            self.assertEqual(result['backend']['name'], 'builtin')
-            self.assertIsInstance(summary['router_exit'], int)  # No success-exit assertion.
-            self.assertIn('routing', result)
-            self.assertIn('validation', result)
+            if routing_adapter.is_rust_capable_checkout(checkout):
+                op_result = json.loads((receipt_dir / 'run/routing/attempt/operation-result.json').read_text())
+                self.assertEqual(op_result['schema'], 'kicad-route/native-operation/1')
+                self.assertEqual(op_result['status'], 'complete')
+                self.assertEqual(op_result['exit_code'], 0)
+                self.assertEqual(summary['proposal'], 'eligible')
+                self.assertEqual(summary['backend']['value']['name'], 'kicad-route-engine')
+                self.assertIsInstance(summary['router_exit'], int)  # No success-exit assertion.
+                self.assertIn('routing', op_result)
+                self.assertIn('publication', op_result)
+            else:
+                result = json.loads((receipt_dir / 'run/routing/attempt/result.json').read_text())
+                self.assertEqual(result['backend']['name'], 'builtin')
+                self.assertIsInstance(summary['router_exit'], int)  # No success-exit assertion.
+                self.assertIn('routing', result)
+                self.assertIn('validation', result)
 
 
 class PrerequisitePolicy(unittest.TestCase):
