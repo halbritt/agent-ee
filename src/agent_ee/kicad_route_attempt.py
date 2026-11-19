@@ -2489,21 +2489,36 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
     saw_help = after_dd = False
     positional = []
     last_variadic = None
+
+    def _flush_variadic():
+        nonlocal last_variadic
+        if last_variadic is None or len(positional) >= 2:
+            last_variadic = None
+            return
+        max_take = min(2 - len(positional), len(last_variadic) - 1)
+        k = 0
+        while k < max_take and last_variadic[-1 - k].lower().endswith('.kicad_pcb'):
+            k += 1
+        if k > 0:
+            positional.extend(last_variadic[-k:])
+        last_variadic = None
+
     i = 2
     n = len(tokens)
     while i < n:
         tok = tokens[i]
         if not after_dd and tok == '--':
+            _flush_variadic()
             after_dd = True
-            last_variadic = None
             i += 1
             continue
         if not after_dd and tok in ('--help', '-h'):
+            _flush_variadic()
             saw_help = True
-            last_variadic = None
             i += 1
             continue
         if not after_dd and tok.startswith('-'):
+            _flush_variadic()
             if '=' in tok:
                 flag, inline = tok.split('=', 1)
                 val = inline
@@ -2600,12 +2615,7 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
             positional.append(tok)
             last_variadic = None
             i += 1
-    if len(positional) < 2 and last_variadic is not None:
-        needed = 2 - len(positional)
-        if len(last_variadic) > needed and all(
-            s.lower().endswith('.kicad_pcb') for s in last_variadic[-needed:]
-        ):
-            positional.extend(last_variadic[-needed:])
+    _flush_variadic()
     for arg_tok in tokens[1:]:
         a_chain, _, _, _, a_err = _re01_resolve_exec_chain(
             arg_tok, cwd=cwd, is_cmd=False, mounts=mounts)
