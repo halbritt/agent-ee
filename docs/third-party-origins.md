@@ -260,6 +260,10 @@ attribution do not establish that the source-project licences have been satisfie
   committed manifest of external benchmark repositories and commits; the
   third-party benchmark boards it fetches under `~/.cache/agent-ee-krt-bench/`
   stay external and runtime-only (never committed into `agent-ee`).
+- The external One-Air-Max routing case uses the KiCad project at commit
+  `f87615475ec8b349c979b22474eb1c3d2d284f65`. The local router lab keeps
+  a placed, unrouted derivative and uses the original project rules. The
+  upstream project carries CC BY-SA 4.0. [Project and licence](https://gitlab.com/kicad/code/kicad/-/blob/f87615475ec8b349c979b22474eb1c3d2d284f65/demos/openair-max/LICENSE.txt)
 - **Audit limits**: `agent-ee` records the `kicad-route` commit, tree
   cleanliness, `rust-engine/Cargo.lock` / `LICENSE` / `tools/rust_engine_kicad.py`
   digests, and `kicad-route-engine` SHA-256 per preflight/attempt without
