@@ -65,6 +65,26 @@ class PairCoverageTests(unittest.TestCase):
                         routing_adapter.board_route_argv(
                             rust_checkout, '/staged', '/out', budget_s=60, diff_pairs=bad_pairs)
 
+    def test_native_pair_coverage_requires_resolved_members_and_coupled_disposition(self):
+        request = {'diff_pairs': 'auto'}
+        native = {'nets': [{'id': 1, 'name': 'CAN+'}, {'id': 2, 'name': 'CAN-'}],
+                  'routing_options': {'diff_pairs_mode': 'auto'}}
+        row = dict(pos_net=1, neg_net=2, pos_name='CAN+', neg_name='CAN-', class_name='CAN',
+                   width_nm=250000, gap_nm=350000, disposition='coupled')
+        result = {'schema': attempt.NATIVE_OPERATION_SCHEMA, 'status': 'complete',
+                  'routing': {'status': 'complete', 'diff_pairs': [row]}}
+        coupled = attempt.pair_coverage(request, result, native, 'complete')
+        self.assertEqual(coupled['status'], 'reported_coupled')
+        self.assertFalse(coupled['acceptance_ready'])
+        for records in ([], [dict(row, disposition='existing')], [dict(row, disposition='unverified')],
+                        [dict(row, pos_name='other')], [dict(row, pos_net=True)], [dict(row, class_name='')], [row, row]):
+            with self.subTest(records=records):
+                result['routing']['diff_pairs'] = records
+                self.assertEqual(attempt.pair_coverage(request, result, native, 'complete')['status'], 'unknown')
+        single = attempt.pair_coverage({}, result, native, 'complete')
+        self.assertIn('CAN pair routed single-ended', single['limitations'])
+        self.assertEqual(single['status'], 'unknown')
+
     def test_single_ended_can_is_never_pair_coverage(self):
         record = {'scope': {'nets': ['CAN+', 'CAN-']}}
         report = attempt.pair_coverage({}, {}, record, 'complete')

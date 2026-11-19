@@ -31,16 +31,36 @@ class NativeCanPairTests(unittest.TestCase):
         self.assertEqual(result['routing']['classification'], 'complete')
         self.assertEqual(result['routing']['pair_coverage']['status'], 'reported_coupled')
         pair, = result['pair_result']
-        self.assertEqual((pair['p'], pair['n'], pair['netclass']), ('CAN+', 'CAN-', 'CAN'))
-        self.assertEqual((pair['width_mm'], pair['gap_mm']), (.25, .35))
-        self.assertEqual(pair['backend_status'], 'COUPLED')
-        self.assertTrue(pair['routed'])
-        self.assertEqual(pair['gap_violations'], 0)
+        if 'disposition' in pair:
+            self.assertEqual((pair['pos_name'], pair['neg_name'], pair['class_name']), ('CAN+', 'CAN-', 'CAN'))
+            self.assertEqual((pair['width_nm'], pair['gap_nm']), (250000, 350000))
+            self.assertEqual(pair['disposition'], 'coupled')
+        else:
+            self.assertEqual((pair['p'], pair['n'], pair['netclass']), ('CAN+', 'CAN-', 'CAN'))
+            self.assertEqual((pair['width_mm'], pair['gap_mm']), (.25, .35))
+            self.assertEqual(pair['backend_status'], 'COUPLED')
+            self.assertTrue(pair['routed'])
+            self.assertEqual(pair['gap_violations'], 0)
         self.assertEqual(result['positive'], {'execution': 'ok', 'outcome': 'pass'})
         self.assertEqual(result['negative'], {'execution': 'ok', 'outcome': 'defect', 'violations': ['can-skew']})
         before = self.out / 'positive/inputs/project/can.kicad_pcb'
         routed = self.out / 'route/run/routing/candidate/project/can.kicad_pcb'
         self.assertEqual(digest(before), digest(routed), 'coverage must grade the unchanged router output')
+        import pcbnew
+        board = pcbnew.LoadBoard(str(routed))
+        tracks = list(board.GetTracks())
+        self.assertEqual(len(tracks), 2)
+        rails = {t.GetNetname(): t for t in tracks}
+        self.assertEqual(set(rails), {'CAN+', 'CAN-'})
+        for t in rails.values():
+            self.assertEqual(t.GetLayer(), pcbnew.F_Cu)
+            self.assertEqual(t.GetWidth(), 250000)
+            self.assertEqual(t.GetStart().y, t.GetEnd().y)
+            pads = [pad for footprint in board.GetFootprints() for pad in footprint.Pads()
+                    if pad.GetNetname() == t.GetNetname()]
+            self.assertEqual(len(pads), 2)
+            self.assertTrue(all(any(pad.HitTest(end) for end in (t.GetStart(), t.GetEnd())) for pad in pads))
+        self.assertEqual(abs(rails['CAN+'].GetStart().y - rails['CAN-'].GetStart().y) - 250000, 350000)
         findings = read_json(self.out / 'negative/checks/can-routing.json')['details']['constraints']
         skew = next(c for c in findings if c['id'] == 'can-skew')
         self.assertTrue(any('5.0000 mm' in f['description'] for f in skew['native_findings']))
@@ -60,9 +80,9 @@ class NativeCanPairTests(unittest.TestCase):
             path.write_text(rules(path.read_text()))
         summary = probe.route(candidate, out / 'route', self.checkout, pairs=False)
         report = read_json(out / 'route/run/routing/adapter-report.json')
-        native = read_json(out / 'route/run/routing/attempt/result.json')
+        native = probe.router_result(out / 'route')
         self.assertNotIn('diff_pairs', report['request'])
-        self.assertEqual(native['routing']['status'], 'COMPLETE')
+        self.assertEqual(native['routing']['status'].lower(), 'complete')
         # Whatever KiCad says about the copper, nothing claims the pair was routed as a pair.
         self.assertEqual(summary['pair_coverage']['status'], 'unknown')
         self.assertIn('CAN pair routed single-ended', summary['pair_coverage']['limitations'])

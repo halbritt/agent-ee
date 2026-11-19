@@ -598,9 +598,17 @@ def _verify(run, report, inputs, receipt, layout):
             raise ValueError('routing backend identity differs from the retained result.json')
     if receipt is not None:
         _receipt_agrees(receipt, report, request, routing, backend)
-    pairs = attempt.pair_coverage(request, result, record, classification)
+    if native_run and op_result is not None:
+        pairs = attempt.pair_coverage(request, op_result, op_req, classification)
+    else:
+        pairs = attempt.pair_coverage(request, result, record, classification)
     if 'pair_coverage' in sem and sem['pair_coverage'] != pairs:
-        raise ValueError('pair coverage differs from retained routing evidence')
+        # Older native adapters had no per-pair result and reported no coverage.
+        historical = (native_run and isinstance(op_result, dict)
+                      and (not isinstance(op_result.get('routing'), dict) or 'diff_pairs' not in op_result['routing'])
+                      and sem['pair_coverage'] == attempt.pair_coverage(request, None, None, classification))
+        if not historical:
+            raise ValueError('pair coverage differs from retained routing evidence')
     policy = _policy_grade(routing, report, request, result, classification)
     experiment = _experiment_grade(routing, report, request, result, classification, retained, expected)
     return {'classification': classification, 'proposal': proposal, 'coverage': coverage,
