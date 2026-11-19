@@ -12,7 +12,7 @@ from build_stage_fixture import requirements as retained_requirements
 
 from agent_ee import placement_job as job
 from agent_ee.storage import digest, read_json, write_json
-from tests.test_placement_job_impedance import prepare as outer_inputs
+from tests.test_placement_job_impedance import assert_missing_reference, prepare as outer_inputs
 from tests.test_placement_job_rules import public_job
 from tests.toolchain import require_kicad_route, require_toolchain
 
@@ -88,8 +88,7 @@ class StriplineJobTests(unittest.TestCase):
                 report = read_json(out / 'job-report.json')
                 self.assertNotEqual(report['status'], 'completed', report)
                 self.assertFalse((out / 'routed-incumbent.json').exists())
-                self.assertEqual(report['final']['impedance']['status'], 'FAIL')
-                self.assertTrue(any(layer in d for d in report['final']['impedance']['defects']))
+                assert_missing_reference(self, self.report, report, layer, out)
 
     def test_missing_lower_dielectric_is_rejected_before_native_defaulting(self):
         config = prepare(self.root / 'missing-er-inputs', self.checkout)

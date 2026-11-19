@@ -351,7 +351,8 @@ With `route-native`, the job can select the search grid, route a detected single
 select differential pairs and their allowed layers, and request intra-pair skew matching.
 The native operation result lists physical bus groups under `routing.bus_groups` as net
 IDs in lane order. The saved native request maps each ID to its net name and records the
-bus controls and grid in nanometres. Qualified impedance, grouped length or delay, and
+bus controls and grid in nanometres. Pair impedance uses the authored stackup and checks
+each saved coupled segment, terminal escape and filled reference plane. Grouped length or delay and
 AC-chain placement require measurements on the final saved board after placement's own
 refill. The native placement job refuses those requirements until their final checks are
 available.

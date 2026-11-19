@@ -583,6 +583,19 @@
         "fixtures/kicad-happy/ac4-false-positives/correction.patch"
       ]
     },
+    "KICAD-ROUTE-IMPEDANCE": {
+      "name": "Saved pair geometry checks and impedance equations from kicad-route",
+      "description": "The saved copper, launch and reference-plane checks in placement_impedance.py adapt src/kicad_route/pair_impedance.py. The nominal impedance equations follow rust-engine/src/diff_pair.rs.",
+      "upstream": {
+        "repository": "https://github.com/halbritt/kicad-route",
+        "revision": "f6f396e58d782f03a9440fc933456204485c25c0",
+        "license_file": "LICENSE"
+      },
+      "upstream_license": "MIT, copyright (c) 2026 halbritt. The full upstream notice is included in placement_impedance.py.",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "The upstream MIT licence permits adaptation with attribution. No separate owner publication decision was recorded."
+    },
     "KRT-515": {
       "name": "KiCadRoutingTools placer mechanisms reimplemented in the Rust placement job",
       "description": "Transaction (touched/commit/rollback), bucketed spatial-query and seeded-restart semantics of the KRT placer (py_placer/placement/simple.py, simple_anneal.py, place_simple.py at tag v0.23.7), selected by AGENTEE-514 and reimplemented after source inspection in crates/placement-engine/src/job.rs (AGENTEE-515). Not a clean-room implementation. No upstream file is copied. Edge-seat selection and rectangular corner-aware edge identity from py_placer/placement/floorplan.py at 222bb144744c3ddd979674e528bf8647e9ced8d6 were adapted in placement_edges.py (retired in ed3dc851; consolidated into placement_job.py) and job.rs; no mating-face inference is claimed.",
@@ -3588,6 +3601,16 @@
       "origins": [
         "AE",
         "KRT-515"
+      ]
+    },
+    {
+      "paths": [
+        "src/agent_ee/placement_impedance.py"
+      ],
+      "kind": "adapted-source",
+      "origins": [
+        "AE",
+        "KICAD-ROUTE-IMPEDANCE"
       ]
     },
     {
