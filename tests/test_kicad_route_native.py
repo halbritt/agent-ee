@@ -385,10 +385,25 @@ class NativeKicadRouteTest(unittest.TestCase):
     def test_pair_opt_in_with_no_detected_pairs_uses_version_two(self):
         placed = self.placed_rc()
         if routing_adapter.is_rust_capable_checkout(self.checkout):
-            with self.assertRaisesRegex(ValueError, 'diff_pairs'):
-                routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
-                                     schematic='rc_filter.kicad_sch', name='rc_filter', label='pairs-empty',
-                                     checkout=self.checkout, budget=120, diff_pairs='auto')
+            spec = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
+                                        schematic='rc_filter.kicad_sch', name='rc_filter', label='pairs-empty',
+                                        checkout=self.checkout, budget=120, diff_pairs='auto')
+            before = self.state()
+            receipt_dir = self.root / 'pairs-receipt'
+            receipt = stage_receipts.run_step(receipt_dir, placed, spec, {'implementation': 1, 'receipt_index': 1})
+            self.assertEqual(self.state(), before)
+            self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
+            self.assertIn(receipt['exit_code'], (0, 2), receipt['violations'])
+            self.assertEqual(receipt['violations'], [])
+            work = receipt_dir / 'run'
+            summary = routing_adapter.verify(work, receipt=receipt)
+            self.assertEqual(summary['classification'], 'complete')
+            self.assertEqual(summary['proposal'], 'eligible')
+            op = json.loads((work / 'routing/attempt/operation-result.json').read_text())
+            self.assertEqual(op['schema'], attempt.NATIVE_OPERATION_SCHEMA)
+            self.assertEqual(op['status'], 'complete')
+            report = json.loads((work / 'routing/adapter-report.json').read_text())
+            self.assertEqual(report['process']['argv'][-2:], ['--diff-pairs', 'auto'])
             return
         spec = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
                                     schematic='rc_filter.kicad_sch', name='rc_filter', label='pairs-empty',
@@ -419,12 +434,6 @@ class NativeKicadRouteTest(unittest.TestCase):
             routing_adapter.verify(work, receipt=receipt)
 
     def test_pair_opt_in_routes_an_original_two_net_board(self):
-        if routing_adapter.is_rust_capable_checkout(self.checkout):
-            with self.assertRaisesRegex(ValueError, 'diff_pairs'):
-                routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
-                                     schematic='rc_filter.kicad_sch', name='rc_filter', label='pairs-native',
-                                     checkout=self.checkout, budget=120, diff_pairs='auto')
-            return
         placed = self.placed_rc()
         made = execute(placed, self.root / 'make-pair',
                        ['/usr/bin/python3', '-I', '-B', '-c', PAIR_BOARD, '/work/pair.kicad_pcb'], timeout=300)
@@ -447,6 +456,13 @@ class NativeKicadRouteTest(unittest.TestCase):
         summary = routing_adapter.verify(work, attempt.files_of(attempt.tree(placed)))
         self.assertEqual(observed['exit_code'], 0, summary)
         self.assertEqual(summary['classification'], 'complete')
+        if routing_adapter.is_rust_capable_checkout(self.checkout):
+            op = json.loads((work / 'routing/attempt/operation-result.json').read_text())
+            self.assertEqual(op['schema'], attempt.NATIVE_OPERATION_SCHEMA)
+            self.assertEqual(op['status'], 'complete')
+            report = json.loads((work / 'routing/adapter-report.json').read_text())
+            self.assertEqual(report['process']['argv'][-2:], ['--diff-pairs', 'auto'])
+            return
         result = json.loads((work / 'routing/attempt/result.json').read_text())
         self.assertEqual(result['schema'], 'kicad-route/route/2')
         pair, = result['pairs']
@@ -762,6 +778,38 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     op['publication']['published'] = False
                     op['publication']['output_sha256'] = None
                 self.assertEqual(attempt.native_semantics(code, op, req_file, src, out)[0], expected, (code, status))
+            # Pre-snapshot admission refusals (M5.2.1 P2): source_sha256 is None before source admission.
+            for code, status, expected in (
+                (8, 'destination_exists', 'refused'),
+                (8, 'publication_refused', 'refused'),
+                (8, 'usage_refused', 'refused'),
+                (2, 'invalid', 'refused'),
+                (2, 'unsupported', 'refused'),
+                (8, 'ambiguous_termination', 'contradiction'),
+                (3, 'unroutable', 'contradiction'),
+                (2, 'native_validation_failed', 'contradiction'),
+                (0, 'complete', 'contradiction'),
+            ):
+                op = json.loads(json.dumps(base_op))
+                op['exit_code'], op['status'] = code, status
+                op['source'] = {'source_sha256': None, 'sidecar_check': {'passed': False}}
+                if code != 0:
+                    op['routing'] = None
+                    op['publication']['published'] = False
+                    op['publication']['output_sha256'] = None
+                self.assertEqual(
+                    attempt.native_semantics(code, op, req_file, src, out)[0],
+                    expected,
+                    (code, status),
+                )
+            # Non-None source_sha256 mismatch still fails closed to contradiction on exit 8.
+            bad_src = json.loads(json.dumps(base_op))
+            bad_src['exit_code'], bad_src['status'] = 8, 'destination_exists'
+            bad_src['routing'] = None
+            bad_src['publication']['published'] = False
+            bad_src['publication']['output_sha256'] = None
+            bad_src['source']['source_sha256'] = '0' * 64
+            self.assertEqual(attempt.native_semantics(8, bad_src, req_file, src, out)[0], 'contradiction')
             # Tamper checks: every binding mismatch fails closed to contradiction.
             for mutate in (
                 lambda o: o['request'].update(request_sha256='0' * 64),
@@ -1249,7 +1297,26 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                 routing_adapter.check_re01_command([
                     'bwrap', '--ro-bind', str(co), '/opt/kicad-route', '--',
                     '/usr/bin/kicad-route-engine', 'route-native', '/work/in.kicad_pcb', '/work/out.kicad_pcb',
+                    '--diff-pairs', 'auto',
                 ])
+                routing_adapter.check_re01_command([
+                    'bwrap', '--ro-bind', str(co), '/opt/kicad-route', '--',
+                    '/usr/bin/kicad-route-engine', 'route-native', '/work/in.kicad_pcb', '/work/out.kicad_pcb',
+                    '--diff-pairs', 'CAN+,CAN-', '--diff-pairs', 'USB_P,USB_N',
+                ])
+                for bad_dp in (
+                    ['--diff-pairs', '-bad'],
+                    ['--diff-pairs', 'auto', '--diff-pairs', 'CAN+,CAN-'],
+                    ['--diff-pairs', 'auto', '--diff-pairs', 'auto'],
+                    ['--diff-pairs', 'CAN+'],
+                    ['--diff-pairs', 'CAN+,'],
+                ):
+                    with self.assertRaises(routing_adapter.RE01OwnershipError):
+                        routing_adapter.check_re01_command([
+                            'bwrap', '--ro-bind', str(co), '/opt/kicad-route', '--',
+                            '/usr/bin/kicad-route-engine', 'route-native',
+                            '/work/in.kicad_pcb', '/work/out.kicad_pcb', *bad_dp,
+                        ])
                 routing_adapter.check_re01_command([
                     'bwrap', '--ro-bind', str(bridge), '/opt/bridge.py', '--',
                     sys.executable, '-BI', '/opt/bridge.py', '--help',

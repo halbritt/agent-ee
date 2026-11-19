@@ -21,10 +21,23 @@ class PairCoverageTests(unittest.TestCase):
             self.assertEqual(argv[argv.index('--diff-pairs') + 1], 'auto')
         rust_checkout = require_kicad_route()
         if routing_adapter.is_rust_capable_checkout(rust_checkout):
+            spec = routing_adapter.step(project='project', board='can.kicad_pcb',
+                schematic='can.kicad_sch', name='can', label='pair',
+                checkout=rust_checkout, diff_pairs='auto')
+            request = attempt.parse_request(spec['argv'][4:])
+            argv = attempt.tool_argv(request, {**attempt.default_layout(request), 'checkout': rust_checkout})
+            self.assertEqual(argv[1], 'route-native')
+            self.assertEqual(argv[argv.index('--diff-pairs') + 1], 'auto')
+            board_argv = routing_adapter.board_route_argv(
+                rust_checkout, '/staged', '/out', budget_s=60, diff_pairs='auto')
+            self.assertEqual(board_argv[1], 'route-native')
+            self.assertEqual(board_argv[board_argv.index('--diff-pairs') + 1], 'auto')
+            pair_argv = routing_adapter.board_route_argv(
+                rust_checkout, '/staged', '/out', budget_s=60, diff_pairs=['CAN+,CAN-'])
+            self.assertEqual(pair_argv[pair_argv.index('--diff-pairs') + 1], 'CAN+,CAN-')
             with self.assertRaisesRegex(ValueError, 'diff_pairs'):
-                routing_adapter.step(project='project', board='can.kicad_pcb',
-                    schematic='can.kicad_sch', name='can', label='pair',
-                    checkout=rust_checkout, diff_pairs='auto')
+                routing_adapter.board_route_argv(
+                    rust_checkout, '/staged', '/out', budget_s=60, diff_pairs='manual')
 
     def test_single_ended_can_is_never_pair_coverage(self):
         record = {'scope': {'nets': ['CAN+', 'CAN-']}}

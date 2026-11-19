@@ -1073,7 +1073,7 @@ def _native_board_route_argv(checkout, staged_dir, out_dir, *, budget_s, owned_c
                              output_board=None, operation_result=None, save_request=None,
                              project_file=None):
     unsupported = []
-    for name, val in (('diff_pairs', diff_pairs), ('pair_layers', pair_layers),
+    for name, val in (('pair_layers', pair_layers),
                       ('pair_impedance', pair_impedance), ('intra_pair_match', intra_pair_match),
                       ('bus', bus), ('length_match', length_match), ('ac_match', ac_match),
                       ('grid_step_mm', grid_step_mm)):
@@ -1081,6 +1081,20 @@ def _native_board_route_argv(checkout, staged_dir, out_dir, *, budget_s, owned_c
             unsupported.append(name)
     if unsupported:
         raise ValueError('route-native refuses unsupported legacy/M4 options: ' + ', '.join(unsupported))
+    diff_pair_args = []
+    if diff_pairs is not None:
+        if diff_pairs == 'auto':
+            diff_pair_args = ['--diff-pairs', 'auto']
+        elif isinstance(diff_pairs, (list, tuple)) and diff_pairs:
+            for pair in diff_pairs:
+                if not isinstance(pair, str) or pair.startswith('-'):
+                    raise ValueError("diff_pairs must be 'auto' or non-empty '<POS>,<NEG>' specs")
+                parts = pair.split(',')
+                if len(parts) != 2 or not parts[0] or not parts[1] or parts[0].startswith('-'):
+                    raise ValueError("diff_pairs must be 'auto' or non-empty '<POS>,<NEG>' specs")
+                diff_pair_args += ['--diff-pairs', pair]
+        else:
+            raise ValueError("diff_pairs must be 'auto' or None")
     engine_bin = attempt.resolve_kicad_route_engine(checkout)
     if engine_bin is None or not engine_bin.is_file() or not os.access(engine_bin, os.X_OK):
         raise ValueError('kicad-route-engine binary missing for Rust-capable checkout')
@@ -1100,6 +1114,7 @@ def _native_board_route_argv(checkout, staged_dir, out_dir, *, budget_s, owned_c
         '--native-bridge', str(bridge),
         '--python', attempt.PYTHON,
         '--timeout-ms', str(int(budget_s) * 1000),
+        *diff_pair_args,
     ]
     proj = Path(project_file) if project_file is not None else (staged_path / (Path(board_name).stem + '.kicad_pro'))
     if proj.is_file() and not proj.is_symlink():

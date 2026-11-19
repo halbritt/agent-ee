@@ -2255,7 +2255,7 @@ _RE01_ENGINE_VALUE_FLAGS = frozenset((
     '--rules', '--project', '--limits', '--max-expansions',
     '--operation-result', '--save-request', '--native-bridge',
     '--python', '--timeout-ms', '--max-child-output-bytes',
-    '--pour-area-loss', '--pour-min-spokes',
+    '--pour-area-loss', '--pour-min-spokes', '--diff-pairs',
 ))
 _RE01_ENGINE_PATH_FLAGS = frozenset((
     '--rules', '--project', '--limits', '--operation-result', '--save-request',
@@ -2435,6 +2435,8 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
     if len(tokens) < 2 or tokens[1] != 'route-native':
         return f'RE-01 forbids unsupported kicad-route-engine subcommand: {tokens[1:]}'
     seen_flags = set()
+    diff_pairs_mode = None
+    seen_explicit_pairs = set()
     py_tok = bridge_tok = None
     saw_help = after_dd = False
     positional = []
@@ -2462,11 +2464,29 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
                 i += 2
             if flag not in _RE01_ENGINE_VALUE_FLAGS:
                 return f'RE-01 forbids unknown route-native option {flag}'
+            if not val:
+                return f'RE-01 forbids empty route-native option value for {flag}'
+            if flag == '--diff-pairs':
+                if val.startswith('-'):
+                    return f'RE-01 forbids flag-like --diff-pairs value: {val}'
+                if val == 'auto':
+                    if diff_pairs_mode is not None:
+                        return 'RE-01 forbids duplicate or mixed --diff-pairs option'
+                    diff_pairs_mode = 'auto'
+                else:
+                    if diff_pairs_mode == 'auto':
+                        return 'RE-01 forbids combining --diff-pairs auto with explicit pairs'
+                    parts = val.split(',')
+                    if len(parts) != 2 or not parts[0] or not parts[1] or parts[0].startswith('-'):
+                        return f'RE-01 forbids invalid --diff-pairs pair spec: {val}'
+                    if val in seen_explicit_pairs:
+                        return f'RE-01 forbids duplicate --diff-pairs pair: {val}'
+                    seen_explicit_pairs.add(val)
+                    diff_pairs_mode = 'explicit'
+                continue
             if flag in seen_flags:
                 return f'RE-01 forbids duplicate route-native option {flag}'
             seen_flags.add(flag)
-            if not val:
-                return f'RE-01 forbids empty route-native option value for {flag}'
             if flag == '--python':
                 py_tok = val
             elif flag == '--native-bridge':
@@ -4172,8 +4192,6 @@ def is_native_request(request, checkout):
 def native_unsupported_problems(request):
     """Fail-closed refusals for options unsupported by route-native (zero Python KRT fallback)."""
     problems = []
-    if 'diff_pairs' in request:
-        problems.append('route-native does not support diff_pairs')
     if 'layer_policy' in request:
         problems.append('route-native does not support layer_policy')
     if 'experiment_policy' in request:
@@ -4200,6 +4218,7 @@ def native_tool_argv(request, layout):
         '--native-bridge', str(bridge),
         '--python', PYTHON,
         '--timeout-ms', str(int(request['budget_s']) * 1000),
+        *(['--diff-pairs', 'auto'] if request.get('diff_pairs') == 'auto' else []),
     ]
 
 
@@ -4474,7 +4493,12 @@ def native_semantics(exit_code, op_result, saved_request_path, source_board, out
         if not isinstance(routing_block, dict) or routing_block.get('request_sha256') != req_sha:
             return 'contradiction', ['native routing.request_sha256 differs from request.request_sha256']
     if source_board is not None and Path(source_board).is_file() and not Path(source_board).is_symlink():
-        if source_block.get('source_sha256') != digest(source_board):
+        src_sha = source_block.get('source_sha256')
+        if src_sha is None:
+            if exit_code == 0 or status not in (
+                    'destination_exists', 'publication_refused', 'usage_refused', 'invalid', 'unsupported'):
+                return 'contradiction', ['native source_sha256 differs from staged source board']
+        elif src_sha != digest(source_board):
             return 'contradiction', ['native source_sha256 differs from staged source board']
     sidecar = source_block.get('sidecar_check')
     if not isinstance(sidecar, dict) or not isinstance(sidecar.get('passed'), bool):
