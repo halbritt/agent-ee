@@ -1,5 +1,6 @@
 """Existing geometric bus routing through the normal placement/build workflow."""
 import copy
+import json
 import os
 from pathlib import Path
 import shutil
@@ -51,6 +52,21 @@ class BusJobTests(unittest.TestCase):
         self.assertEqual(report['final']['opens'], 0)
         self.assertEqual(report['final']['identity_problems'], [])
         result = read_json(report['route']['result_path'])
+        if result.get('schema') == 'kicad-route/native-operation/1':
+            import pcbnew
+            request = json.loads(result['request']['request_json'])
+            self.assertEqual(request['routing_options']['grid_step_nm'], 100_000)
+            self.assertEqual(request['routing_options']['bus']['detection_radius_nm'], 20_000_000)
+            self.assertEqual(request['routing_options']['bus']['min_nets'], 3)
+            self.assertEqual(result['budgets']['max_expansions'], 100_000)
+            names = {net['id']: net['name'] for net in request['nets']}
+            (members,) = result['routing']['bus_groups']
+            self.assertEqual([names[n] for n in members], [f'D{i}' for i in range(8)])
+            board = pcbnew.LoadBoard(report['final']['board'])
+            routed = {item.GetNetname() for item in board.GetTracks()}
+            self.assertTrue({*map(names.__getitem__, members), 'AUX'} <= routed)
+            self.assertEqual(len([pad for pad in board.GetPads() if pad.GetNetname() == 'D3']), 3)
+            return result
         groups = result['process']['bus_routing']['groups']
         self.assertEqual(len(groups), 1)
         group = next(iter(groups.values()))
@@ -64,8 +80,9 @@ class BusJobTests(unittest.TestCase):
     def test_public_job_routes_grouped_bus_and_tap_without_rule_or_placement_changes(self):
         self.assertEqual(self.done.returncode, 0, self.done.stdout + self.done.stderr)
         result = self.assert_bus(self.report)
-        self.assertEqual(result['settings']['bus']['detection_radius'], 20)
-        self.assertEqual(result['settings']['bus']['min_nets'], 3)
+        if result.get('schema') != 'kicad-route/native-operation/1':
+            self.assertEqual(result['settings']['bus']['detection_radius'], 20)
+            self.assertEqual(result['settings']['bus']['min_nets'], 3)
         final = Path(self.report['final']['board'])
         for name, suffix in [('project', '.kicad_pro'), ('rules', '.kicad_dru')]:
             self.assertEqual(digest(final.with_suffix(suffix)), self.config['inputs'][name]['sha256'])

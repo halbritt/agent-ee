@@ -2507,11 +2507,14 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 raise JobRefusal('local decoupling planes differ from captured plane plan')
         report['preflight'] = {}
         report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
-        if routing_adapter.is_rust_capable_checkout(config['router']['checkout']) and (
-                diff_pairs is not None or pair_layers is not None or impedance is not None
-                or matching is not None or bus is not None or length_match is not None
-                or ac_match is not None or config['router'].get('grid_step_mm') is not None):
-            raise JobRefusal('route-native refuses unsupported M4 pair/impedance/length/ac or grid_step_mm constraints (RE-01)')
+        if routing_adapter.is_rust_capable_checkout(config['router']['checkout']):
+            # Placement can refill and save the routed board again. These jobs
+            # require measurements against that final copper and the source rules.
+            for option, requirement in (('pair_impedance', impedance), ('length_match', length_match),
+                                        ('ac_match', ac_match)):
+                if requirement is not None:
+                    raise JobRefusal(f'router.{option} requires final saved-board measurement; '
+                                     'route-native does not provide this placement check')
         if impedance is not None:
             # Native load/save inserts dielectric defaults. Check the authored
             # bytes before placement can make an omitted value look declared.

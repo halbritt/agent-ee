@@ -1541,21 +1541,17 @@ class DiffPairIntentTests(unittest.TestCase):
         derivation = json.loads((self.root / "bundle/inputs/project-rule-derivation.json").read_text())
         self.assertEqual(derivation["routing"]["diff_pair_gap"]["selected"], 0.25)
         options = routing_adapter.validate_router_options(router)
-        if routing_adapter.is_rust_capable_checkout(router["checkout"]):
-            with self.assertRaisesRegex(ValueError, "unsupported legacy/M4 options"):
-                routing_adapter.board_route_argv(
-                    router["checkout"], "/staged", "/out", budget_s=60, diff_pairs=options["diff_pairs"],
+        legacy_checkout, _ = make_checkout(self.root / "legacy-router", "complete")
+        for checkout in (router["checkout"], legacy_checkout):
+            with self.subTest(checkout=checkout):
+                argv = routing_adapter.board_route_argv(
+                    checkout, "/staged", "/out", budget_s=60, diff_pairs=options["diff_pairs"],
                     pair_layers=options["pair_layers"], pair_impedance=options["pair_impedance"],
                     intra_pair_match=options["intra_pair_match"])
-        legacy_checkout, _ = make_checkout(self.root / "legacy-router", "complete")
-        argv = routing_adapter.board_route_argv(
-            legacy_checkout, "/staged", "/out", budget_s=60, diff_pairs=options["diff_pairs"],
-            pair_layers=options["pair_layers"], pair_impedance=options["pair_impedance"],
-            intra_pair_match=options["intra_pair_match"])
-        self.assertEqual(argv[argv.index("--diff-pairs") + 1], "auto")
-        self.assertEqual(argv[argv.index("--pair-impedance") + 1], "90")
-        self.assertEqual(argv[argv.index("--impedance-reference") + 1], "GND")
-        self.assertIn("--diff-pair-intra-match", argv)
+                self.assertEqual(argv[argv.index("--diff-pairs") + 1], "auto")
+                self.assertEqual(argv[argv.index("--pair-impedance") + 1], "90")
+                self.assertEqual(argv[argv.index("--impedance-reference") + 1], "GND")
+                self.assertIn("--diff-pair-intra-match", argv)
         self.nets("CLK_P", "CLK_N", [{"positive": "CLK_P", "negative": "CLK_N"}])
         self.assertEqual(self.plan("plain")["placement"]["router"],
                          {"checkout": expected_checkout,

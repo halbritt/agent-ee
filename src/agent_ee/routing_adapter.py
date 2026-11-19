@@ -1072,15 +1072,6 @@ def _native_board_route_argv(checkout, staged_dir, out_dir, *, budget_s, owned_c
                              ac_match=None, diff_pairs=None, board_name='board.kicad_pcb',
                              output_board=None, operation_result=None, save_request=None,
                              project_file=None):
-    unsupported = []
-    for name, val in (('pair_layers', pair_layers),
-                      ('pair_impedance', pair_impedance), ('intra_pair_match', intra_pair_match),
-                      ('bus', bus), ('length_match', length_match), ('ac_match', ac_match),
-                      ('grid_step_mm', grid_step_mm)):
-        if val is not None:
-            unsupported.append(name)
-    if unsupported:
-        raise ValueError('route-native refuses unsupported legacy/M4 options: ' + ', '.join(unsupported))
     diff_pair_args = []
     if diff_pairs is not None:
         if diff_pairs == 'auto':
@@ -1139,7 +1130,8 @@ def _native_board_route_argv(checkout, staged_dir, out_dir, *, budget_s, owned_c
     proj = Path(project_file) if project_file is not None else (staged_path / (Path(board_name).stem + '.kicad_pro'))
     if proj.is_file() and not proj.is_symlink():
         argv += ['--project', str(proj)]
-    return argv
+    return argv + _board_option_args(grid_step_mm, pair_layers, pair_impedance, intra_pair_match,
+                                   bus, length_match, ac_match)
 
 
 def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owned_copper=False, budget_s,
@@ -1163,6 +1155,14 @@ def board_route_argv(checkout, staged_dir, out_dir, *, design_name='board', owne
         if diff_pairs != 'auto':
             raise ValueError("diff_pairs must be 'auto' or None")
         argv += ['--diff-pairs', 'auto']
+    return argv + _board_option_args(grid_step_mm, pair_layers, pair_impedance, intra_pair_match,
+                                   bus, length_match, ac_match)
+
+
+def _board_option_args(grid_step_mm, pair_layers, pair_impedance, intra_pair_match,
+                      bus, length_match, ac_match):
+    """Encode the board constraints accepted by both router CLIs."""
+    argv = []
     if grid_step_mm is not None:
         argv += ['--grid-step', str(grid_step_mm)]
     if pair_layers is not None:

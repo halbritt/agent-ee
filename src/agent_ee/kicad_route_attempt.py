@@ -2283,7 +2283,7 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
 
 
 _RE01_ENGINE_BOOL_FLAGS = frozenset((
-    '--no-short-pair-deferral', '--diff-pair-intra-match',
+    '--no-short-pair-deferral', '--diff-pair-intra-match', '--bus',
 ))
 _RE01_ENGINE_VARIADIC_FLAGS = frozenset((
     '--pair-layers', '--length-match-group', '--nets',
@@ -2302,7 +2302,8 @@ _RE01_ENGINE_VALUE_FLAGS = frozenset((
     '--group-meander-amplitude', '--group-meander-spacing',
     '--pair-impedance', '--impedance-tolerance', '--impedance-reference',
     '--impedance-uncoupled', '--ac-couple-chain-json',
-    '--ac-match-tolerance', '--ac-meander-amplitude', '--protect',
+    '--ac-match-tolerance', '--ac-meander-amplitude', '--protect', '--grid-step',
+    '--bus-detection-radius', '--bus-attraction-radius', '--bus-attraction-bonus', '--bus-min-nets',
 ))
 _RE01_ENGINE_PATH_FLAGS = frozenset((
     '--rules', '--project', '--limits', '--operation-result', '--save-request',
