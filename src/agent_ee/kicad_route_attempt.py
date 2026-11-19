@@ -502,6 +502,10 @@ def _re01_exec_category(base):
     return None
 
 
+def _re01_is_sourceless_pyc(name):
+    return bool(name) and name.lower().endswith(('.pyc', '.pyo'))
+
+
 def _re01_is_py_hook_name(name):
     if not name:
         return False
@@ -791,6 +795,8 @@ def _re01_check_zip_py_hooks(zip_path, entry, *, sub_prefix=''):
                     rel_parts = parts
                 if not rel_parts:
                     continue
+                if any(_re01_is_sourceless_pyc(p) for p in rel_parts):
+                    return f'RE-01 forbids PYTHONPATH zipfile containing bytecode {name}: {entry}'
                 top = rel_parts[0]
                 if _re01_is_py_hook_name(top):
                     return f'RE-01 forbids PYTHONPATH zipfile containing {name}: {entry}'
@@ -960,7 +966,8 @@ def _re01_check_cur_pycache_strict(cur_dir, cur_sb, mounts, entry, label, py_roo
 
 def _re01_enqueue_bfs_child(de, cur_dir, cur_sb, cur_strict, depth, queue, *, mounts, py_roots,
                             entry, label, cwd, forbid_pth, seen_mounted_sb, seen_states,
-                            strict_checked_caches=None, only_strict_symlinks=False):
+                            strict_checked_caches=None, only_strict_symlinks=False,
+                            walk_cur=False):
     child_sb = posixpath.join(cur_sb, de.name) if cur_sb else None
     is_mounted_sym = bool(
         mounts and child_sb and _re01_mount_lookup(child_sb, mounts)[0] == 'symlink'
@@ -978,6 +985,12 @@ def _re01_enqueue_bfs_child(de, cur_dir, cur_sb, cur_strict, depth, queue, *, mo
             _re01_sb_touches_nonroot_mount(c, mounts, py_roots=py_roots)
             for c in (t_sb, *t_chain) if c
         )
+        if (depth == 0 or cur_strict or next_strict or walk_cur) and (
+            _re01_is_sourceless_pyc(de.name)
+            or _re01_is_sourceless_pyc(t_sb)
+            or _re01_is_sourceless_pyc(t_file)
+        ):
+            return f'RE-01 forbids {label} containing symlinked sourceless bytecode: {entry}'
         if only_strict_symlinks and not next_strict:
             return None
         if (not cur_strict) and next_strict and (
@@ -1079,17 +1092,16 @@ def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbi
         is_top_or_sys = (cur_real in _RE01_TOP_HOST_ROOTS) or bool(
             cur_real and _re01_is_protected_system_path(cur_real, py_roots)
         )
+        cur_sys_protected = bool(
+            (cur_sb and _re01_is_protected_system_path(cur_sb, py_roots))
+            or (cur_real and _re01_is_protected_system_path(cur_real, py_roots))
+        )
         walk_cur = (cur_strict or has_nonroot_non_sys) and not is_top_or_sys and not is_unoverlaid_repo
         only_strict_symlinks = (not walk_cur) and has_nonroot_non_sys and not is_unoverlaid_repo
         try:
             with os.scandir(cur_dir) as it:
                 for de in it:
                     name = de.name
-                    if depth == 0:
-                        if forbid_pth and name.endswith('.pth'):
-                            return f'RE-01 forbids {label} containing {name}: {entry}'
-                        if _re01_is_py_hook_name(name):
-                            return f'RE-01 forbids {label} containing {name}: {entry}'
                     if name == '__pycache__':
                         cache_sb = posixpath.join(cur_sb, '__pycache__') if cur_sb else None
                         is_mounted_sym = bool(
@@ -1123,6 +1135,28 @@ def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbi
                             if err is not None:
                                 return err
                         continue
+                    child_sb = posixpath.join(cur_sb, name) if cur_sb else None
+                    is_mounted_sym = bool(
+                        mounts and child_sb and _re01_mount_lookup(child_sb, mounts)[0] == 'symlink'
+                    )
+                    scan_strict = cur_strict or (
+                        depth > 0 and mounts and child_sb
+                        and _re01_sb_touches_nonroot_mount(child_sb, mounts, py_roots=py_roots)
+                    )
+                    if depth == 0:
+                        if forbid_pth and name.endswith('.pth'):
+                            return f'RE-01 forbids {label} containing {name}: {entry}'
+                        if _re01_is_py_hook_name(name):
+                            return f'RE-01 forbids {label} containing {name}: {entry}'
+                    elif (cur_strict or scan_strict) and _re01_is_py_hook_name(name):
+                        return f'RE-01 forbids {label} containing {name}: {entry}'
+                    if _re01_is_sourceless_pyc(name):
+                        is_sym_entry = de.is_symlink() or is_mounted_sym
+                        skip_pyc = (is_unoverlaid_repo and not is_sym_entry) or (
+                            cur_sys_protected and not cur_strict and not scan_strict and not is_mounted_sym
+                        )
+                        if not skip_pyc and (depth == 0 or cur_strict or scan_strict or walk_cur or is_sym_entry):
+                            return f'RE-01 forbids {label} containing sourceless bytecode {name}: {entry}'
                     if name == '.git' or (not walk_cur and not only_strict_symlinks):
                         continue
                     c_err = _re01_enqueue_bfs_child(
@@ -1130,7 +1164,8 @@ def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbi
                         entry=entry, label=label, cwd=cwd, forbid_pth=forbid_pth,
                         seen_mounted_sb=seen_mounted_sb, seen_states=seen_states,
                         strict_checked_caches=strict_checked_caches,
-                        only_strict_symlinks=only_strict_symlinks)
+                        only_strict_symlinks=only_strict_symlinks,
+                        walk_cur=walk_cur)
                     if c_err is not None:
                         return c_err
         except OSError:
@@ -1230,6 +1265,10 @@ def _re01_check_mounted_import_children(sb_targets, mounts, entry_label, *, labe
             first_comp = rel_parts[0]
             if '__pycache__' in rel_parts:
                 return f'RE-01 forbids {label} mounted/symlinked __pycache__: {entry_label}'
+            if any(_re01_is_sourceless_pyc(p) for p in rel_parts) or _re01_is_sourceless_pyc(dest):
+                return f'RE-01 forbids {label} mounted/symlinked sourceless bytecode: {entry_label}'
+            if kind == 'bind' and _re01_is_sourceless_pyc(host_tgt):
+                return f'RE-01 forbids {label} mounted sourceless bytecode: {entry_label}'
             if (forbid_pth and first_comp.endswith('.pth')) or _re01_is_py_hook_name(first_comp):
                 return f'RE-01 forbids {label} mounted {first_comp}: {entry_label}'
             if check_path_reason and kind == 'bind' and host_tgt:
@@ -1244,12 +1283,14 @@ def _re01_check_mounted_import_children(sb_targets, mounts, entry_label, *, labe
                 if d_err is not None:
                     return d_err
             elif kind == 'symlink':
-                t_chain, _, t_any, t_sb, t_err = _re01_resolve_exec_chain(
+                t_chain, t_file, t_any, t_sb, t_err = _re01_resolve_exec_chain(
                     dest, cwd=cwd, is_cmd=False, mounts=mounts)
                 if t_err is not None:
                     return t_err
                 if any('__pycache__' in c.split('/') for c in (dest, t_sb, *t_chain) if c):
                     return f'RE-01 forbids {label} mounted/symlinked __pycache__: {entry_label}'
+                if any(_re01_is_sourceless_pyc(c) for c in (dest, host_tgt, t_sb, t_file, *t_chain) if c):
+                    return f'RE-01 forbids {label} mounted/symlinked sourceless bytecode: {entry_label}'
                 if t_any and os.path.isdir(t_any):
                     t_targets = (dest, t_sb) if t_sb and t_sb != dest else (dest,)
                     d_err = _re01_check_dir_py_hooks(
@@ -1279,6 +1320,8 @@ def _re01_check_bwrap_py_mounts(mounts, *, cwd=None):
         is_py_mount = False
         is_identity_trusted = False
         if kind == 'bind':
+            if _re01_is_sourceless_pyc(dest) or _re01_is_sourceless_pyc(host_tgt):
+                return f'RE-01 forbids bwrap bytecode mount onto {dest}'
             if dest.endswith('.py') or (host_tgt and host_tgt.endswith('.py') and os.path.isfile(host_tgt)):
                 is_py_mount = True
                 if host_tgt and _re01_is_trusted_repo_import_dir(posixpath.dirname(dest)):
@@ -1294,6 +1337,8 @@ def _re01_check_bwrap_py_mounts(mounts, *, cwd=None):
                 return t_err
             if any('__pycache__' in c.split('/') for c in (dest, t_sb, *t_chain) if c):
                 return f'RE-01 forbids bwrap symlink into __pycache__: {dest}'
+            if any(_re01_is_sourceless_pyc(c) for c in (dest, host_tgt, t_sb, t_file, *t_chain) if c):
+                return f'RE-01 forbids bwrap bytecode symlink at {dest}'
             if dest.endswith('.py') or (t_sb and t_sb.endswith('.py')) or (t_file and t_file.endswith('.py')):
                 is_py_mount = True
         if not is_py_mount or is_identity_trusted:

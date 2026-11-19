@@ -2795,6 +2795,219 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                     capture_output=True, text=True, timeout=5)
                 self.assertEqual(done_pos.returncode, 0, done_pos.stderr)
 
+    def test_re01_r17_sourceless_pyc_vectors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / 'marker.txt'
+            ver = f'{sys.version_info.major}.{sys.version_info.minor}'
+            evil_src = root / 'evil_src.py'
+            evil_src.write_text(f'open({str(marker)!r}, "a").write("BYPASS_PYC\\n")\nVAL = 99\n')
+            evil_pyc = root / 'evil.pyc'
+            py_compile.compile(str(evil_src), cfile=str(evil_pyc), doraise=True)
+
+            dir_pyc = root / 'dir_pyc'
+            dir_pyc.mkdir()
+            (dir_pyc / 'caller.py').write_text('import helper_mod\n')
+            shutil.copy2(evil_pyc, dir_pyc / 'helper_mod.pyc')
+            dir_pyc_sub = root / 'dir_pyc_sub'
+            (dir_pyc_sub / 'p1').mkdir(parents=True)
+            (dir_pyc_sub / 'p1/__init__.py').write_text('')
+            shutil.copy2(evil_pyc, dir_pyc_sub / 'p1/helper_mod.pyc')
+
+            sp0 = root / 'sp0'
+            sp0.mkdir()
+            (sp0 / 'caller.py').write_text('import helper_mod\n')
+            (sp0 / 'helper_mod.pyc').write_text('placeholder\n')
+            sp1 = root / 'sp1'
+            (sp1 / 'p1').mkdir(parents=True)
+            (sp1 / 'caller.py').write_text('import p1.helper_mod\n')
+            (sp1 / 'p1/__init__.py').write_text('')
+            (sp1 / 'p1/helper_mod.pyc').write_text('placeholder\n')
+
+            pp = root / 'pp'
+            pp.mkdir()
+            (pp / 'helper_mod.pyc').write_text('placeholder\n')
+            clean_caller = root / 'clean_caller.py'
+            clean_caller.write_text('import helper_mod\n')
+            clean_sub_caller = root / 'clean_sub_caller.py'
+            clean_sub_caller.write_text('import sub.p1.helper_mod\n')
+
+            us_home = root / 'us_home'
+            us_site = us_home / f'.local/lib/python{ver}/site-packages'
+            (us_site / 'p1').mkdir(parents=True)
+            (us_site / 'p1/__init__.py').write_text('')
+            (us_site / 'p1/helper_mod.pyc').write_text('placeholder\n')
+            us_caller = root / 'us_caller.py'
+            us_caller.write_text('import p1.helper_mod\n')
+
+            hs0 = root / 'hs0'
+            hs0.mkdir()
+            (hs0 / 'caller.py').write_text('import helper_mod\n')
+            (hs0 / 'helper_mod.pyc').symlink_to('/opt/evil.pyc')
+            hs1 = root / 'hs1'
+            (hs1 / 'p1').mkdir(parents=True)
+            (hs1 / 'caller.py').write_text('import p1.helper_mod\n')
+            (hs1 / 'p1/__init__.py').write_text('')
+            (hs1 / 'p1/helper_mod.pyc').symlink_to('/opt/evil.pyc')
+
+            host_sp0 = root / 'host_sp0'
+            host_sp0.mkdir()
+            (host_sp0 / 'caller.py').write_text('import helper_mod\n')
+            shutil.copy2(evil_pyc, host_sp0 / 'helper_mod.pyc')
+
+            with routing_adapter.re01_enforced():
+                blocked_cases = [
+                    ('robind_dir_pyc_sp0', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--ro-bind', str(dir_pyc), '/opt/d',
+                         '--', sys.executable, '/opt/d/caller.py'], timeout=5)),
+                    ('robind_dir_pyc_pp', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--ro-bind', str(dir_pyc), '/opt/d',
+                         '--setenv', 'PYTHONPATH', '/opt/d',
+                         '--', sys.executable, str(clean_caller)], timeout=5)),
+                    ('robind_dir_pyc_opt_subdir', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--ro-bind', str(dir_pyc_sub), '/opt/sub',
+                         '--setenv', 'PYTHONPATH', '/opt',
+                         '--', sys.executable, str(clean_sub_caller)], timeout=5)),
+                    ('robind_placeholder_pyc_sp0', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--ro-bind', str(evil_pyc), str(sp0 / 'helper_mod.pyc'),
+                         '--', sys.executable, str(sp0 / 'caller.py')], timeout=5)),
+                    ('robind_placeholder_pyc_sp1', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--ro-bind', str(evil_pyc), str(sp1 / 'p1/helper_mod.pyc'),
+                         '--', sys.executable, str(sp1 / 'caller.py')], timeout=5)),
+                    ('robind_placeholder_pyc_pp', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--ro-bind', str(evil_pyc), str(pp / 'helper_mod.pyc'),
+                         '--setenv', 'PYTHONPATH', str(pp),
+                         '--', sys.executable, str(clean_caller)], timeout=5)),
+                    ('robind_placeholder_pyc_usersite_d1', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--ro-bind', str(evil_pyc), str(us_site / 'p1/helper_mod.pyc'),
+                         '--setenv', 'HOME', str(us_home),
+                         '--', sys.executable, str(us_caller)], timeout=5)),
+                    ('tmpfs_robind_pyc_sp0', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--dir', '/opt/d',
+                         '--ro-bind', str(clean_caller), '/opt/d/caller.py',
+                         '--ro-bind', str(evil_pyc), '/opt/d/helper_mod.pyc',
+                         '--', sys.executable, '/opt/d/caller.py'], timeout=5)),
+                    ('tmpfs_robind_pyc_pp', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--dir', '/opt/d',
+                         '--ro-bind', str(evil_pyc), '/opt/d/helper_mod.pyc',
+                         '--setenv', 'PYTHONPATH', '/opt/d',
+                         '--', sys.executable, str(clean_caller)], timeout=5)),
+                    ('tmpfs_symlink_pyc_sp0', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--dir', '/opt/d',
+                         '--ro-bind', str(clean_caller), '/opt/d/caller.py',
+                         '--ro-bind', str(evil_pyc), '/opt/e.pyc',
+                         '--symlink', '/opt/e.pyc', '/opt/d/helper_mod.pyc',
+                         '--', sys.executable, '/opt/d/caller.py'], timeout=5)),
+                    ('host_sym_pyc_d0', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--ro-bind', str(evil_pyc), '/opt/evil.pyc',
+                         '--', sys.executable, str(hs0 / 'caller.py')], timeout=5)),
+                    ('host_sym_pyc_d1', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(marker), str(marker),
+                         '--tmpfs', '/opt', '--ro-bind', str(evil_pyc), '/opt/evil.pyc',
+                         '--', sys.executable, str(hs1 / 'caller.py')], timeout=5)),
+                    ('host_sourceless_pyc_sp0', lambda: subprocess.run(
+                        [sys.executable, str(host_sp0 / 'caller.py')], timeout=5)),
+                    ('direct_pyc_arg', lambda: subprocess.run(
+                        [sys.executable, str(evil_pyc)], timeout=5)),
+                ]
+                for label, fn in blocked_cases:
+                    with self.subTest(case=label):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            fn()
+                self.assertFalse(marker.exists())
+
+    def test_re01_r17_zip_bytecode_and_positive_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / 'marker.txt'
+            evil_src = root / 'evil_src.py'
+            evil_src.write_text(f'open({str(marker)!r}, "a").write("ZIP_PYC_PWN\\n")\nVAL = 99\n')
+            evil_pyc = root / 'evil.pyc'
+            py_compile.compile(str(evil_src), cfile=str(evil_pyc), doraise=True)
+
+            zip_top = root / 'evil_top.zip'
+            with zipfile.ZipFile(zip_top, 'w') as zf:
+                zf.write(evil_pyc, 'helper_mod.pyc')
+            zip_nested = root / 'evil_nested.zip'
+            with zipfile.ZipFile(zip_nested, 'w') as zf:
+                zf.writestr('p1/__init__.py', '')
+                zf.write(evil_pyc, 'p1/helper_mod.pyc')
+            zip_pyo = root / 'evil_pyo.zip'
+            with zipfile.ZipFile(zip_pyo, 'w') as zf:
+                zf.write(evil_pyc, 'sub/helper_mod.pyo')
+            zip_clean = root / 'clean.zip'
+            with zipfile.ZipFile(zip_clean, 'w') as zf:
+                zf.writestr('clean_zip_mod.py', 'VAL = 7\n')
+
+            caller = root / 'caller.py'
+            caller.write_text('import helper_mod\n')
+            nested_caller = root / 'nested_caller.py'
+            nested_caller.write_text('import p1.helper_mod\n')
+            clean_dir = root / 'pos_clean_dir'
+            clean_dir.mkdir()
+            clean_py = clean_dir / 'clean.py'
+            clean_py.write_text('import clean_zip_mod, sys; assert clean_zip_mod.VAL == 7; sys.exit(0)\n')
+            unrelated_pc = root / 'unrelated_evil_pycache' / '__pycache__'
+            unrelated_pc.mkdir(parents=True)
+            shutil.copy2(evil_pyc, unrelated_pc / 'helper_mod.pyc')
+
+            repo_root = Path(__file__).resolve().parents[1]
+            co = routing_adapter.resolve_kicad_route_checkout()
+            real_bridge = routing_adapter.resolve_native_bridge(co)
+
+            with routing_adapter.re01_enforced():
+                for label, fn in (
+                    ('zip_top_pyc', lambda: subprocess.run(
+                        [sys.executable, str(caller)],
+                        env={**os.environ, 'PYTHONPATH': str(zip_top)}, timeout=5)),
+                    ('zip_nested_pyc', lambda: subprocess.run(
+                        [sys.executable, str(nested_caller)],
+                        env={**os.environ, 'PYTHONPATH': str(zip_nested)}, timeout=5)),
+                    ('zip_subprefix_pyo', lambda: subprocess.run(
+                        [sys.executable, str(caller)],
+                        env={**os.environ, 'PYTHONPATH': f'{zip_pyo}/sub'}, timeout=5)),
+                    ('bwrap_zip_nested_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                         '--ro-bind', str(zip_nested), '/opt/evil.zip',
+                         '--setenv', 'PYTHONPATH', '/opt/evil.zip',
+                         '--', sys.executable, str(nested_caller)], timeout=5)),
+                ):
+                    with self.subTest(case=label):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            fn()
+                self.assertFalse(marker.exists())
+                for pos_label, pos_argv, pos_env in (
+                    ('pos_clean_zip', [sys.executable, str(clean_py)], {**os.environ, 'PYTHONPATH': str(zip_clean)}),
+                    ('pos_pypath_src_tests', [sys.executable, '-B', str(clean_py)],
+                     {**os.environ, 'PYTHONPATH': f"{repo_root / 'src'}{os.pathsep}{repo_root / 'tests'}{os.pathsep}{zip_clean}"}),
+                    ('pos_bind_unrelated_evil_pc',
+                     ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                      '--setenv', 'PYTHONPATH', str(zip_clean), '--', sys.executable, str(clean_py)], None),
+                    *(([('pos_bwrap_real_bridge_help',
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                         '--ro-bind', str(real_bridge), '/opt/bridge.py',
+                         '--', sys.executable, '-B', '/opt/bridge.py', '--help'], None),
+                       ('pos_bwrap_real_kr_co',
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                         '--ro-bind', str(co), '/opt/kicad-route',
+                         '--', sys.executable, '-B', str(real_bridge), '--help'], None)])
+                      if real_bridge is not None and real_bridge.is_file() else []),
+                ):
+                    with self.subTest(case=pos_label):
+                        done = subprocess.run(pos_argv, env=pos_env, capture_output=True, text=True, timeout=5)
+                        self.assertEqual(done.returncode, 0, done.stderr)
+
 
 class NativeAdapterHardeningTests(unittest.TestCase):
     def test_not_run_attempt_sets_native_backend_and_verifies(self):
