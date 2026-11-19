@@ -9,6 +9,7 @@ schematic, project and library tables are unchanged. This exercises the real
 router; the policy fixture tests live in test_kicad_route_adapter.py.
 """
 import contextlib
+import importlib.machinery
 import json
 import os
 import pwd
@@ -3005,6 +3006,260 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                       if real_bridge is not None and real_bridge.is_file() else []),
                 ):
                     with self.subTest(case=pos_label):
+                        done = subprocess.run(pos_argv, env=pos_env, capture_output=True, text=True, timeout=5)
+                        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_re01_r18_depth1_forged_pycache_so_and_top_roots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / 'marker.txt'
+            ver = f'{sys.version_info.major}.{sys.version_info.minor}'
+            tag = sys.implementation.cache_tag
+            ext_sfx = importlib.machinery.EXTENSION_SUFFIXES[0]
+            evil_src = root / 'evil_src.py'
+            evil_src.write_text(f'open({str(marker)!r}, "a").write("R18_PWN\\n")\nVAL = 99\n')
+            evil_pyc = root / 'evil.pyc'
+            py_compile.compile(str(evil_src), cfile=str(evil_pyc), doraise=True)
+            evil_big = root / 'evil_big.py'
+            evil_big.write_text('VAL = 99  # padded\n')
+            os.utime(evil_big, (os.stat(evil_big).st_atime, os.stat(evil_src).st_mtime))
+            clean_caller = root / 'clean_caller.py'
+            clean_caller.write_text('import p1.helper_mod\n')
+
+            sp1 = root / 'sp1'
+            (sp1 / 'p1').mkdir(parents=True)
+            (sp1 / 'caller.py').write_text('import p1.helper_mod\n')
+            shutil.copy2(evil_pyc, sp1 / 'p1/helper_mod.pyc')
+            sp2 = root / 'sp2'
+            (sp2 / 'p1/p2').mkdir(parents=True)
+            (sp2 / 'caller.py').write_text('import p1.p2.helper_mod\n')
+            shutil.copy2(evil_pyc, sp2 / 'p1/p2/helper_mod.pyc')
+            pp1 = root / 'pp1'
+            (pp1 / 'p1').mkdir(parents=True)
+            shutil.copy2(evil_pyc, pp1 / 'p1/helper_mod.pyc')
+            us_home = root / 'us_home'
+            us_site = us_home / f'.local/lib/python{ver}/site-packages'
+            (us_site / 'p1').mkdir(parents=True)
+            shutil.copy2(evil_pyc, us_site / 'p1/helper_mod.pyc')
+
+            pc_d0 = root / 'pc_d0'
+            (pc_d0 / '__pycache__').mkdir(parents=True)
+            (pc_d0 / 'caller.py').write_text('import helper_mod\n')
+            (pc_d0 / 'helper_mod.py').write_text(evil_big.read_text())
+            py_compile.compile(str(evil_src), cfile=str(pc_d0 / f'__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+            pc_d1 = root / 'pc_d1'
+            (pc_d1 / 'p1/__pycache__').mkdir(parents=True)
+            (pc_d1 / 'caller.py').write_text('import p1.helper_mod\n')
+            (pc_d1 / 'p1/helper_mod.py').write_text(evil_big.read_text())
+            py_compile.compile(str(evil_src), cfile=str(pc_d1 / f'p1/__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+
+            sym_tgt = root / 'sym_tgt'
+            sym_tgt.mkdir()
+            shutil.copy2(evil_pyc, sym_tgt / 'helper_mod.pyc')
+            sym_dir_sp = root / 'sym_dir_sp'
+            sym_dir_sp.mkdir()
+            (sym_dir_sp / 'caller.py').write_text('import p1.helper_mod\n')
+            (sym_dir_sp / 'p1').symlink_to(sym_tgt)
+            sym_pc = root / 'sym_pc'
+            (sym_pc / 'p1').mkdir(parents=True)
+            (sym_pc / 'caller.py').write_text('import p1.helper_mod\n')
+            (sym_pc / 'p1/helper_mod.py').write_text(evil_big.read_text())
+            (sym_pc / 'p1/__pycache__').symlink_to(pc_d1 / 'p1/__pycache__')
+            sym_py = root / 'sym_py'
+            (sym_py / 'p1/__pycache__').mkdir(parents=True)
+            (sym_py / 'caller.py').write_text('import p1.helper_mod\n')
+            (sym_py / 'p1/helper_mod.py').symlink_to(evil_big)
+            py_compile.compile(str(evil_src), cfile=str(sym_py / f'p1/__pycache__/helper_mod.{tag}.pyc'), doraise=True)
+
+            so_d0 = root / 'so_d0'
+            so_d0.mkdir()
+            (so_d0 / 'caller.py').write_text('import helper_mod\n')
+            (so_d0 / f'helper_mod{ext_sfx}').write_bytes(b'\x7fELF')
+            so_d1 = root / 'so_d1'
+            (so_d1 / 'p1').mkdir(parents=True)
+            (so_d1 / 'caller.py').write_text('import p1.helper_mod\n')
+            (so_d1 / 'p1/helper_mod.abi3.so').write_bytes(b'\x7fELF')
+            so_plain = root / 'so_plain'
+            so_plain.mkdir()
+            (so_plain / 'helper_mod.so').write_bytes(b'\x7fELF')
+            clean_pkg = root / 'clean_pkg'
+            (clean_pkg / 'sub').mkdir(parents=True)
+            (clean_pkg / 'sub/__init__.py').write_text('VAL = 5\n')
+            pos_clean_dir = root / 'pos_clean_dir'
+            pos_clean_dir.mkdir()
+            pos_opt_caller = pos_clean_dir / 'pos_opt_caller.py'
+            pos_opt_caller.write_text('import sub, sys; assert sub.VAL == 5; sys.exit(0)\n')
+
+            with routing_adapter.re01_enforced():
+                blocked_cases = [
+                    ('host_sp0_d1_pyc', lambda: subprocess.run([sys.executable, str(sp1 / 'caller.py')], timeout=5)),
+                    ('host_sp0_d2_pyc', lambda: subprocess.run([sys.executable, str(sp2 / 'caller.py')], timeout=5)),
+                    ('host_pp_d1_pyc', lambda: subprocess.run(
+                        [sys.executable, str(clean_caller)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(pp1)}, timeout=5)),
+                    ('host_usersite_d1_pyc', lambda: subprocess.run(
+                        [sys.executable, str(clean_caller)],
+                        env={'PATH': '/usr/bin:/bin', 'HOME': str(us_home)}, timeout=5)),
+                    ('bwrap_roroot_sp0_d1_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--', sys.executable, str(sp1 / 'caller.py')], timeout=5)),
+                    ('bwrap_roroot_tmpfs_opt_sp0_d1_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                         '--', sys.executable, str(sp1 / 'caller.py')], timeout=5)),
+                    ('bwrap_roroot_pp_d1_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--setenv', 'PYTHONPATH', str(pp1),
+                         '--', sys.executable, str(clean_caller)], timeout=5)),
+                    ('bwrap_roroot_usersite_d1_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--setenv', 'HOME', str(us_home),
+                         '--', sys.executable, str(clean_caller)], timeout=5)),
+                    ('host_d0_forged_pycache', lambda: subprocess.run(
+                        [sys.executable, str(pc_d0 / 'caller.py')], timeout=5)),
+                    ('host_d1_forged_pycache', lambda: subprocess.run(
+                        [sys.executable, str(pc_d1 / 'caller.py')], timeout=5)),
+                    ('bwrap_roroot_d1_forged_pycache', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--', sys.executable, str(pc_d1 / 'caller.py')], timeout=5)),
+                    ('host_sym_dir_d1_pyc', lambda: subprocess.run(
+                        [sys.executable, str(sym_dir_sp / 'caller.py')], timeout=5)),
+                    ('bwrap_roroot_sym_dir_d1_pyc', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--', sys.executable, str(sym_dir_sp / 'caller.py')],
+                        timeout=5)),
+                    ('host_sym_pycache_d1', lambda: subprocess.run(
+                        [sys.executable, str(sym_pc / 'caller.py')], timeout=5)),
+                    ('bwrap_roroot_sym_pycache_d1', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--', sys.executable, str(sym_pc / 'caller.py')], timeout=5)),
+                    ('host_sym_py_forged_pc_d1', lambda: subprocess.run(
+                        [sys.executable, str(sym_py / 'caller.py')], timeout=5)),
+                    ('host_d0_so_sp0', lambda: subprocess.run([sys.executable, str(so_d0 / 'caller.py')], timeout=5)),
+                    ('host_d1_so_sp0', lambda: subprocess.run([sys.executable, str(so_d1 / 'caller.py')], timeout=5)),
+                    ('host_d0_so_pp', lambda: subprocess.run(
+                        [sys.executable, str(clean_caller)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(so_plain)}, timeout=5)),
+                    ('bwrap_tmpfs_opt_so', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt', '--dir', '/opt/d',
+                         '--ro-bind', str(so_d0 / 'caller.py'), '/opt/d/caller.py',
+                         '--ro-bind', str(so_d0 / f'helper_mod{ext_sfx}'), f'/opt/d/helper_mod{ext_sfx}',
+                         '--', sys.executable, '/opt/d/caller.py'], timeout=5)),
+                    ('bwrap_roroot_so_d1', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--', sys.executable, str(so_d1 / 'caller.py')], timeout=5)),
+                    *[
+                        (f'top_host_root_pp_{top_r}', lambda r=top_r: routing_adapter.check_re01_command(
+                            [sys.executable, str(clean_caller)],
+                            env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': r}))
+                        for top_r in ('/', '/tmp', '/var/tmp', '/opt', '/var', '/home', '/usr', '/etc')
+                    ],
+                    ('top_host_root_bwrap_opt_pp', lambda: routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', '/', '/', '--bind', str(root), str(root),
+                         '--setenv', 'PYTHONPATH', '/opt', '--', sys.executable, str(clean_caller)])),
+                    ('top_host_root_bwrap_tmp_sp0', lambda: routing_adapter.check_re01_command(
+                        ['bwrap', '--ro-bind', '/', '/', '--ro-bind', str(clean_caller), '/tmp/caller.py',
+                         '--', sys.executable, '/tmp/caller.py'])),
+                ]
+                for label, fn in blocked_cases:
+                    with self.subTest(case=label):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            fn()
+                self.assertFalse(marker.exists())
+                done_opt = subprocess.run(
+                    ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                     '--ro-bind', str(clean_pkg), '/opt/pkg',
+                     '--setenv', 'PYTHONPATH', '/opt/pkg',
+                     '--', sys.executable, str(pos_opt_caller)],
+                    capture_output=True, text=True, timeout=5)
+                self.assertEqual(done_opt.returncode, 0, done_opt.stderr)
+
+    def test_re01_r18_pcbnew_dup_env_zip_and_host_usersite_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / 'marker.txt'
+            evil_src = root / 'evil_src.py'
+            evil_src.write_text(f'open({str(marker)!r}, "a").write("R18_SIB_PWN\\n")\n')
+            evil_pyc = root / 'evil.pyc'
+            py_compile.compile(str(evil_src), cfile=str(evil_pyc), doraise=True)
+            clean_dir = root / 'clean_dir'
+            clean_dir.mkdir()
+            clean_py = clean_dir / 'clean.py'
+            clean_py.write_text('import sys; sys.exit(0)\n')
+            in_pcb, out_pcb = root / 'in.kicad_pcb', root / 'out.kicad_pcb'
+            in_pcb.write_text('(kicad_pcb)\n')
+
+            pp_pcb_pyc = root / 'pp_pcb_pyc'
+            (pp_pcb_pyc / 'pcbnew').mkdir(parents=True)
+            shutil.copy2(evil_pyc, pp_pcb_pyc / 'pcbnew/__init__.pyc')
+            pp_pcb_py = root / 'pp_pcb_py'
+            pp_pcb_py.mkdir()
+            (pp_pcb_py / 'pcbnew.py').write_text(evil_src.read_text())
+            pp_pcb_so = root / 'pp_pcb_so'
+            pp_pcb_so.mkdir()
+            (pp_pcb_so / 'pcbnew.so').write_bytes(b'\x7fELF')
+
+            zip_nest_kr = root / 'nest_kr.zip'
+            with zipfile.ZipFile(zip_nest_kr, 'w') as zf:
+                zf.writestr('pkg/kicad_route/__init__.py', evil_src.read_text())
+            zip_nest_pcb = root / 'nest_pcb.zip'
+            with zipfile.ZipFile(zip_nest_pcb, 'w') as zf:
+                zf.writestr('pkg/pcbnew.py', evil_src.read_text())
+
+            co = routing_adapter.resolve_kicad_route_checkout()
+            real_engine = routing_adapter.resolve_kicad_route_engine(co)
+            real_bridge = routing_adapter.resolve_native_bridge(co)
+            sym_kr_pp = root / 'sym_kr_pp'
+            sym_kr_pp.mkdir()
+            if (co / 'src/kicad_route').is_dir():
+                (sym_kr_pp / 'sub_alias').symlink_to(co / 'src/kicad_route')
+
+            with routing_adapter.re01_enforced():
+                blocked_cases = [
+                    ('dup_env_bytes_str', lambda: subprocess.run(
+                        [sys.executable, str(clean_py)],
+                        env={b'PATH': b'/usr/bin:/bin', b'PYTHONPATH': str(pp_pcb_py).encode(),
+                             'PYTHONPATH': str(clean_dir)}, timeout=5)),
+                    ('dup_env_bwrap', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--', sys.executable, str(clean_py)],
+                        env={b'PATH': b'/usr/bin:/bin', b'PYTHONPATH': str(pp_pcb_py).encode(),
+                             'PYTHONPATH': str(clean_dir)}, timeout=5)),
+                    ('dup_env_safepath', lambda: subprocess.run(
+                        [sys.executable, str(clean_py)],
+                        env={b'PATH': b'/usr/bin:/bin', b'PYTHONSAFEPATH': b'0', 'PYTHONSAFEPATH': '1'}, timeout=5)),
+                    ('zip_nested_kicad_route', lambda: subprocess.run(
+                        [sys.executable, str(clean_py)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(zip_nest_kr)}, timeout=5)),
+                    ('zip_nested_pcbnew', lambda: subprocess.run(
+                        [sys.executable, str(clean_py)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(zip_nest_pcb)}, timeout=5)),
+                ]
+                if (sym_kr_pp / 'sub_alias').is_symlink():
+                    blocked_cases.extend([
+                        ('sym_to_kicad_route_host', lambda: subprocess.run(
+                            [sys.executable, str(clean_py)],
+                            env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(sym_kr_pp)}, timeout=5)),
+                        ('sym_to_kicad_route_bwrap', lambda: subprocess.run(
+                            ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt', '--ro-bind', str(sym_kr_pp), '/opt/pp',
+                             '--setenv', 'PYTHONPATH', '/opt/pp', '--', sys.executable, str(clean_py)], timeout=5)),
+                    ])
+                if real_bridge is not None and real_bridge.is_file():
+                    for lbl, pp_dir in (('pcb_pyc', pp_pcb_pyc), ('pcb_py', pp_pcb_py), ('pcb_so', pp_pcb_so)):
+                        blocked_cases.append((f'bridge_{lbl}', lambda d=pp_dir: subprocess.run(
+                            [sys.executable, '-B', str(real_bridge), '--help'],
+                            env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(d)}, timeout=5)))
+                if real_engine is not None and real_engine.is_file():
+                    for lbl, pp_dir in (('pcb_pyc', pp_pcb_pyc), ('pcb_py', pp_pcb_py), ('pcb_so', pp_pcb_so)):
+                        blocked_cases.append((f'route_native_{lbl}', lambda d=pp_dir: subprocess.run(
+                            [str(real_engine), 'route-native', str(in_pcb), str(out_pcb)],
+                            env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': str(d)}, timeout=5)))
+                for label, fn in blocked_cases:
+                    with self.subTest(case=label):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            fn()
+                self.assertFalse(marker.exists())
+                pw_dir = pwd.getpwuid(os.getuid()).pw_dir
+                for pos_lbl, pos_argv, pos_env in (
+                    ('pos_real_host_usersite', [sys.executable, str(clean_py)],
+                     {'PATH': '/usr/bin:/bin', 'HOME': pw_dir}),
+                    ('pos_bwrap_opaque_opt_pp',
+                     ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                      '--ro-bind', str(clean_dir), '/opt/sub', '--setenv', 'PYTHONPATH', '/opt',
+                      '--', sys.executable, str(clean_py)], None),
+                ):
+                    with self.subTest(case=pos_lbl):
                         done = subprocess.run(pos_argv, env=pos_env, capture_output=True, text=True, timeout=5)
                         self.assertEqual(done.returncode, 0, done.stderr)
 

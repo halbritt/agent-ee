@@ -398,10 +398,12 @@ _RE01_ALT_RUNTIMES = frozenset((
     'sqlite3', 'ed', 'ex', 'vi', 'vim', 'nvim', 'rview', 'rvim', 'prove',
     'cpan', 'java', 'jshell', 'go', 'cargo',
 ))
-_RE01_PY_HOOK_NAMES = frozenset(sys.stdlib_module_names) | frozenset((
+_RE01_ALWAYS_PY_HOOKS = frozenset((
     'sitecustomize', 'usercustomize', '_distutils_hack', 'apport_python_hook',
     '_sitebuiltins', 'kicad_route', 'native_delay', 'grid_router',
+    'pcbnew', '_pcbnew',
 ))
+_RE01_PY_HOOK_NAMES = frozenset(sys.stdlib_module_names) | _RE01_ALWAYS_PY_HOOKS
 _RE01_ALLOWED_EXECUTABLES = frozenset((
     'kicad-route-engine', 'bwrap', 'kicad-cli', 'true', 'false', 'echo',
 ))
@@ -456,6 +458,22 @@ def _decode_audit_arg(val):
     return str(raw)
 
 
+def _re01_decode_env(env):
+    raw_env = os.environ if env is None else env
+    try:
+        items = list(raw_env.items())
+    except AttributeError:
+        return None, 'RE-01 forbids invalid environment mapping under audit enforcement'
+    decoded = {}
+    for raw_k, raw_v in items:
+        k = _decode_audit_arg(raw_k)
+        v = _decode_audit_arg(raw_v)
+        if k in decoded:
+            return None, f'RE-01 forbids duplicate environment key {k!r} under audit enforcement'
+        decoded[k] = v
+    return decoded, None
+
+
 def _re01_norm_posix(path_str):
     norm = posixpath.normpath(path_str)
     while norm.startswith('//'):
@@ -504,6 +522,19 @@ def _re01_exec_category(base):
 
 def _re01_is_sourceless_pyc(name):
     return bool(name) and name.lower().endswith(('.pyc', '.pyo'))
+
+
+def _re01_is_python_ext_module(name):
+    if not name:
+        return False
+    base = posixpath.basename(str(name).rstrip('/'))
+    return base.lower().endswith('.so')
+
+
+def _re01_is_always_py_hook_name(name):
+    if not name:
+        return False
+    return name in _RE01_ALWAYS_PY_HOOKS or name.split('.', 1)[0] in _RE01_ALWAYS_PY_HOOKS
 
 
 def _re01_is_py_hook_name(name):
@@ -797,10 +828,14 @@ def _re01_check_zip_py_hooks(zip_path, entry, *, sub_prefix=''):
                     continue
                 if any(_re01_is_sourceless_pyc(p) for p in rel_parts):
                     return f'RE-01 forbids PYTHONPATH zipfile containing bytecode {name}: {entry}'
+                if any(_re01_is_python_ext_module(p) for p in rel_parts):
+                    return f'RE-01 forbids PYTHONPATH zipfile containing extension module {name}: {entry}'
                 top = rel_parts[0]
                 if _re01_is_py_hook_name(top):
                     return f'RE-01 forbids PYTHONPATH zipfile containing {name}: {entry}'
                 if top == '__pycache__' and len(rel_parts) > 1 and _re01_is_py_hook_name(rel_parts[1]):
+                    return f'RE-01 forbids PYTHONPATH zipfile containing {name}: {entry}'
+                if any(_re01_is_always_py_hook_name(p) for p in rel_parts):
                     return f'RE-01 forbids PYTHONPATH zipfile containing {name}: {entry}'
     except (OSError, zipfile.BadZipFile, ValueError):
         return f'RE-01 forbids unreadable zipfile on PYTHONPATH: {entry}'
@@ -848,28 +883,64 @@ def _re01_is_trusted_repo_import_dir(dir_path):
     return False
 
 
-def _re01_dir_strict_pycache(dir_path, sb_targets, mounts):
-    if not mounts:
+def _re01_is_real_host_usersite_dir(dir_path):
+    if not dir_path:
         return False
-    for target_sb in sb_targets:
-        if not target_sb:
-            continue
-        prefix = '/' if target_sb == '/' else target_sb + '/'
-        if any(dest.startswith(prefix) for dest in mounts):
-            return True
-        kind, best_dest, _ = _re01_mount_lookup(target_sb, mounts)
-        if kind == 'opaque':
-            return True
-        if best_dest is not None and best_dest != '/' and not _re01_is_trusted_repo_import_dir(dir_path):
-            return True
-    return False
+    try:
+        pw_dir = pwd.getpwuid(os.getuid()).pw_dir
+    except KeyError:
+        return False
+    if not pw_dir:
+        return False
+    try:
+        real_pw = _re01_norm_posix(os.path.realpath(pw_dir))
+        real_dir = _re01_norm_posix(os.path.realpath(dir_path))
+    except OSError:
+        return False
+    prefix = posixpath.join(real_pw, '.local', 'lib')
+    if not real_dir.startswith(prefix + '/'):
+        return False
+    rel = real_dir[len(prefix) + 1:].split('/')
+    return (len(rel) >= 2 and rel[0].startswith('python')
+            and rel[1] in ('site-packages', 'dist-packages'))
 
 
-def _re01_scan_pycache_dir(cache_path, entry, label, *, strict_pycache=False):
+def _re01_dir_strict_pycache(dir_path, sb_targets, mounts, *, is_usersite=False):
+    py_roots = _re01_system_python_roots()
+    if mounts:
+        for target_sb in sb_targets:
+            if not target_sb:
+                continue
+            prefix = '/' if target_sb == '/' else target_sb + '/'
+            if any(dest.startswith(prefix) for dest in mounts):
+                return True
+            kind, best_dest, _ = _re01_mount_lookup(target_sb, mounts)
+            if kind == 'opaque':
+                return True
+            if best_dest is not None and best_dest != '/' and not _re01_is_trusted_repo_import_dir(dir_path):
+                if _re01_sb_touches_nonroot_mount(target_sb, mounts, py_roots=py_roots):
+                    return True
+    if _re01_is_trusted_repo_import_dir(dir_path):
+        return False
+    try:
+        real_dir = _re01_norm_posix(os.path.realpath(dir_path))
+    except OSError:
+        real_dir = None
+    if (real_dir and _re01_is_protected_system_path(real_dir, py_roots)) or any(
+        t and _re01_is_protected_system_path(t, py_roots) for t in sb_targets
+    ):
+        return False
+    if is_usersite and _re01_is_real_host_usersite_dir(dir_path):
+        return False
+    return True
+
+
+def _re01_scan_pycache_dir(cache_path, entry, label, *, strict_pycache=False, check_stdlib_hooks=True):
+    hook_fn = _re01_is_py_hook_name if check_stdlib_hooks else _re01_is_always_py_hook_name
     try:
         with os.scandir(cache_path) as sub_it:
             for sub in sub_it:
-                if (sub.is_symlink() or _re01_is_py_hook_name(sub.name)
+                if (sub.is_symlink() or hook_fn(sub.name)
                         or (strict_pycache and sub.name.lower().endswith(('.pyc', '.pyo')))):
                     return f'RE-01 forbids {label} containing __pycache__/{sub.name}: {entry}'
     except OSError:
@@ -972,18 +1043,24 @@ def _re01_enqueue_bfs_child(de, cur_dir, cur_sb, cur_strict, depth, queue, *, mo
     is_mounted_sym = bool(
         mounts and child_sb and _re01_mount_lookup(child_sb, mounts)[0] == 'symlink'
     )
-    if mounts and (de.is_symlink() or is_mounted_sym):
-        if not child_sb:
-            return None
+    if de.is_symlink() or is_mounted_sym:
+        target_ref = child_sb or de.path
         t_chain, t_file, t_any, t_sb, t_err = _re01_resolve_exec_chain(
-            child_sb, cwd=cwd, is_cmd=False, mounts=mounts)
+            target_ref, cwd=cwd, is_cmd=False, mounts=mounts)
         if t_err is not None:
             return t_err
+        for cand in (t_sb, t_file, *t_chain):
+            if cand:
+                reason = _re01_path_reason(cand, entry, is_cmd_pos=False, cwd=cwd)
+                if reason is not None:
+                    return reason
         if any('__pycache__' in c.split('/') for c in (t_sb, *t_chain) if c):
             return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
-        next_strict = cur_strict or any(
-            _re01_sb_touches_nonroot_mount(c, mounts, py_roots=py_roots)
-            for c in (t_sb, *t_chain) if c
+        next_strict = cur_strict or (
+            bool(mounts) and any(
+                _re01_sb_touches_nonroot_mount(c, mounts, py_roots=py_roots)
+                for c in (t_sb, *t_chain) if c
+            )
         )
         if (depth == 0 or cur_strict or next_strict or walk_cur) and (
             _re01_is_sourceless_pyc(de.name)
@@ -991,9 +1068,11 @@ def _re01_enqueue_bfs_child(de, cur_dir, cur_sb, cur_strict, depth, queue, *, mo
             or _re01_is_sourceless_pyc(t_file)
         ):
             return f'RE-01 forbids {label} containing symlinked sourceless bytecode: {entry}'
+        if _re01_is_python_ext_module(de.name) or _re01_is_python_ext_module(t_sb) or _re01_is_python_ext_module(t_file):
+            return f'RE-01 forbids {label} containing symlinked extension module: {entry}'
         if only_strict_symlinks and not next_strict:
             return None
-        if (not cur_strict) and next_strict and (
+        if (not cur_strict) and (
             de.name.endswith('.py')
             or (t_sb and t_sb.endswith('.py'))
             or (t_file and t_file.endswith('.py'))
@@ -1005,7 +1084,7 @@ def _re01_enqueue_bfs_child(de, cur_dir, cur_sb, cur_strict, depth, queue, *, mo
                 return c_err
         if t_any and os.path.isdir(t_any):
             queue.append((t_any, t_sb, next_strict, depth + 1))
-        if next_strict and t_sb and t_sb not in seen_mounted_sb:
+        if mounts and next_strict and t_sb and t_sb not in seen_mounted_sb:
             c_err = _re01_check_mounted_import_children(
                 (t_sb,), mounts, entry, label=label, cwd=cwd, forbid_pth=forbid_pth,
                 _visited_sb=seen_mounted_sb, _visited_states=seen_states)
@@ -1083,20 +1162,38 @@ def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbi
         if state_key in seen_states:
             continue
         seen_states.add(state_key)
+        is_allowed_opt_sp0 = bool(
+            cur_real == '/opt'
+            and label == 'script sys.path[0]'
+            and mounts
+            and any(dest.startswith('/opt/') for dest in mounts)
+            and not (st.st_mode & stat.S_IWOTH)
+        )
+        if cur_real in _RE01_TOP_HOST_ROOTS and not is_allowed_opt_sp0:
+            return f'RE-01 forbids {label} at unoverlaid host root {cur_real}: {entry}'
         if depth > 0 and cur_strict and mounts and cur_sb and cur_sb not in seen_mounted_sb:
             c_err = _re01_check_mounted_import_children(
                 (cur_sb,), mounts, entry, label=label, cwd=cwd, forbid_pth=forbid_pth,
                 _visited_sb=seen_mounted_sb, _visited_states=seen_states)
             if c_err is not None:
                 return c_err
-        is_top_or_sys = (cur_real in _RE01_TOP_HOST_ROOTS) or bool(
-            cur_real and _re01_is_protected_system_path(cur_real, py_roots)
-        )
         cur_sys_protected = bool(
             (cur_sb and _re01_is_protected_system_path(cur_sb, py_roots))
             or (cur_real and _re01_is_protected_system_path(cur_real, py_roots))
         )
-        walk_cur = (cur_strict or has_nonroot_non_sys) and not is_top_or_sys and not is_unoverlaid_repo
+        is_unoverlaid_real_usersite = (
+            label == 'user site-packages'
+            and _re01_is_real_host_usersite_dir(cur_dir)
+            and not cur_strict
+            and not (cur_sb and mounts and _re01_sb_touches_nonroot_mount(cur_sb, mounts, py_roots=py_roots))
+        )
+        eff_strict = cur_strict or (
+            not is_unoverlaid_repo
+            and not cur_sys_protected
+            and not is_unoverlaid_real_usersite
+        )
+        is_top_or_sys = (cur_real in _RE01_TOP_HOST_ROOTS) or cur_sys_protected
+        walk_cur = not is_top_or_sys and not is_unoverlaid_repo
         only_strict_symlinks = (not walk_cur) and has_nonroot_non_sys and not is_unoverlaid_repo
         try:
             with os.scandir(cur_dir) as it:
@@ -1107,31 +1204,19 @@ def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbi
                         is_mounted_sym = bool(
                             mounts and cache_sb and _re01_mount_lookup(cache_sb, mounts)[0] == 'symlink'
                         )
-                        scan_strict = cur_strict or (
+                        scan_strict = eff_strict or (
                             depth > 0 and mounts and cache_sb
                             and _re01_sb_touches_nonroot_mount(cache_sb, mounts, py_roots=py_roots)
                         )
                         if de.is_symlink() or is_mounted_sym:
-                            if depth == 0 or cur_strict or scan_strict:
+                            if not (cur_sys_protected and not eff_strict and not scan_strict and not is_mounted_sym):
                                 return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
-                            c_target = cache_sb or de.path
-                            c_chain, _, c_any, c_sb, c_err = _re01_resolve_exec_chain(
-                                c_target, cwd=cwd, is_cmd=False, mounts=mounts)
-                            if c_err is not None:
-                                return c_err
-                            if mounts and any(
-                                _re01_sb_touches_nonroot_mount(c, mounts, py_roots=py_roots)
-                                for c in (c_sb, *c_chain) if c
-                            ):
-                                return f'RE-01 forbids {label} containing symlinked __pycache__: {entry}'
-                            if c_any and os.path.isdir(c_any) and (walk_cur or not mounts):
-                                err = _re01_scan_pycache_dir(
-                                    c_any, entry, label, strict_pycache=True)
-                                if err is not None:
-                                    return err
-                        elif (depth == 0 or scan_strict) and de.is_dir(follow_symlinks=False):
+                        elif (depth == 0 or scan_strict or walk_cur) and de.is_dir(follow_symlinks=False):
+                            check_stdlib_hooks = (depth == 0 or bool(scan_strict))
                             err = _re01_scan_pycache_dir(
-                                de.path, entry, label, strict_pycache=bool(scan_strict))
+                                de.path, entry, label,
+                                strict_pycache=bool(scan_strict),
+                                check_stdlib_hooks=check_stdlib_hooks)
                             if err is not None:
                                 return err
                         continue
@@ -1139,28 +1224,42 @@ def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbi
                     is_mounted_sym = bool(
                         mounts and child_sb and _re01_mount_lookup(child_sb, mounts)[0] == 'symlink'
                     )
-                    scan_strict = cur_strict or (
+                    scan_strict = eff_strict or (
                         depth > 0 and mounts and child_sb
                         and _re01_sb_touches_nonroot_mount(child_sb, mounts, py_roots=py_roots)
                     )
+                    is_sym_entry = de.is_symlink() or is_mounted_sym
                     if depth == 0:
                         if forbid_pth and name.endswith('.pth'):
                             return f'RE-01 forbids {label} containing {name}: {entry}'
                         if _re01_is_py_hook_name(name):
                             return f'RE-01 forbids {label} containing {name}: {entry}'
-                    elif (cur_strict or scan_strict) and _re01_is_py_hook_name(name):
-                        return f'RE-01 forbids {label} containing {name}: {entry}'
+                    else:
+                        if _re01_is_always_py_hook_name(name):
+                            if not (cur_sys_protected and not eff_strict and not scan_strict and not is_mounted_sym):
+                                return f'RE-01 forbids {label} containing {name}: {entry}'
+                        elif (eff_strict or scan_strict) and _re01_is_py_hook_name(name):
+                            return f'RE-01 forbids {label} containing {name}: {entry}'
                     if _re01_is_sourceless_pyc(name):
-                        is_sym_entry = de.is_symlink() or is_mounted_sym
                         skip_pyc = (is_unoverlaid_repo and not is_sym_entry) or (
-                            cur_sys_protected and not cur_strict and not scan_strict and not is_mounted_sym
+                            cur_sys_protected and not eff_strict and not scan_strict and not is_mounted_sym
                         )
-                        if not skip_pyc and (depth == 0 or cur_strict or scan_strict or walk_cur or is_sym_entry):
+                        if not skip_pyc and (depth == 0 or eff_strict or scan_strict or walk_cur or is_sym_entry):
                             return f'RE-01 forbids {label} containing sourceless bytecode {name}: {entry}'
+                    if _re01_is_python_ext_module(name) and (
+                        is_sym_entry or not de.is_dir(follow_symlinks=False)
+                    ):
+                        skip_so = (
+                            (is_unoverlaid_repo and not is_sym_entry)
+                            or (cur_sys_protected and not eff_strict and not scan_strict and not is_mounted_sym)
+                            or (is_unoverlaid_real_usersite and not is_sym_entry and not scan_strict)
+                        )
+                        if not skip_so:
+                            return f'RE-01 forbids {label} containing extension module {name}: {entry}'
                     if name == '.git' or (not walk_cur and not only_strict_symlinks):
                         continue
                     c_err = _re01_enqueue_bfs_child(
-                        de, cur_dir, cur_sb, cur_strict, depth, queue, mounts=mounts, py_roots=py_roots,
+                        de, cur_dir, cur_sb, eff_strict, depth, queue, mounts=mounts, py_roots=py_roots,
                         entry=entry, label=label, cwd=cwd, forbid_pth=forbid_pth,
                         seen_mounted_sb=seen_mounted_sb, seen_states=seen_states,
                         strict_checked_caches=strict_checked_caches,
@@ -1269,8 +1368,14 @@ def _re01_check_mounted_import_children(sb_targets, mounts, entry_label, *, labe
                 return f'RE-01 forbids {label} mounted/symlinked sourceless bytecode: {entry_label}'
             if kind == 'bind' and _re01_is_sourceless_pyc(host_tgt):
                 return f'RE-01 forbids {label} mounted sourceless bytecode: {entry_label}'
+            if any(_re01_is_python_ext_module(p) for p in rel_parts) or _re01_is_python_ext_module(dest):
+                return f'RE-01 forbids {label} mounted/symlinked extension module: {entry_label}'
+            if kind == 'bind' and _re01_is_python_ext_module(host_tgt):
+                return f'RE-01 forbids {label} mounted extension module: {entry_label}'
             if (forbid_pth and first_comp.endswith('.pth')) or _re01_is_py_hook_name(first_comp):
                 return f'RE-01 forbids {label} mounted {first_comp}: {entry_label}'
+            if any(_re01_is_always_py_hook_name(p) for p in rel_parts):
+                return f'RE-01 forbids {label} mounted {entry_label}'
             if check_path_reason and kind == 'bind' and host_tgt:
                 reason = _re01_path_reason(host_tgt, entry_label, is_cmd_pos=False, cwd=cwd)
                 if reason is not None:
@@ -1291,6 +1396,13 @@ def _re01_check_mounted_import_children(sb_targets, mounts, entry_label, *, labe
                     return f'RE-01 forbids {label} mounted/symlinked __pycache__: {entry_label}'
                 if any(_re01_is_sourceless_pyc(c) for c in (dest, host_tgt, t_sb, t_file, *t_chain) if c):
                     return f'RE-01 forbids {label} mounted/symlinked sourceless bytecode: {entry_label}'
+                if any(_re01_is_python_ext_module(c) for c in (dest, host_tgt, t_sb, t_file, *t_chain) if c):
+                    return f'RE-01 forbids {label} mounted/symlinked extension module: {entry_label}'
+                for cand in (t_sb, t_file, *t_chain):
+                    if cand:
+                        reason = _re01_path_reason(cand, entry_label, is_cmd_pos=False, cwd=cwd)
+                        if reason is not None:
+                            return reason
                 if t_any and os.path.isdir(t_any):
                     t_targets = (dest, t_sb) if t_sb and t_sb != dest else (dest,)
                     d_err = _re01_check_dir_py_hooks(
@@ -1322,6 +1434,8 @@ def _re01_check_bwrap_py_mounts(mounts, *, cwd=None):
         if kind == 'bind':
             if _re01_is_sourceless_pyc(dest) or _re01_is_sourceless_pyc(host_tgt):
                 return f'RE-01 forbids bwrap bytecode mount onto {dest}'
+            if _re01_is_python_ext_module(dest) or _re01_is_python_ext_module(host_tgt):
+                return f'RE-01 forbids bwrap extension module mount onto {dest}'
             if dest.endswith('.py') or (host_tgt and host_tgt.endswith('.py') and os.path.isfile(host_tgt)):
                 is_py_mount = True
                 if host_tgt and _re01_is_trusted_repo_import_dir(posixpath.dirname(dest)):
@@ -1339,6 +1453,8 @@ def _re01_check_bwrap_py_mounts(mounts, *, cwd=None):
                 return f'RE-01 forbids bwrap symlink into __pycache__: {dest}'
             if any(_re01_is_sourceless_pyc(c) for c in (dest, host_tgt, t_sb, t_file, *t_chain) if c):
                 return f'RE-01 forbids bwrap bytecode symlink at {dest}'
+            if any(_re01_is_python_ext_module(c) for c in (dest, host_tgt, t_sb, t_file, *t_chain) if c):
+                return f'RE-01 forbids bwrap extension module symlink at {dest}'
             if dest.endswith('.py') or (t_sb and t_sb.endswith('.py')) or (t_file and t_file.endswith('.py')):
                 is_py_mount = True
         if not is_py_mount or is_identity_trusted:
@@ -1384,12 +1500,9 @@ def _re01_check_bwrap_py_mounts(mounts, *, cwd=None):
 
 def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
                     python_no_usersite=False, python_ignore_env=False, python_xy=None):
-    raw_env = os.environ if env is None else env
-    try:
-        items = list(raw_env.items())
-    except AttributeError:
-        return None, 'RE-01 forbids invalid environment mapping under audit enforcement'
-    decoded = {_decode_audit_arg(k): _decode_audit_arg(v) for k, v in items}
+    decoded, env_err = _re01_decode_env(env)
+    if env_err is not None:
+        return None, env_err
     for var in _RE01_LD_FORBIDDEN_ENV:
         if decoded.get(var):
             return None, f'RE-01 forbids {var} under audit enforcement'
@@ -1475,6 +1588,8 @@ def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
             checked_dirs = set()
             for dcand in (cand_any, *chain):
                 if dcand and os.path.isdir(dcand):
+                    if mounts and _re01_mount_lookup(dcand, mounts)[0] == 'opaque':
+                        continue
                     strict = _re01_dir_strict_pycache(dcand, sb_targets, mounts)
                     if (dcand, strict) not in checked_dirs:
                         checked_dirs.add((dcand, strict))
@@ -1542,7 +1657,9 @@ def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
                 checked_u = set()
                 for dcand in (u_any, *u_chain):
                     if dcand and os.path.isdir(dcand):
-                        strict = _re01_dir_strict_pycache(dcand, u_targets, mounts)
+                        if mounts and _re01_mount_lookup(dcand, mounts)[0] == 'opaque':
+                            continue
+                        strict = _re01_dir_strict_pycache(dcand, u_targets, mounts, is_usersite=True)
                         if (dcand, strict) not in checked_u:
                             checked_u.add((dcand, strict))
                             d_err = _re01_check_dir_py_hooks(
@@ -1696,16 +1813,11 @@ def _re01_check_python_args(args, *, cwd=None, mounts=None, env=None):
             return f'RE-01 forbids binary/bytecode Python execution: {script_tok}'
     except OSError:
         return f'RE-01 requires a readable regular .py script file: {script_tok}'
-    raw_env = os.environ if env is None else env
-    safepath = False
-    if isinstance(raw_env, collections.abc.Mapping) or hasattr(raw_env, 'items'):
-        try:
-            for k, v in raw_env.items():
-                if _decode_audit_arg(k) == 'PYTHONSAFEPATH':
-                    sv = _decode_audit_arg(v).strip()
-                    safepath = bool(re.fullmatch(r'[1-9]\d*', sv) or sv.lower() == 'true')
-        except AttributeError:
-            safepath = False
+    decoded_env, env_err = _re01_decode_env(env)
+    if env_err is not None:
+        return env_err
+    sv = decoded_env.get('PYTHONSAFEPATH', '').strip()
+    safepath = bool(re.fullmatch(r'[1-9]\d*', sv) or sv.lower() == 'true')
     if not isolated and not (not ignore_env and safepath):
         checked_sp0_dirs = set()
         script_dir = os.path.dirname(host_file)
@@ -1753,7 +1865,11 @@ def _re01_check_python_args(args, *, cwd=None, mounts=None, env=None):
                     if d_err is not None:
                         return d_err
         elif script_dir:
-            d_err = _re01_check_dir_py_hooks(script_dir, script_tok, label='script sys.path[0]')
+            host_sb_targets = (script_dir,)
+            strict_host = _re01_dir_strict_pycache(script_dir, host_sb_targets, None)
+            d_err = _re01_check_dir_py_hooks(
+                script_dir, script_tok, label='script sys.path[0]',
+                strict_pycache=strict_host, sb_targets=host_sb_targets)
             if d_err is not None:
                 return d_err
     for arg_tok in args[script_idx + 1:]:
@@ -1887,10 +2003,9 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
     if env is None:
         bwrap_env = dict(os.environ)
     else:
-        try:
-            bwrap_env = {_decode_audit_arg(k): _decode_audit_arg(v) for k, v in env.items()}
-        except AttributeError:
-            return 'RE-01 forbids invalid environment mapping under audit enforcement'
+        bwrap_env, env_err = _re01_decode_env(env)
+        if env_err is not None:
+            return env_err
     idx = 0
     n = len(args)
     while idx < n:
@@ -2310,11 +2425,10 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
     sp, env_err = _re01_check_env(env, cwd=cwd, mounts=mounts, check_python=False)
     if env_err is not None:
         return env_err
-    raw_env = os.environ if env is None else env
-    try:
-        pc_raw = {_decode_audit_arg(k): _decode_audit_arg(v) for k, v in raw_env.items()}.get('PYTHONPYCACHEPREFIX')
-    except AttributeError:
-        return 'RE-01 forbids invalid environment mapping under audit enforcement'
+    decoded_env, env_err = _re01_decode_env(env)
+    if env_err is not None:
+        return env_err
+    pc_raw = decoded_env.get('PYTHONPYCACHEPREFIX')
     pc_err = _re01_check_pycache_prefix(pc_raw, cwd=cwd, mounts=mounts)
     if pc_err is not None:
         return pc_err
