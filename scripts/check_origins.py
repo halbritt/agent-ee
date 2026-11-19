@@ -273,12 +273,13 @@ def capture_origins(inventory, manifest):
     return found, errors
 
 
-def facts_basis(inventory):
+def facts_basis(inventory, *, include_empty=False):
     """Digest of every input, besides hash-pinned bytes, that relocated origin facts depend on."""
     basis = {'content_markers': {label: pattern.pattern.decode('latin-1')
                                  for label, pattern in sorted(CONTENT_MARKERS.items())},
              'capture_sources': {key: origin.get('capture_sources', [])
-                                 for key, origin in sorted(inventory['origins'].items())}}
+                                 for key, origin in sorted(inventory['origins'].items())
+                                 if include_empty or origin.get('capture_sources')}}
     return hashlib.sha256(json.dumps(basis, sort_keys=True).encode()).hexdigest()
 
 
@@ -354,7 +355,8 @@ def facts_problems(facts, inventory, relocation, expected):
     if set(facts) != keys:
         return [f'origin_facts must have exactly the keys {sorted(keys)}']
     problems = []
-    if facts['basis_sha256'] != facts_basis(inventory):
+    # Older /2 writers also included origins which had no capture source markers.
+    if facts['basis_sha256'] not in (facts_basis(inventory), facts_basis(inventory, include_empty=True)):
         problems.append('relocated origin facts were recorded under different content markers '
                         'or capture sources; fetch the relocated groups and re-record them with '
                         'scripts/check_origins.py --relocated-facts')
