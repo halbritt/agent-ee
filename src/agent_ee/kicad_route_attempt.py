@@ -4864,6 +4864,23 @@ def pair_binding(plans, record, result):
     return True
 
 
+def native_exported_request(result, saved):
+    """A rejected board can retain its exact exported request only inside the operation result."""
+    if isinstance(saved, dict):
+        return saved
+    info = result.get('request') if isinstance(result, dict) else None
+    if isinstance(info, dict):
+        raw = info.get('request_json')
+        if isinstance(raw, str) and hashlib.sha256(raw.encode('utf-8')).hexdigest() == info.get('request_sha256'):
+            try:
+                request = json.loads(raw)
+            except (ValueError, RecursionError):
+                return {}
+            if isinstance(request, dict):
+                return request
+    return {}
+
+
 def _native_pair_binding(pair, nets, seen):
     if not isinstance(pair, dict) or pair.get('disposition') not in ('coupled', 'existing', 'unverified'):
         return False
@@ -4884,7 +4901,7 @@ def pair_coverage(request, result, record, classification):
     coverage = {'status': 'unknown', 'pairs': [], 'limitations': limitations, 'acceptance_ready': False}
     native = isinstance(result, dict) and result.get('schema') == NATIVE_OPERATION_SCHEMA
     if native:
-        native_request = record if isinstance(record, dict) else {}
+        native_request = native_exported_request(result, record)
         exported_nets = native_request.get('nets')
         nets = {row['id']: row['name'] for row in (exported_nets if isinstance(exported_nets, list) else [])
                 if isinstance(row, dict) and type(row.get('id')) is int and isinstance(row.get('name'), str)}

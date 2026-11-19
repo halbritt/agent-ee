@@ -1,4 +1,5 @@
 """Declared pair request and honest coverage, independent of routing completeness."""
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -85,6 +86,19 @@ class PairCoverageTests(unittest.TestCase):
         single = attempt.pair_coverage({}, result, native, 'complete')
         self.assertIn('CAN pair routed single-ended', single['limitations'])
         self.assertEqual(single['status'], 'unknown')
+
+    def test_rejected_native_board_can_retain_its_single_ended_request_inline(self):
+        data = json.dumps({'nets': [{'id': 1, 'name': 'CAN+'}, {'id': 2, 'name': 'CAN-'}]})
+        result = {'schema': attempt.NATIVE_OPERATION_SCHEMA, 'status': 'native_validation_failed',
+                  'routing': {'status': 'complete'},
+                  'request': {'request_json': data, 'request_sha256': hashlib.sha256(data.encode()).hexdigest()}}
+        coverage = attempt.pair_coverage({}, result, None, 'validation_failed')
+        self.assertEqual(coverage['status'], 'unknown')
+        self.assertIn('CAN pair routed single-ended', coverage['limitations'])
+        self.assertIn('Single-ended attempt did not produce an eligible board', coverage['limitations'])
+        result['request']['request_sha256'] = '0' * 64
+        self.assertNotIn('CAN pair routed single-ended',
+                         attempt.pair_coverage({}, result, None, 'validation_failed')['limitations'])
 
     def test_single_ended_can_is_never_pair_coverage(self):
         record = {'scope': {'nets': ['CAN+', 'CAN-']}}

@@ -487,7 +487,10 @@ def _verify(run, report, inputs, receipt, layout):
     native_run = (f'attempt/{attempt.NATIVE_OPERATION_FILE}' in retained
                   or 'kicad_route_engine' in (report.get('tool') or {}))
     req_found, op_req = _retained_json(routing, attempt.NATIVE_REQUEST_FILE, retained) if native_run else (False, None)
-    _tool_claims(report, request, expected, ran=process is not None, native_request=op_req)
+    op_found, op_result = (_retained_json(routing, attempt.NATIVE_OPERATION_FILE, retained, strict=True)
+                           if native_run else (False, None))
+    _tool_claims(report, request, expected, ran=process is not None,
+                 native_request=attempt.native_exported_request(op_result, op_req))
     _staged(routing, report, request, expected, ran=process is not None)
     if report['tool_version'] != (attempt.TOOL_VERSION if legacy_claim(report) is None else
                                   attempt.LEGACY_TOOL_VERSION):
@@ -510,7 +513,7 @@ def _verify(run, report, inputs, receipt, layout):
     if (classification not in ('validation_failed', 'policy_failed') and
             report['rejected_candidate_sha256'] is not None):
         raise ValueError(f'a {classification} attempt records a rejected candidate')
-    result = record = op_result = None
+    result = record = None
     backend = attempt.native_backend_of(None) if native_run else attempt.backend_of(None)
     if classification == 'not_run':
         if (process is not None or retained or report['discovery'] is not None or
@@ -519,7 +522,6 @@ def _verify(run, report, inputs, receipt, layout):
         if native_run and report['backend'] != backend:
             raise ValueError('routing backend identity differs from the retained operation-result.json')
     elif native_run:
-        op_found, op_result = _retained_json(routing, attempt.NATIVE_OPERATION_FILE, retained, strict=True)
         malformed = (op_found and op_result is None) or (req_found and op_req is None)
         expected_missing = []
         if not op_found:
