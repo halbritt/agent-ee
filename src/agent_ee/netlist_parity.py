@@ -3,6 +3,7 @@
 from .check_registry import register as _register_check
 from . import check_prerequisites as _requires
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from .hardware_interface import text, unique_object
 
 from .design_limits import MAX_COMPONENTS, MAX_NETS, MAX_TERMINALS
 MAX_BYTES = 8_000_000
+MAX_JSON_DEPTH = 128
 MAX_SEARCH = 100_000
 MAX_LIBRARY_BYTES = 32 * 1024 * 1024
 
@@ -378,10 +380,27 @@ def read_json_source(path):
         raw = stream.read(MAX_BYTES + 1)
     if len(raw) > MAX_BYTES:
         raise Unsupported('source byte limit exceeded')
+    source = raw.decode(json.detect_encoding(raw), 'surrogatepass')
+    # Count containers before the decoder allocates them. A backslash and its
+    # following character form one token, so escaped quotes keep us in a string.
+    depth = 0
+    in_string = False
+    for match in re.finditer(r'\\.|["{}\[\]]', source, re.DOTALL):
+        token = match[0]
+        if token == '"':
+            in_string = not in_string
+        elif not in_string:
+            if token in ('[', '{'):
+                depth += 1
+                if depth > MAX_JSON_DEPTH:
+                    raise ValueError(f'JSON nesting exceeds {MAX_JSON_DEPTH} levels')
+            elif token in (']', '}'):
+                depth -= 1
+
     def invalid_constant(value):
         raise ValueError(f'non-finite JSON constant: {value}')
     try:
-        return json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
+        return json.loads(source, object_pairs_hook=unique_object, parse_constant=invalid_constant)
     except RecursionError as exc:
         raise ValueError('JSON nesting exceeds parser limit') from exc
 
