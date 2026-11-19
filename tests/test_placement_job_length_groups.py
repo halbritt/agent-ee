@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 
+from saved_path_fixture import measure
 from build_stage_fixture import requirements as retained_requirements
 
 from agent_ee import placement_job as job
@@ -63,7 +64,12 @@ class LengthGroupsJobTests(unittest.TestCase):
         self.assertEqual(len(group['measurements']), 4)
         self.assertEqual(group['skew_violations'], [])
         router = read_json(report['route']['result_path'])
-        self.assertEqual(router['validation']['length_matching']['status'], 'PASS')
+        if report['route'].get('native_operation_schema'):
+            routed = report['route']['path_measurements']['length_groups']
+            self.assertEqual(routed['board_sha256'], report['route']['board_sha256'])
+        else:
+            routed = router['validation']['length_matching']
+        self.assertEqual(routed['status'], 'PASS')
 
     def test_public_job_checks_paths_again_after_final_native_save(self):
         self.assertEqual(self.done.returncode, 0, self.done.stdout + self.done.stderr)
@@ -156,14 +162,22 @@ k.SaveBoard(sys.argv[1],b)
         done = public_job(path, out)
         self.assertNotEqual(done.returncode, 0)
         report = read_json(out / 'job-report.json')
-        self.assertEqual(report['status'], 'verification_failed', report)
-        final = report['final']
-        self.assertEqual(final['opens'], 0)
-        native = read_json(Path(final['board']).parent / 'native-drc.json')
+        if self.report['route'].get('native_operation_schema'):
+            self.assertEqual(report['status'], 'route_failed', report)
+            self.assertIn('protected/existing net', report['reason'])
+            self.assertEqual(report['final'], {'status': 'unavailable', 'reason': 'no_candidate'})
+            native, _ = job.drc(board, out, label='connected-control')
+            measured = measure(board, self.report['route'], self.checkout, 'length_groups',
+                               self.report['final']['length_matching']['requirement'], out / 'direct')
+        else:
+            self.assertEqual(report['status'], 'verification_failed', report)
+            board = Path(report['final']['board'])
+            native = read_json(board.parent / 'native-drc.json')
+            measured = report['final']['length_matching']
+        self.assertEqual(native['unconnected_items'], [])
         self.assertFalse([v for v in native['violations'] if v['severity'] == 'error'])
-        measured = final['length_matching']
         self.assertEqual(measured['status'], 'FAIL')
-        self.assertEqual(measured['board_sha256'], digest(final['board']))
+        self.assertEqual(measured['board_sha256'], digest(board))
         group, = measured['groups']
         self.assertEqual(len(group['measurements']), 4)
         self.assertEqual(len(group['skew_violations']), 1)

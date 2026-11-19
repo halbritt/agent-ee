@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 
+from saved_path_fixture import lengthen_horizontal_trace, measure
 from build_stage_fixture import requirements as retained_requirements
 
 from agent_ee import add_planes, placement_job as job
@@ -91,9 +92,24 @@ class DelayGroupsJobTests(unittest.TestCase):
         write_json(path, config); done = public_job(path, out)
         self.assertNotEqual(done.returncode, 0)
         report = read_json(out/'job-report.json')
-        self.assertEqual(report['status'], 'verification_failed', report)
-        self.assertEqual(report['final']['opens'], 0)
-        self.assertEqual(report['final']['length_matching']['status'], 'FAIL')
+        if self.report['route'].get('native_operation_schema'):
+            self.assertEqual(report['status'], 'route_failed', report)
+            self.assertIn('unable to match', report['reason'])
+            self.assertEqual(report['final'], {'status': 'unavailable', 'reason': 'no_candidate'})
+            board = lengthen_horizontal_trace(self.report, self.root / 'longer-delay', 'DQ0')
+            native, _ = job.drc(board, out, label='connected-control')
+            self.assertEqual(native['unconnected_items'], [])
+            measured = measure(board, self.report['route'], self.checkout, 'length_groups',
+                               self.report['final']['length_matching']['requirement'], out / 'direct')
+            self.assertEqual(measured['board_sha256'], digest(board))
+            group, = measured['groups']
+            self.assertEqual(len(group['measurements']), 2)
+            self.assertTrue(group['skew_violations'])
+        else:
+            self.assertEqual(report['status'], 'verification_failed', report)
+            self.assertEqual(report['final']['opens'], 0)
+            measured = report['final']['length_matching']
+        self.assertEqual(measured['status'], 'FAIL')
         self.assertFalse((out/'routed-incumbent.json').exists())
 
     def test_missing_dielectric_refuses_before_native_defaulting(self):
