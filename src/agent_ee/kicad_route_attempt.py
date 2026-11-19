@@ -446,15 +446,31 @@ _RE01_BWRAP_TRY_OPTS = frozenset(('--bind-try', '--dev-bind-try', '--ro-bind-try
 _RE01_BWRAP_OPAQUE_OPTS = frozenset(('--tmpfs', '--proc', '--dev', '--mqueue'))
 
 
+_RE01_NUL_OR_SURROGATE_RE = re.compile(r'[\x00\ud800-\udfff]')
+_RE01_SEC_ENV_EXACT = frozenset((
+    'PATH', 'HOME', 'PYTHONPATH', 'TMPDIR', 'VIRTUAL_ENV',
+    'GCONV_PATH', 'GLIBC_TUNABLES', '__PYVENV_LAUNCHER__',
+))
+_RE01_SEC_ENV_PREFIXES = ('KICAD', 'AGENT_EE', 'PYTHON', 'LD_')
+
+
+def _re01_has_nul_or_surrogate(s):
+    return bool(s and _RE01_NUL_OR_SURROGATE_RE.search(s))
+
+
+def _re01_is_security_env_key(key):
+    return key in _RE01_SEC_ENV_EXACT or key.startswith(_RE01_SEC_ENV_PREFIXES)
+
+
 def _decode_audit_arg(val):
-    if isinstance(val, (bytes, bytearray)):
-        return bytes(val).decode('utf-8', 'replace')
+    if isinstance(val, (bytes, bytearray, memoryview)):
+        return os.fsdecode(bytes(val))
     try:
         raw = os.fspath(val)
     except TypeError:
         return str(val)
-    if isinstance(raw, (bytes, bytearray)):
-        return bytes(raw).decode('utf-8', 'replace')
+    if isinstance(raw, (bytes, bytearray, memoryview)):
+        return os.fsdecode(bytes(raw))
     return str(raw)
 
 
@@ -468,6 +484,10 @@ def _re01_decode_env(env):
     for raw_k, raw_v in items:
         k = _decode_audit_arg(raw_k)
         v = _decode_audit_arg(raw_v)
+        if _re01_has_nul_or_surrogate(k):
+            return None, f'RE-01 forbids NUL or lone surrogate in environment key {k!r} under audit enforcement'
+        if _re01_is_security_env_key(k) and _re01_has_nul_or_surrogate(v):
+            return None, f'RE-01 forbids NUL or lone surrogate in {k} under audit enforcement'
         if k in decoded:
             return None, f'RE-01 forbids duplicate environment key {k!r} under audit enforcement'
         decoded[k] = v
@@ -548,10 +568,16 @@ def _re01_is_py_hook_name(name):
 def _re01_abs_cwd(cwd, *, mounts=None, with_chain=False):
     if cwd is None and mounts is None:
         cwd_path = os.getcwd()
+        if _re01_has_nul_or_surrogate(cwd_path):
+            err = f'RE-01 forbids NUL or lone surrogate in cwd under audit enforcement: {cwd_path!r}'
+            return (None, [], err) if with_chain else (None, err)
         return (cwd_path, [cwd_path], None) if with_chain else (cwd_path, None)
     raw = os.getcwd() if cwd is None else cwd
     if not raw:
         err = 'RE-01 forbids empty cwd under audit enforcement'
+        return (None, [], err) if with_chain else (None, err)
+    if _re01_has_nul_or_surrogate(raw):
+        err = f'RE-01 forbids NUL or lone surrogate in cwd under audit enforcement: {raw!r}'
         return (None, [], err) if with_chain else (None, err)
     if not posixpath.isabs(raw):
         raw = posixpath.join(os.getcwd(), raw)
@@ -1498,6 +1524,26 @@ def _re01_check_bwrap_py_mounts(mounts, *, cwd=None):
     return None
 
 
+def _re01_host_backing_dirs(mounts, *extras):
+    return {
+        _re01_norm_posix(p)
+        for p in (
+            *extras,
+            *(m_src for m_kind, m_src in (mounts.values() if mounts else ())
+              if m_kind == 'bind' and m_src),
+        )
+        if p
+    }
+
+
+def _re01_is_host_backing_path(dcand, host_backing_dirs):
+    dcand_norm = _re01_norm_posix(dcand)
+    return any(
+        dcand_norm == b or (b != '/' and dcand_norm.startswith(b + '/'))
+        for b in host_backing_dirs
+    )
+
+
 def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
                     python_no_usersite=False, python_ignore_env=False, python_xy=None):
     decoded, env_err = _re01_decode_env(env)
@@ -1585,10 +1631,26 @@ def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
                         z_err = _re01_check_zip_py_hooks(a_file, entry, sub_prefix=sub_prefix)
                         if z_err is not None:
                             return None, z_err
+            leaf_any = None
+            if mounts and leaf_sb:
+                l_kind, _, l_mapped = _re01_mount_lookup(leaf_sb, mounts)
+                if l_kind == 'bind' and l_mapped:
+                    leaf_any = l_mapped
+            host_backing_dirs = _re01_host_backing_dirs(mounts, cand_any, leaf_any)
             checked_dirs = set()
-            for dcand in (cand_any, *chain):
+            for dcand in (cand_any, leaf_any):
                 if dcand and os.path.isdir(dcand):
-                    if mounts and _re01_mount_lookup(dcand, mounts)[0] == 'opaque':
+                    strict = _re01_dir_strict_pycache(dcand, sb_targets, mounts)
+                    if (dcand, strict) not in checked_dirs:
+                        checked_dirs.add((dcand, strict))
+                        d_err = _re01_check_dir_py_hooks(
+                            dcand, entry, strict_pycache=strict, sb_targets=sb_targets, mounts=mounts, cwd=cwd)
+                        if d_err is not None:
+                            return None, d_err
+            for dcand in chain:
+                if dcand and os.path.isdir(dcand):
+                    if (mounts and not _re01_is_host_backing_path(dcand, host_backing_dirs)
+                            and _re01_mount_lookup(dcand, mounts)[0] == 'opaque'):
                         continue
                     strict = _re01_dir_strict_pycache(dcand, sb_targets, mounts)
                     if (dcand, strict) not in checked_dirs:
@@ -1654,10 +1716,27 @@ def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
                 if u_leaf_err is not None:
                     return None, u_leaf_err
                 u_targets = [t for t in dict.fromkeys((u_sb, u_leaf)) if t]
+                u_leaf_any = None
+                if mounts and u_leaf:
+                    ul_kind, _, ul_mapped = _re01_mount_lookup(u_leaf, mounts)
+                    if ul_kind == 'bind' and ul_mapped:
+                        u_leaf_any = ul_mapped
+                u_backing_dirs = _re01_host_backing_dirs(mounts, u_any, u_leaf_any)
                 checked_u = set()
-                for dcand in (u_any, *u_chain):
+                for dcand in (u_any, u_leaf_any):
                     if dcand and os.path.isdir(dcand):
-                        if mounts and _re01_mount_lookup(dcand, mounts)[0] == 'opaque':
+                        strict = _re01_dir_strict_pycache(dcand, u_targets, mounts, is_usersite=True)
+                        if (dcand, strict) not in checked_u:
+                            checked_u.add((dcand, strict))
+                            d_err = _re01_check_dir_py_hooks(
+                                dcand, user_site, label='user site-packages', forbid_pth=True,
+                                strict_pycache=strict, sb_targets=u_targets, mounts=mounts, cwd=cwd)
+                            if d_err is not None:
+                                return None, d_err
+                for dcand in u_chain:
+                    if dcand and os.path.isdir(dcand):
+                        if (mounts and not _re01_is_host_backing_path(dcand, u_backing_dirs)
+                                and _re01_mount_lookup(dcand, mounts)[0] == 'opaque'):
                             continue
                         strict = _re01_dir_strict_pycache(dcand, u_targets, mounts, is_usersite=True)
                         if (dcand, strict) not in checked_u:
@@ -2000,12 +2079,9 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
     dir_dests = []
     bwrap_cwd = outer_cwd
     bwrap_argv0 = None
-    if env is None:
-        bwrap_env = dict(os.environ)
-    else:
-        bwrap_env, env_err = _re01_decode_env(env)
-        if env_err is not None:
-            return env_err
+    bwrap_env, env_err = _re01_decode_env(env)
+    if env_err is not None:
+        return env_err
     idx = 0
     n = len(args)
     while idx < n:
@@ -2461,7 +2537,12 @@ def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=No
     tokens = [_decode_audit_arg(a) for a in argv]
     if not tokens or not tokens[0]:
         return 'RE-01 forbids empty command execution under audit enforcement'
+    for tok in tokens:
+        if _re01_has_nul_or_surrogate(tok):
+            return f'RE-01 forbids NUL or lone surrogate in command argument under audit enforcement: {tok!r}'
     cwd_raw = _decode_audit_arg(cwd) if cwd is not None else None
+    if cwd_raw is not None and _re01_has_nul_or_surrogate(cwd_raw):
+        return f'RE-01 forbids NUL or lone surrogate in cwd under audit enforcement: {cwd_raw!r}'
     cwd_str, cwd_chain, cwd_err = _re01_abs_cwd(cwd_raw, mounts=_mounts, with_chain=True)
     if cwd_err is not None:
         return cwd_err
@@ -2564,7 +2645,9 @@ def _re01_check_command_reason(argv, *, cwd=None, env=None, _depth=0, _mounts=No
         except OSError:
             head = b''
         if head.startswith(b'#!'):
-            first_line = head.split(b'\n', 1)[0].split(b'\x00', 1)[0][2:].strip().decode('utf-8', 'replace')
+            first_line = os.fsdecode(head.split(b'\n', 1)[0][2:].strip())
+            if _re01_has_nul_or_surrogate(first_line):
+                return f'RE-01 forbids NUL or lone surrogate in shebang under audit enforcement: {exe_tok}'
             parts = first_line.split(None, 1)
             if not parts:
                 return f'RE-01 forbids empty shebang execution under audit enforcement: {exe_tok}'

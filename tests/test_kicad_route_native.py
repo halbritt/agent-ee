@@ -3263,6 +3263,217 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
                         done = subprocess.run(pos_argv, env=pos_env, capture_output=True, text=True, timeout=5)
                         self.assertEqual(done.returncode, 0, done.stderr)
 
+    def test_re01_r19_nonutf8_bytes_surrogates_and_unrelated_env(self):
+        class BytesPath:
+            def __init__(self, raw):
+                self._raw = raw
+
+            def __fspath__(self):
+                return self._raw
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            root_b = os.fsencode(root)
+            marker = root / 'marker.txt'
+            ver = f'{sys.version_info.major}.{sys.version_info.minor}'
+            clean_dir = root / 'clean_dir'
+            clean_dir.mkdir()
+            clean_py = clean_dir / 'clean.py'
+            clean_py.write_text(
+                'import os, sys\n'
+                'val = os.environb.get(b"UNRELATED_NONUTF8")\n'
+                'if val is not None:\n'
+                '    assert val == b"val_\\xff", val\n'
+                'sys.exit(0)\n'
+            )
+            caller = root / 'caller.py'
+            caller.write_text('import p1.helper_mod\n')
+
+            pp_b = root_b + b'/pp_\xff'
+            os.makedirs(pp_b)
+            with open(pp_b + b'/sitecustomize.py', 'w') as fh:
+                fh.write(f'open({str(marker)!r}, "a").write("NU_SC\\n")\n')
+            with open(pp_b + b'/pcbnew.py', 'w') as fh:
+                fh.write(f'open({str(marker)!r}, "a").write("NU_PCB\\n")\n')
+            home_b = root_b + b'/home_\xfe'
+            us_b = home_b + f'/.local/lib/python{ver}/site-packages/p1'.encode()
+            os.makedirs(us_b)
+            py_compile.compile(str(clean_py), cfile=os.fsdecode(us_b + b'/helper_mod.pyc'), doraise=True)
+            zip_b = root_b + b'/evil_\xff.zip'
+            with zipfile.ZipFile(os.fsdecode(zip_b), 'w') as zf:
+                zf.writestr('pcbnew.py', f'open({str(marker)!r}, "a").write("NU_ZIP\\n")\n')
+            shebang_nonutf8 = root / 'shebang_nonutf8.sh'
+            shebang_nonutf8.write_bytes(b'#!/tmp/dir_\xff/python3\n')
+            shebang_nonutf8.chmod(0o755)
+            shebang_nul = root / 'shebang_nul.sh'
+            shebang_nul.write_bytes(b'#!/usr/bin/python3\x00/bin/sh\n')
+            shebang_nul.chmod(0o755)
+            in_pcb, out_pcb = root / 'in.kicad_pcb', root / 'out.kicad_pcb'
+            in_pcb.write_text('(kicad_pcb)\n')
+            co = routing_adapter.resolve_kicad_route_checkout()
+            real_engine = routing_adapter.resolve_kicad_route_engine(co)
+
+            with routing_adapter.re01_enforced():
+                blocked_cases = [
+                    ('pp_bytes', lambda: subprocess.run(
+                        [sys.executable, str(clean_py)],
+                        env={b'PATH': b'/usr/bin:/bin', b'PYTHONPATH': pp_b}, timeout=5)),
+                    ('pp_pathlike_bytes', lambda: subprocess.run(
+                        [sys.executable, str(clean_py)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': BytesPath(pp_b)}, timeout=5)),
+                    ('pp_surrogate_str', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(clean_py)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': os.fsdecode(pp_b)})),
+                    ('pp_bytearray', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(clean_py)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': bytearray(pp_b)})),
+                    ('pp_memoryview', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(clean_py)],
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': memoryview(pp_b)})),
+                    ('home_bytes', lambda: subprocess.run(
+                        [sys.executable, str(caller)],
+                        env={b'PATH': b'/usr/bin:/bin', b'HOME': home_b}, timeout=5)),
+                    ('cwd_bytes', lambda: subprocess.run(
+                        [sys.executable, str(clean_py)], cwd=pp_b,
+                        env={'PATH': '/usr/bin:/bin', 'PYTHONPATH': '.'}, timeout=5)),
+                    ('bwrap_robind_bytes', lambda: subprocess.run(
+                        [b'bwrap', b'--ro-bind', b'/', b'/', b'--tmpfs', b'/opt',
+                         b'--ro-bind', pp_b, b'/opt/pp', b'--setenv', b'PYTHONPATH', b'/opt/pp',
+                         b'--', os.fsencode(sys.executable), os.fsencode(clean_py)], timeout=5)),
+                    ('zipfile_bytes', lambda: subprocess.run(
+                        [sys.executable, str(clean_py)],
+                        env={b'PATH': b'/usr/bin:/bin', b'PYTHONPATH': zip_b}, timeout=5)),
+                    ('posix_spawn_bytes', lambda: os.posix_spawn(
+                        sys.executable, [sys.executable, str(clean_py)],
+                        {b'PATH': b'/usr/bin:/bin', b'PYTHONPATH': pp_b})),
+                    ('argv_bytearray', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(clean_py), bytearray(b'arg_\xff')])),
+                    ('argv_memoryview', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(clean_py), memoryview(b'arg_\xff')])),
+                    ('argv_pathlike_bytes', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(clean_py), BytesPath(b'arg_\xff')])),
+                    ('argv_surrogate_str', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(clean_py), 'arg_\udcff'])),
+                    ('argv_nul', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(clean_py), 'arg\x00x'])),
+                    ('env_key_surrogate', lambda: routing_adapter.check_re01_command(
+                        [sys.executable, str(clean_py)],
+                        env={b'PATH': b'/usr/bin:/bin', b'BAD_\xff': b'1'})),
+                    *[
+                        (f'sec_env_{sec_k}', lambda k=sec_k: routing_adapter.check_re01_command(
+                            [sys.executable, str(clean_py)],
+                            env={'PATH': '/usr/bin:/bin', k: 'val_\udcff'}))
+                        for sec_k in (
+                            'PATH', 'HOME', 'PYTHONPATH', 'TMPDIR', 'KICAD_CONFIG_HOME',
+                            'AGENT_EE_TEST', 'PYTHONNOUSERSITE', 'LD_LIBRARY_PATH',
+                            'GCONV_PATH', 'GLIBC_TUNABLES', '__PYVENV_LAUNCHER__',
+                        )
+                    ],
+                    ('shebang_nonutf8', lambda: routing_adapter.check_re01_command(
+                        [str(shebang_nonutf8)])),
+                    ('shebang_nul', lambda: routing_adapter.check_re01_command(
+                        [str(shebang_nul)])),
+                ]
+                if real_engine is not None and real_engine.is_file():
+                    blocked_cases.append(('route_native_bytes_pp', lambda: subprocess.run(
+                        [str(real_engine), 'route-native', '--python', sys.executable, str(in_pcb), str(out_pcb)],
+                        env={b'PATH': b'/usr/bin:/bin', b'PYTHONPATH': pp_b}, timeout=5)))
+                for label, fn in blocked_cases:
+                    with self.subTest(case=label):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            fn()
+                self.assertFalse(marker.exists())
+                with unittest.mock.patch.dict(os.environ, {'UNRELATED_NONUTF8': 'val_\udcff'}):
+                    done = subprocess.run(
+                        [sys.executable, str(clean_py)], capture_output=True, text=True, timeout=5)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                    done_bw = subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--', sys.executable, str(clean_py)],
+                        capture_output=True, text=True, timeout=5)
+                    self.assertEqual(done_bw.returncode, 0, done_bw.stderr)
+
+    def test_re01_r19_bwrap_opaque_host_bind_bypasses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / 'marker.txt'
+            ver = f'{sys.version_info.major}.{sys.version_info.minor}'
+            evil_src = root / 'evil_src.py'
+            evil_src.write_text(f'open({str(marker)!r}, "a").write("R19_OPAQUE_PWN\\n")\n')
+            evil_pyc = root / 'evil.pyc'
+            py_compile.compile(str(evil_src), cfile=str(evil_pyc), doraise=True)
+
+            evil_pp = root / 'evil_pp'
+            evil_pp.mkdir()
+            shutil.copy2(evil_pyc, evil_pp / 'helper_mod.pyc')
+            evil_kr = root / 'evil_kr'
+            (evil_kr / 'kicad_route').mkdir(parents=True)
+            (evil_kr / 'kicad_route/__init__.py').write_text(evil_src.read_text())
+            evil_us = root / 'evil_us'
+            (evil_us / 'p1').mkdir(parents=True)
+            shutil.copy2(evil_pyc, evil_us / 'p1/helper_mod.pyc')
+
+            clean_dir = root / 'clean_dir'
+            clean_dir.mkdir()
+            clean_mount = root / 'clean_mount'
+            clean_mount.mkdir()
+            fake_home = root / 'fake_home'
+            (fake_home / f'.local/lib/python{ver}/site-packages').mkdir(parents=True)
+            clean_py = clean_dir / 'clean.py'
+            clean_py.write_text('import sys; sys.exit(0)\n')
+            caller_mod = clean_dir / 'caller_mod.py'
+            caller_mod.write_text('import helper_mod\n')
+            caller_kr = clean_dir / 'caller_kr.py'
+            caller_kr.write_text('import kicad_route\n')
+            caller_us = clean_dir / 'caller_us.py'
+            caller_us.write_text('import p1.helper_mod\n')
+
+            with routing_adapter.re01_enforced():
+                blocked_cases = [
+                    ('exact_tmpfs_evil_pp', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', str(evil_pp),
+                         '--ro-bind', str(evil_pp), str(clean_mount), '--setenv', 'PYTHONPATH', str(clean_mount),
+                         '--', sys.executable, str(caller_mod)], timeout=5)),
+                    ('parent_tmpfs_evil_pp', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', str(root),
+                         '--ro-bind', str(evil_pp), str(clean_mount), '--setenv', 'PYTHONPATH', str(clean_mount),
+                         '--', sys.executable, str(caller_mod)], timeout=5)),
+                    ('exact_tmpfs_evil_kr', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', str(evil_kr),
+                         '--ro-bind', str(evil_kr), str(clean_mount), '--setenv', 'PYTHONPATH', str(clean_mount),
+                         '--', sys.executable, str(caller_kr)], timeout=5)),
+                    ('parent_tmpfs_evil_kr', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', str(root),
+                         '--ro-bind', str(evil_kr), str(clean_mount), '--setenv', 'PYTHONPATH', str(clean_mount),
+                         '--', sys.executable, str(caller_kr)], timeout=5)),
+                    ('exact_tmpfs_usersite', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', str(evil_us),
+                         '--ro-bind', str(evil_us), str(fake_home / f'.local/lib/python{ver}/site-packages'),
+                         '--setenv', 'HOME', str(fake_home), '--', sys.executable, str(caller_us)], timeout=5)),
+                    ('parent_tmpfs_usersite', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', str(root),
+                         '--ro-bind', str(evil_us), str(fake_home / f'.local/lib/python{ver}/site-packages'),
+                         '--setenv', 'HOME', str(fake_home), '--', sys.executable, str(caller_us)], timeout=5)),
+                    ('exact_tmpfs_opt_sub', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt', '--tmpfs', str(evil_pp),
+                         '--ro-bind', str(evil_pp), '/opt/sub', '--setenv', 'PYTHONPATH', '/opt/sub',
+                         '--', sys.executable, str(caller_mod)], timeout=5)),
+                    ('parent_tmpfs_opt_sub', lambda: subprocess.run(
+                        ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt', '--tmpfs', str(root),
+                         '--ro-bind', str(evil_pp), '/opt/sub', '--setenv', 'PYTHONPATH', '/opt/sub',
+                         '--', sys.executable, str(caller_mod)], timeout=5)),
+                ]
+                for label, fn in blocked_cases:
+                    with self.subTest(case=label):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            fn()
+                self.assertFalse(marker.exists())
+                done_pos = subprocess.run(
+                    ['bwrap', '--ro-bind', '/', '/', '--tmpfs', '/opt',
+                     '--ro-bind', str(clean_dir), '/opt/sub', '--setenv', 'PYTHONPATH', '/opt',
+                     '--', sys.executable, str(clean_py)],
+                    capture_output=True, text=True, timeout=5)
+                self.assertEqual(done_pos.returncode, 0, done_pos.stderr)
+
 
 class NativeAdapterHardeningTests(unittest.TestCase):
     def test_not_run_attempt_sets_native_backend_and_verifies(self):
