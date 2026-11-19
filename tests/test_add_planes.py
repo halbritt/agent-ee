@@ -513,24 +513,55 @@ assert k.SaveBoard('/work/pod.kicad_pcb',b)
         route_spec = routing_adapter.step(project='project', board='pod.kicad_pcb', schematic='pod.kicad_sch',
                                          name='plane-probe', label='planes-native', checkout=checkout, budget=120)
         route_receipt = stage_receipts.run_step(self.root/'route-receipt', self.source, route_spec, {'test':'planes-route'})
-        self.assert_routed(plane_receipt, route_receipt, self.root/'route-receipt/run')
+        self.assert_routed(plane_receipt, route_receipt, self.root/'route-receipt/run', checkout=checkout)
 
-    def assert_routed(self, plane_receipt, route_receipt, work):
+    def assert_routed(self, plane_receipt, route_receipt, work, checkout=None):
         self.assertEqual(route_receipt['inputs'], stage_receipts.after_tree(plane_receipt))
         self.assertEqual(route_receipt['status'], 'completed', route_receipt)
         summary = routing_adapter.verify(work, receipt=route_receipt)
         self.assertEqual(summary['proposal'], 'eligible')
-        attempt = work/'routing/attempt'
-        record = read_json(attempt/'attempt.json')
-        self.assertEqual(record['settings']['protect'], 'existing')
-        result = read_json(attempt/'result.json')
-        self.assertEqual(result['validation']['status'], 'PASS')
-        self.assertEqual(result['routing']['status'], 'COMPLETE')
-        board = (work/'routing/candidate/project/pod.kicad_pcb').read_text()
-        self.assertGreater(len(benchmark.children(benchmark.parse(board), 'segment')), 0)
-        checks = read_json(attempt/'validate/preservation.json')
-        pour = next(c for c in checks if c['check']=='pour_integrity')
-        self.assertEqual(pour['status'], 'PASS', pour)
+        attempt = work / 'routing/attempt'
+        checkout = checkout if checkout is not None else routing_adapter.checkout_of(route_receipt['spec'])
+        if routing_adapter.is_rust_capable_checkout(checkout):
+            op_req_path = attempt / 'operation-request.json'
+            op_req = read_json(op_req_path)
+            op_result = read_json(attempt / 'operation-result.json')
+            self.assertEqual(op_req['version'], 1)
+            self.assertEqual(op_req['source_id'], op_result['source']['snapshot_sha256'])
+            self.assertEqual(len(op_req.get('zones', [])), 3)
+            self.assertEqual(len(op_req.get('rule_areas', [])), 1)
+            self.assertEqual(op_result['schema'], 'kicad-route/native-operation/1')
+            self.assertEqual(op_result['status'], 'complete')
+            self.assertEqual(op_result['exit_code'], 0)
+            self.assertEqual(summary['backend']['value']['name'], 'kicad-route-engine')
+            self.assertEqual(op_result['request']['request_sha256'], digest(op_req_path))
+            self.assertIn('routing', op_result)
+            self.assertEqual(op_result['routing']['status'], 'complete')
+            self.assertGreater(op_result['routing']['added_track_count'], 0)
+            self.assertEqual(op_result['routing']['removed_track_count'], 0)
+            self.assertIn('publication', op_result)
+            self.assertTrue(op_result['publication']['published'])
+            apply_phase = next(p for p in op_result['phases'] if p['phase'] == 'native_apply_validate')
+            self.assertEqual(apply_phase['status'], 'ok', apply_phase)
+        else:
+            record = read_json(attempt / 'attempt.json')
+            self.assertEqual(record['settings']['protect'], 'existing')
+            result = read_json(attempt / 'result.json')
+            self.assertEqual(result['validation']['status'], 'PASS')
+            self.assertEqual(result['routing']['status'], 'COMPLETE')
+            checks = read_json(attempt / 'validate/preservation.json')
+            pour = next(c for c in checks if c['check'] == 'pour_integrity')
+            self.assertEqual(pour['status'], 'PASS', pour)
+        board_path = work / 'routing/candidate/project/pod.kicad_pcb'
+        parsed = benchmark.parse(board_path.read_text())
+        self.assertGreater(len(benchmark.children(parsed, 'segment')), 0)
+        planned_ids = set(planes.zone_ids(self.plan))
+        zones = [z for z in benchmark.children(parsed, 'zone') if benchmark.uid(z) in planned_ids]
+        self.assertEqual({benchmark.uid(z) for z in zones}, planned_ids)
+        self.assertTrue(all(benchmark.children(z, 'filled_polygon') for z in zones))
+        ant1 = next(fp for fp in benchmark.children(parsed, 'footprint')
+                    if any(benchmark.values(p) == ['Reference', 'ANT1'] for p in benchmark.children(fp, 'property')))
+        self.assertEqual(len(benchmark.children(ant1, 'zone')), 1)
 
 
 if __name__=='__main__':
