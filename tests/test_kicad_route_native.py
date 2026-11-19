@@ -3782,6 +3782,72 @@ class NativeAdapterHardeningTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'classify as contradiction'):
                 routing_adapter.verify(work, attempt.files_of(inputs_tree), layout=layout)
 
+    def test_re01_route_native_flag_parity_and_pycache_private_path(self):
+        checkout = require_kicad_route()
+        if not routing_adapter.is_rust_capable_checkout(checkout):
+            self.skipTest('requires Rust-capable kicad-route checkout')
+        real_engine = routing_adapter.resolve_kicad_route_engine(checkout)
+        real_bridge = routing_adapter.resolve_native_bridge(checkout)
+        self.assertIsNotNone(real_engine)
+        self.assertIsNotNone(real_bridge)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            in_pcb = root / 'in.kicad_pcb'
+            out_pcb = root / 'out.kicad_pcb'
+            in_pcb.write_text('(kicad_pcb)\n')
+            eng_str = str(real_engine)
+            br_str = str(real_bridge)
+            priv_pc = root / 'pc_ok'
+            priv_env = {'PATH': '/usr/bin:/bin', 'HOME': str(root), 'TMPDIR': str(root),
+                        'PYTHONPYCACHEPREFIX': str(priv_pc)}
+            with routing_adapter.re01_enforced():
+                # Valid route-native flags supported under RE-01 direct-exec allowlist
+                for ok_cmd in (
+                    [eng_str, 'route-native', str(in_pcb), str(out_pcb),
+                     '--native-bridge', br_str, '--protect', 'existing'],
+                    [eng_str, 'route-native', str(in_pcb), str(out_pcb),
+                     '--native-bridge', br_str, '--protect', 'human', '--nets', '/SIG_A', '!/GND'],
+                    [eng_str, 'route-native', '--native-bridge', br_str,
+                     '--nets', '/SIG_A', '/SIG_B', str(in_pcb), str(out_pcb)],
+                    [eng_str, 'route-native', str(in_pcb), str(out_pcb),
+                     '--native-bridge', br_str, '--diff-pairs', 'auto',
+                     '--pair-layers', 'F.Cu', 'B.Cu', '--no-short-pair-deferral',
+                     '--diff-pair-intra-match', '--length-match-tolerance', '0.1',
+                     '--meander-amplitude', '1.0', '--ac-couple-chain-json', '["C1","C2"]',
+                     '--ac-match-tolerance', '0.1', '--ac-meander-amplitude', '2.0'],
+                ):
+                    with self.subTest(ok_cmd=ok_cmd):
+                        routing_adapter.check_re01_command(ok_cmd, env=priv_env)
+
+                # Invalid --protect mode, inline value on boolean flag, variadic missing positionals
+                for bad_cmd in (
+                    [eng_str, 'route-native', str(in_pcb), str(out_pcb),
+                     '--native-bridge', br_str, '--protect', 'bogus'],
+                    [eng_str, 'route-native', str(in_pcb), str(out_pcb),
+                     '--native-bridge', br_str, '--no-short-pair-deferral=1'],
+                    [eng_str, 'route-native', '--native-bridge', br_str,
+                     '--nets', '/SIG_A', str(in_pcb)],
+                    [eng_str, 'route-native', str(in_pcb), str(out_pcb),
+                     '--native-bridge', br_str, '--pair-layers', 'F.Cu', '--pair-layers', 'B.Cu'],
+                    [eng_str, 'route-native', str(in_pcb), str(out_pcb),
+                     '--native-bridge', br_str, '--nets', '/SIG_A', str(root / 'kicad_route/evil')],
+                ):
+                    with self.subTest(bad_cmd=bad_cmd):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            routing_adapter.check_re01_command(bad_cmd, env=priv_env)
+
+                # GAP-08: relative or non-private PYTHONPYCACHEPREFIX must fail closed
+                for bad_pc_env in (
+                    {'PATH': '/usr/bin:/bin', 'PYTHONPYCACHEPREFIX': 'rel_cache'},
+                    {'PATH': '/usr/bin:/bin', 'PYTHONPYCACHEPREFIX': '/opt/evil_pc'},
+                    {'PATH': '/usr/bin:/bin', 'HOME': str(root), 'TMPDIR': str(root),
+                     'PYTHONPYCACHEPREFIX': str(root)},
+                ):
+                    with self.subTest(bad_pc_env=bad_pc_env):
+                        with self.assertRaises(routing_adapter.RE01OwnershipError):
+                            routing_adapter.check_re01_command(
+                                [sys.executable, '-I', '-B', br_str, '--help'], env=bad_pc_env)
+
 
 if __name__ == '__main__':
     unittest.main()

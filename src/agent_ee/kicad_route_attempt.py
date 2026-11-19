@@ -43,6 +43,7 @@ import site
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -1298,9 +1299,11 @@ def _re01_check_dir_py_hooks(dir_path, entry, *, label='PYTHONPATH entry', forbi
     return None
 
 
-def _re01_check_pycache_prefix(raw_val, *, cwd=None, mounts=None):
+def _re01_check_pycache_prefix(raw_val, *, cwd=None, mounts=None, env=None):
     if not raw_val:
         return None
+    if not raw_val.startswith('/'):
+        return f'RE-01 forbids relative PYTHONPYCACHEPREFIX: {raw_val}'
     pc_chain, _, pc_any, pc_sb, pc_err = _re01_resolve_exec_chain(
         raw_val, cwd=cwd, is_cmd=False, mounts=mounts)
     if pc_err is not None:
@@ -1336,6 +1339,33 @@ def _re01_check_pycache_prefix(raw_val, *, cwd=None, mounts=None):
                         pass
                 if lk is None and '/' not in mounts:
                     return None
+    priv_roots = []
+    tmp_norm = ''
+    if env:
+        home_raw = env.get('HOME', '')
+        tmp_raw = env.get('TMPDIR', '')
+        home_norm = _re01_norm_posix(home_raw) if home_raw.startswith('/') else ''
+        tmp_norm = _re01_norm_posix(tmp_raw) if tmp_raw.startswith('/') else ''
+        if home_norm and home_norm != '/':
+            priv_roots.append(home_norm)
+        if tmp_norm and tmp_norm != '/':
+            priv_roots.append(tmp_norm)
+        if (home_norm.endswith('/home') and tmp_norm.endswith('/tmp')
+                and posixpath.dirname(home_norm) == posixpath.dirname(tmp_norm)
+                and posixpath.dirname(home_norm) != '/'):
+            priv_roots.append(posixpath.dirname(home_norm))
+    if not tmp_norm:
+        sys_tmp = _re01_norm_posix(tempfile.gettempdir())
+        if sys_tmp and sys_tmp != '/' and sys_tmp not in priv_roots:
+            priv_roots.append(sys_tmp)
+        env_tmp = os.environ.get('TMPDIR', '')
+        if env_tmp.startswith('/'):
+            env_tmp_norm = _re01_norm_posix(env_tmp)
+            if env_tmp_norm and env_tmp_norm != '/' and env_tmp_norm not in priv_roots:
+                priv_roots.append(env_tmp_norm)
+    for target_sb in (pc_sb, leaf_sb):
+        if not target_sb or not any(target_sb.startswith(r + '/') for r in priv_roots):
+            return f'RE-01 forbids PYTHONPYCACHEPREFIX outside private temp/home dir: {raw_val}'
     if mounts:
         for target_sb in dict.fromkeys(t for t in (leaf_sb, pc_sb) if t):
             t_pref = '/' if target_sb == '/' else target_sb + '/'
@@ -1573,7 +1603,8 @@ def _re01_check_env(env, *, cwd=None, mounts=None, check_python=True,
     for var in _RE01_PYTHON_FORBIDDEN_ENV:
         if decoded.get(var):
             return None, f'RE-01 forbids {var} under audit enforcement'
-    pc_err = _re01_check_pycache_prefix(decoded.get('PYTHONPYCACHEPREFIX'), cwd=cwd, mounts=mounts)
+    pc_err = _re01_check_pycache_prefix(
+        decoded.get('PYTHONPYCACHEPREFIX'), cwd=cwd, mounts=mounts, env=decoded)
     if pc_err is not None:
         return None, pc_err
     venv = decoded.get('VIRTUAL_ENV')
@@ -2251,11 +2282,27 @@ def _re01_check_bwrap(args, *, cwd=None, env=None, depth=0, outer_mounts=None):
         args[idx:], cwd=bwrap_cwd, env=bwrap_env, _depth=depth + 1, _mounts=mounts, _argv0=bwrap_argv0)
 
 
+_RE01_ENGINE_BOOL_FLAGS = frozenset((
+    '--no-short-pair-deferral', '--diff-pair-intra-match',
+))
+_RE01_ENGINE_VARIADIC_FLAGS = frozenset((
+    '--pair-layers', '--length-match-group', '--nets',
+))
+_RE01_ENGINE_REPEATABLE_FLAGS = frozenset((
+    '--diff-pairs', '--length-match-group', '--length-match-group-json',
+    '--ac-couple-chain-json', '--nets',
+))
 _RE01_ENGINE_VALUE_FLAGS = frozenset((
     '--rules', '--project', '--limits', '--max-expansions',
     '--operation-result', '--save-request', '--native-bridge',
     '--python', '--timeout-ms', '--max-child-output-bytes',
     '--pour-area-loss', '--pour-min-spokes', '--diff-pairs',
+    '--length-match-tolerance', '--meander-amplitude', '--length-match-group-json',
+    '--group-match-tolerance', '--group-delay-tolerance',
+    '--group-meander-amplitude', '--group-meander-spacing',
+    '--pair-impedance', '--impedance-tolerance', '--impedance-reference',
+    '--impedance-uncoupled', '--ac-couple-chain-json',
+    '--ac-match-tolerance', '--ac-meander-amplitude', '--protect',
 ))
 _RE01_ENGINE_PATH_FLAGS = frozenset((
     '--rules', '--project', '--limits', '--operation-result', '--save-request',
@@ -2441,28 +2488,67 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
     py_tok = bridge_tok = None
     saw_help = after_dd = False
     positional = []
+    last_variadic = None
     i = 2
     n = len(tokens)
     while i < n:
         tok = tokens[i]
         if not after_dd and tok == '--':
             after_dd = True
+            last_variadic = None
             i += 1
             continue
         if not after_dd and tok in ('--help', '-h'):
             saw_help = True
+            last_variadic = None
             i += 1
             continue
         if not after_dd and tok.startswith('-'):
             if '=' in tok:
-                flag, val = tok.split('=', 1)
+                flag, inline = tok.split('=', 1)
+                val = inline
                 i += 1
             else:
                 flag = tok
+                inline = None
+                val = None
+            if flag in _RE01_ENGINE_BOOL_FLAGS:
+                if inline is not None:
+                    return f'RE-01 forbids inline value on boolean route-native option {flag}'
+                last_variadic = None
+                if inline is None:
+                    i += 1
+                continue
+            if flag in _RE01_ENGINE_VARIADIC_FLAGS:
+                if flag not in _RE01_ENGINE_REPEATABLE_FLAGS and flag in seen_flags:
+                    return f'RE-01 forbids duplicate route-native option {flag}'
+                seen_flags.add(flag)
+                if inline is not None:
+                    items = [part for part in inline.split(',') if part]
+                    if not items:
+                        return f'RE-01 forbids empty route-native option value for {flag}'
+                    last_variadic = None
+                else:
+                    items = []
+                    while i + 1 < n:
+                        nxt = tokens[i + 1]
+                        if nxt == '--' or nxt.startswith('-'):
+                            break
+                        if not nxt:
+                            return f'RE-01 forbids empty route-native option value for {flag}'
+                        items.append(nxt)
+                        i += 1
+                    if not items:
+                        return f'RE-01 forbids incomplete route-native option {flag}'
+                    last_variadic = items
+                    i += 1
+                continue
+            if inline is None:
                 if i + 1 >= n:
                     return f'RE-01 forbids incomplete route-native option {flag}'
                 val = tokens[i + 1]
                 i += 2
+            last_variadic = None
             if flag not in _RE01_ENGINE_VALUE_FLAGS:
                 return f'RE-01 forbids unknown route-native option {flag}'
             if not val:
@@ -2491,9 +2577,12 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
                     seen_explicit_nets.update(parts)
                     diff_pairs_mode = 'explicit'
                 continue
-            if flag in seen_flags:
-                return f'RE-01 forbids duplicate route-native option {flag}'
-            seen_flags.add(flag)
+            if flag not in _RE01_ENGINE_REPEATABLE_FLAGS:
+                if flag in seen_flags:
+                    return f'RE-01 forbids duplicate route-native option {flag}'
+                seen_flags.add(flag)
+            if flag == '--protect' and val not in ('none', 'existing', 'human', 'locked'):
+                return f'RE-01 forbids invalid --protect mode: {val}'
             if flag == '--python':
                 py_tok = val
             elif flag == '--native-bridge':
@@ -2509,7 +2598,14 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
                         return reason
         else:
             positional.append(tok)
+            last_variadic = None
             i += 1
+    if len(positional) < 2 and last_variadic is not None:
+        needed = 2 - len(positional)
+        if len(last_variadic) > needed and all(
+            s.lower().endswith('.kicad_pcb') for s in last_variadic[-needed:]
+        ):
+            positional.extend(last_variadic[-needed:])
     for arg_tok in tokens[1:]:
         a_chain, _, _, _, a_err = _re01_resolve_exec_chain(
             arg_tok, cwd=cwd, is_cmd=False, mounts=mounts)
@@ -2532,7 +2628,7 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
     if env_err is not None:
         return env_err
     pc_raw = decoded_env.get('PYTHONPYCACHEPREFIX')
-    pc_err = _re01_check_pycache_prefix(pc_raw, cwd=cwd, mounts=mounts)
+    pc_err = _re01_check_pycache_prefix(pc_raw, cwd=cwd, mounts=mounts, env=decoded_env)
     if pc_err is not None:
         return pc_err
     kc_chain, kc_host, _, kc_sb, kc_err = _re01_resolve_exec_chain(
