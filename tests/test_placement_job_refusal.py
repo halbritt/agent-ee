@@ -1,6 +1,7 @@
 """Terminal refusal evidence begins only after job-directory ownership."""
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -115,6 +116,41 @@ class RefusalReportTests(fixture.Fixture):
         self.assert_report(out, report, None, 'runtime preflight failed')
         self.assertEqual((report['failure_kind'], report['failing_stage']), ('environment', 'runtime-preflight'))
         self.assertEqual(set(report['phases']), {'setup'})
+
+    def test_job_only_external_native_checkout_refuses_before_placement(self):
+        from agent_ee import routing_adapter
+        checkout = Path(require_kicad_route())
+        if not routing_adapter.is_rust_capable_checkout(checkout):
+            self.skipTest('requires a Rust-capable checkout for host executable ownership')
+        # Use the same clean source and actual native executable at a different
+        # location. Only the operator's checkout selection differs.
+        alternate = self.dir / 'external-checkout'
+        subprocess.run(['git', 'clone', '--quiet', '--local', '--no-hardlinks', str(checkout), str(alternate)],
+                       check=True, timeout=60)
+        head = subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip()
+        subprocess.run(['git', '-C', str(alternate), 'checkout', '--quiet', '--detach', head],
+                       check=True, timeout=60)
+        executable = alternate / 'rust-engine/target/release/kicad-route-engine'
+        executable.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(routing_adapter.resolve_kicad_route_engine(checkout), executable)
+        config = self.config()
+        config['router']['checkout'] = str(alternate)
+        config_path = self.dir / 'external-job.json'
+        config_path.write_text(json.dumps(config))
+        out = self.dir / 'external-job'
+        env = os.environ.copy()
+        for variable in ('AGENT_EE_KICAD_ROUTE_CHECKOUT', 'AGENT_EE_KICAD_ROUTE_ENGINE', 'KICAD_ROUTE_ENGINE_BIN'):
+            env.pop(variable, None)
+        result = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'place', 'run', str(config_path),
+                                 '--out', str(out)], env=env, capture_output=True, text=True, timeout=90)
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads((out / 'job-report.json').read_text())
+        self.assert_report(out, report, None, 'untrusted kicad-route-engine path')
+        self.assertEqual((report['failure_kind'], report['failing_stage']), ('environment', 'runtime-preflight'))
+        self.assertEqual(report['preflight']['router']['commit'], head)
+        self.assertTrue(report['preflight']['router']['clean'])
+        self.assertEqual(set(report['phases']), {'setup'})
+        self.assertFalse(list(out.glob('route-a*')))
 
     def test_missing_planner_is_a_runtime_failure_with_a_retained_report(self):
         out = self.dir / 'job'
