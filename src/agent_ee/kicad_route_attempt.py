@@ -2304,6 +2304,7 @@ _RE01_ENGINE_VALUE_FLAGS = frozenset((
     '--impedance-uncoupled', '--ac-couple-chain-json',
     '--ac-match-tolerance', '--ac-meander-amplitude', '--protect', '--grid-step',
     '--bus-detection-radius', '--bus-attraction-radius', '--bus-attraction-bonus', '--bus-min-nets',
+    '--layer-policy-json',
 ))
 _RE01_ENGINE_PATH_FLAGS = frozenset((
     '--rules', '--project', '--limits', '--operation-result', '--save-request',
@@ -2597,6 +2598,14 @@ def _re01_check_engine_args(tokens, *, host_exe, sb_exe, cwd=None, env=None, dep
                 if flag in seen_flags:
                     return f'RE-01 forbids duplicate route-native option {flag}'
                 seen_flags.add(flag)
+            if flag == '--layer-policy-json':
+                try:
+                    policy = strict_json(val, 'native layer policy')
+                    if not isinstance(policy, dict) or set(policy) - {'signal_layers', 'layer_costs', 'per_net_signal_layers'}:
+                        raise RequestError('unexpected native layer policy fields')
+                    validate_layer_policy({**policy, 'pour_area_loss_pct': 0})
+                except RequestError as error:
+                    return f'RE-01 forbids invalid native layer policy: {error}'
             if flag == '--protect' and val not in ('none', 'existing', 'human', 'locked'):
                 return f'RE-01 forbids invalid --protect mode: {val}'
             if flag == '--python':
@@ -4306,11 +4315,13 @@ def is_native_request(request, checkout):
 def native_unsupported_problems(request):
     """Fail-closed refusals for options unsupported by route-native (zero Python KRT fallback)."""
     problems = []
-    if 'layer_policy' in request:
-        problems.append('route-native does not support layer_policy')
     if 'experiment_policy' in request:
         problems.append('route-native does not support experiment_policy')
     return problems
+
+
+def native_layer_settings(policy):
+    return {k: policy[k] for k in ('signal_layers', 'layer_costs', 'per_net_signal_layers') if k in policy}
 
 
 def native_tool_argv(request, layout):
@@ -4333,6 +4344,8 @@ def native_tool_argv(request, layout):
         '--python', PYTHON,
         '--timeout-ms', str(int(request['budget_s']) * 1000),
         '--protect', 'existing',
+        *(['--layer-policy-json', canonical_json(native_layer_settings(request['layer_policy']))]
+          if 'layer_policy' in request else []),
         *(['--diff-pairs', 'auto'] if request.get('diff_pairs') == 'auto' else []),
     ]
 
@@ -5646,6 +5659,59 @@ def constraint_binding_problems(candidate_root, request):
     return []
 
 
+def native_policy_result(operation):
+    publication = operation.get('publication', {}) if isinstance(operation, dict) else {}
+    routing = operation.get('routing') if isinstance(operation, dict) else None
+    return {'validation': {'validated_board_sha256': publication.get('output_sha256')},
+            'routing': {'status': 'COMPLETE' if isinstance(routing, dict) and routing.get('status') == 'complete' else 'INCOMPLETE'}}
+
+
+def native_layer_verdict(grade):
+    # Failed native fill preservation is a validation failure on both router generations.
+    if grade['items'].get('pour_integrity', {}).get('status') == 'defect':
+        return 'validation_failed'
+    return 'complete' if grade['status'] == 'pass' else 'policy_failed'
+
+
+def native_policy_measurements(report, request, layout, routing, source, saved, cancel):
+    policy = request['layer_policy']
+    attempt = routing / 'attempt'
+    out = routing / 'tmp' / 'layer-measurements.json'
+    bridge = Path(layout['checkout']) / 'tools' / 'rust_engine_kicad.py'
+    argv = [PYTHON, '-I', '-B', str(bridge), 'measure-layer-policy', str(source), str(saved), str(out),
+            '--pour-area-loss', str(policy['pour_area_loss_pct'])]
+    if 'reference' in policy:
+        argv += ['--reference-spec', canonical_json(reference_spec(policy))]
+    with re01_enforced():
+        process = run_tool(argv, tool_env(layout), routing, attempt / 'layer-policy.stdout',
+                           attempt / 'layer-policy.stderr', request['timeout_s'], cancel)
+    for stream in ('layer-policy.stdout', 'layer-policy.stderr'):
+        if (attempt / stream).is_file():
+            report['retained'][f'attempt/{stream}'] = digest(attempt / stream)
+    if process['exit_code'] != 0 or process['cancelled'] or process['timed_out']:
+        return
+    samples = strict_json_file(out, 'native layer measurements')
+    out.unlink()
+    before, after = samples['source'], samples['candidate']
+    if before['sha256'] != digest(source) or after['sha256'] != digest(saved):
+        raise RequestError('layer measurements do not match the source and saved board')
+    sidecars = {suffix: digest(source.with_suffix(suffix)) for suffix in ('.kicad_pro', '.kicad_dru')
+                if source.with_suffix(suffix).is_file()}
+    if sidecars != samples['sidecars']:
+        raise RequestError('layer measurements do not match the source project settings and rules')
+    files = {source.name: before['sha256'], **{source.with_suffix(ext).name: sha for ext, sha in sidecars.items()}}
+    artifacts = {'snapshot.json': {'files': files}, 'facts/reference-facts.json': before,
+                 'validate/candidate-facts.json': after, 'validate/preservation.json': samples['preservation'],
+                 'validate/pour-integrity.json': samples['pour']}
+    if 'reference' in policy:
+        artifacts[POLICY_FILE] = samples['reference']
+    for rel, value in artifacts.items():
+        path = attempt / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(canonical_json(value) + '\n')
+        report['retained'][f'attempt/{rel}'] = digest(path)
+
+
 def _run_native_attempt(report, request, layout, routing, candidate_root, inputs_tree, inputs, generation, cancel):
     project = request['project']
     argv, env = tool_argv(request, layout), tool_env(layout)
@@ -5714,6 +5780,19 @@ def _run_native_attempt(report, request, layout, routing, candidate_root, inputs
         report['rejected_candidate_sha256'] = None
     elif violations:
         reasons = reasons + violations
+    policy = request.get('layer_policy')
+    grade = None
+    if policy is not None and classification == 'complete':
+        native_policy_measurements(report, request, layout, routing, source_board, output_board, cancel)
+        grade = layer_policy_grade(policy, routing / 'attempt', native_policy_result(op_result), classification,
+                                   request['board'])
+        classification = native_layer_verdict(grade)
+        if classification != 'complete':
+            reasons = reasons + [f"saved board layer policy: {grade['status']}"]
+            report['rejected_candidate_sha256'] = digest(output_board)
+            if classification == 'validation_failed':
+                grade = layer_policy_grade(policy, routing / 'attempt', native_policy_result(op_result),
+                                           classification, request['board'])
     if classification == 'complete':
         sha = digest(output_board)
         report['candidate_files'] = {request['board']: sha}
@@ -5730,6 +5809,8 @@ def _run_native_attempt(report, request, layout, routing, candidate_root, inputs
         report['rejected_candidate_sha256'] = digest(output_board)
     report['semantics'] = {'classification': classification, 'reasons': reasons,
                            'exit_code': process['exit_code']}
+    if grade is not None:
+        report['semantics']['layer_policy'] = grade
     return _finish(report, routing, native_result=op_result)
 
 

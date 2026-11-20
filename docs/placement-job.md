@@ -208,7 +208,8 @@ Native non-default netclasses and custom rules are carried through the job.
 `.kicad_dru` exists, `inputs.rules` must name it with its SHA-256; omission or a
 different companion path refuses the job. The full build derives this binding
 from the preceding native project automatically. Materialization, routing and
-final grading preserve the exact authored bytes. Changed or missing routed
+final grading preserve the exact authored bytes. Opening the saved routed board
+loads the project and custom rules shipped beside it. Changed or missing routed
 project/rule files make the result ineligible, even if copying the original
 rules back for final diagnostics yields a clean DRC result. Rule changes also
 change the resumable job identity. Before search, a disposable native rule-loading
@@ -351,11 +352,13 @@ With `route-native`, the job can select the search grid, route a detected single
 select differential pairs and their allowed layers, and request intra-pair skew matching.
 The native operation result lists physical bus groups under `routing.bus_groups` as net
 IDs in lane order. The saved native request maps each ID to its net name and records the
-bus controls and grid in nanometres. Pair impedance uses the authored stackup and checks
-each saved coupled segment, terminal escape and filled reference plane. Grouped length or delay and
-AC-chain placement require measurements on the final saved board after placement's own
-refill. The native placement job refuses those requirements until their final checks are
-available.
+bus controls and grid in nanometres. For pair impedance, placement checks the
+authored stackup and measures each saved coupled segment, terminal escape and
+filled reference plane. For grouped length, nominal delay and AC chains, KiCad
+measures terminal-to-terminal paths on the router output and again after the
+final refill. Placement checks the authored timing profiles before KiCad saves
+the board. The first measurements appear in `route.path_measurements`, and the
+final measurements appear in `final.length_matching` or `final.ac_matching`.
 
 For a host-native placement job, `router.checkout` selects the tool source. The
 host can execute its installed router or a checkout beside the agent-ee

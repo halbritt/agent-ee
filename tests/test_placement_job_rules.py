@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 from build_stage_fixture import requirements as retained_requirements
+from saved_path_fixture import copy_project
 
 from agent_ee import net_constraints, placement_job as job, routing_rules
 from agent_ee.storage import digest, read_json, write_json
@@ -122,7 +123,7 @@ class NativeRuleJobTests(unittest.TestCase):
         self.assertEqual(report['status'], 'completed', report)
         placed = read_json(self.root / 'job/routed-incumbent.json')['placement']
         owners = job._owners(k.LoadBoard(placed['board']))
-        routed = dict(status='routed', router_accepted=True, board=str(board))
+        routed = {**report['route'], 'board': str(board)}
         result = job.final_checks(routed, placed, owners, set(), self.root / label,
             job.normalize_intent(read_json(self.config['inputs']['intent']['path']),
                                  read_json(self.config['inputs']['groups']['path'])))
@@ -211,9 +212,16 @@ class NativeRuleJobTests(unittest.TestCase):
                 self.assertNotEqual(report['status'], 'completed')
                 self.assertFalse((out / 'routed-incumbent.json').exists())
                 if name == 'short-limit':
-                    self.assertEqual(report['final']['opens'], 0, report)
-                    self.assertEqual(report['final']['integrity'], 'preserved', report)
-                    native = read_json(Path(report['final']['board']).parent / 'native-drc.json')
+                    if self.report['route'].get('native_operation_schema'):
+                        self.assertEqual(report['status'], 'refused', report)
+                        self.assertIn('length_out_of_range', report['reason'])
+                        board = copy_project(Path(self.report['final']['board']), self.root / 'short-length', rules)
+                        native, _ = job.drc(board, out, label='length')
+                        self.assertEqual(native['unconnected_items'], [])
+                    else:
+                        self.assertEqual(report['final']['opens'], 0, report)
+                        self.assertEqual(report['final']['integrity'], 'preserved', report)
+                        native = read_json(Path(report['final']['board']).parent / 'native-drc.json')
                     self.assertTrue(any(v['type'] == 'length_out_of_range' for v in native['violations']))
                 else:
                     self.assertIn('native custom rules failed loading witness', report['reason'])

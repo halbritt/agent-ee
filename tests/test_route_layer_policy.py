@@ -51,7 +51,19 @@ def probe(ref, x, y, net, side):
 
 
 for ref, x, side in [('TP1', 15, k.F_Cu), ('TP2', 45, k.B_Cu)]:
-    probe(ref, x, y, net, side if mode == 'layer_change' else None)
+    probe(ref, x, y, net, side if mode in ('layer_change', 'existing_layer_change') else None)
+if mode in ('existing_back', 'existing_layer_change'):
+    def segment(start, end, layer):
+        track = k.PCB_TRACK(b); track.SetLayer(layer); track.SetWidth(k.FromMM(.25)); track.SetNet(net)
+        track.SetStart(k.VECTOR2I(k.FromMM(start), k.FromMM(y)))
+        track.SetEnd(k.VECTOR2I(k.FromMM(end), k.FromMM(y))); b.Add(track)
+    if mode == 'existing_back':
+        segment(15, 45, k.B_Cu)
+    else:
+        segment(15, 30, k.F_Cu); segment(30, 45, k.B_Cu)
+        via = k.PCB_VIA(b); via.SetPosition(k.VECTOR2I(k.FromMM(30), k.FromMM(y)))
+        via.SetViaType(k.VIATYPE_THROUGH); via.SetLayerPair(k.F_Cu, k.B_Cu)
+        via.SetWidth(k.FromMM(.8)); via.SetDrill(k.FromMM(.4)); via.SetNet(net); b.Add(via)
 if mode == 'inner_track':
     # The input's own copper on In1.Cu: a finished AUX connection the router must keep.
     aux = k.NETINFO_ITEM(b, 'AUX'); b.Add(aux)
@@ -173,7 +185,10 @@ class RouteLayerPolicyNativeTest(PlaneFixture, unittest.TestCase):
         self.assertEqual(receipt['status'], 'completed', (receipt['violations'], report['semantics']))
         self.assertEqual(summary['proposal'], 'eligible', report['semantics'])
         argv = report['process']['argv']
-        self.assertIn('--backend-arg=--layers', argv)
+        if 'route-native' in argv:
+            self.assertEqual(json.loads(argv[argv.index('--layer-policy-json') + 1]), attempt.native_layer_settings(OUTER))
+        else:
+            self.assertIn('--backend-arg=--layers', argv)
         grade = summary['layer_policy']
         self.assertEqual(grade['status'], 'pass', grade)
         board = (work / 'routing/candidate/project/pod.kicad_pcb').read_text()
@@ -203,6 +218,12 @@ class RouteLayerPolicyNativeTest(PlaneFixture, unittest.TestCase):
         self.assertTrue({r['net_layer'] for r in grade['items']['area_loss']['exceeded']} &
                         {'GND@In1.Cu', 'GND@In2.Cu'})
         self.assertEqual(grade['items']['pour_integrity']['status'], 'defect')
+
+        if 'route-native' in report['process']['argv']:
+            report['rejected_candidate_sha256'] = '0' * 64
+            attempt.write_report(work / 'routing/adapter-report.json', report)
+            with self.assertRaisesRegex(ValueError, 'rejected layer-policy candidate'):
+                routing_adapter.verify(work)
 
     def test_route_over_a_plane_void_fails_reference_continuity(self):
         # y = 25 crosses the owned In1/In2 fill keepout at x 28..32.
@@ -252,7 +273,9 @@ class RouteLayerPolicyNativeTest(PlaneFixture, unittest.TestCase):
                            for t in facts['tracks']]
         path = work / 'routing/attempt/facts/reference-facts.json'
         path.write_text(json.dumps(facts))
-        result = read_json(work / 'routing/attempt/result.json')
+        operation = work / 'routing/attempt' / attempt.NATIVE_OPERATION_FILE
+        result = (attempt.native_policy_result(read_json(operation)) if operation.is_file()
+                  else read_json(work / 'routing/attempt/result.json'))
         regraded = attempt.layer_policy_grade(OUTER, work / 'routing/attempt', result, 'complete', 'pod.kicad_pcb')
         self.assertEqual(regraded['items']['disallowed_tracks']['status'], 'defect')
         self.assertEqual([t['net'] for t in regraded['items']['disallowed_tracks']['tracks']], ['AUX'])

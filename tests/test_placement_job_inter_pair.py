@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from build_stage_fixture import requirements as retained_requirements
+from saved_path_fixture import copy_project, lengthen_horizontal_trace, measure
 
 from agent_ee import placement_job as job
 from agent_ee.storage import digest, read_json, write_json
@@ -83,9 +84,21 @@ class InterPairJobTests(unittest.TestCase):
         write_json(path,config);done=public_job(path,out)
         self.assertNotEqual(done.returncode,0)
         report=read_json(out/'job-report.json')
-        self.assertEqual(report['status'],'verification_failed',report)
-        self.assertEqual(report['final']['opens'],0)
-        self.assertEqual(report['final']['length_matching']['status'],'FAIL')
+        if self.report['route'].get('native_operation_schema'):
+            self.assertEqual(report['status'], 'route_failed', report)
+            self.assertIn('unable to match coupled pair', report['reason'])
+            board = lengthen_horizontal_trace(self.report, self.root / 'longer-pair', 'B_P')
+            native, _ = job.drc(board, out, label='connected')
+            self.assertEqual(native['unconnected_items'], [])
+            spec = dict(spacing_widths=2, **config['router']['length_match'])
+            measured = measure(board, self.report['route'], self.checkout, 'length_groups', spec, out / 'length')
+            self.assertEqual(measured['board_sha256'], digest(board))
+        else:
+            self.assertEqual(report['status'], 'verification_failed', report)
+            self.assertEqual(report['final']['opens'], 0)
+            measured = report['final']['length_matching']
+        self.assertEqual(measured['status'], 'FAIL')
+        self.assertTrue(measured['groups'][0]['skew_violations'])
         self.assertFalse((out/'routed-incumbent.json').exists())
 
     def test_authored_coupling_requirement_cannot_be_waived(self):
@@ -96,10 +109,20 @@ class InterPairJobTests(unittest.TestCase):
         write_json(request,config);done=public_job(request,out)
         self.assertNotEqual(done.returncode,0)
         report=read_json(out/'job-report.json')
-        self.assertEqual(report['status'],'verification_failed',report)
-        self.assertEqual(report['final']['opens'],0)
-        self.assertEqual(report['final']['length_matching']['status'],'PASS')
-        native=read_json(Path(report['final']['board']).parent/'native-drc.json')
+        if self.report['route'].get('native_operation_schema'):
+            self.assertEqual(report['status'], 'route_failed', report)
+            self.assertIn('unable to match coupled pair', report['reason'])
+            board = copy_project(Path(self.report['final']['board']), self.root / 'matched-strict', rules=path)
+            native, _ = job.drc(board, out, label='coupling')
+            self.assertEqual(native['unconnected_items'], [])
+            spec = self.report['final']['length_matching']['requirement']
+            measured = measure(board, self.report['route'], self.checkout, 'length_groups', spec, out / 'length')
+            self.assertEqual(measured['status'], 'PASS', measured)
+        else:
+            self.assertEqual(report['status'], 'verification_failed', report)
+            self.assertEqual(report['final']['opens'], 0)
+            self.assertEqual(report['final']['length_matching']['status'], 'PASS')
+            native = read_json(Path(report['final']['board']).parent / 'native-drc.json')
         self.assertIn('diff_pair_uncoupled_length_too_long',{v['type'] for v in native['violations']})
         self.assertFalse((out/'routed-incumbent.json').exists())
 

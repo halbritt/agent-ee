@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import unittest
 
+from saved_path_fixture import lengthen_horizontal_trace, measure
 from build_stage_fixture import requirements as retained_requirements
 
 from agent_ee import placement_job as job
@@ -67,23 +68,32 @@ class AcMatchingJobTests(unittest.TestCase):
         self.assertTrue(all(digest(e['path']) == e['sha256'] for e in self.config['inputs'].values()))
 
     def test_connected_unmatched_chain_rejects(self):
-        # Router 995891ae routes this chain within 0.0194 mm of skew without meanders, so a 0.1 mm
-        # tolerance passes at any amplitude. The skew comes from unequal terminal fanout lengths, and
-        # a 0.001 mm meander cannot remove it; a 0.001 mm tolerance (above the 0.0002 mm rounding
-        # bound) therefore cannot be met.
         config = copy.deepcopy(self.config)
         config['router']['ac_match'].update(amplitude_mm=.001, tolerance_mm=.001)
         path, out = self.root / 'insufficient.json', self.root / 'insufficient'
         write_json(path, config)
         done = public_job(path, out)
-        self.assertNotEqual(done.returncode, 0)
         report = read_json(out / 'job-report.json')
-        self.assertEqual(report['status'], 'verification_failed', report)
-        self.assertEqual(report['final']['opens'], 0)
-        self.assertEqual(report['final']['ac_matching']['status'], 'FAIL')
-        chain, = report['final']['ac_matching']['chains']
-        self.assertGreater(chain['skew_mm'], .001, 'the router matched the chain; this case needs a larger skew')
-        self.assertFalse((out / 'routed-incumbent.json').exists())
+        if self.report['route'].get('native_operation_schema'):
+            # Both polarities have the same measured length even at this tighter tolerance.
+            self.assertEqual(done.returncode, 0, report)
+            chain, = report['final']['ac_matching']['chains']
+            self.assertLessEqual(chain['skew_mm'] + chain['rounding_bound_mm'], .001)
+            board = lengthen_horizontal_trace(report, self.root / 'longer-ac', 'DPA_P')
+            native, _ = job.drc(board, out, label='connected-control')
+            self.assertEqual(native['unconnected_items'], [])
+            measured = measure(board, report['route'], self.checkout, 'ac_matching',
+                               config['router']['ac_match'], out / 'direct')
+            self.assertEqual(measured['board_sha256'], digest(board))
+        else:
+            self.assertNotEqual(done.returncode, 0)
+            self.assertEqual(report['status'], 'verification_failed', report)
+            self.assertEqual(report['final']['opens'], 0)
+            measured = report['final']['ac_matching']
+            self.assertFalse((out / 'routed-incumbent.json').exists())
+        self.assertEqual(measured['status'], 'FAIL')
+        chain, = measured['chains']
+        self.assertGreater(chain['skew_mm'], .001)
 
     def test_changed_chain_requirement_cannot_resume(self):
         config = copy.deepcopy(self.config)

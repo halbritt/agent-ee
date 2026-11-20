@@ -1962,7 +1962,15 @@ def _route_attempt(route_dir, *, argv, env, clock, cancel_dir):
     native = 'route-native' in argv_list
     if native:
         idx = argv_list.index('route-native')
-        Path(argv_list[idx + 2]).parent.mkdir(parents=True, exist_ok=True)
+        source, output = map(Path, argv_list[idx + 1:idx + 3])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        # route-native publishes only copper. Make its project and rule files
+        # available before publication so opening the routed board uses them.
+        for suffix in ('.kicad_pro', '.kicad_dru'):
+            companion = source.with_suffix(suffix)
+            if companion.is_file():
+                with companion.open('rb') as src, output.with_suffix(suffix).open('xb') as dest:
+                    shutil.copyfileobj(src, dest)
         Path(argv_list[argv_list.index('--operation-result') + 1]).parent.mkdir(parents=True, exist_ok=True)
     with open(route_dir / 'kicad-route.stdout', 'wb') as out, open(route_dir / 'kicad-route.stderr', 'wb') as err:
         if native:
@@ -1973,7 +1981,10 @@ def _route_attempt(route_dir, *, argv, env, clock, cancel_dir):
                 raise EnvironmentFailure('routing-preflight', str(exc)) from exc
         else:
             done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
-    return routing_adapter.bind_board_attempt(route_dir, argv, done.returncode)
+    routed = routing_adapter.bind_board_attempt(route_dir, argv, done.returncode)
+    if native and routed.get('board'):
+        routed['project'] = str(output.with_suffix('.kicad_pro'))
+    return routed
 
 
 def _route_feedback(record, checkout, *, env, clock, cancel_dir, owned_copper=True):
@@ -2040,6 +2051,31 @@ def _route_feedback(record, checkout, *, env, clock, cancel_dir, owned_copper=Tr
 # The router identity a job records: routing_adapter.preflight's checkout record (the kicad-route
 # commit, clean-tree state and code digest), the executable and adapter digests, and its problems.
 ROUTER_IDENTITY = ('commit', 'clean', 'code_sha256', 'code_files', 'executable_sha256', 'adapter_sha256', 'problems')
+
+
+def _measure_paths(board, routed, router_checkout, kind, spec, out, *, clock, cancel_dir):
+    from . import routing_adapter
+    out.mkdir()
+    request, result = out / 'request.json', out / 'result.json'
+    if routed.get('native_operation_schema'):
+        data = {'requirement': spec}
+        if kind == 'ac_matching':
+            operation = read_json(Path(routed['result_path']))
+            data['pairs'] = (operation.get('routing') or {}).get('diff_pairs', [])
+        write_json(request, data)
+        argv = [sys.executable, '-B', '-m', 'agent_ee.final_paths', kind, str(board), str(request), str(result)]
+    else:
+        write_json(request, spec if kind == 'length_groups' else {'requirement': spec})
+        argv = routing_adapter.post_route_checker_argv(router_checkout, kind, board, request, result)
+    done = _run_child(argv, clock=clock, cancel_dir=cancel_dir)
+    measured = read_json(result) if result.is_file() else {
+        'status': 'FAIL', 'defects': [done.stderr.decode(errors='replace')[-2000:]]}
+    if (done.returncode != 0 or measured.get('board_sha256') != digest(board)
+            or measured.get('requirement') != spec):
+        measured['status'] = 'FAIL'
+        if measured.get('board_sha256') != digest(board) or measured.get('requirement') != spec:
+            measured.setdefault('defects', []).append(f'{kind} result does not bind the saved board and requirement')
+    return measured
 
 
 def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, clock=None, cancel_dir=None,
@@ -2265,6 +2301,13 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
     record.update(attempts=attempts, elapsed_s=time.monotonic() - started, preflight=check,
                   copper_policy=('locked_local_copper_from_track_free_input' if owned_copper and local_record is not None and local_record['protected']
                                  else 'generated_from_track_free_input' if owned_copper else 'preserve_existing'))
+    if record.get('native_operation_schema') and record.get('board') and (length_match or ac_match):
+        saved = Path(record['board'])
+        for kind, spec in [('length_groups', length_match), ('ac_matching', ac_match)]:
+            if spec is not None:
+                record.setdefault('path_measurements', {})[kind] = _measure_paths(
+                    saved, record, checkout, kind, spec, route_dir / (kind + '-verification'),
+                    clock=clock, cancel_dir=cancel_dir)
     if plane_record is not None:
         record['planes'] = plane_record
     if local_record is not None:
@@ -2510,17 +2553,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
                 raise JobRefusal('local decoupling planes differ from captured plane plan')
         report['preflight'] = {}
         report['preflight'] = preflight(config, executable, clock=clock, identities=report['preflight'])
-        if routing_adapter.is_rust_capable_checkout(config['router']['checkout']):
-            # Placement can refill and save the routed board again. These jobs
-            # require measurements against that final copper and the source rules.
-            for option, requirement in (('length_match', length_match), ('ac_match', ac_match)):
-                if requirement is not None:
-                    raise JobRefusal(f'router.{option} requires final saved-board measurement; '
-                                     'route-native does not provide this placement check')
+        rust_route = routing_adapter.is_rust_capable_checkout(config['router']['checkout'])
         if impedance is not None:
             # Native load/save inserts dielectric defaults. Check the authored
             # bytes before placement can make an omitted value look declared.
-            if routing_adapter.is_rust_capable_checkout(config['router']['checkout']):
+            if rust_route:
                 from .placement_impedance import stackup
                 try:
                     stackup(board_bytes, pair_layers[0])
@@ -2536,10 +2573,15 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
             report['preflight']['impedance_stackup'] = {
                 'status': 'PASS', 'board_sha256': sha256_bytes(board_bytes), 'layer': pair_layers[0]}
         if length_match is not None and 'tolerance_ps' in length_match:
-            done = _run_child(routing_adapter.preflight_delay_argv(
-                config['router']['checkout'], board_path,
-                {n for g in length_match['groups'] for n in g}),
-                clock=clock, cancel_dir=None)
+            if rust_route:
+                done = _run_child([sys.executable, '-B', '-m', 'agent_ee.final_paths', 'preflight',
+                                   str(board_path), '-', '-'], clock=clock,
+                                  input_bytes=canonical({'requirement': length_match}))
+            else:
+                done = _run_child(routing_adapter.preflight_delay_argv(
+                    config['router']['checkout'], board_path,
+                    {n for g in length_match['groups'] for n in g}),
+                    clock=clock, cancel_dir=None)
             if done.returncode:
                 raise JobRefusal('original delay model is unproven: '
                                  + done.stderr.decode(errors='replace')[-2000:])
@@ -3272,9 +3314,11 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
         and isinstance(routed.get('argv'), list)
         and 'route-native' in routed['argv']
     )
+    # Older native attempts published the PCB alone and kept its rule files
+    # in the input directory. Current attempts deliver the project alongside it.
     staged_board = (
         Path(routed['argv'][routed['argv'].index('route-native') + 1])
-        if native_routed else None
+        if native_routed and 'project' not in routed else None
     )
     for suffix in ('.kicad_pro', '.kicad_dru'):
         authored = Path(incumbent['directory']) / ('board' + suffix)
@@ -3396,36 +3440,12 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
             if done.returncode != 0 or impedance_result.get('board_sha256') != digest(board):
                 impedance_result['status'] = 'FAIL'
                 impedance_result.setdefault('defects', []).append('final impedance result does not bind the saved board')
-    length_result = None
-    if length_match is not None:
-        out = final_dir.parent / (final_dir.name + '-length-verification')
-        out.mkdir()
-        request, result = out / 'request.json', out / 'result.json'
-        write_json(request, length_match)
-        done = _run_child(routing_adapter.post_route_checker_argv(
-            router_checkout, 'length_groups', board, request, result),
-            clock=clock, cancel_dir=cancel_dir)
-        length_result = read_json(result) if result.is_file() else {
-            'status': 'FAIL', 'defects': [done.stderr.decode(errors='replace')[-2000:]]}
-        if (done.returncode != 0 or length_result.get('board_sha256') != digest(board)
-                or length_result.get('requirement') != length_match):
-            length_result['status'] = 'FAIL'
-            length_result.setdefault('defects', []).append('final length result does not bind the saved board and requirement')
-    ac_result = None
-    if ac_match is not None:
-        out = final_dir.parent / (final_dir.name + '-ac-verification')
-        out.mkdir()
-        request, result = out / 'request.json', out / 'result.json'
-        write_json(request, {'requirement': ac_match})
-        done = _run_child(routing_adapter.post_route_checker_argv(
-            router_checkout, 'ac_matching', board, request, result),
-            clock=clock, cancel_dir=cancel_dir)
-        ac_result = read_json(result) if result.is_file() else {
-            'status': 'FAIL', 'defects': [done.stderr.decode(errors='replace')[-2000:]]}
-        if (done.returncode != 0 or ac_result.get('board_sha256') != digest(board)
-                or ac_result.get('requirement') != ac_match):
-            ac_result['status'] = 'FAIL'
-            ac_result.setdefault('defects', []).append('final AC result does not bind the saved board and requirement')
+    length_result = _measure_paths(board, routed, router_checkout, 'length_groups', length_match,
+                                   final_dir.with_name(final_dir.name + '-length-verification'),
+                                   clock=clock, cancel_dir=cancel_dir) if length_match is not None else None
+    ac_result = _measure_paths(board, routed, router_checkout, 'ac_matching', ac_match,
+                               final_dir.with_name(final_dir.name + '-ac-verification'),
+                               clock=clock, cancel_dir=cancel_dir) if ac_match is not None else None
     split = classify_errors(report_, owners, base_keys, placed_keys, moved=incumbent.get('moved_footprints'), rigid=rigid)
     edge_intent = check_edge_intent(board, normalized, clock=clock, cancel_dir=cancel_dir)
     locality = check_locality(board, normalized, clock=clock, cancel_dir=cancel_dir)
@@ -3497,6 +3517,8 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
         ('pair impedance', impedance_result, 'status', ('PASS',)),
         ('length matching', length_result, 'status', ('PASS',)),
         ('AC matching', ac_result, 'status', ('PASS',))) if result is not None]
+    for kind, observation in routed.get('path_measurements', {}).items():
+        declared.append((f'published router board {kind}', observation.get('status'), ('PASS',)))
     rejections += [f'{name} check: {status}' for name, status, passing in declared if status not in passing]
     failed = bool(rejections)
     # Which rejections the placement made and which the routing made: another routing search of the
