@@ -409,6 +409,16 @@ The 0.5 % bound here is an example, not a source-backed pod limit. AGENTEE-257
 must determine its basis before campaign adoption; this feature supplies no new
 area-loss threshold or RF qualification.
 
+On Rust-capable checkouts the adapter passes `signal_layers`, optional
+`layer_costs` and the per-net declarations to `route-native --layer-policy-json`.
+The Rust search applies the allowed track layers and checks the complete copper
+span of each proposed via on a declared net. A cost preference cannot override
+the allowed layers. After routing, the KiCad bridge reloads the saved source and
+candidate using the source project settings and rules. It measures tracks, arcs,
+vias, poured copper and any declared RF reference plane. A failed or missing
+measurement withholds the candidate. Replay recomputes the grade from the
+retained measurements and the saved board identity.
+
 This declaration adds `items.per_net_signal_layers` to the adapter grade. It
 reads kicad-route's native `validate/candidate-facts.json`, bound to the validated
 board hash, and checks every segment, arc and via of each listed net. All copper

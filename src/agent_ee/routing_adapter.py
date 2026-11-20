@@ -547,6 +547,25 @@ def _verify(run, report, inputs, receipt, layout):
             derived, _ = attempt.native_semantics(
                 process['exit_code'], op_result, op_req_path, None,
                 candidate if proposal != 'none' else None)
+            if 'layer_policy' in request and derived == 'complete':
+                snapshot = routing / 'attempt/snapshot.json'
+                if snapshot.is_file():
+                    board = Path(request['board'])
+                    names = (board, board.with_suffix('.kicad_pro'), board.with_suffix('.kicad_dru'))
+                    captured = report['inputs']['files']
+                    files = {str(name): captured[str(Path(request['project']) / name)] for name in names
+                             if str(Path(request['project']) / name) in captured}
+                    measurement = attempt.strict_json_file(snapshot, 'native board and project snapshot')
+                    if not isinstance(measurement, dict) or measurement.get('files') != files:
+                        raise ValueError('native layer measurement differs from captured board and project rules')
+                result = attempt.native_policy_result(op_result)
+                policy_grade = attempt.layer_policy_grade(request['layer_policy'], routing / 'attempt', result,
+                                                          derived, request['board'])
+                derived = attempt.native_layer_verdict(policy_grade)
+                if (derived != 'complete' and
+                        result['validation']['validated_board_sha256'] != report['rejected_candidate_sha256']):
+                    raise ValueError('rejected layer-policy candidate differs from the measured saved board')
+
             if classification != 'contradiction':
                 if derived != classification:
                     raise ValueError(f'retained reports classify as {derived}, not {classification}')
@@ -722,6 +741,11 @@ def _tool_claims(report, request, layout, *, ran, native_request=None):
         expected_argv = attempt.native_tool_argv(request, {**layout, 'engine': eng_path})
         options = native_request.get('routing_options', {}) if isinstance(native_request, dict) else {}
         protect_mode = options.get('protect_mode') if isinstance(options, dict) else None
+        if isinstance(native_request, dict) and 'layer_policy' in request:
+            expected_layers = attempt.native_layer_settings(request['layer_policy'])
+            if not isinstance(options, dict) or options.get('layer_policy') != expected_layers:
+                raise ValueError('native layer policy differs between the executed argv and saved request')
+
         if '--protect' not in process['argv']:
             # Earlier native invocations omitted the option. Only their exact argv
             # and an exported request without a protection override can replay.

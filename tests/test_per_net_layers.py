@@ -158,7 +158,10 @@ class PerNetLayerNativeTest(native.PlaneFixture, unittest.TestCase):
 
     def test_back_segment_violates_front_only_net_despite_global_allowance(self):
         policy = {**POLICY, 'layer_costs': [1000, 1]}
-        receipt, summary, report, work = self.route(35, policy, 'per-net-back')
+        # The native search prevents new B.Cu tracks. The saved-board grader must
+        # still detect the same physical violation on protected input copper.
+        mode = 'existing_back' if attempt.is_rust_capable_checkout(self.checkout) else 'pth'
+        receipt, summary, report, work = self.route(35, policy, 'per-net-back', mode)
         items = self.assert_rejected_and_bound(summary, report, work)
         item = items['per_net_signal_layers']
         self.assertEqual(item['status'], 'defect', item)
@@ -170,12 +173,13 @@ class PerNetLayerNativeTest(native.PlaneFixture, unittest.TestCase):
                           'reference_continuity': 'pass'}, items)
 
     def test_via_to_another_layer_is_rejected(self):
-        receipt, summary, report, work = self.route(35, POLICY, 'per-net-via', 'layer_change')
+        mode = 'existing_layer_change' if attempt.is_rust_capable_checkout(self.checkout) else 'layer_change'
+        receipt, summary, report, work = self.route(35, POLICY, 'per-net-via', mode)
         items = self.assert_rejected_and_bound(summary, report, work)
         item = items['per_net_signal_layers']
         self.assertEqual(item['status'], 'defect')
         vias = {v['uuid'] for v in self.facts(work)['vias'] if v['net'] == 'SIGNAL'}
-        self.assertTrue(vias, 'the router did not change side through a via')
+        self.assertTrue(vias, 'the saved board contains no SIGNAL through-via')
         self.assertEqual({v['uuid'] for v in item['violations'] if v['kind'] == 'via'}, vias)
         for v in item['violations']:
             if v['kind'] == 'via':
