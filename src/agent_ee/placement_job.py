@@ -3559,7 +3559,7 @@ def _preflight(config, executable=None, *, clock=None, cancel_dir=None, identiti
         # checks. Audit the binary before placement; the final command is audited
         # again at launch with its bridge, paths, arguments and environment.
         try:
-            routing_adapter.check_re01_command([router['engine'], '--version'], env={})
+            routing_adapter.check_re01_command([router['engine'], '--version'], cwd=router['checkout'], env={})
         except routing_adapter.RE01OwnershipError as exc:
             problems.append(f'{exc}. Select the host checkout with AGENT_EE_KICAD_ROUTE_CHECKOUT.')
     if cli.returncode != 0:
