@@ -74,6 +74,7 @@ NO_PYCACHE = '/dev/null'
 # Python processes such a command starts inherit the environment but not -X options, so the
 # command's environment carries a private prefix as well (routing_adapter.router_env).
 ROUTER_PYTHON_FLAGS = ('-B', '-X', f'pycache_prefix={NO_PYCACHE}')
+NATIVE_IO_PYTHON_FLAGS = ('-P', '-s', '-B')
 
 REPORT_SCHEMA = 'agent-ee.kicad-route-attempt/1'
 # Every report has exactly these keys, whatever the outcome.
@@ -5691,17 +5692,26 @@ def native_layer_verdict(grade):
     return 'complete' if grade['status'] == 'pass' else 'policy_failed'
 
 
+def native_bridge_process(layout, *args):
+    """Run native I/O with the sandbox's controlled environment and system interpreter."""
+    bridge = Path(layout['checkout']) / 'tools' / 'rust_engine_kicad.py'
+    env = tool_env(layout)
+    # RE-01 accepts direct script arguments. Python must read the fixed
+    # environment prefix, omit the script and user-site paths, and skip writes.
+    env['PYTHONPYCACHEPREFIX'] = NO_PYCACHE
+    return [PYTHON, *NATIVE_IO_PYTHON_FLAGS, str(bridge), *args], env
+
+
 def native_policy_measurements(report, request, layout, routing, source, saved, cancel):
     policy = request['layer_policy']
     attempt = routing / 'attempt'
     out = routing / 'tmp' / 'layer-measurements.json'
-    bridge = Path(layout['checkout']) / 'tools' / 'rust_engine_kicad.py'
-    argv = [PYTHON, '-I', *ROUTER_PYTHON_FLAGS, str(bridge), 'measure-layer-policy', str(source), str(saved), str(out),
-            '--pour-area-loss', str(policy['pour_area_loss_pct'])]
+    argv, env = native_bridge_process(layout, 'measure-layer-policy', str(source), str(saved), str(out),
+                                      '--pour-area-loss', str(policy['pour_area_loss_pct']))
     if 'reference' in policy:
         argv += ['--reference-spec', canonical_json(reference_spec(policy))]
     with re01_enforced():
-        process = run_tool(argv, tool_env(layout), routing, attempt / 'layer-policy.stdout',
+        process = run_tool(argv, env, routing, attempt / 'layer-policy.stdout',
                            attempt / 'layer-policy.stderr', request['timeout_s'], cancel)
     for stream in ('layer-policy.stdout', 'layer-policy.stderr'):
         if (attempt / stream).is_file():

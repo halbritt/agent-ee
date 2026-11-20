@@ -361,6 +361,24 @@ class RouterCommandCacheTest(unittest.TestCase):
                      ['/k/.venv-krt/bin/python', '-I', '-B', '-c', 'pass']):
             self.assertFalse(routing_adapter.is_router_command(argv), argv)
 
+    def test_native_measurement_interpreter_uses_the_private_cache_and_system_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bridge = root / 'tools/rust_engine_kicad.py'
+            bridge.parent.mkdir()
+            bridge.write_text("import json, sys\n"
+                              "print(json.dumps([sys.pycache_prefix, sys.dont_write_bytecode, "
+                              "sys.flags.no_user_site, sys.flags.safe_path, sys.path]))\n")
+            layout = dict(checkout=root, candidate=root, work=root, state=root)
+            argv, env = attempt.native_bridge_process(layout, 'measure-layer-policy')
+            self.assertEqual(argv[-2:], [str(bridge), 'measure-layer-policy'])
+            run = subprocess.run(argv, env=env, cwd=root, text=True, capture_output=True, check=True)
+            prefix, read_only, no_user_site, safe_path, paths = json.loads(run.stdout)
+            self.assertEqual(prefix, attempt.NO_PYCACHE)
+            self.assertTrue(read_only and no_user_site and safe_path)
+            self.assertNotIn(str(bridge.parent), paths)
+            self.assertNotIn(str(root), paths)
+
     # Words that tie a function to the router checkout or its environment.
     ROUTER_STRINGS = ('.venv-krt', 'kicad-route', 'kicad_route')
     ROUTER_NAMES = ('checkout', 'router_checkout')
