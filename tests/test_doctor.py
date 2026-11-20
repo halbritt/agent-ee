@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,7 +31,8 @@ class DoctorTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.binaries = {}
-        for name in ("kicad-cli", "ngspice", "bwrap", "/usr/bin/python3", "claude", "_pcbnew.so", "agent-ee-placement"):
+        self.python = sys.executable
+        for name in ("kicad-cli", "ngspice", "bwrap", self.python, "claude", "_pcbnew.so", "agent-ee-placement"):
             path = self.root / Path(name).name
             path.write_bytes(f"binary bytes of {name}".encode())
             self.binaries[name] = path
@@ -59,9 +61,9 @@ class DoctorTests(unittest.TestCase):
             raise FileNotFoundError(2, "No such file or directory", command[0])
         if command[0] == str(self.binaries["agent-ee-placement"]):
             return subprocess.CompletedProcess(command, 0, self.versions["agent-ee-placement"] + "\n", "")
-        if command[0] == "/usr/bin/python3" and command[1] == "--version":
+        if command[0] == self.python and command[1] == "--version":
             return subprocess.CompletedProcess(command, 0, "Python 3.12.3\n", "")
-        if command[0] == "/usr/bin/python3":
+        if command[0] == self.python:
             if self.pcbnew_fails:
                 return subprocess.CompletedProcess(
                     command, 1, "", "ModuleNotFoundError: No module named 'pcbnew'\n"
@@ -98,9 +100,9 @@ class DoctorTests(unittest.TestCase):
             self.assertEqual(probes[name]["sha256"], self.sha(name))
             self.assertEqual(probes[name]["version_output"], self.versions[name])
         self.assertEqual(probes["python3"]["version_output"], "Python 3.12.3")
-        self.assertEqual(probes["python3"]["sha256"], self.sha("/usr/bin/python3"))
+        self.assertEqual(probes["python3"]["sha256"], self.sha(self.python))
         # pcbnew is imported through system Python; the relied-on binary is its native extension.
-        self.assertEqual(probes["pcbnew"]["path"], str(self.binaries["/usr/bin/python3"]))
+        self.assertEqual(probes["pcbnew"]["path"], str(self.binaries[self.python]))
         self.assertEqual(probes["pcbnew"]["binary"], str(self.binaries["_pcbnew.so"]))
         self.assertEqual(probes["pcbnew"]["sha256"], self.sha("_pcbnew.so"))
         self.assertNotIn("skipped", report)
@@ -146,7 +148,7 @@ class DoctorTests(unittest.TestCase):
         self.kicad_record()
         original = self.run_probe
         def other_pcbnew_build(command, **kwargs):
-            if command[0] == "/usr/bin/python3" and "GetBuildVersion" in command[-1]:
+            if command[0] == self.python and "GetBuildVersion" in command[-1]:
                 return subprocess.CompletedProcess(command, 0, "10.0.6-10.0.6~ubuntu24.04.1\n", "")
             return original(command, **kwargs)
         self.run_probe = other_pcbnew_build

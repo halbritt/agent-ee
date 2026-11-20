@@ -904,7 +904,8 @@ def prepare_stub_trial(request):
                and item.GetWidth() <= t.GetWidth()
                and all(t.GetEffectiveShape(t.GetLayer()).Collide(p,0) for p in (item.GetStart(),item.GetEnd()))
                for t in receivers):
-            board.Remove(item)
+            board.Delete(item)
+            del items[uid]
             removed.append(uid)
     if not removed:
         return dict(status='not_applicable', removed=[])

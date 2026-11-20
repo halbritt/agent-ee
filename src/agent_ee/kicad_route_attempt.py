@@ -5696,7 +5696,7 @@ def native_policy_measurements(report, request, layout, routing, source, saved, 
     attempt = routing / 'attempt'
     out = routing / 'tmp' / 'layer-measurements.json'
     bridge = Path(layout['checkout']) / 'tools' / 'rust_engine_kicad.py'
-    argv = [PYTHON, '-I', '-B', str(bridge), 'measure-layer-policy', str(source), str(saved), str(out),
+    argv = [PYTHON, '-I', *ROUTER_PYTHON_FLAGS, str(bridge), 'measure-layer-policy', str(source), str(saved), str(out),
             '--pour-area-loss', str(policy['pour_area_loss_pct'])]
     if 'reference' in policy:
         argv += ['--reference-spec', canonical_json(reference_spec(policy))]

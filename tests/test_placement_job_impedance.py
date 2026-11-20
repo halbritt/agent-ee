@@ -27,7 +27,7 @@ def prepare(root, checkout):
     # The job must create the reference through its normal plane producer.
     subprocess.run([sys.executable, '-c', '''import sys,pcbnew as k
 b=k.LoadBoard(sys.argv[1])
-for z in list(b.Zones()):b.Remove(z)
+for z in list(b.Zones()):b.Delete(z)
 k.SaveBoard(sys.argv[1],b)
 ''', str(root / 'board.kicad_pcb')], check=True, capture_output=True, timeout=30)
     write_json(root / 'intent.json', dict(fixed_poses=[], edge_connectors=[], proximity=[]))
@@ -65,7 +65,7 @@ def assert_missing_reference(case, positive, rejected, layer, directory):
         sources = [z for z in board.Zones() if z.IsOnLayer(board.GetLayerID(layer))]
         case.assertTrue(sources)
         for zone in sources:
-            board.Remove(zone)
+            board.Delete(zone)
         path = directory / 'interrupted-reference.kicad_pcb'
         k.SaveBoard(str(path), board)
         plan = positive['final']['impedance']['plan']

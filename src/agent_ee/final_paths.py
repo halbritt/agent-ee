@@ -208,7 +208,7 @@ def _read_paths(findings, label, paths, unit, inventory, tolerance):
 
 def check(board, request, output, mode):
     import pcbnew
-    from .native_run import drc_argv
+    from . import native_run
     from .routing_adapter import validate_router_options
     key = 'ac_match' if mode == 'ac_matching' else 'length_match'
     options = {key: request['requirement']}
@@ -271,11 +271,15 @@ def check(board, request, output, mode):
             batch = rules if mode == 'ac_matching' else [rules[index]]
             rule_file.write_text(old_rules + '\n' + '\n'.join(batch) + '\n')
             report_path = work / f'paths-{index}.json'
-            # The placement controller owns this process group and its deadline.
-            # KiCad inherits the group so cancellation also stops the measurement.
-            with (work / f'paths-{index}.log').open('wb') as log:
-                subprocess.run(drc_argv(copied, report_path, units='mm'), stdout=log, stderr=log,
-                               timeout=300, check=True)
+            # Keep the project read-only during measurement. Bubblewrap also
+            # terminates KiCad if the parent placement job cancels this process.
+            run_dir = work / f'drc-{index}'
+            intent = native_run.drc(Path('/candidate') / copied.name, '/work/paths.json',
+                                    units='mm', timeout=300)
+            execution = native_run.run(intent, inputs=project, work=run_dir)
+            (work / f'paths-{index}.log').write_bytes(execution.stdout + execution.stderr)
+            native_run.completed(execution).check_returncode()
+            (run_dir / 'paths.json').replace(report_path)
             findings = read_json(report_path)
         unit = 'ps' if 'tolerance_ps' in spec else 'mm'
         tolerance = Decimal(str(spec['tolerance_' + unit])) if mode == 'length_groups' else None

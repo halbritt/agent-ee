@@ -28,7 +28,7 @@ def prepare(root, checkout):
     # The normal plane producer must produce both references from this plan.
     subprocess.run([sys.executable, '-c', '''import sys,pcbnew as k
 b=k.LoadBoard(sys.argv[1])
-for z in list(b.Zones()):b.Remove(z)
+for z in list(b.Zones()):b.Delete(z)
 k.SaveBoard(sys.argv[1],b)
 ''', str(root / 'board.kicad_pcb')], check=True, capture_output=True, timeout=30)
     planes = read_json(root / 'planes.json')
