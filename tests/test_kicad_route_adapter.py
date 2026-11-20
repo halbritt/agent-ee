@@ -1060,6 +1060,19 @@ class LayerPolicyTest(unittest.TestCase):
         self.assertEqual(grade['items']['pour_integrity']['status'], 'defect')
         self.assertEqual(case.verify()['layer_policy'], grade)
 
+    def test_native_pour_bound_uses_exact_polygon_area_at_float_resolution(self):
+        before = 200_000_000_000_000_000
+        row = {'net_layer': 'GND@F.Cu', 'area_mm2': [100000., 50000.], 'area_delta_pct': -50.}
+        # Half a square nanometre more loss has the same printable percentage.
+        for after, status in ((before // 2 - 1, 'defect'), (before // 2, 'pass')):
+            with self.subTest(after=after):
+                areas = [before, after]
+                detail = attempt.area_loss({}, [dict(row, area_twice_nm2=areas)], 50.)
+                self.assertEqual(detail['status'], status, detail)
+                self.assertEqual(detail['layers'][0]['area_twice_nm2'], areas)
+        for invalid in ([before], [before, False], [before, before]):
+            self.assertEqual(attempt.area_loss({}, [dict(row, area_twice_nm2=invalid)], 50.)['status'], 'unknown')
+
     def test_unmeasured_items_are_unknown_and_never_pass(self):
         for label, scenario, policy in (
                 ('no pour grade', {'name': 'complete', 'no_pour': True}, POLICY),

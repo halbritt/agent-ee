@@ -417,7 +417,12 @@ the allowed layers. After routing, the KiCad bridge reloads the saved source and
 candidate using the source project settings and rules. It measures tracks, arcs,
 vias, poured copper and any declared RF reference plane. A failed or missing
 measurement withholds the candidate. Replay recomputes the grade from the
-retained measurements and the saved board identity.
+retained measurements and the saved board identity. KiCad fill measurements
+count overlapping copper once per net and layer. Native area rows keep the two
+display areas in mm² and also record the signed area change in mm² and the exact
+source and candidate areas in half-square-nanometre units. The policy compares
+those integer areas against the declared percentage even when the two display
+areas round to the same number.
 
 This declaration adds `items.per_net_signal_layers` to the adapter grade. It
 reads kicad-route's native `validate/candidate-facts.json`, bound to the validated
