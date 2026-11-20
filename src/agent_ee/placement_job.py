@@ -1962,7 +1962,15 @@ def _route_attempt(route_dir, *, argv, env, clock, cancel_dir):
     native = 'route-native' in argv_list
     if native:
         idx = argv_list.index('route-native')
-        Path(argv_list[idx + 2]).parent.mkdir(parents=True, exist_ok=True)
+        source, output = map(Path, argv_list[idx + 1:idx + 3])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        # route-native publishes only copper. Make its project and rule files
+        # available before publication so opening the routed board uses them.
+        for suffix in ('.kicad_pro', '.kicad_dru'):
+            companion = source.with_suffix(suffix)
+            if companion.is_file():
+                with companion.open('rb') as src, output.with_suffix(suffix).open('xb') as dest:
+                    shutil.copyfileobj(src, dest)
         Path(argv_list[argv_list.index('--operation-result') + 1]).parent.mkdir(parents=True, exist_ok=True)
     with open(route_dir / 'kicad-route.stdout', 'wb') as out, open(route_dir / 'kicad-route.stderr', 'wb') as err:
         if native:
@@ -1970,7 +1978,10 @@ def _route_attempt(route_dir, *, argv, env, clock, cancel_dir):
                 done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
         else:
             done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
-    return routing_adapter.bind_board_attempt(route_dir, argv, done.returncode)
+    routed = routing_adapter.bind_board_attempt(route_dir, argv, done.returncode)
+    if native and routed.get('board'):
+        routed['project'] = str(output.with_suffix('.kicad_pro'))
+    return routed
 
 
 def _route_feedback(record, checkout, *, env, clock, cancel_dir, owned_copper=True):
@@ -2288,10 +2299,7 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
                   copper_policy=('locked_local_copper_from_track_free_input' if owned_copper and local_record is not None and local_record['protected']
                                  else 'generated_from_track_free_input' if owned_copper else 'preserve_existing'))
     if record.get('native_operation_schema') and record.get('board') and (length_match or ac_match):
-        project = route_dir / 'native-path-project'
-        shutil.copytree(staged, project)
-        saved = project / 'board.kicad_pcb'
-        shutil.copyfile(record['board'], saved)
+        saved = Path(record['board'])
         for kind, spec in [('length_groups', length_match), ('ac_matching', ac_match)]:
             if spec is not None:
                 record.setdefault('path_measurements', {})[kind] = _measure_paths(
@@ -3303,9 +3311,11 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
         and isinstance(routed.get('argv'), list)
         and 'route-native' in routed['argv']
     )
+    # Older native attempts published the PCB alone and kept its rule files
+    # in the input directory. Current attempts deliver the project alongside it.
     staged_board = (
         Path(routed['argv'][routed['argv'].index('route-native') + 1])
-        if native_routed else None
+        if native_routed and 'project' not in routed else None
     )
     for suffix in ('.kicad_pro', '.kicad_dru'):
         authored = Path(incumbent['directory']) / ('board' + suffix)

@@ -5,14 +5,20 @@ import shutil
 from agent_ee import placement_job as job
 
 
+def copy_project(source, directory, rules=None):
+    directory.mkdir()
+    board = directory / source.name
+    for suffix in ('.kicad_pcb', '.kicad_pro', '.kicad_dru'):
+        source_file = rules if suffix == '.kicad_dru' and rules else source.with_suffix(suffix)
+        shutil.copyfile(source_file, board.with_suffix(suffix))
+    return board
+
+
 def lengthen_horizontal_trace(report, directory, net):
     import pcbnew as k
 
     source = Path(report['final']['board'])
-    directory.mkdir()
-    board = directory / source.name
-    for suffix in ('.kicad_pcb', '.kicad_pro', '.kicad_dru'):
-        shutil.copyfile(source.with_suffix(suffix), board.with_suffix(suffix))
+    board = copy_project(source, directory)
     native = k.LoadBoard(str(board))
     track = max((t for t in native.GetTracks() if t.GetNetname() == net and t.GetClass() == 'PCB_TRACK'
                  and t.GetStart().y == t.GetEnd().y), key=lambda t: t.GetLength())

@@ -208,7 +208,8 @@ Native non-default netclasses and custom rules are carried through the job.
 `.kicad_dru` exists, `inputs.rules` must name it with its SHA-256; omission or a
 different companion path refuses the job. The full build derives this binding
 from the preceding native project automatically. Materialization, routing and
-final grading preserve the exact authored bytes. Changed or missing routed
+final grading preserve the exact authored bytes. Opening the saved routed board
+loads the project and custom rules shipped beside it. Changed or missing routed
 project/rule files make the result ineligible, even if copying the original
 rules back for final diagnostics yields a clean DRC result. Rule changes also
 change the resumable job identity. Before search, a disposable native rule-loading
