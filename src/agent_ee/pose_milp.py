@@ -113,16 +113,15 @@ def candidate(problem, diagnostic, proposal, evaluation):
     return dict(evaluation, seed=diagnostic['seed'], strategy=SCHEMA)
 
 
-def runtime_identity():
-    """Observe the existing owned KRT wheels; never select or install a fallback."""
+def runtime_identity(helper_path=__file__):
+    """Capture the numerical runtime used for this job and its placement helper."""
     import importlib.metadata
-    import sys
     prefix = Path(sys.prefix).resolve()
     versions, files = {}, {}
-    for name, version in [('numpy', '2.5.4'), ('scipy', '1.18.1')]:
+    for name in ('numpy', 'scipy'):
         dist = importlib.metadata.distribution(name)
-        if dist.version != version or not dist.files:
-            raise ValueError('pose solver requires the pinned KRT wheel: ' + name)
+        if not dist.version or not dist.files:
+            raise ValueError('pose solver requires a version and installed file list for ' + name)
         versions[name] = dist.version
         for entry in dist.files:
             if entry.suffix == '.pyc':
@@ -133,7 +132,7 @@ def runtime_identity():
             files[path.relative_to(prefix).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     return dict(versions=versions, files_sha256=hashlib.sha256(canonical(files)).hexdigest(),
                 python_sha256=hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
-                python_version=sys.version, helper_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+                python_version=sys.version, helper_sha256=hashlib.sha256(Path(helper_path).read_bytes()).hexdigest())
 
 
 def child_argv(checkout):

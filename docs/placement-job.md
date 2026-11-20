@@ -38,9 +38,10 @@ and unrelated footprint poses stay unchanged. Conservative body, copper, access
 and locality bounds guide the proposal; failure to find a solution is search
 failure, not proof that the design is physically infeasible.
 
-This stage uses the qualified router checkout's `.venv-krt/bin/python`, with
-NumPy 2.5.4 and SciPy 1.18.1. The implementation and observed runtime bytes enter
-the checkpoint identity. The repair uses at most half the remaining job time,
+This stage uses NumPy and SciPy installed in the qualified router checkout's
+`.venv-krt/bin/python`. The checkpoint records their versions and file hashes,
+the interpreter and the placement helper. The solver checks that identity before
+and after calculating a proposal. The repair uses at most half the remaining job time,
 capped at 150 seconds, with at most 120 seconds inside the numerical solver.
 Cancellation stops its process. Complete UUID coverage and unchanged inactive
 poses are checked before the original, hash-bound Rust engine regrades the

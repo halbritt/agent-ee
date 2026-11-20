@@ -5,6 +5,7 @@ import io
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -104,6 +105,12 @@ class ProposalTests(unittest.TestCase):
         original = copy.deepcopy((problem, diagnostic))
         checkout = require_kicad_route()
         runtime = job._acquisition_solver(checkout, {'operation': 'identity'}, clock=job.Clock(30))
+        installed = subprocess.check_output([
+            checkout / '.venv-krt/bin/python', '-I', '-B', '-c',
+            'from importlib.metadata import version; import json; '
+            'print(json.dumps({name: version(name) for name in ("numpy", "scipy")}))',
+        ], text=True)
+        self.assertEqual(runtime['versions'], json.loads(installed))
         result = job._acquisition_solver(checkout, dict(operation='propose', problem=problem,
             diagnostic=diagnostic, max_seconds=10, runtime=runtime), clock=job.Clock(30))
         self.assertEqual(result['status'], 'proposed', result)
@@ -249,7 +256,8 @@ class ControllerTests(unittest.TestCase):
 
     def test_runtime_drift_refuses_before_numerical_work(self):
         for runtime in ({**self.runtime, 'helper_sha256': 'changed'},
-                        {**self.runtime, 'files_sha256': 'changed'}):
+                        {**self.runtime, 'files_sha256': 'changed'},
+                        {**self.runtime, 'versions': {'numpy': 'changed'}}):
             request = io.StringIO(json.dumps(dict(operation='propose', runtime=self.runtime)))
             with patch('sys.stdin', request), patch.object(repair, 'runtime_identity', return_value=runtime), \
                     patch.object(repair, 'propose', side_effect=AssertionError('must not run')):

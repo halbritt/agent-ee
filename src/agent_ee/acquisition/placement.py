@@ -113,26 +113,8 @@ def candidate(problem, diagnostic, proposal, evaluation):
 
 
 def runtime_identity():
-    """Observe the existing owned KRT wheels; never select or install a fallback."""
-    import importlib.metadata
-    import sys
-    prefix = Path(sys.prefix).resolve()
-    versions, files = {}, {}
-    for name, version in [('numpy', '2.5.4'), ('scipy', '1.18.1')]:
-        dist = importlib.metadata.distribution(name)
-        if dist.version != version or not dist.files:
-            raise ValueError('acquisition placement requires the pinned KRT wheel: ' + name)
-        versions[name] = dist.version
-        for entry in dist.files:
-            if entry.suffix == '.pyc':
-                continue
-            path = Path(dist.locate_file(entry)).resolve(strict=True)
-            if not path.is_relative_to(prefix):
-                raise ValueError('acquisition solver dependency escaped its explicit runtime')
-            files[path.relative_to(prefix).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return dict(versions=versions, files_sha256=hashlib.sha256(canonical(files)).hexdigest(),
-                python_sha256=hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
-                python_version=sys.version, helper_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+    from .. import pose_milp
+    return pose_milp.runtime_identity(__file__)
 
 
 def child_argv(checkout):
