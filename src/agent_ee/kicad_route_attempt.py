@@ -27,6 +27,7 @@ import collections
 import collections.abc
 import contextlib
 import contextvars
+from decimal import Decimal
 import errno
 import hashlib
 import importlib.util
@@ -5275,9 +5276,26 @@ def area_loss(policy, layers, bound):
     the policy protects had no copper to begin with."""
     reference = {f'{policy["reference"]["net"]}@{layer}' for layer in policy['reference']['layers']} \
         if 'reference' in policy else set()
-    rows = [{'net_layer': r['net_layer'], 'area_delta_pct': r['area_delta_pct'], 'area_mm2': r.get('area_mm2')}
-            for r in layers]
-    over = [r for r in rows if r['area_delta_pct'] is not None and -r['area_delta_pct'] > bound]
+    rows, over = [], []
+    numerator, denominator = Decimal(str(bound)).as_integer_ratio()
+    for layer in layers:
+        pct = layer['area_delta_pct']
+        row = {'net_layer': layer['net_layer'], 'area_delta_pct': pct, 'area_mm2': layer.get('area_mm2')}
+        if 'area_twice_nm2' in layer:
+            areas = layer['area_twice_nm2']
+            if not isinstance(areas, list) or len(areas) != 2 or not all(type(n) is int and n >= 0 for n in areas):
+                return _item('unknown', reason='malformed native fill areas')
+            before, after = areas
+            delta = after - before
+            if pct != (delta * 100 / before if before else None):
+                return _item('unknown', reason='reported fill percentage differs from native fill areas')
+            row.update(area_twice_nm2=areas, area_delta_mm2=delta / 2_000_000_000_000)
+            exceeds = -delta * 100 * denominator > before * numerator
+        else:
+            exceeds = pct is not None and -pct > bound
+        rows.append(row)
+        if exceeds:
+            over.append(row)
     unmeasured = [r for r in rows if r['area_delta_pct'] is None]
     empty_reference = [r for r in unmeasured if r['net_layer'] in reference]
     absent = sorted(reference - {r['net_layer'] for r in rows})
