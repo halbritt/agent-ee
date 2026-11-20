@@ -1966,8 +1966,11 @@ def _route_attempt(route_dir, *, argv, env, clock, cancel_dir):
         Path(argv_list[argv_list.index('--operation-result') + 1]).parent.mkdir(parents=True, exist_ok=True)
     with open(route_dir / 'kicad-route.stdout', 'wb') as out, open(route_dir / 'kicad-route.stderr', 'wb') as err:
         if native:
-            with routing_adapter.re01_enforced():
-                done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
+            try:
+                with routing_adapter.re01_enforced():
+                    done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
+            except routing_adapter.RE01OwnershipError as exc:
+                raise EnvironmentFailure('routing-preflight', str(exc)) from exc
         else:
             done = _run_child(argv, clock=clock, cancel_dir=cancel_dir, stdout=out, stderr=err, env=env, cwd=route_dir)
     return routing_adapter.bind_board_attempt(route_dir, argv, done.returncode)
@@ -3551,6 +3554,14 @@ def _preflight(config, executable=None, *, clock=None, cancel_dir=None, identiti
     router = routing_adapter.preflight(config['router']['checkout'])
     identities['router'] = {k: router.get(k) for k in ('checkout', *ROUTER_IDENTITY[:-1])}
     problems = list(router['problems'])
+    if router.get('rust_capable') and not problems:
+        # Clean source and the operator's host executable selection are separate
+        # checks. Audit the binary before placement; the final command is audited
+        # again at launch with its bridge, paths, arguments and environment.
+        try:
+            routing_adapter.check_re01_command([router['engine'], '--version'], env={})
+        except routing_adapter.RE01OwnershipError as exc:
+            problems.append(f'{exc}. Select the host checkout with AGENT_EE_KICAD_ROUTE_CHECKOUT.')
     if cli.returncode != 0:
         problems.append('kicad-cli unavailable')
     if problems:

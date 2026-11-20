@@ -357,6 +357,12 @@ AC-chain placement require measurements on the final saved board after placement
 refill. The native placement job refuses those requirements until their final checks are
 available.
 
+For a host-native placement job, `router.checkout` selects the tool source. The
+host can execute its installed router or a checkout beside the agent-ee
+repository. For another checkout location, set `AGENT_EE_KICAD_ROUTE_CHECKOUT`
+to that same path when launching the job. Runtime preflight records the
+selected tool and reports an unavailable host executable before placement.
+
 Optional `router.grid_step_mm` selects the builtin router's search resolution
 in millimetres, including its coupled differential-pair and remaining-net
 passes. For example, `0.025` requests a 25 micrometre search grid. It does not
