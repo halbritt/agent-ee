@@ -282,19 +282,21 @@ export (routing) and final validation all draw on it.
 The placement search takes a share of the time left when it starts
 (`search.time_share`, a number above 0 and below 1, default 0.4); the rest is
 kept for the native checks of its candidates, routing and the final checks. The
-engine sizes the search to that time. `steps_per_seed` is optional. Without it
-a seed runs for its whole share of the time, and the design compiler writes none
-unless the design gives one: on the boards measured the cost was still falling at
-250,000 steps per movable part, so no fixed count is a sound default. With it, it
-is the most steps a seed may take, not a promise: the remaining time is shared between the seeds still to
-run, a seed's schedule follows whichever is further along, its step count or its
-share of the clock, and so always cools fully. A short probe measures the step
-rate, and seeds are dropped from the end of the list when the rate cannot give
-each of them 2,000 trial moves per movable part; the first seed always runs. Each
-seed row in `engine-output.json` says what ended it (`limited_by`: `steps` or
-`time`) and its measured `steps_per_s`; `budget` holds the plan. A search limited
-this way ends `completed`, and its candidates go on as usual. The job report
-records it as `search.limited_by_budget` and in `placement.deadline_limited`.
+engine gives each scheduled seed a time window and a step limit. An explicit
+`steps_per_seed` supplies that limit. When it is omitted, the engine allows
+250,000 steps per movable part, with a floor of 100,000 steps. Annealing ends
+at the first limit it reaches. A short probe measures the step rate. The
+engine drops later seeds when it estimates that fewer than 2,000 trial moves
+per movable part fit in the remaining time. The first pending seed runs if
+the search still has time.
+
+In `engine-output.json`, `budget.steps_per_seed_limit` records the requested
+limit or `null`. The annealing loop uses `budget.effective_steps_per_seed_limit`.
+A completed seed reports its step count, measured `steps_per_s` and which
+limit ended the run in `limited_by`. A seed dropped by the planner has
+status `not_run_budget` and contributes to `budget.seeds_not_run`. Candidates
+from completed seeds proceed to native checks. The job reports a time-limited
+search in `search.limited_by_budget` and `placement.deadline_limited`.
 Each completed seed row also records `clock_schedule_start_step`: the first
 step where the schedule began following the clock, or `null` when it never
 did. Seed heartbeat events carry the same field. A seed can finish its full

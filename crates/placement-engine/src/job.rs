@@ -2993,8 +2993,8 @@ pub fn run(input: &Value) -> Result<Value> {
     let skip: BTreeSet<u64> = search["completed_seeds"].as_array().cloned().unwrap_or_default()
         .iter().filter_map(Value::as_u64).collect();
     let deadline_ms = search.get("deadline_ms").and_then(Value::as_u64);
-    // Without a step count a seed runs for its share of the deadline: the search is as
-    // long as its time allows (AGENTEE-637). A step count is then only an upper limit.
+    // Each seed stops at its time window or its step limit. When the caller
+    // gives only a deadline, the step limit depends on the movable part count.
     let steps_given = search.get("steps_per_seed").is_some_and(|v| !v.is_null());
     ensure!(steps_given || deadline_ms.is_some(), "search needs steps_per_seed or deadline_ms");
     let mut limits = Limits {
@@ -3179,6 +3179,7 @@ pub fn run(input: &Value) -> Result<Value> {
         "timing": {"prepare_s": prepare_s, "total_s": started.elapsed().as_secs_f64()},
         "budget": {"sized_to_deadline": sized, "deadline_ms": deadline_ms,
                    "steps_per_seed_limit": if steps_given { json!(limits.steps_per_seed) } else { Value::Null },
+                   "effective_steps_per_seed_limit": limits.steps_per_seed.max(1),
                    "useful_steps_per_seed": useful_steps, "probe": probe, "plan": plan_rows,
                    "seeds_time_limited": time_limited, "seeds_not_run": dropped,
                    "limited": time_limited > 0 || dropped > 0 || status == "deadline"},
@@ -3908,7 +3909,8 @@ mod tests {
         for c in result["shortlist"].as_array().unwrap() {
             assert_eq!(c["full_evaluation_equal"], true);
         }
-        // No step count: every seed runs for its share of the time.
+        // No requested step count: each scheduled seed gets a time window and
+        // the board-size limit. The rate probe may drop a later seed.
         let mut open = input(vec![]);
         open["search"].as_object_mut().unwrap().remove("steps_per_seed");
         open["search"]["verify_every"] = json!(0);
@@ -3916,7 +3918,34 @@ mod tests {
         let timed = run(&open).unwrap();
         assert_eq!(timed["status"], "completed");
         assert_eq!(timed["budget"]["steps_per_seed_limit"], Value::Null);
-        assert!(timed["seeds"].as_array().unwrap().iter().all(|s| s["limited_by"] == "time"));
+        let rows = timed["seeds"].as_array().unwrap();
+        let plan = timed["budget"]["plan"].as_array().unwrap();
+        let requested = open["search"]["seeds"].as_array().unwrap();
+        let ceiling = timed["budget"]["effective_steps_per_seed_limit"].as_u64().unwrap();
+        assert_eq!(ceiling, 4 * 250_000);
+        assert_eq!(rows.len(), requested.len());
+        assert!(!plan.is_empty());
+        assert_eq!(plan[0]["seed"], requested[0]["seed"]);
+        let mut time_limited = 0;
+        for (request, row) in requested.iter().zip(rows) {
+            assert_eq!(row["seed"], request["seed"]);
+            if plan.iter().any(|entry| entry["seed"] == row["seed"]) {
+                assert_eq!(row["status"], "completed");
+                let steps = row["steps"].as_u64().unwrap();
+                assert!((1..=ceiling).contains(&steps));
+                if steps == ceiling {
+                    assert_eq!(row["limited_by"], "steps");
+                } else {
+                    assert_eq!(row["limited_by"], "time");
+                    time_limited += 1;
+                }
+            } else {
+                assert_eq!(row["status"], "not_run_budget");
+                assert!(row.get("steps").is_none() && row.get("limited_by").is_none());
+            }
+        }
+        assert_eq!(timed["budget"]["seeds_time_limited"], time_limited);
+        assert_eq!(timed["budget"]["seeds_not_run"], rows.len() - plan.len());
         open["search"].as_object_mut().unwrap().remove("deadline_ms");
         assert!(run(&open).unwrap_err().to_string().contains("steps_per_seed or deadline_ms"));
         // Without a deadline nothing is sized and the result is the step-for-step one.
@@ -3924,6 +3953,7 @@ mod tests {
         plain["search"].as_object_mut().unwrap().remove("deadline_ms");
         let (a, b) = (run(&plain).unwrap(), run(&plain).unwrap());
         assert_eq!(a["budget"]["sized_to_deadline"], false);
+        assert_eq!(a["budget"]["effective_steps_per_seed_limit"], plain["search"]["steps_per_seed"]);
         assert_eq!(a["shortlist"], b["shortlist"]);
         assert!(a["seeds"].as_array().unwrap().iter().all(|s| s["limited_by"] == "steps"));
         assert!(a["seeds"].as_array().unwrap().iter().all(|s| s.get("clock_schedule_start_step") == Some(&Value::Null)));
