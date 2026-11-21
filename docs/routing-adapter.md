@@ -409,6 +409,10 @@ The 0.5 % bound here is an example, not a source-backed pod limit. AGENTEE-257
 must determine its basis before campaign adoption; this feature supplies no new
 area-loss threshold or RF qualification.
 
+A checkout containing the native Rust crate requires a regular
+`tools/rust_engine_kicad.py` to run the builtin router. A missing bridge or
+a symlink produces an error before routing.
+
 On Rust-capable checkouts the adapter passes `signal_layers`, optional
 `layer_costs` and the per-net declarations to `route-native --layer-policy-json`.
 The Rust search applies the allowed track layers and checks the complete copper

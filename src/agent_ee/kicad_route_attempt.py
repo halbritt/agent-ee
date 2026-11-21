@@ -300,11 +300,14 @@ def resolve_kicad_route_checkout(explicit=None):
 
 
 def is_rust_capable_checkout(checkout):
-    """True when the checkout carries the Rust native bridge (tools/rust_engine_kicad.py)."""
+    """Select the native router even if its bridge is missing or damaged."""
     if not checkout:
         return False
-    bridge = Path(checkout) / 'tools' / 'rust_engine_kicad.py'
-    return bridge.is_file() and not bridge.is_symlink()
+    root = Path(checkout)
+    bridge = root / 'tools' / 'rust_engine_kicad.py'
+    # A dangling symlink or an incomplete native crate still identifies this
+    # checkout. Preflight and command construction report the missing tool.
+    return bridge.exists() or bridge.is_symlink() or (root / 'rust-engine' / 'Cargo.toml').is_file()
 
 
 def resolve_native_bridge(checkout=None):

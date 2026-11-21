@@ -628,6 +628,35 @@ class NativePrerequisiteTest(unittest.TestCase):
 class Feature10RouteNativeUnitTests(unittest.TestCase):
     """Focused behavioral coverage for resolver, route-native contract, exits 0/2..8, and RE-01."""
 
+    def test_damaged_native_checkout_refuses_board_routing_without_legacy_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            router = root / 'router'
+            (router / 'tools').mkdir(parents=True)
+            self.assertFalse(attempt.is_native_request({'backend': 'builtin'}, router))
+            engine = router / 'rust-engine/target/release/kicad-route-engine'
+            engine.parent.mkdir(parents=True)
+            engine.touch(mode=0o755)
+            (router / 'rust-engine/Cargo.toml').write_text('[package]\nname = "kicad-route-engine"\n')
+            bridge = router / 'tools/rust_engine_kicad.py'
+            foreign = root / 'foreign.py'
+            foreign.write_text('# different module\n')
+            for state in ('missing', 'symlink', 'dangling'):
+                with self.subTest(state=state):
+                    if state == 'symlink':
+                        bridge.symlink_to(foreign)
+                    elif state == 'dangling':
+                        foreign.unlink()
+                    self.assertTrue(attempt.is_native_request({'backend': 'builtin'}, router))
+                    self.assertIsNone(attempt.resolve_native_bridge(router))
+                    with self.assertRaisesRegex(ValueError, 'bridge|rust_engine_kicad'):
+                        routing_adapter.board_route_argv(router, root / 'input', root / 'out', budget_s=30)
+            bridge.unlink()
+            bridge.write_text('# native I/O\n')
+            self.assertEqual(attempt.resolve_native_bridge(router), bridge)
+            argv = routing_adapter.board_route_argv(router, root / 'input', root / 'out', budget_s=30)
+            self.assertEqual(argv[:2], [str(engine), 'route-native'])
+
     def test_checkout_and_engine_resolver_precedence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
