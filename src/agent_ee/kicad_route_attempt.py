@@ -307,7 +307,7 @@ def is_rust_capable_checkout(checkout):
     bridge = root / 'tools' / 'rust_engine_kicad.py'
     # A dangling symlink or an incomplete native crate still identifies this
     # checkout. Preflight and command construction report the missing tool.
-    return bridge.exists() or bridge.is_symlink() or (root / 'rust-engine' / 'Cargo.toml').is_file()
+    return bridge.exists() or bridge.is_symlink() or (root / 'rust-engine').is_dir()
 
 
 def resolve_native_bridge(checkout=None):

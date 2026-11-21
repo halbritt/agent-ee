@@ -160,6 +160,7 @@ Tests: `PYTHONPATH=src /usr/bin/python3 -m unittest tests.test_generate -v`.
 The integration test runs stages 1 to 5 and 7 with `--skip-review` over the
 tests' owned synthetic catalog, committed to a throwaway git checkout, never the
 owner's live fome-mc BOM. Stage 5 runs the kicad-route checkout named by
-`AGENT_EE_KICAD_ROUTE_CHECKOUT`, put first on `PATH`. Without the toolchain or
+`AGENT_EE_KICAD_ROUTE_CHECKOUT`. It invokes that checkout’s native engine or,
+for an explicitly selected legacy checkout, its own launcher. Without the toolchain or
 that variable the test skips, and under `AGENT_EE_REQUIRE_TOOLCHAIN=1` it fails.
 Tests never run stage 6 with inference.

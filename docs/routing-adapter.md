@@ -36,8 +36,10 @@ and `publication.output_sha256 == sha256(output_board)`), maps exits
 with legacy `0..5`, enforces `RE-01` via `sys.addaudithook` (forbidding
 `bin/kicad-route` and `src/kicad_route/*.py` execution), and fails closed with
 zero fallback to Python KRT if `kicad-route-engine` is missing or an unsupported
-legacy/M4 option is requested. Non-Rust synthetic checkouts keep the legacy
-`kicad-route/route/1` contract below.
+legacy/M4 option is requested. The default builtin router requires a native
+checkout and a regular, unlinked bridge. A caller can explicitly select a historical
+or synthetic checkout for the legacy `kicad-route/route/1` contract below.
+The generation stage uses that checkout’s own `bin/kicad-route`.
 
 The adapter runs kicad-route at the clean commit its checkout holds and records
 that commit in every report (see
@@ -408,10 +410,6 @@ nonempty allowed copper-layer lists. Each list must be a subset of the global
 The 0.5 % bound here is an example, not a source-backed pod limit. AGENTEE-257
 must determine its basis before campaign adoption; this feature supplies no new
 area-loss threshold or RF qualification.
-
-A checkout containing the native Rust crate requires a regular
-`tools/rust_engine_kicad.py` to run the builtin router. A missing bridge or
-a symlink produces an error before routing.
 
 On Rust-capable checkouts the adapter passes `signal_layers`, optional
 `layer_costs` and the per-net declarations to `route-native --layer-policy-json`.

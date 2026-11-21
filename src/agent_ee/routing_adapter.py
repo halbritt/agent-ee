@@ -107,11 +107,14 @@ def preflight(checkout=None, state=None, backend='builtin'):
     The checkout is recorded and qualified by the same attempt.preflight the sandbox
     runs: HEAD from the git files, the clean-tree state from git with optional locks
     off, and the code digest. Any clean commit qualifies; the result names it."""
+    explicit = str(checkout or '').strip() or os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '').strip()
     checkout = attempt.resolve_kicad_route_checkout(checkout).resolve()
     state = Path(state).resolve() if state is not None else checkout
     record, _, problems = attempt.preflight(checkout, state, backend, mounted_at=attempt.SANDBOX[
         'checkout' if state == checkout else 'state'])
     rust_capable = attempt.is_rust_capable_checkout(checkout)
+    if not explicit and not rust_capable and backend == 'builtin':
+        problems.append(f'native router missing from default checkout: {checkout}')
     engine_bin = attempt.resolve_kicad_route_engine(checkout) if rust_capable else None
     exec_sha = (digest(engine_bin) if engine_bin is not None and engine_bin.is_file()
                 else (digest(checkout / 'bin/kicad-route') if (checkout / 'bin/kicad-route').is_file() else None))

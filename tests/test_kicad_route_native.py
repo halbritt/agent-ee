@@ -637,13 +637,16 @@ class Feature10RouteNativeUnitTests(unittest.TestCase):
             engine = router / 'rust-engine/target/release/kicad-route-engine'
             engine.parent.mkdir(parents=True)
             engine.touch(mode=0o755)
-            (router / 'rust-engine/Cargo.toml').write_text('[package]\nname = "kicad-route-engine"\n')
+            manifest = router / 'rust-engine/Cargo.toml'
+            manifest.write_text('[package]\nname = "kicad-route-engine"\n')
             bridge = router / 'tools/rust_engine_kicad.py'
             foreign = root / 'foreign.py'
             foreign.write_text('# different module\n')
-            for state in ('missing', 'symlink', 'dangling'):
+            for state in ('missing', 'missing-manifest', 'symlink', 'dangling'):
                 with self.subTest(state=state):
-                    if state == 'symlink':
+                    if state == 'missing-manifest':
+                        manifest.unlink()
+                    elif state == 'symlink':
                         bridge.symlink_to(foreign)
                     elif state == 'dangling':
                         foreign.unlink()

@@ -544,7 +544,7 @@ class IntegrationTest(unittest.TestCase):
 
     def test_skip_review_run(self):
         require_toolchain(native=True)
-        # Stage 5 runs `kicad-route` from PATH: the pinned checkout's launcher.
+        # Stage 5 records the executable from the selected checkout.
         route = require_kicad_route()
         path = os.pathsep.join([str(route / 'bin'), os.environ.get('PATH', '')])
         with ReceiptTemporaryDirectory(prefix='agent-ee-rung1-') as tmp, \
@@ -572,6 +572,37 @@ class IntegrationTest(unittest.TestCase):
                 g.validate_receipt(json.loads((run / item['receipt']).read_text()))
             console = (run / 'stages/7-fab/export-fab/run/console.log').read_text()
             self.assertIn('CPL rotation policy is not captured', console)
+
+    def test_generate_legacy_router_runs_only_from_selected_checkout(self):
+        with ReceiptTemporaryDirectory(prefix='agent-ee-router-choice-') as tmp:
+            root = Path(tmp)
+            placed = root / 'placed'
+            placed.mkdir()
+            (placed / 'b.kicad_pcb').write_text('(kicad_pcb)\n')
+            selected, other = root / 'selected', root / 'unrelated'
+            for checkout in (selected, other):
+                launcher = checkout / 'bin/kicad-route'
+                launcher.parent.mkdir(parents=True)
+                launcher.write_text('#!/bin/sh\nexit 8\n')
+                launcher.chmod(0o755)
+            for name, checkout, error in (
+                    ('missing', root / 'absent', 'checkout missing'),
+                    ('implicit', selected, 'native router missing'),
+                    ('historical', selected, 'expected one kicad-route result.json')):
+                with self.subTest(name=name), mock.patch.dict(os.environ, {
+                        'PATH': str(other / 'bin') + os.pathsep + os.environ['PATH'],
+                        'AGENT_EE_KICAD_ROUTE_CHECKOUT': '' if name == 'implicit' else str(checkout)}), \
+                        mock.patch.object(routing_adapter, 'resolve_kicad_route_checkout', return_value=checkout):
+                    stage = g.Stage(root / name, 5, 'routing')
+                    stage.dir.mkdir(parents=True)
+                    with self.assertRaisesRegex(g.StageFailure, error):
+                        g.stage_routing(stage, {'name': 'b', 'placed': placed}, {})
+                    if name == 'historical':
+                        expected = str(selected / 'bin/kicad-route')
+                        self.assertEqual(stage.receipt['commands'][0]['argv'][0], expected)
+                        self.assertEqual(stage.receipt['tools']['kicad-route']['resolved'], expected)
+                    else:
+                        self.assertEqual(stage.receipt['commands'], [])
 
     def test_tool_identity_kicad_route_engine_avoids_version_and_stage_routing_fails_closed(self):
         with ReceiptTemporaryDirectory(prefix='agent-ee-gen-route-') as tmp, \

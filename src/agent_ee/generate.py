@@ -269,12 +269,13 @@ def tool_identity(name):
             _TOOLS[name] = record
             return record
         else:
-            is_engine = name == 'kicad-route-engine' or Path(name).name == 'kicad-route-engine'
+            is_engine = Path(name).name == 'kicad-route-engine'
+            is_router = Path(name).name in ('kicad-route', 'kicad-route-engine')
             record['path'] = shutil.which(name) or (str(Path(name)) if is_engine and Path(name).is_file() else None)
             command = {'kicad-cli': [name, 'version'], 'bwrap': [name, '--version'],
                        '/usr/bin/python3': [name, '--version'], 'kicad-route': None}.get(
-                           name, None if is_engine else [name, '--version'])
-            if (name == 'kicad-route' or is_engine) and record['path']:
+                           name, None if is_router else [name, '--version'])
+            if is_router and record['path']:
                 real = Path(record['path']).resolve()
                 record['resolved'] = str(real)
                 root = next((p for p in real.parents if (p / '.git').exists()), None)
@@ -1192,9 +1193,12 @@ def stage_routing(stage, state, options):
         out_board = out / 'native' / f'{name}.kicad_pcb'
         op_result_path = out / 'operation-result.json'
         op_request_path = out / 'operation-request.json'
-        argv = routing_adapter._native_board_route_argv(
-            checkout, project, out, budget_s=300, board_name=f'{name}.kicad_pcb',
-            output_board=out_board, operation_result=op_result_path, save_request=op_request_path)
+        try:
+            argv = routing_adapter._native_board_route_argv(
+                checkout, project, out, budget_s=300, board_name=f'{name}.kicad_pcb',
+                output_board=out_board, operation_result=op_result_path, save_request=op_request_path)
+        except ValueError as exc:
+            raise StageFailure(str(exc)) from exc
         with routing_adapter.re01_enforced():
             command = stage.run(argv, cwd=project, timeout=1500, label='kicad-route-engine')
         stage.receipt['details']['kicad_route_exit'] = command['exit_code']
@@ -1221,21 +1225,18 @@ def stage_routing(stage, state, options):
         stage.receipt['details']['candidate_sha256'] = digest(design / f'{name}.kicad_pcb')
         state['design'] = design
         return
-    which = shutil.which('kicad-route')
-    if not Path(checkout).is_dir() and which is None:
+    if not checkout.is_dir():
         raise StageFailure(f'kicad-route checkout missing: {checkout}')
-    if which is not None:
-        real_which = Path(which).resolve()
-        which_root = next((p for p in real_which.parents if (p / '.git').exists()), None)
-        if which_root is None and real_which.parent.name == 'bin':
-            which_root = real_which.parent.parent
-        if which_root is not None and routing_adapter.is_rust_capable_checkout(which_root):
-            raise StageFailure(f'RE-01 forbids falling back to legacy kicad-route for Rust-capable checkout: {which_root}')
-    if which is None:
-        raise StageFailure(f'kicad-route missing: checkout {checkout} is not Rust-capable and kicad-route is not on PATH')
-    stage.tool('kicad-route')
+    if not os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT', '').strip():
+        raise StageFailure(f'native router missing from default checkout: {checkout}')
+    launcher = checkout.resolve() / 'bin' / 'kicad-route'
+    if not launcher.is_file() or not os.access(launcher, os.X_OK):
+        raise StageFailure(f'legacy router missing or not executable: {launcher}')
+    if not launcher.resolve().is_relative_to(checkout.resolve()):
+        raise StageFailure(f'legacy router launcher outside selected checkout: {launcher}')
+    stage.receipt['tools']['kicad-route'] = tool_identity(str(launcher))
     # 'builtin' is the canonical name since KICADROUTE-82; the deprecated 'krt' is never emitted (AGENTEE-450).
-    command = stage.run(['kicad-route', '--out', str(out), 'run', '--backend', 'builtin', '--budget', '300'],
+    command = stage.run([str(launcher), '--out', str(out), 'run', '--backend', 'builtin', '--budget', '300'],
                         cwd=project, timeout=1500, label='kicad-route')
     # kicad-route also links runs/<project>/<label>/latest to the stamp directory.
     results = sorted(p for p in out.glob('runs/*/*/*/result.json') if not p.parent.is_symlink())
