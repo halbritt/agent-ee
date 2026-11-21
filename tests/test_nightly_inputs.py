@@ -403,16 +403,18 @@ class StockPreparationEndToEndTests(unittest.TestCase):
 
                     def communicate_at_boundary(*args, **kwargs):
                         nonlocal first
-                        if first:
+                        if first and boundary in ('outer', 'interrupted'):
                             first = False
-                            if boundary == 'outer':
-                                kwargs['timeout'] = 1.6  # accelerate only this real outer wait
-                            elif boundary == 'interrupted':
-                                deadline = time.monotonic() + 5
-                                while len(server.requests) < 2 and time.monotonic() < deadline:
-                                    time.sleep(0.01)
-                                self.assertEqual(len(server.requests), 2)
+                            # The first fetch and the producer's one-second rate limit
+                            # must finish before the deadline interrupts the pending fetch.
+                            deadline = time.monotonic() + 5
+                            while len(server.requests) < 2 and time.monotonic() < deadline:
+                                time.sleep(0.01)
+                            self.assertEqual(len(server.requests), 2)
+                            self.assertIsNone(child.poll())
+                            if boundary == 'interrupted':
                                 raise KeyboardInterrupt('owned test interruption during fetch')
+                            kwargs['timeout'] = 0  # expire the real outer wait with the child live
                         return communicate(*args, **kwargs)
 
                     child.communicate = communicate_at_boundary
@@ -421,8 +423,10 @@ class StockPreparationEndToEndTests(unittest.TestCase):
                 stock_dir = self.base / ('stock-' + boundary)
                 expected = KeyboardInterrupt if boundary == 'interrupted' else RuntimeError
                 with patch.object(nightly_inputs.subprocess, 'Popen', side_effect=launch):
-                    with self.assertRaises(expected):
+                    with self.assertRaises(expected) as caught:
                         nightly_inputs.prepare_fresh_stock(config, ROOT, stock_dir)
+                if boundary == 'outer':
+                    self.assertIsInstance(caught.exception.__cause__, nightly_inputs.subprocess.TimeoutExpired)
                 self.assertEqual(len(children), 1)
                 self.assertIsNotNone(children[0].returncode)
                 with self.assertRaises(ProcessLookupError):
