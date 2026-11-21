@@ -1964,8 +1964,8 @@ def _route_attempt(route_dir, *, argv, env, clock, cancel_dir):
         idx = argv_list.index('route-native')
         source, output = map(Path, argv_list[idx + 1:idx + 3])
         output.parent.mkdir(parents=True, exist_ok=True)
-        # route-native publishes only copper. Make its project and rule files
-        # available before publication so opening the routed board uses them.
+        # Pre-stage the original KiCad settings for selected router versions
+        # that require callers to supply them beside the routed board.
         for suffix in ('.kicad_pro', '.kicad_dru'):
             companion = source.with_suffix(suffix)
             if companion.is_file():
