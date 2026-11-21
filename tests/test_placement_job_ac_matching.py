@@ -65,6 +65,13 @@ class AcMatchingJobTests(unittest.TestCase):
     def test_public_job_measures_final_composed_paths(self):
         self.assertEqual(self.done.returncode, 0, self.done.stdout + self.done.stderr)
         self.assert_matched(self.report)
+        inputs = self.root / 'inputs'
+        final = Path(self.report['final']['board']).parent
+        self.assertEqual((final / 'fp-lib-table').read_bytes(), (inputs / 'fp-lib-table').read_bytes())
+        for footprint in (inputs / 'AcQualification.pretty').glob('*.kicad_mod'):
+            self.assertEqual((final / footprint.relative_to(inputs)).read_bytes(), footprint.read_bytes())
+        grade = read_json(final / 'native-drc.json')
+        self.assertFalse([v for v in grade['violations'] if v['type'].startswith('lib_footprint')])
         self.assertTrue(all(digest(e['path']) == e['sha256'] for e in self.config['inputs'].values()))
 
     def test_connected_unmatched_chain_rejects(self):

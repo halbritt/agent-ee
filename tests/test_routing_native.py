@@ -3,9 +3,45 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent_ee.routing_native import route_coverage
+from agent_ee.routing_native import copy_footprint_libraries, route_coverage
+from agent_ee.symbol_library import children, field, parse_sexpr
 from tests.routing_fixture import make_board
 from tests.toolchain import require_toolchain
+
+
+class FootprintLibraryTests(unittest.TestCase):
+    def test_parenthesized_project_directory_copies_nested_native_library(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source, dest = root / 'src', root / 'out'
+            lib = Path('parts/Board.pretty')
+            (source / lib).mkdir(parents=True)
+            (source / lib / 'Pad.kicad_mod').write_bytes(b'(footprint "Pad")')
+            dest.mkdir()
+            table = b'(fp_lib_table (lib (uri "$(KIPRJMOD)/parts/Board.pretty")))'
+            (source / 'fp-lib-table').write_bytes(table)
+            copy_footprint_libraries(source, dest)
+            self.assertEqual((dest / 'fp-lib-table').read_bytes(), table)
+            self.assertEqual((dest / lib / 'Pad.kicad_mod').read_bytes(), b'(footprint "Pad")')
+
+    def test_parent_relative_library_keeps_its_original_location(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source, dest = root / 'source', root / 'job' / 'output'
+            source.mkdir()
+            dest.mkdir(parents=True)
+            library = root / 'external library.pretty'
+            library.mkdir()
+            table = source / 'fp-lib-table'
+            original = (b'(fp_lib_table (version 7) (lib (name "External")(type "KiCad")'
+                        b'(uri "${KIPRJMOD}/../external library.pretty")(options "")'
+                        b'(descr "The original (uri field) remains in this description")))\n')
+            table.write_bytes(original)
+            copy_footprint_libraries(source, dest)
+            row, = children(parse_sexpr((dest / 'fp-lib-table').read_bytes()), 'lib')
+            self.assertEqual(field(row, 'uri', 1), [str(library)])
+            self.assertEqual(field(row, 'descr', 1), ['The original (uri field) remains in this description'])
+            self.assertEqual(table.read_bytes(), original)
 
 
 class NativePadContactTests(unittest.TestCase):

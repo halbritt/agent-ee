@@ -369,10 +369,59 @@ def probe_board(path, constraints, work=None):
     return probe
 
 
+def copy_footprint_libraries(source, destination):
+    """Keep KiCad's footprint lookup valid when a board moves to a new project directory."""
+    from .symbol_library import children, field, parse_sexpr
+
+    source, destination = Path(source), Path(destination)
+    table = source / 'fp-lib-table'
+    if not table.is_file():
+        return
+    data = table.read_bytes()
+    rows = children(parse_sexpr(data, comment_chars='#;'), 'lib')
+    rewrites = {}
+    copied = set()
+    for index, row in enumerate(rows):
+        uri, = field(row, 'uri', 1)
+        if not uri.startswith(('${KIPRJMOD}/', '$(KIPRJMOD)/')):
+            continue
+        relative = Path(uri.split('/', 1)[1])
+        if relative in copied:
+            continue
+        library = source / relative
+        # A native .pretty library stores its footprints as flat .kicad_mod
+        # files. Bundle it with the board so the final job survives relocation.
+        if (not relative.is_absolute() and '..' not in relative.parts
+                and relative.suffix == '.pretty' and library.is_dir()):
+            target = destination / relative
+            target.mkdir(parents=True, exist_ok=True)
+            for item in library.iterdir():
+                if item.is_file() and (item.suffix == '.kicad_mod' or item.name.upper().startswith('LICENSE')):
+                    shutil.copyfile(item, target / item.name)
+            copied.add(relative)
+        else:
+            # Parent-relative and plugin libraries remain external dependencies.
+            # A new board directory must still refer to the authored resource.
+            rewrites[index] = str(library.resolve())
+
+    if rewrites:
+        raw = parse_sexpr(data, raw=True, comment_chars='#;')
+        raw_rows = children(raw, 'lib')
+        for index, absolute in rewrites.items():
+            children(raw_rows[index], 'uri')[0][1] = json.dumps(absolute, ensure_ascii=False)
+
+        def render(node):
+            return '(' + ' '.join(map(render, node)) + ')' if isinstance(node, list) else node
+
+        data = (render(raw) + '\n').encode('utf-8')
+    (destination / 'fp-lib-table').write_bytes(data)
+
+
 def stage_board(source, directory, constraint):
     directory.mkdir()
     target = directory / 'board.kicad_pcb'
     shutil.copyfile(source, target)
+    copy_footprint_libraries(source.parent, directory)
     pro = source.with_suffix('.kicad_pro')
     project = json.loads(pro.read_text(encoding='utf-8')) if pro.is_file() else {}
     settings = project.setdefault('board', {}).setdefault('design_settings', {})

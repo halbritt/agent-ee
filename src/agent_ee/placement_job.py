@@ -44,6 +44,7 @@ from . import native_run, placement_problem
 from .placement_problem import (INPUT_SCHEMA, OUTPUT_SCHEMA, JobRefusal, escape_hints,  # noqa: F401
                                 rule_mm as _rule_mm)
 from .storage import canonical, digest, read_json, write_json
+from .routing_native import copy_footprint_libraries
 from .run_record import policy_files
 
 JOB_SCHEMA = 'agent-ee.placement-job/1'
@@ -1665,6 +1666,7 @@ def materialize(source, poses, destination, project_bytes, *, normalized, rules_
     if not pcbnew.SaveBoard(str(out), board):
         raise JobRefusal('native SaveBoard failed')
     # SaveBoard also writes sibling project files; the job restores the frozen project bytes.
+    copy_footprint_libraries(Path(source).parent, destination)
     (destination / 'board.kicad_pro').write_bytes(project_bytes)
     if rules_bytes is not None:
         (destination / 'board.kicad_dru').write_bytes(rules_bytes)
@@ -2111,6 +2113,7 @@ def route(candidate_dir, route_dir, checkout, *, budget_s, timeout_s, home, cloc
         raise JobRefusal('design name must be one nonempty path component')
     staged = route_dir / 'candidate' / design_name
     staged.mkdir(parents=True)
+    copy_footprint_libraries(candidate_dir, staged)
     for name in ('board.kicad_pcb', 'board.kicad_pro', 'board.kicad_dru'):
         if name.endswith('.kicad_dru') and not (Path(candidate_dir) / name).exists():
             continue
@@ -3305,6 +3308,7 @@ def final_checks(routed, incumbent, owners, base_keys, job_dir, normalized, *, r
         return {'status': 'unavailable', 'reason': routed.get('status')}
     final_dir = Path(job_dir)
     final_dir.mkdir()
+    copy_footprint_libraries(incumbent['directory'], final_dir)
     shutil.copyfile(routed['board'], final_dir / 'board.kicad_pcb')
     board = final_dir / 'board.kicad_pcb'
     problems = []

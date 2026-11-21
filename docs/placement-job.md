@@ -161,6 +161,12 @@ intent document. For an original-dialect intent they therefore all see the
 native projection; the connector `side` and `context` fields it removes stay
 operative only through the compatibility record that capture checks natively.
 
+Placed candidates, the routing input and the final board carry the project's
+`fp-lib-table`. For a project-local KiCad `.pretty` library, the job copies
+its footprints and license files at the relative path used by the table.
+Parent-relative library references resolve to their original absolute paths.
+Those libraries must remain available when the final board is reopened.
+
 One builder, `placement_problem`, turns an in-memory board description plus
 the normalized intent into the engine input (AGENTEE-538). The job reads the
 native board into that description. Capture builds the problem the engine
