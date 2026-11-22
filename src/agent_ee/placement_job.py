@@ -3036,6 +3036,11 @@ def _execute_job(config, job_dir, *, resume, executable, clock, report, ownershi
     report['placement'] = chosen_placement(job_dir, deadline_limited=search_limited)
     report['phases'] = clock.phases
     report['elapsed_s'] = round(time.monotonic() - clock.start, 3)
+    # A constructed route can exceed a rule bound on one placement and meet it
+    # on another. Keep ordinary no-candidate retries until the portfolio ends.
+    if status == 'route_failed' and _native_length_refusal(report['route']):
+        status = 'refused'
+        report['reason'] = 'length_out_of_range: ' + report['route']['reason']
     report['status'] = status
     report['validity'] = ('integrity-valid placement; physical checks ' + report.get('final', {}).get('physical_checks', 'unavailable')
                           if incumbent is not None else
@@ -3076,6 +3081,16 @@ def _silk_graphic_conflicts(report):
                 and not description.lower().startswith(('pcb text', 'footprint text')))
     return [violation for violation in report['violations'] if violation['type'] in ARTWORK_CONFLICTS
             and not any(names_a_field(item['description']) for item in violation['items'])]
+
+
+def _native_length_refusal(route):
+    """Native-operation/1 puts the length check in the reason of an unroutable result."""
+    from .kicad_route_attempt import NATIVE_OPERATION_SCHEMA
+    return (route.get('native_operation_schema') == NATIVE_OPERATION_SCHEMA
+            and route.get('status') == 'no_candidate' and route.get('router_status') == 'unroutable'
+            and route.get('router_exit') == 3
+            and re.fullmatch(r'length rule ".*": cannot certify net ".*" within [0-9]+ nm '
+                             r'\(constructed upper bound [0-9]+ nm\)', route.get('reason') or '') is not None)
 
 
 def _completion_status(routed, incumbent, final, *, engine_feasible=True):

@@ -1048,7 +1048,11 @@ the author; per-candidate check refusals reject that candidate. Other nonzero
 reader exits, missing output and malformed replies are tool failures.
 A budget/stall kill identified by the router's structured command stop flags is
 instead `no_candidate`: it retains `route_failed` and seed retries, or
-`placement_infeasible` when no hard-feasible incumbent exists. Locality and
+`placement_infeasible` when no hard-feasible incumbent exists. A native whole-net length refusal also
+keeps the remaining placement trials eligible. If the selected unsuccessful trial
+ended because the router could not certify the length limit, the final job reports
+`refused` with `length_out_of_range`, the rule, net, limit and constructed upper
+bound. This bound describes the attempted route. Locality and
 verification findings also keep their design path.
 
 The [design loop](design-generate.md#attempts-and-feedback) reports preflight

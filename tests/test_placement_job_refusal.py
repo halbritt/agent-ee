@@ -18,6 +18,20 @@ def snapshot(directory):
             for p in directory.rglob('*') if p.is_file()}
 
 
+class NativeLengthRefusalTests(unittest.TestCase):
+    def test_only_native_length_certification_failure_is_a_rule_refusal(self):
+        record = dict(native_operation_schema='kicad-route/native-operation/1', status='no_candidate',
+                      router_exit=3, router_status='unroutable',
+                      reason='length rule "timing": cannot certify net "/A[0]" within 123 nm '
+                             '(constructed upper bound 456 nm)')
+        self.assertTrue(job._native_length_refusal(record))
+        for difference in [dict(reason='no legal path'), dict(reason='length rule "timing" is unsupported'),
+                           dict(router_status='budget_exhausted', router_exit=4),
+                           dict(status='backend_failure'), dict(native_operation_schema=None)]:
+            with self.subTest(difference=difference):
+                self.assertFalse(job._native_length_refusal({**record, **difference}))
+
+
 class RefusalReportTests(fixture.Fixture):
     def setUp(self):
         super().setUp()
