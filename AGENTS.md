@@ -89,7 +89,6 @@ any of these claims unless the owner asks for one.
   tool should refuse it with a clear message.
 - Money, orders, uploads of project files and owner-sourced constraints need
   the owner's direct answer. Do not label agent-written text as owner-stated.
-- The telemetry pod is on hold (AGENTEE-518). Do not work on it.
 - This repository is public. Do not commit third-party design files, libraries
   or datasheets without a recorded licence.
 
