@@ -260,6 +260,42 @@ def verify(native, supplier, rotation, *, pad_map=None, nets=None, tolerance='10
                 pairs=[dict(native_index=i, supplier_index=j) for i, j in edges])
 
 
+def smd_placement_rotation(native, supplier, nets):
+    """Check component terminals alone when footprints add plated pads on their nets.
+
+    The caller keeps the full land-pattern failure. All holes still subtract from
+    the copper, and a separate through-hole terminal disqualifies this check.
+    """
+    nets = _normalize_nets(nets)
+    surfaces = []
+    via_counts = []
+    for pattern in (native, supplier):
+        top = [p for p in pattern['pads'] if p['layers'] == ['F.Cu']]
+        plated = [p for p in pattern['pads'] if set(p['layers']) == {'F.Cu', 'B.Cu'}]
+        numbers = {p['number'] for p in top}
+        if (len(top) != len(numbers) or len(top) + len(plated) != len(pattern['pads'])
+                or any(p['number'] not in numbers or not nets.get(p['number']) for p in plated)):
+            return None
+        surfaces.append(dict(pattern, pads=top))
+        via_counts.append(len(plated))
+    native_top, supplier_top = surfaces
+    if (not any(via_counts) or {p['number'] for p in native_top['pads']}
+            != {p['number'] for p in supplier_top['pads']}):
+        return None
+    turns = []
+    for angle in (0, 90, 180, 270):
+        try:
+            verify(native_top, supplier_top, angle, nets=nets)
+        except PatternError:
+            continue
+        turns.append(angle)
+    if len(turns) == 1:
+        return dict(offset_degrees=turns[0], reference='numbered_smd_terminals',
+                    surface_terminals=len(native_top['pads']), native_plated_pads=via_counts[0],
+                    supplier_plated_pads=via_counts[1])
+    return None
+
+
 def _symbol_names(pins, *, supplier=False):
     found = {}
     for pin in pins:

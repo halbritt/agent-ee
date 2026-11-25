@@ -637,7 +637,7 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
     board_numbers, supplier_numbers = sorted(p[0] for p in board_pads), sorted(p[0] for p in supplier_pads)
     if (registration is not None or board_numbers.count('1') != 1
             or not _same_pads_apart_from_extras(board_numbers, supplier_numbers)):
-        from .pad_correspondence import derive
+        from .pad_correspondence import derive, smd_placement_rotation
         from .land_geometry import GeometryError
         spins = ()
         try:
@@ -650,7 +650,18 @@ def _pin1(record, notes, found, board_error, ref, nodes, suppliers, tolerance_nm
                                     supplier_pins=spins,
                                     native_pins=_board_pin_names(found, ref, netlist, lcsc, pad_nets))
         except (PatternError, GeometryError, SupplierError) as exc:
-            return mode('pad_correspondence', f'{ref} {lcsc}: deterministic {exc.mode}: {exc}')
+            mode('pad_correspondence', f'{ref} {lcsc}: deterministic {exc.mode}: {exc}')
+            if registration is None and isinstance(exc, PatternError):
+                try:
+                    placement = smd_placement_rotation(native['pattern'], package['pattern'], pad_nets)
+                except GeometryError as error:
+                    return mode('pin1_unclassified', f'SMD placement: {error}')
+                if placement:
+                    pin1.update(placement)
+                    if turn(delta) != placement['offset_degrees']:
+                        mode('rotation_conflict', f"policy rotation {delta} differs from numbered SMD "
+                             f"terminal rotation {placement['offset_degrees']}")
+            return
         pin1.update(reference='electrical_pad_correspondence',
                     offset_degrees=correspondence['rotation_degrees'], **correspondence)
         board_name = board_basis = None

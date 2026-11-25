@@ -9,7 +9,7 @@ import unittest
 from agent_ee.easyeda_footprint import SupplierError, parse_package, text
 from agent_ee.land_geometry import area_bounds
 from agent_ee.land_pattern import PatternError, extract_footprint, register
-from agent_ee.pad_correspondence import derive, verify, validate_declaration
+from agent_ee.pad_correspondence import derive, smd_placement_rotation, verify, validate_declaration
 from agent_ee.symbol_library import parse_sexpr
 from tests.land_pattern_fixtures import component, kicad_footprint, pad, provenance
 
@@ -175,6 +175,31 @@ class CorrespondenceTests(unittest.TestCase):
         pattern = parse_package(raw, 'C9', 200)['pattern']
         with self.assertRaisesRegex(PatternError, r'\[tool_gap\].*found 2 geometric'):
             derive(pattern, pattern)
+
+    def test_placement_registers_smd_terminals_with_extra_plated_pads(self):
+        terminals = [('1', -5, -3), ('2', 5, -3), ('3', 0, 4)]
+        raw = component('C9', [pad('RECT', x, y, 2, 2, n) for n, x, y in terminals], origin=(0, 0))
+        supplier = parse_package(raw, 'C9', 200)['pattern']
+        native = register(supplier, supplier, dict(translation='declared_origin',
+                                                   rotation='270', mirror=False))[1]
+        via = copy.deepcopy(native['pads'][-1])
+        via['layers'] = ['F.Cu', 'B.Cu']
+        via['primitive'].update(shape='circle', size=['200000', '200000'])
+        native['pads'].append(via)
+        native['holes'].append(dict(via['primitive'], size=['100000', '100000']))
+        with self.assertRaises(PatternError):
+            verify(native, supplier, 270)
+        self.assertEqual(smd_placement_rotation(native, supplier, {'3': 'GND'}),
+                         dict(offset_degrees=270, reference='numbered_smd_terminals',
+                              surface_terminals=3, native_plated_pads=1, supplier_plated_pads=0))
+        self.assertIsNone(smd_placement_rotation(native, supplier, {'3': 'unconnected-(IC-Pad3)'}))
+        with_via = copy.deepcopy(supplier)
+        supplier_via = copy.deepcopy(with_via['pads'][-1])
+        supplier_via['layers'] = ['B.Cu', 'F.Cu']
+        with_via['pads'].append(supplier_via)
+        self.assertEqual(smd_placement_rotation(native, with_via, {'3': 'GND'})['offset_degrees'], 270)
+        via['number'] = '4'
+        self.assertIsNone(smd_placement_rotation(native, supplier, {'4': 'GND'}))
 
     def test_declaration_shape_is_strict(self):
         for value in ({}, dict(rotation_degrees=True, pad_map={'a': ['b']}),

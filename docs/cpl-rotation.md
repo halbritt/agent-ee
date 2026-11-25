@@ -339,6 +339,15 @@ The aggregate follows `land_pattern`:
 - Otherwise, any non-ok row gives the worst execution and `unknown`.
 - `pass` needs every row to pass.
 
+Some surface-mount footprints add plated vias to a numbered exposed pad.
+When complete copper registration fails, the placement check can still identify
+the component angle. Both footprints must have one surface land per terminal
+and the same terminal numbers. Each extra plated pad must share a connected
+surface terminal's number. The tool keeps drill voids in the geometry and
+tries all four quarter turns. A single matching turn supplies the reported
+offset. A different policy angle raises `rotation_conflict`. The original
+`pad_correspondence` finding stays open for physical land review.
+
 A populated probe footprint that is missing from the CPL makes the result
 `malformed`. Before any output, these are refused:
 
